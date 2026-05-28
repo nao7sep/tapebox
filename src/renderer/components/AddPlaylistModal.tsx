@@ -1,22 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EnumEntry } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { formatTime } from '@renderer/lib/format'
 
 type Props = {
-  sessionId: string
+  url: string
   sourceTitle: string | null
   onClose: () => void
 }
 
 /**
- * Modal for playlist/channel adds.
- *   - Loads entries via the streaming enum:entry events.
- *   - All checkable entries are selected by default.
- *   - User can stop loading early; whatever loaded so far remains selectable.
- *   - Confirm adds the selected URLs via downloads:addBulk.
+ * Playlist / channel adder.
+ *
+ * The modal owns the enum:start lifecycle. The flow:
+ *   1. useEffect runs once on mount.
+ *   2. Subscriptions for enum:entry / enum:done / enum:error are attached
+ *      FIRST. They use a sessionId ref to filter events; the ref starts null
+ *      and is populated when enum:start returns.
+ *   3. Only after subscriptions are wired does the modal call enum:start.
+ *
+ * Result: there is no window in which main can emit events before the
+ * renderer is listening, even if the renderer's event loop is busy.
  */
-export function AddPlaylistModal({ sessionId, sourceTitle, onClose }: Props) {
+export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
   const [entries, setEntries] = useState<EnumEntry[]>([])
   const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -24,10 +30,12 @@ export function AddPlaylistModal({ sessionId, sourceTitle, onClose }: Props) {
   const [search, setSearch] = useState('')
   const [adding, setAdding] = useState(false)
 
+  const sessionIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     const offs = [
       ipcOn('enum:entry', (e) => {
-        if (e.sessionId !== sessionId) return
+        if (e.sessionId !== sessionIdRef.current) return
         setEntries((prev) => [...prev, e.entry])
         if (!e.entry.alreadyInLibrary && !e.entry.unavailable) {
           setSelected((prev) => {
@@ -37,11 +45,28 @@ export function AddPlaylistModal({ sessionId, sourceTitle, onClose }: Props) {
           })
         }
       }),
-      ipcOn('enum:done',  (e) => { if (e.sessionId === sessionId) setDone(true) }),
-      ipcOn('enum:error', (e) => { if (e.sessionId === sessionId) { setDone(true); setError(e.error) } }),
+      ipcOn('enum:done', (e) => {
+        if (e.sessionId === sessionIdRef.current) setDone(true)
+      }),
+      ipcOn('enum:error', (e) => {
+        if (e.sessionId === sessionIdRef.current) { setDone(true); setError(e.error) }
+      }),
     ]
-    return () => offs.forEach((off) => off())
-  }, [sessionId])
+
+    // Subscriptions are now live. Safe to start streaming.
+    ipcInvoke('enum:start', { url })
+      .then((r) => { sessionIdRef.current = r.sessionId })
+      .catch((err) => { setError(String(err)); setDone(true) })
+
+    return () => {
+      offs.forEach((off) => off())
+      // Best-effort cancel on unmount. If the modal closes via Cancel button
+      // we've already called enum:cancel; this is a safety net for other
+      // unmount paths (programmatic close, page navigation in dev mode, etc.).
+      const sid = sessionIdRef.current
+      if (sid) void ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
+    }
+  }, [url])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -71,7 +96,8 @@ export function AddPlaylistModal({ sessionId, sourceTitle, onClose }: Props) {
   }
 
   async function stopLoading() {
-    await ipcInvoke('enum:cancel', { sessionId }).catch(() => {})
+    const sid = sessionIdRef.current
+    if (sid) await ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
     setDone(true)
   }
 
@@ -91,7 +117,8 @@ export function AddPlaylistModal({ sessionId, sourceTitle, onClose }: Props) {
   }
 
   async function cancel() {
-    if (!done) await ipcInvoke('enum:cancel', { sessionId }).catch(() => {})
+    const sid = sessionIdRef.current
+    if (sid && !done) await ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
     onClose()
   }
 

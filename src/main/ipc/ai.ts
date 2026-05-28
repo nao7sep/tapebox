@@ -1,7 +1,7 @@
 import { handle } from './handle'
 import * as session from '@main/store/session'
 import * as ai from '@main/services/ai-client'
-import { normalizeSlug } from '@main/core/slug'
+import { slugifyAscii } from '@main/core/slug'
 
 export function registerAiHandlers(): void {
   handle('ai:generateSlug', async ({ itemId }) => {
@@ -11,6 +11,6 @@ export function registerAiHandlers(): void {
       title: item.originalTitle ?? item.title,
       uploader: item.uploader,
     })
-    return { slug: normalizeSlug(raw) }
+    return { slug: slugifyAscii(raw) }
   })
 }

@@ -6,6 +6,7 @@ import { registerEnumHandlers } from './enum'
 import { registerAiHandlers } from './ai'
 import { registerExportHandlers } from './export'
 import { registerDialogHandlers } from './dialog'
+import { registerAppHandlers } from './app'
 
 /**
  * Mount all IPC handlers. Called once after stores are loaded and before
@@ -20,4 +21,5 @@ export function registerIpcHandlers(): void {
   registerAiHandlers()
   registerExportHandlers()
   registerDialogHandlers()
+  registerAppHandlers()
 }

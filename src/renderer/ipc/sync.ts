@@ -1,16 +1,18 @@
 import { ipcInvoke, ipcOn } from './client'
 import { useItemsStore } from '@renderer/store/items'
 import { useBinariesStore } from '@renderer/store/binaries'
+import { useRuntimeStore } from '@renderer/store/runtime'
 
 /**
  * Wire renderer stores to main's IPC.
- *   - Initial pull: library:list, binaries:status.
+ *   - Initial pull: library:list, binaries:status, app:runtimeInfo.
  *   - Live: items:* + binaries:* events.
  * Returns a cleanup function for the caller's useEffect.
  */
 export function startIpcSync(): () => void {
   void ipcInvoke('library:list').then((items) => useItemsStore.getState().setAll(items))
   void ipcInvoke('binaries:status').then((s) => useBinariesStore.getState().setStatuses(s))
+  void ipcInvoke('app:runtimeInfo').then((info) => useRuntimeStore.getState().setInfo(info))
 
   const offs = [
     ipcOn('items:added',     (items) => useItemsStore.getState().upsertMany(items)),

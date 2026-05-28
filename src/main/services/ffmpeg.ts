@@ -1,8 +1,8 @@
 import { access, constants } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import execa from 'execa'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
+import { execCapture } from '@main/io/spawn'
 
 /**
  * ffmpeg subprocess service.
@@ -24,13 +24,15 @@ export type ExtractOptions = {
   filenameStem: string
   codec: Codec
   chapter?: { startSeconds: number; endSeconds: number } | null
+  signal?: AbortSignal
 }
+
+const EXTRACT_IDLE_TIMEOUT_MS = 30_000
 
 export async function extractAudio(opts: ExtractOptions): Promise<string> {
   const ext = audioExtension(opts.codec, opts.mediaPath)
   const outPath = join(opts.destinationDir, `${opts.filenameStem}.${ext}`)
 
-  // Refuse to overwrite. Caller does pre-flight checks; this is belt-and-suspenders.
   if (await exists(outPath)) {
     throw new Error(`Output already exists: ${outPath}`)
   }
@@ -51,11 +53,10 @@ export async function extractAudio(opts: ExtractOptions): Promise<string> {
   args.push(outPath)
 
   log.info('ffmpeg extract', { outPath, codec: opts.codec, hasChapter: !!opts.chapter })
-  try {
-    await execa(binaryPath('ffmpeg'), args, { reject: true })
-  } catch (err) {
-    throw new Error(`ffmpeg failed: ${String(err)}`)
-  }
+  await execCapture(binaryPath('ffmpeg'), args, {
+    signal: opts.signal,
+    idleTimeoutMs: EXTRACT_IDLE_TIMEOUT_MS,
+  })
   return outPath
 }
 

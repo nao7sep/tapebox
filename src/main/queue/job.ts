@@ -11,24 +11,39 @@ import type { Item } from '@shared/domain'
 
 /**
  * Single job lifecycle: probe -> download -> finalize sidecar.
- * Owns one AbortController; cancel() aborts the chain at the next yt-dlp
- * boundary. Persists item updates and emits events at every transition.
+ *
+ * Cancellation is awaitable: cancel() returns the same Promise that run()
+ * returns. The queue manager awaits this when other handlers (library:remove,
+ * downloads:pause) need the yt-dlp process to be gone before they touch disk.
  */
 export class Job {
   readonly itemId: string
   private controller = new AbortController()
   private cancelled = false
+  private runPromise: Promise<void> | null = null
 
   constructor(item: Item) {
     this.itemId = item.id
   }
 
-  cancel(): void {
+  /**
+   * Request cancellation. Returns the run() promise so the caller can await
+   * actual teardown (subprocess exit + finally blocks done). Safe to call
+   * before run() begins or after it finishes — both cases resolve immediately.
+   */
+  cancel(): Promise<void> {
     this.cancelled = true
     this.controller.abort()
+    return this.runPromise ?? Promise.resolve()
   }
 
-  async run(): Promise<void> {
+  run(): Promise<void> {
+    if (this.runPromise) return this.runPromise
+    this.runPromise = this.runInner()
+    return this.runPromise
+  }
+
+  private async runInner(): Promise<void> {
     try {
       await this.probe()
       if (this.cancelled) return

@@ -1,7 +1,12 @@
-import execa from 'execa'
 import { dirname, extname, join } from 'node:path'
 import { binaryPath, paths } from '@main/paths'
 import { log } from '@main/io/logger'
+import {
+  execCapture,
+  makeLineBuffer,
+  spawnStreaming,
+  waitForExit,
+} from '@main/io/spawn'
 
 /**
  * yt-dlp subprocess service.
@@ -31,15 +36,18 @@ export type ProbeResult = {
   isPlaylist: boolean
 }
 
+const PROBE_IDLE_TIMEOUT_MS = 30_000
+const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000
+
 /**
  * Single-video probe. Returns parsed --dump-json output.
  * For playlist URLs use enumeratePlaylist (phase 6).
  */
 export async function probe(url: string, signal: AbortSignal): Promise<ProbeResult> {
-  const { stdout } = await execa(
+  const { stdout } = await execCapture(
     binaryPath('yt-dlp'),
     ['--dump-json', '--skip-download', '--no-warnings', '--no-playlist', url],
-    { env: ytdlpEnv(), signal: signal, reject: true },
+    { env: ytdlpEnv(), signal, idleTimeoutMs: PROBE_IDLE_TIMEOUT_MS },
   )
   const info = JSON.parse(stdout) as Record<string, unknown>
   return {
@@ -81,10 +89,10 @@ const FINAL_PATH_MARKER = 'tapebox-final-filepath:'
  * stable until the user renames to a slug.
  */
 export async function download(opts: DownloadOptions): Promise<DownloadResult> {
-  let finalPath: string | null = null
+  const captured: { finalPath: string | null } = { finalPath: null }
   let lastPct = -1
 
-  const child = execa(
+  const child = spawnStreaming(
     binaryPath('yt-dlp'),
     [
       '--paths', `home:${opts.libraryDir}`,
@@ -96,17 +104,16 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
       '--print', `after_move:${FINAL_PATH_MARKER}%(filepath)s`,
       opts.url,
     ],
-    { env: ytdlpEnv(), signal: opts.signal, buffer: false, reject: true },
+    { env: ytdlpEnv(), signal: opts.signal, idleTimeoutMs: DOWNLOAD_IDLE_TIMEOUT_MS },
   )
 
-  const handleLine = (line: string) => {
-    const t = line.trim()
-    if (!t) return
-    if (t.startsWith(FINAL_PATH_MARKER)) {
-      finalPath = t.slice(FINAL_PATH_MARKER.length)
+  const lineBuffer = makeLineBuffer((line) => {
+    if (!line) return
+    if (line.startsWith(FINAL_PATH_MARKER)) {
+      captured.finalPath = line.slice(FINAL_PATH_MARKER.length)
       return
     }
-    const m = t.match(/\[download\]\s+(\d+(?:\.\d+)?)%/)
+    const m = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/)
     if (m && m[1]) {
       const pct = parseFloat(m[1])
       if (pct !== lastPct) {
@@ -114,16 +121,18 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
         opts.onProgress?.(pct)
       }
     }
+  })
+
+  child.stdout.on('data', lineBuffer.feed)
+  child.stderr.on('data', lineBuffer.feed)
+
+  try {
+    await waitForExit(child, { command: 'yt-dlp download' })
+  } finally {
+    lineBuffer.flush()
   }
 
-  const tailLines = (data: Buffer) => {
-    data.toString('utf8').split(/\r?\n/).forEach(handleLine)
-  }
-  child.stdout?.on('data', tailLines)
-  child.stderr?.on('data', tailLines)
-
-  await child
-
+  const finalPath = captured.finalPath
   if (!finalPath) {
     throw new Error('yt-dlp did not report a final file path')
   }
@@ -140,7 +149,11 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
  * Best-effort: ensure yt-dlp can run. Logs the version. Throws if missing.
  */
 export async function ensureRunnable(): Promise<string> {
-  const { stdout } = await execa(binaryPath('yt-dlp'), ['--version'], { env: ytdlpEnv() })
+  const { stdout } = await execCapture(
+    binaryPath('yt-dlp'),
+    ['--version'],
+    { env: ytdlpEnv() },
+  )
   const version = stdout.trim().split('\n')[0] ?? 'unknown'
   log.info('yt-dlp ready', { version })
   return version

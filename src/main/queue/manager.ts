@@ -13,6 +13,12 @@ import { Job } from './job'
  *
  * tick() is the single scheduler entry point — called when items are added,
  * resumed, or when an active job finishes.
+ *
+ * cancel() returns a Promise that resolves once the underlying yt-dlp
+ * process has exited and the Job's finally blocks have run. Callers that
+ * need to touch the item's files (library:remove, library:renameToSlug)
+ * must await this before doing so — otherwise yt-dlp keeps writing into
+ * paths that have just been unlinked.
  */
 
 const active = new Map<string, Job>()
@@ -39,8 +45,18 @@ export function tick(): void {
   }
 }
 
-export function cancel(itemId: string): void {
-  active.get(itemId)?.cancel()
+/**
+ * Awaitable cancel. Resolves only after the Job's run() has settled — i.e.,
+ * yt-dlp has exited and disk state is no longer being mutated by this job.
+ */
+export async function cancel(itemId: string): Promise<void> {
+  const job = active.get(itemId)
+  if (!job) return
+  await job.cancel()
+}
+
+export function isActive(itemId: string): boolean {
+  return active.has(itemId)
 }
 
 /**

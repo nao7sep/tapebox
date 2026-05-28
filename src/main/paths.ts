@@ -4,6 +4,10 @@ import { join } from 'node:path'
 /**
  * All TapeBox state lives under ~/.tapebox by convention.
  * Electron's userData is also redirected here (see main/index.ts).
+ *
+ * 'work' is our own scratch space. 'cache' is left for Electron's HTTP cache
+ * (Cache_Data, Code Cache, GPUCache) so the two subsystems never race over
+ * the same directory.
  */
 export const tapeboxRoot = join(homedir(), '.tapebox')
 
@@ -12,13 +16,13 @@ export const paths = {
   bin:            join(tapeboxRoot, 'bin'),
   library:        join(tapeboxRoot, 'library'),
   logs:           join(tapeboxRoot, 'logs'),
-  cache:          join(tapeboxRoot, 'cache'),
-  cacheDownloads: join(tapeboxRoot, 'cache', 'downloads'),
-  cacheThumbs:    join(tapeboxRoot, 'cache', 'thumbnails'),
+  work:           join(tapeboxRoot, 'work'),
+  workDownloads:  join(tapeboxRoot, 'work', 'downloads'),
+  workThumbs:     join(tapeboxRoot, 'work', 'thumbnails'),
   config:         join(tapeboxRoot, 'config.json'),
   session:        join(tapeboxRoot, 'session.json'),
   apiKeys:        join(tapeboxRoot, 'api-keys.json'),
-  binVersions:    join(tapeboxRoot, 'bin', '.versions.json'),
+  devPidFile:     join(tapeboxRoot, '.dev.pid'),
 } as const
 
 export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
@@ -35,7 +39,7 @@ export const requiredDirs: readonly string[] = [
   paths.bin,
   paths.library,
   paths.logs,
-  paths.cache,
-  paths.cacheDownloads,
-  paths.cacheThumbs,
+  paths.work,
+  paths.workDownloads,
+  paths.workThumbs,
 ]

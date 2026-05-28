@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Settings } from '@shared/settings'
-import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
+import { ipcInvoke } from '@renderer/ipc/client'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useItemsStore } from '@renderer/store/items'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -20,7 +20,7 @@ export default function App() {
   const selectedId = useSelectionStore((s) => s.selectedId)
   const select = useSelectionStore((s) => s.select)
   const binaryStatuses = useBinariesStore((s) => s.statuses)
-  const enumeration = useEnumerationStore((s) => s.active)
+  const pendingEnum = useEnumerationStore((s) => s.pending)
   const closeEnum = useEnumerationStore((s) => s.close)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -31,18 +31,9 @@ export default function App() {
     return stop
   }, [])
 
-  // Re-fetch settings when the dialog closes so the header reflects edits.
   useEffect(() => {
     if (!showSettings) void ipcInvoke('settings:get').then(setSettings)
   }, [showSettings])
-
-  // Items updated → may have new state we want shown immediately
-  useEffect(() => {
-    const off = ipcOn('items:updated', () => {
-      // No-op: store already updated; this hook reserved for future side effects.
-    })
-    return off
-  }, [])
 
   useEffect(() => {
     if (selectedId && !items.some((i) => i.id === selectedId)) select(null)
@@ -53,61 +44,61 @@ export default function App() {
 
   return (
     <DropZone>
-    <main className="flex h-screen flex-col">
-      <header className="shrink-0 space-y-3 border-b border-zinc-800 p-4">
-        <div className="flex items-baseline justify-between gap-4">
-          <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
-          <div className="flex items-baseline gap-4">
-            {settings && (
-              <p className="text-xs text-zinc-500">
-                <span className="text-zinc-300">{settings.libraryDir}</span>
-                {' · '}
-                Autostart <span className="text-zinc-300">{settings.autoStartDownloads ? 'on' : 'off'}</span>
-                {' · '}
-                Concurrency <span className="text-zinc-300">{settings.maxConcurrentDownloads}</span>
-              </p>
-            )}
-            <button
-              onClick={() => setShowSettings(true)}
-              className="text-xs text-zinc-400 hover:text-zinc-100"
-            >
-              Settings
-            </button>
-          </div>
-        </div>
-        <TopBar />
-        <FilterChips />
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-80 shrink-0 overflow-y-auto border-r border-zinc-800">
-          <ItemList />
-        </aside>
-        <section className="flex-1 overflow-y-auto">
-          {selectedItem ? (
-            <DetailPane item={selectedItem} />
-          ) : (
-            <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-500">
-              Select a tape from the list.
+      <main className="flex h-screen flex-col">
+        <header className="shrink-0 space-y-3 border-b border-zinc-800 p-4">
+          <div className="flex items-baseline justify-between gap-4">
+            <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
+            <div className="flex items-baseline gap-4">
+              {settings && (
+                <p className="text-xs text-zinc-500">
+                  <span className="text-zinc-300">{settings.libraryDir}</span>
+                  {' · '}
+                  Autostart <span className="text-zinc-300">{settings.autoStartDownloads ? 'on' : 'off'}</span>
+                  {' · '}
+                  Concurrency <span className="text-zinc-300">{settings.maxConcurrentDownloads}</span>
+                </p>
+              )}
+              <button
+                onClick={() => setShowSettings(true)}
+                className="text-xs text-zinc-400 hover:text-zinc-100"
+              >
+                Settings
+              </button>
             </div>
-          )}
-        </section>
-      </div>
+          </div>
+          <TopBar />
+          <FilterChips />
+        </header>
 
-      {enumeration && (
-        <AddPlaylistModal
-          sessionId={enumeration.sessionId}
-          sourceTitle={enumeration.sourceTitle}
-          onClose={closeEnum}
-        />
-      )}
+        <div className="flex flex-1 overflow-hidden">
+          <aside className="w-80 shrink-0 overflow-y-auto border-r border-zinc-800">
+            <ItemList />
+          </aside>
+          <section className="flex-1 overflow-y-auto">
+            {selectedItem ? (
+              <DetailPane item={selectedItem} />
+            ) : (
+              <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-500">
+                Select a tape from the list.
+              </div>
+            )}
+          </section>
+        </div>
 
-      {showSettings && (
-        <SettingsDialog onClose={() => setShowSettings(false)} />
-      )}
+        {pendingEnum && (
+          <AddPlaylistModal
+            url={pendingEnum.url}
+            sourceTitle={pendingEnum.sourceTitle}
+            onClose={closeEnum}
+          />
+        )}
 
-      {needsFirstRun && <FirstRunDialog />}
-    </main>
+        {showSettings && (
+          <SettingsDialog onClose={() => setShowSettings(false)} />
+        )}
+
+        {needsFirstRun && <FirstRunDialog />}
+      </main>
     </DropZone>
   )
 }

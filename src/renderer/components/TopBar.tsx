@@ -7,8 +7,9 @@ const URL_PATTERN = /^https?:\/\//i
 /**
  * URL input bar.
  *   - On window focus, inspects the clipboard and offers any http(s) URL.
- *   - Submitting routes through enum:start so playlists/channels open the
- *     selection modal automatically; single videos go straight to the queue.
+ *   - Submitting calls enum:detect to learn the URL's shape:
+ *       - 'single' → downloads:add directly
+ *       - 'multi'  → open the playlist modal, which owns enum:start
  */
 export function TopBar() {
   const [url, setUrl] = useState('')
@@ -36,11 +37,11 @@ export function TopBar() {
     setBusy(true)
     setError(null)
     try {
-      const result = await ipcInvoke('enum:start', { url: v })
+      const result = await ipcInvoke('enum:detect', { url: v })
       if (result.kind === 'single') {
         await ipcInvoke('downloads:add', { url: v })
       } else {
-        openEnum(result.sessionId, result.sourceTitle)
+        openEnum(v, result.sourceTitle)
       }
       setUrl('')
       setSuggestion(null)

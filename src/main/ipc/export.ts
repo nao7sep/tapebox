@@ -4,7 +4,7 @@ import { handle } from './handle'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import * as ffmpeg from '@main/services/ffmpeg'
-import { normalizeSlug } from '@main/core/slug'
+import { sanitizeFilename } from '@main/core/filename'
 import { log } from '@main/io/logger'
 
 /**
@@ -21,8 +21,10 @@ import { log } from '@main/io/logger'
  *   {slug}          item.slug (falls back to sourceId/itemId)
  *   {index}         1-based chapter index
  *   {index:02}      2-digit zero-padded chapter index
- *   {chapterTitle}  chapter title, slug-normalized
- *   {chapterTitleRaw}  chapter title, raw (use carefully — may contain weird chars)
+ *   {chapterTitle}  chapter title, filesystem-safe (preserves Unicode,
+ *                   strips only reserved characters). Empty for titles that
+ *                   contain only reserved characters — the index token keeps
+ *                   filenames unique.
  */
 
 type ExportArgs = {
@@ -75,12 +77,18 @@ export function registerExportHandlers(): void {
 
     for (let i = 0; i < chapters.length; i++) {
       const c = chapters[i]!
-      const stem = applyTemplate(template, {
+      let stem = applyTemplate(template, {
         slug: baseStem,
         index: i + 1,
-        chapterTitle: normalizeSlug(c.title),
-        chapterTitleRaw: c.title,
+        chapterTitle: sanitizeFilename(c.title),
       })
+      // Final scrub on the whole composed stem to defend against template
+      // tokens or static template text introducing reserved characters.
+      stem = sanitizeFilename(stem)
+      if (!stem) {
+        // chapterTitle collapsed AND template was sparse; fall back to index.
+        stem = sanitizeFilename(`${baseStem}-${String(i + 1).padStart(2, '0')}`)
+      }
       if (seenStems.has(stem)) {
         throw new Error(`Filename collision in export plan: "${stem}". Adjust the template.`)
       }
@@ -117,14 +125,12 @@ function applyTemplate(template: string, ctx: {
   slug: string
   index: number
   chapterTitle: string
-  chapterTitleRaw: string
 }): string {
   return template
     .replace(/\{slug\}/g, ctx.slug)
     .replace(/\{index:02\}/g, String(ctx.index).padStart(2, '0'))
     .replace(/\{index\}/g, String(ctx.index))
     .replace(/\{chapterTitle\}/g, ctx.chapterTitle)
-    .replace(/\{chapterTitleRaw\}/g, ctx.chapterTitleRaw)
 }
 
 async function fileExists(p: string): Promise<boolean> {

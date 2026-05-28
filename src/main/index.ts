@@ -1,13 +1,33 @@
 import { app, BrowserWindow } from 'electron'
 import { mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
-import { paths, requiredDirs } from './paths'
-import { closeLogger, initLogger, log, pruneOldLogs } from './io/logger'
-import { loadSettings, getSettings } from './store/config'
-import { loadSession, persistNow } from './store/session'
-import { registerIpcHandlers } from './ipc'
-import * as queue from './queue/manager'
-import { registerMediaProtocolHandler, registerMediaSchemeAsPrivileged } from './protocol'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { paths, requiredDirs } from './paths.js'
+import { closeLogger, initLogger, log, pruneOldLogs } from './io/logger.js'
+import { loadSettings, getSettings } from './store/config.js'
+import { loadSession, persistNow } from './store/session.js'
+import { registerIpcHandlers } from './ipc/index.js'
+import * as queue from './queue/manager.js'
+import { registerMediaProtocolHandler, registerMediaSchemeAsPrivileged } from './protocol.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * Single-instance lock. If another tapebox instance already holds the lock,
+ * focus its window and quit ourselves. Must run before app.whenReady() because
+ * the second process should never start its own event loop.
+ */
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  process.exit(0)
+}
+
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.focus()
+})
 
 // Redirect Electron's own state into ~/.tapebox so everything lives in one
 // place. Must happen before app is ready and before any path queries.
@@ -31,7 +51,7 @@ function createMainWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#09090b',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -64,7 +84,25 @@ async function startup(): Promise<void> {
   createMainWindow()
 }
 
-app.whenReady().then(() => {
+/**
+ * Idempotent cleanup. Called from both window-all-closed (so macOS persists
+ * on close without quitting) and before-quit (so explicit Cmd+Q persists too).
+ */
+let shutdownPromise: Promise<void> | null = null
+function shutdown(): Promise<void> {
+  if (shutdownPromise) return shutdownPromise
+  shutdownPromise = (async () => {
+    try {
+      await persistNow()
+    } catch {
+      // already logged
+    }
+    await closeLogger()
+  })()
+  return shutdownPromise
+}
+
+void app.whenReady().then(() => {
   void startup().catch((err) => {
     log.error('startup failed', { error: String(err) })
     app.quit()
@@ -76,16 +114,12 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  void shutdown()
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', async (event) => {
+app.on('before-quit', (event) => {
+  if (shutdownPromise) return
   event.preventDefault()
-  try {
-    await persistNow()
-  } catch {
-    // already logged
-  }
-  await closeLogger()
-  app.exit(0)
+  void shutdown().then(() => app.exit(0))
 })

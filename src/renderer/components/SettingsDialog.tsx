@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AiProfile, Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
+import { useRuntimeStore } from '@renderer/store/runtime'
 
 type Props = { onClose: () => void }
 
@@ -17,6 +18,7 @@ export function SettingsDialog({ onClose }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const runtime = useRuntimeStore((s) => s.info)
 
   useEffect(() => {
     void ipcInvoke('settings:get').then(setSettings)
@@ -121,6 +123,15 @@ export function SettingsDialog({ onClose }: Props) {
           </Section>
 
           <Section title="AI profiles" hint="Used for slug generation. Currently only OpenAI-compatible endpoints.">
+            {runtime && !runtime.encryptionAvailable && (
+              <div className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+                The OS keychain is unavailable on this system, so API keys can't be saved securely.
+                {' '}
+                {runtime.platform === 'linux'
+                  ? 'Install libsecret (or gnome-keyring) and restart TapeBox.'
+                  : 'Saving API keys is disabled until OS encryption becomes available.'}
+              </div>
+            )}
             <div className="space-y-2">
               {settings.aiProfiles.map((p) => (
                 <ProfileRow
@@ -128,6 +139,7 @@ export function SettingsDialog({ onClose }: Props) {
                   profile={p}
                   active={p.id === settings.activeAiProfileId}
                   busy={busy}
+                  canSaveKey={runtime?.encryptionAvailable ?? false}
                   onActive={() => setActiveProfile(p.id)}
                   onChange={(patch) => updateProfile(p.id, patch)}
                   onDelete={() => deleteProfile(p.id)}
@@ -235,10 +247,11 @@ function NumberField({ label, value, min, max, disabled, onChange }: {
   )
 }
 
-function ProfileRow({ profile, active, busy, onActive, onChange, onDelete }: {
+function ProfileRow({ profile, active, busy, canSaveKey, onActive, onChange, onDelete }: {
   profile: AiProfile
   active: boolean
   busy: boolean
+  canSaveKey: boolean
   onActive: () => void
   onChange: (patch: Partial<AiProfile>) => void
   onDelete: () => void
@@ -302,20 +315,21 @@ function ProfileRow({ profile, active, busy, onActive, onChange, onDelete }: {
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="API key…"
+          placeholder={canSaveKey ? 'API key…' : 'Keychain unavailable'}
           spellCheck={false}
-          className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs placeholder-zinc-600 focus:border-zinc-600 focus:outline-none"
+          disabled={!canSaveKey}
+          className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs placeholder-zinc-600 focus:border-zinc-600 focus:outline-none disabled:opacity-50"
         />
         <button
           onClick={saveKey}
-          disabled={keyBusy || !apiKey.trim()}
+          disabled={keyBusy || !apiKey.trim() || !canSaveKey}
           className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
         >
           Save key
         </button>
         <button
           onClick={clearKey}
-          disabled={keyBusy}
+          disabled={keyBusy || !canSaveKey}
           className="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
         >
           Clear

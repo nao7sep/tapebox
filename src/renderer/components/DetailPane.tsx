@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { z } from 'zod'
 import type { Item } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -10,7 +11,17 @@ import { ChapterList } from './ChapterList'
 import { RenameDialog } from './RenameDialog'
 import { ExportDialog } from './ExportDialog'
 
-type Chapter = { start_time: number; end_time: number; title: string }
+/**
+ * Chapter shape as yt-dlp writes it into the sidecar. We validate at the
+ * boundary because a malformed sidecar (manual edit, future yt-dlp change)
+ * could otherwise feed NaN to <video>.currentTime.
+ */
+const SidecarChapterSchema = z.object({
+  start_time: z.number(),
+  end_time: z.number(),
+  title: z.string(),
+})
+type Chapter = z.infer<typeof SidecarChapterSchema>
 
 export function DetailPane({ item }: { item: Item }) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -32,9 +43,12 @@ export function DetailPane({ item }: { item: Item }) {
     return () => { cancelled = true }
   }, [item.id, item.state, item.sidecarFilename])
 
-  const chapters: Chapter[] = Array.isArray(sidecar?.chapters)
-    ? (sidecar.chapters as Chapter[])
-    : []
+  const chapters: Chapter[] = (() => {
+    const raw = sidecar?.chapters
+    if (!Array.isArray(raw)) return []
+    const parsed = z.array(SidecarChapterSchema).safeParse(raw)
+    return parsed.success ? parsed.data : []
+  })()
 
   const mediaUrl = item.filename
     ? `tapebox-media:///${encodeURIComponent(item.filename)}`
@@ -47,6 +61,20 @@ export function DetailPane({ item }: { item: Item }) {
     void v.play().catch(() => {})
   }
 
+  /**
+   * Release the file handle before any operation that touches the file's
+   * name or existence on disk. On Windows the OS refuses rename/unlink while
+   * the file is open in a <video> element. On macOS/Linux it works but the
+   * sidecar may be stale if the read happened before release.
+   */
+  function releaseMedia() {
+    const v = videoRef.current
+    if (!v) return
+    v.pause()
+    v.removeAttribute('src')
+    v.load()
+  }
+
   async function archive()   { await ipcInvoke('library:archive',   { itemIds: [item.id] }) }
   async function unarchive() { await ipcInvoke('library:unarchive', { itemIds: [item.id] }) }
   async function cancel()    { await ipcInvoke('downloads:cancel',  { itemId: item.id }) }
@@ -55,8 +83,14 @@ export function DetailPane({ item }: { item: Item }) {
   async function remove() {
     const ok = confirm('Remove this item and delete its files?')
     if (!ok) return
+    releaseMedia()
     await ipcInvoke('library:remove', { itemIds: [item.id], deleteFiles: true })
     select(null)
+  }
+
+  function openRename() {
+    releaseMedia()
+    setShowRename(true)
   }
 
   return (
@@ -82,7 +116,7 @@ export function DetailPane({ item }: { item: Item }) {
         )}
       </div>
 
-      {item.state === 'downloaded' && mediaUrl && (
+      {item.state === 'downloaded' && mediaUrl && !showRename && (
         <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} />
       )}
 
@@ -108,7 +142,7 @@ export function DetailPane({ item }: { item: Item }) {
         {item.state === 'downloaded' && (
           <>
             <ActionButton onClick={() => setShowExport(true)}>Export audio…</ActionButton>
-            <ActionButton onClick={() => setShowRename(true)}>Rename…</ActionButton>
+            <ActionButton onClick={openRename}>Rename…</ActionButton>
             {item.archivedAtUtc
               ? <ActionButton onClick={unarchive}>Move to Inbox</ActionButton>
               : <ActionButton onClick={archive}>Archive</ActionButton>}

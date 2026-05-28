@@ -25,7 +25,7 @@ export function registerDownloadHandlers(): void {
   })
 
   handle('downloads:cancel', async ({ itemId }) => {
-    queue.cancel(itemId)
+    await queue.cancel(itemId)
   })
 
   handle('downloads:retry', async ({ itemId }) => {
@@ -34,7 +34,7 @@ export function registerDownloadHandlers(): void {
   })
 
   handle('downloads:pause', async ({ itemId }) => {
-    queue.cancel(itemId)
+    await queue.cancel(itemId)
     transition(itemId, { state: 'paused' })
   })
 

@@ -7,36 +7,34 @@ import { log } from '@main/io/logger'
 import type { EnumEntry } from '@shared/ipc-contract'
 
 /**
- * Enumeration session lifecycle:
- *   enum:start  -> probe kind. If single, return immediately. If multi, start
- *                  background streaming and return a sessionId.
- *   enum:entry  -> emitted per video as it arrives from yt-dlp.
- *   enum:done   -> stream finished naturally.
- *   enum:error  -> stream errored.
- *   enum:cancel -> abort the stream.
+ * Enumeration session lifecycle, split into two IPC calls so the renderer can
+ * attach event subscribers before any streaming begins:
+ *   - enum:detect — one-shot probe. Returns kind (single/multi) + source title.
+ *   - enum:start  — once the modal is mounted and subscribed, start streaming.
+ *                   Returns the sessionId used to filter events and cancel.
+ *
+ * Events:
+ *   enum:entry  — per video as it arrives
+ *   enum:done   — stream finished naturally
+ *   enum:error  — stream errored
  */
 
 const active = new Map<string, enumService.EnumerationHandle>()
+const detectAbortDeadlineMs = 20_000
 
 export function registerEnumHandlers(): void {
-  handle('enum:start', async ({ url }) => {
-    const detectCtl = new AbortController()
-    const kindTimeout = setTimeout(() => detectCtl.abort(), 20_000)
-    let detected: { kind: 'single' | 'multi'; title: string | null }
+  handle('enum:detect', async ({ url }) => {
+    const ctl = new AbortController()
+    const t = setTimeout(() => ctl.abort(), detectAbortDeadlineMs)
     try {
-      detected = await enumService.detectKind(url, detectCtl.signal)
+      const detected = await enumService.detectKind(url, ctl.signal)
+      return { kind: detected.kind, sourceTitle: detected.title }
     } finally {
-      clearTimeout(kindTimeout)
+      clearTimeout(t)
     }
+  })
 
-    if (detected.kind === 'single') {
-      return {
-        sessionId: nanoid(8),
-        kind: 'single' as const,
-        sourceTitle: detected.title,
-      }
-    }
-
+  handle('enum:start', async ({ url }) => {
     const sessionId = nanoid(8)
     const knownSourceIds = new Set(
       session.getItems()
@@ -67,11 +65,7 @@ export function registerEnumHandlers(): void {
       })
       .finally(() => active.delete(sessionId))
 
-    return {
-      sessionId,
-      kind: 'multi' as const,
-      sourceTitle: detected.title,
-    }
+    return { sessionId }
   })
 
   handle('enum:cancel', async ({ sessionId }) => {

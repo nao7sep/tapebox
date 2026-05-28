@@ -1,10 +1,10 @@
 import { access, chmod, constants, mkdir, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import execa from 'execa'
 import { binaryPath, paths } from '@main/paths'
 import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
 import { getSettings, updateSettings } from '@main/store/config'
+import { execCapture } from '@main/io/spawn'
 import { nowUtcIso } from '@shared/utc'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
@@ -16,7 +16,7 @@ import { extractFileFromZip } from './archive'
  *
  * Layout on disk:
  *   ~/.tapebox/bin/{name}{ext}              -- the installed executable
- *   ~/.tapebox/cache/downloads/{tmp}        -- in-progress downloads
+ *   ~/.tapebox/work/downloads/{tmp}         -- in-progress downloads
  *
  * Install is atomic: download to temp, extract/move to final, then chmod.
  * Concurrent installOrUpdate for the same name is serialized by a Set lock.
@@ -36,7 +36,7 @@ async function isInstalled(name: BinaryName): Promise<boolean> {
 
 async function verifyVersion(name: BinaryName): Promise<string> {
   const spec = binarySpecs[name]
-  const { stdout } = await execa(binaryPath(name), [spec.versionFlag], { reject: false })
+  const { stdout } = await execCapture(binaryPath(name), [spec.versionFlag], { reject: false })
   return spec.parseVersion(stdout)
 }
 
@@ -78,10 +78,8 @@ async function performInstall(name: BinaryName): Promise<void> {
   latestKnown.set(name, resolved.version)
   log.info(`binary resolved: ${name} ${resolved.version}`, { url: resolved.downloadUrl })
 
-  // Electron's userData claims ~/.tapebox/cache for its HTTP cache; re-create
-  // our downloads subdir on every install so we never race that subsystem.
-  await mkdir(paths.cacheDownloads, { recursive: true })
-  const tempPath = join(paths.cacheDownloads, `${name}-${Date.now()}.partial`)
+  await mkdir(paths.workDownloads, { recursive: true })
+  const tempPath = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
 
   let lastEmittedPct = -1
   await downloadWithProgress({
@@ -111,9 +109,10 @@ async function performInstall(name: BinaryName): Promise<void> {
 
   if (process.platform !== 'win32') {
     await chmod(finalPath, 0o755)
-    // Strip macOS Gatekeeper quarantine if present; harmless on other platforms / when absent.
+    // Strip macOS Gatekeeper quarantine if present; harmless when absent.
     if (process.platform === 'darwin') {
-      await execa('xattr', ['-d', 'com.apple.quarantine', finalPath]).catch(() => {})
+      await execCapture('xattr', ['-d', 'com.apple.quarantine', finalPath], { reject: false })
+        .catch(() => {})
     }
   }
 

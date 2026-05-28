@@ -1,6 +1,11 @@
-import execa from 'execa'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
+import {
+  execCapture,
+  makeLineBuffer,
+  spawnStreaming,
+  waitForExit,
+} from '@main/io/spawn'
 import { ytdlpEnv } from './ytdlp'
 
 /**
@@ -13,12 +18,15 @@ import { ytdlpEnv } from './ytdlp'
  *     per line, calling onEntry as each arrives.
  */
 
+const DETECT_IDLE_TIMEOUT_MS = 20_000
+const ENUM_IDLE_TIMEOUT_MS = 30_000
+
 export type EnumeratedEntry = {
   id: string
   url: string
   title: string | null
   duration: number | null
-  uploadDate: string | null // raw 'YYYYMMDD' from yt-dlp
+  uploadDate: string | null
   thumbnailUrl: string | null
 }
 
@@ -26,10 +34,10 @@ export async function detectKind(
   url: string,
   signal: AbortSignal,
 ): Promise<{ kind: 'single' | 'multi'; title: string | null }> {
-  const { stdout } = await execa(
+  const { stdout } = await execCapture(
     binaryPath('yt-dlp'),
     ['--flat-playlist', '--dump-single-json', '--no-warnings', url],
-    { env: ytdlpEnv(), signal: signal },
+    { env: ytdlpEnv(), signal, idleTimeoutMs: DETECT_IDLE_TIMEOUT_MS },
   )
   const info = JSON.parse(stdout) as Record<string, unknown>
   const isMulti = info['_type'] === 'playlist' || Array.isArray(info['entries'])
@@ -47,41 +55,36 @@ export function startEnumeration(
   onEntry: (entry: EnumeratedEntry) => void,
 ): EnumerationHandle {
   const ctl = new AbortController()
-  const child = execa(
+  const child = spawnStreaming(
     binaryPath('yt-dlp'),
     ['--flat-playlist', '-j', '--no-warnings', url],
-    { env: ytdlpEnv(), signal: ctl.signal, buffer: false, reject: false },
+    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: ENUM_IDLE_TIMEOUT_MS },
   )
 
   let total = 0
-  let buffer = ''
 
-  const handleChunk = (data: Buffer) => {
-    buffer += data.toString('utf8')
-    let nl = buffer.indexOf('\n')
-    while (nl >= 0) {
-      const line = buffer.slice(0, nl).trim()
-      buffer = buffer.slice(nl + 1)
-      if (line) {
-        try {
-          const info = JSON.parse(line) as Record<string, unknown>
-          const entry = parseEntry(info)
-          if (entry) {
-            onEntry(entry)
-            total++
-          }
-        } catch (err) {
-          log.warn('enum: bad json line', { error: String(err) })
-        }
+  const lineBuffer = makeLineBuffer((line) => {
+    if (!line) return
+    try {
+      const info = JSON.parse(line) as Record<string, unknown>
+      const entry = parseEntry(info)
+      if (entry) {
+        onEntry(entry)
+        total++
       }
-      nl = buffer.indexOf('\n')
+    } catch (err) {
+      log.warn('enum: bad json line', { error: String(err) })
     }
-  }
+  })
 
-  child.stdout?.on('data', handleChunk)
+  child.stdout.on('data', lineBuffer.feed)
 
   const complete = (async () => {
-    await child
+    try {
+      await waitForExit(child, { reject: false, command: 'yt-dlp enum' })
+    } finally {
+      lineBuffer.flush()
+    }
     return { totalCount: total }
   })()
 

@@ -55,11 +55,21 @@ export type IpcCalls = {
   'binaries:update':       { req: { name: BinaryName };              res: void }
 
   // ── Enumeration (playlist/channel pre-add) ───────────────────────────────
-  'enum:start':            { req: { url: string };                   res: EnumStartResult }
-  'enum:cancel':            { req: { sessionId: string };            res: void }
+  // Split into detect + start so the renderer can attach event subscribers
+  // BEFORE any streaming begins. Race-free: enum:detect is pure probe, and
+  // events for enum:start only fire after subscribers are in place.
+  'enum:detect':           { req: { url: string };                   res: EnumDetectResult }
+  'enum:start':            { req: { url: string };                   res: { sessionId: string } }
+  'enum:cancel':           { req: { sessionId: string };             res: void }
 
   // ── Native dialogs ───────────────────────────────────────────────────────
   'dialog:pickDirectory':  { req: { title?: string };                res: string | null }
+
+  // ── Runtime info ─────────────────────────────────────────────────────────
+  // Read-only facts about the current process: platform, arch, whether the
+  // OS keychain is available for safeStorage. Renderer uses this to gate UI
+  // affordances (e.g., hide "Save API key" when keychain unavailable).
+  'app:runtimeInfo':       { req: undefined;                         res: RuntimeInfo }
 }
 
 export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
@@ -88,10 +98,15 @@ export type ImportResult = {
   rejected: { path: string; reason: string }[]
 }
 
-export type EnumStartResult = {
-  sessionId: string
+export type EnumDetectResult = {
   kind: 'single' | 'multi'
   sourceTitle: string | null
+}
+
+export type RuntimeInfo = {
+  platform: NodeJS.Platform
+  arch: string
+  encryptionAvailable: boolean
 }
 
 export type EnumEntry = {
