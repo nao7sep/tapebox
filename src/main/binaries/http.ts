@@ -21,6 +21,8 @@ export async function downloadWithProgress(opts: DownloadOptions): Promise<void>
   let received = 0
 
   const out = createWriteStream(opts.destPath)
+  // Surface filesystem errors (ENOENT etc.) instead of silently dropping them.
+  out.on('error', () => { /* propagated via end() callback below */ })
   const reader = res.body.getReader()
 
   try {

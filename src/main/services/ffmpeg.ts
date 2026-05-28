@@ -1,6 +1,6 @@
 import { access, constants } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { execa } from 'execa'
+import execa from 'execa'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 

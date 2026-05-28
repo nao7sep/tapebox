@@ -1,6 +1,6 @@
-import { access, chmod, constants, rename, unlink } from 'node:fs/promises'
+import { access, chmod, constants, mkdir, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { execa } from 'execa'
+import execa from 'execa'
 import { binaryPath, paths } from '@main/paths'
 import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
@@ -78,6 +78,9 @@ async function performInstall(name: BinaryName): Promise<void> {
   latestKnown.set(name, resolved.version)
   log.info(`binary resolved: ${name} ${resolved.version}`, { url: resolved.downloadUrl })
 
+  // Electron's userData claims ~/.tapebox/cache for its HTTP cache; re-create
+  // our downloads subdir on every install so we never race that subsystem.
+  await mkdir(paths.cacheDownloads, { recursive: true })
   const tempPath = join(paths.cacheDownloads, `${name}-${Date.now()}.partial`)
 
   let lastEmittedPct = -1

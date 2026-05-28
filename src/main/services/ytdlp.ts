@@ -1,4 +1,4 @@
-import { execa } from 'execa'
+import execa from 'execa'
 import { dirname, extname, join } from 'node:path'
 import { binaryPath, paths } from '@main/paths'
 import { log } from '@main/io/logger'
@@ -39,7 +39,7 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
   const { stdout } = await execa(
     binaryPath('yt-dlp'),
     ['--dump-json', '--skip-download', '--no-warnings', '--no-playlist', url],
-    { env: ytdlpEnv(), cancelSignal: signal, reject: true },
+    { env: ytdlpEnv(), signal: signal, reject: true },
   )
   const info = JSON.parse(stdout) as Record<string, unknown>
   return {
@@ -96,7 +96,7 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
       '--print', `after_move:${FINAL_PATH_MARKER}%(filepath)s`,
       opts.url,
     ],
-    { env: ytdlpEnv(), cancelSignal: opts.signal, buffer: false, reject: true },
+    { env: ytdlpEnv(), signal: opts.signal, buffer: false, reject: true },
   )
 
   const handleLine = (line: string) => {

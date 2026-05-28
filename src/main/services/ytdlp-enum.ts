@@ -1,4 +1,4 @@
-import { execa } from 'execa'
+import execa from 'execa'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 import { ytdlpEnv } from './ytdlp'
@@ -29,7 +29,7 @@ export async function detectKind(
   const { stdout } = await execa(
     binaryPath('yt-dlp'),
     ['--flat-playlist', '--dump-single-json', '--no-warnings', url],
-    { env: ytdlpEnv(), cancelSignal: signal },
+    { env: ytdlpEnv(), signal: signal },
   )
   const info = JSON.parse(stdout) as Record<string, unknown>
   const isMulti = info['_type'] === 'playlist' || Array.isArray(info['entries'])
@@ -50,7 +50,7 @@ export function startEnumeration(
   const child = execa(
     binaryPath('yt-dlp'),
     ['--flat-playlist', '-j', '--no-warnings', url],
-    { env: ytdlpEnv(), cancelSignal: ctl.signal, buffer: false, reject: false },
+    { env: ytdlpEnv(), signal: ctl.signal, buffer: false, reject: false },
   )
 
   let total = 0
