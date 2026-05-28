@@ -1,0 +1,16 @@
+# Dependencies
+node_modules
+
+# Build output (electron-vite -> out, electron-builder -> dist)
+out
+dist
+
+# OS junk
+.DS_Store
+
+# Runtime logs
+*.log
+
+# Local environment overrides
+.env
+.env.local
