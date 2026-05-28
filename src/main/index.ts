@@ -6,10 +6,15 @@ import { closeLogger, initLogger, log, pruneOldLogs } from './io/logger'
 import { loadSettings, getSettings } from './store/config'
 import { loadSession, persistNow } from './store/session'
 import { registerIpcHandlers } from './ipc'
+import * as queue from './queue/manager'
+import { registerMediaProtocolHandler, registerMediaSchemeAsPrivileged } from './protocol'
 
 // Redirect Electron's own state into ~/.tapebox so everything lives in one
 // place. Must happen before app is ready and before any path queries.
 app.setPath('userData', paths.root)
+
+// Privileged scheme registration must happen before app is ready.
+registerMediaSchemeAsPrivileged()
 
 async function ensureDirs(): Promise<void> {
   for (const dir of requiredDirs) {
@@ -54,6 +59,8 @@ async function startup(): Promise<void> {
   await loadSession()
 
   registerIpcHandlers()
+  registerMediaProtocolHandler()
+  queue.start()
   createMainWindow()
 }
 
@@ -73,7 +80,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', async (event) => {
-  // Flush pending session writes and close the log file before exit.
   event.preventDefault()
   try {
     await persistNow()

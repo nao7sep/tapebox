@@ -9,6 +9,7 @@ import type { IpcCalls, IpcEvents } from '@shared/ipc-contract'
 type Bridge = {
   invoke(channel: string, req: unknown): Promise<unknown>
   on(channel: string, listener: (payload: unknown) => void): () => void
+  pathForFile(file: File): string
 }
 
 const bridge = (window as unknown as { tapebox: Bridge }).tapebox
@@ -28,4 +29,8 @@ export function ipcOn<K extends keyof IpcEvents>(
   listener: (payload: IpcEvents[K]) => void,
 ): () => void {
   return bridge.on(channel, listener as (payload: unknown) => void)
+}
+
+export function pathForFile(file: File): string {
+  return bridge.pathForFile(file)
 }

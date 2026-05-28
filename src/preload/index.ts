@@ -1,11 +1,11 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 
 /**
- * Minimal, generic bridge. The renderer wraps these in typed helpers
+ * Generic bridge. The renderer wraps these in typed helpers
  * (renderer/ipc/client.ts) derived from src/shared/ipc-contract.ts.
  *
- * We intentionally do NOT expose ipcRenderer directly across the bridge —
- * only the two operations we need: invoke (request/response) and on (events).
+ * pathForFile is the Electron 32+ replacement for File.path — required to
+ * extract a real filesystem path from a dragged File object.
  */
 const api = {
   invoke(channel: string, req: unknown): Promise<unknown> {
@@ -15,6 +15,9 @@ const api = {
     const wrapped = (_event: IpcRendererEvent, payload: unknown) => listener(payload)
     ipcRenderer.on(channel, wrapped)
     return () => ipcRenderer.off(channel, wrapped)
+  },
+  pathForFile(file: File): string {
+    return webUtils.getPathForFile(file)
   },
 }
 

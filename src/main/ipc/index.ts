@@ -1,5 +1,11 @@
 import { registerLibraryHandlers } from './library'
 import { registerSettingsHandlers } from './settings'
+import { registerBinaryHandlers } from './binaries'
+import { registerDownloadHandlers } from './downloads'
+import { registerEnumHandlers } from './enum'
+import { registerAiHandlers } from './ai'
+import { registerExportHandlers } from './export'
+import { registerDialogHandlers } from './dialog'
 
 /**
  * Mount all IPC handlers. Called once after stores are loaded and before
@@ -8,4 +14,10 @@ import { registerSettingsHandlers } from './settings'
 export function registerIpcHandlers(): void {
   registerLibraryHandlers()
   registerSettingsHandlers()
+  registerBinaryHandlers()
+  registerDownloadHandlers()
+  registerEnumHandlers()
+  registerAiHandlers()
+  registerExportHandlers()
+  registerDialogHandlers()
 }

@@ -26,6 +26,7 @@ export type IpcCalls = {
   'library:archive':         { req: { itemIds: string[] };                           res: void }
   'library:unarchive':       { req: { itemIds: string[] };                           res: void }
   'library:refreshMetadata': { req: { itemId: string };                              res: Item }
+  'library:getSidecar':      { req: { itemId: string };                              res: SidecarRaw }
 
   // ── Export (outside the box) ─────────────────────────────────────────────
   'export:audio': {
@@ -56,9 +57,23 @@ export type IpcCalls = {
   // ── Enumeration (playlist/channel pre-add) ───────────────────────────────
   'enum:start':            { req: { url: string };                   res: EnumStartResult }
   'enum:cancel':            { req: { sessionId: string };            res: void }
+
+  // ── Native dialogs ───────────────────────────────────────────────────────
+  'dialog:pickDirectory':  { req: { title?: string };                res: string | null }
 }
 
 export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
+
+/**
+ * The sidecar JSON on disk: yt-dlp's full info.json (with path fields stripped)
+ * plus our 'tapebox' namespace. The yt-dlp portion is intentionally untyped —
+ * it's a large, evolving surface. Only consumers that need a specific field
+ * cast it locally.
+ */
+export type SidecarRaw = Record<string, unknown> & {
+  chapters?: Array<{ start_time: number; end_time: number; title: string }>
+  tapebox?: Record<string, unknown>
+}
 
 export type BinaryStatus = {
   name: BinaryName

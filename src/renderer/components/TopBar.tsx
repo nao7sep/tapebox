@@ -1,0 +1,91 @@
+import { useEffect, useState } from 'react'
+import { ipcInvoke } from '@renderer/ipc/client'
+import { useEnumerationStore } from '@renderer/store/enumeration'
+
+const URL_PATTERN = /^https?:\/\//i
+
+/**
+ * URL input bar.
+ *   - On window focus, inspects the clipboard and offers any http(s) URL.
+ *   - Submitting routes through enum:start so playlists/channels open the
+ *     selection modal automatically; single videos go straight to the queue.
+ */
+export function TopBar() {
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [suggestion, setSuggestion] = useState<string | null>(null)
+  const openEnum = useEnumerationStore((s) => s.open)
+
+  useEffect(() => {
+    const onFocus = async () => {
+      try {
+        const text = (await navigator.clipboard.readText()).trim()
+        if (URL_PATTERN.test(text) && text !== url) setSuggestion(text)
+      } catch {
+        // Clipboard may be empty or read denied; ignore.
+      }
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [url])
+
+  async function add(value: string) {
+    const v = value.trim()
+    if (!v) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await ipcInvoke('enum:start', { url: v })
+      if (result.kind === 'single') {
+        await ipcInvoke('downloads:add', { url: v })
+      } else {
+        openEnum(result.sessionId, result.sourceTitle)
+      }
+      setUrl('')
+      setSuggestion(null)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') void add(url) }}
+          placeholder="Paste a URL"
+          spellCheck={false}
+          className="flex-1 rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-none"
+        />
+        <button
+          onClick={() => void add(url)}
+          disabled={busy || !url.trim()}
+          className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+        >
+          {busy ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+
+      {suggestion && (
+        <button
+          onClick={() => { setUrl(suggestion); setSuggestion(null) }}
+          className="text-xs text-zinc-400 hover:text-zinc-200"
+        >
+          Use clipboard: <span className="text-zinc-300">{suggestion}</span>
+        </button>
+      )}
+
+      {error && (
+        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-1.5 text-xs text-red-300">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}

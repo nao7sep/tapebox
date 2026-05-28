@@ -1,21 +1,33 @@
 import { ipcInvoke, ipcOn } from './client'
 import { useItemsStore } from '@renderer/store/items'
+import { useBinariesStore } from '@renderer/store/binaries'
 
 /**
- * Wire the renderer's stores to main's IPC.
- *   - Initial: fetch library:list once.
- *   - Live: subscribe to items:* events.
+ * Wire renderer stores to main's IPC.
+ *   - Initial pull: library:list, binaries:status.
+ *   - Live: items:* + binaries:* events.
  * Returns a cleanup function for the caller's useEffect.
  */
 export function startIpcSync(): () => void {
-  const store = useItemsStore.getState()
-
-  void ipcInvoke('library:list').then(store.setAll)
+  void ipcInvoke('library:list').then((items) => useItemsStore.getState().setAll(items))
+  void ipcInvoke('binaries:status').then((s) => useBinariesStore.getState().setStatuses(s))
 
   const offs = [
-    ipcOn('items:added', (items) => useItemsStore.getState().upsertMany(items)),
-    ipcOn('items:updated', (item) => useItemsStore.getState().upsert(item)),
-    ipcOn('items:removed', ({ itemIds }) => useItemsStore.getState().removeMany(itemIds)),
+    ipcOn('items:added',     (items) => useItemsStore.getState().upsertMany(items)),
+    ipcOn('items:updated',   (item)  => useItemsStore.getState().upsert(item)),
+    ipcOn('items:removed',   ({ itemIds }) => useItemsStore.getState().removeMany(itemIds)),
+    ipcOn('items:progress',  ({ itemId, phase, percent }) =>
+      useItemsStore.getState().setProgress(itemId, { phase, percent }),
+    ),
+    ipcOn('items:completed', ({ itemId }) => useItemsStore.getState().clearProgress(itemId)),
+    ipcOn('items:failed',    ({ itemId }) => useItemsStore.getState().clearProgress(itemId)),
+
+    ipcOn('binaries:progress', ({ name, percent, phase }) =>
+      useBinariesStore.getState().setProgress(name, percent, phase),
+    ),
+    ipcOn('binaries:ready', ({ name, version }) =>
+      useBinariesStore.getState().markReady(name, version),
+    ),
   ]
   return () => offs.forEach((off) => off())
 }

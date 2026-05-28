@@ -1,0 +1,52 @@
+import { readFile, unlink } from 'node:fs/promises'
+import { writeJsonAtomic } from '@main/io/atomic-json'
+import type { SidecarTapebox } from '@shared/domain'
+
+/**
+ * Build the final sidecar JSON from yt-dlp's info.json output.
+ *
+ * Layout:
+ *   { ...ytDlpInfoJson_with_paths_stripped, tapebox: SidecarTapebox }
+ *
+ * The yt-dlp portion is intentionally NOT zod-validated (large, evolving
+ * surface); only the 'tapebox' namespace is validated by callers.
+ */
+
+const PATH_FIELDS_ROOT = [
+  'filename',
+  '_filename',
+  'filepath',
+  '_filepath',
+  '__finaldir',
+  '__files_to_move',
+  'requested_downloads',
+] as const
+
+const PATH_FIELDS_NESTED_ARRAYS = ['formats', 'requested_formats'] as const
+const NESTED_PATH_KEYS = ['filepath'] as const
+
+export async function finalize(opts: {
+  infoJsonPath: string
+  sidecarPath: string
+  tapeboxAdditions: SidecarTapebox
+}): Promise<void> {
+  const text = await readFile(opts.infoJsonPath, 'utf8')
+  const data = JSON.parse(text) as Record<string, unknown>
+
+  for (const key of PATH_FIELDS_ROOT) delete data[key]
+
+  for (const arrKey of PATH_FIELDS_NESTED_ARRAYS) {
+    const arr = data[arrKey]
+    if (Array.isArray(arr)) {
+      for (const item of arr) {
+        if (item && typeof item === 'object') {
+          for (const k of NESTED_PATH_KEYS) delete (item as Record<string, unknown>)[k]
+        }
+      }
+    }
+  }
+
+  data.tapebox = opts.tapeboxAdditions
+  await writeJsonAtomic(opts.sidecarPath, data)
+  await unlink(opts.infoJsonPath).catch(() => {})
+}

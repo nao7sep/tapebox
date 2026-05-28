@@ -6,11 +6,17 @@ import { z } from 'zod'
  * separate file, keyed by profile id. Config is safe to read/share without
  * leaking credentials.
  */
+/**
+ * 'kind' is forward-looking: 'openai-compatible' covers OpenAI, OpenRouter,
+ * Groq, Together, etc. When native Anthropic or Gemini providers are added
+ * later, the enum grows and ai-client dispatches on kind.
+ */
 export const AiProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
   baseUrl: z.string().url(),
   model: z.string(),
+  kind: z.enum(['openai-compatible']).default('openai-compatible'),
 })
 export type AiProfile = z.infer<typeof AiProfileSchema>
 
@@ -77,12 +83,14 @@ export function defaultAiProfileSuggestions(): AiProfile[] {
       name: 'OpenAI',
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-5.4-mini',
+      kind: 'openai-compatible',
     },
     {
       id: 'openrouter',
       name: 'OpenRouter',
       baseUrl: 'https://openrouter.ai/api/v1',
       model: 'google/gemini-2.5-flash-lite',
+      kind: 'openai-compatible',
     },
   ]
 }

@@ -1,12 +1,29 @@
 import { useEffect, useState } from 'react'
 import type { Settings } from '@shared/settings'
-import { ipcInvoke } from '@renderer/ipc/client'
+import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useItemsStore } from '@renderer/store/items'
+import { useSelectionStore } from '@renderer/store/selection'
+import { useBinariesStore } from '@renderer/store/binaries'
+import { useEnumerationStore } from '@renderer/store/enumeration'
+import { FirstRunDialog, allBinariesInstalled } from '@renderer/components/FirstRunDialog'
+import { TopBar } from '@renderer/components/TopBar'
+import { ItemList } from '@renderer/components/ItemList'
+import { DetailPane } from '@renderer/components/DetailPane'
+import { FilterChips } from '@renderer/components/FilterChips'
+import { AddPlaylistModal } from '@renderer/components/AddPlaylistModal'
+import { SettingsDialog } from '@renderer/components/SettingsDialog'
+import { DropZone } from '@renderer/components/DropZone'
 
 export default function App() {
   const items = useItemsStore((s) => s.items)
+  const selectedId = useSelectionStore((s) => s.selectedId)
+  const select = useSelectionStore((s) => s.select)
+  const binaryStatuses = useBinariesStore((s) => s.statuses)
+  const enumeration = useEnumerationStore((s) => s.active)
+  const closeEnum = useEnumerationStore((s) => s.close)
   const [settings, setSettings] = useState<Settings | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     const stop = startIpcSync()
@@ -14,36 +31,83 @@ export default function App() {
     return stop
   }, [])
 
+  // Re-fetch settings when the dialog closes so the header reflects edits.
+  useEffect(() => {
+    if (!showSettings) void ipcInvoke('settings:get').then(setSettings)
+  }, [showSettings])
+
+  // Items updated → may have new state we want shown immediately
+  useEffect(() => {
+    const off = ipcOn('items:updated', () => {
+      // No-op: store already updated; this hook reserved for future side effects.
+    })
+    return off
+  }, [])
+
+  useEffect(() => {
+    if (selectedId && !items.some((i) => i.id === selectedId)) select(null)
+  }, [items, selectedId, select])
+
+  const selectedItem = items.find((i) => i.id === selectedId) ?? null
+  const needsFirstRun = !allBinariesInstalled(binaryStatuses)
+
   return (
-    <main className="min-h-screen p-8">
-      <header className="mb-8">
-        <h1 className="text-2xl font-medium tracking-tight">TapeBox</h1>
-        {settings && (
-          <p className="mt-1 text-xs text-zinc-500">
-            Library: <span className="text-zinc-300">{settings.libraryDir}</span>
-            {' · '}
-            Autostart: <span className="text-zinc-300">{settings.autoStartDownloads ? 'on' : 'off'}</span>
-            {' · '}
-            Concurrency: <span className="text-zinc-300">{settings.maxConcurrentDownloads}</span>
-          </p>
-        )}
+    <DropZone>
+    <main className="flex h-screen flex-col">
+      <header className="shrink-0 space-y-3 border-b border-zinc-800 p-4">
+        <div className="flex items-baseline justify-between gap-4">
+          <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
+          <div className="flex items-baseline gap-4">
+            {settings && (
+              <p className="text-xs text-zinc-500">
+                <span className="text-zinc-300">{settings.libraryDir}</span>
+                {' · '}
+                Autostart <span className="text-zinc-300">{settings.autoStartDownloads ? 'on' : 'off'}</span>
+                {' · '}
+                Concurrency <span className="text-zinc-300">{settings.maxConcurrentDownloads}</span>
+              </p>
+            )}
+            <button
+              onClick={() => setShowSettings(true)}
+              className="text-xs text-zinc-400 hover:text-zinc-100"
+            >
+              Settings
+            </button>
+          </div>
+        </div>
+        <TopBar />
+        <FilterChips />
       </header>
 
-      {items.length === 0 ? (
-        <p className="text-zinc-500">The box is empty.</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((item) => (
-            <li key={item.id} className="rounded border border-zinc-800 px-3 py-2">
-              <div className="text-sm">{item.title ?? item.sourceUrl}</div>
-              <div className="text-xs text-zinc-500">
-                {item.state}
-                {item.archivedAtUtc && ' · archived'}
-              </div>
-            </li>
-          ))}
-        </ul>
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="w-80 shrink-0 overflow-y-auto border-r border-zinc-800">
+          <ItemList />
+        </aside>
+        <section className="flex-1 overflow-y-auto">
+          {selectedItem ? (
+            <DetailPane item={selectedItem} />
+          ) : (
+            <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-500">
+              Select a tape from the list.
+            </div>
+          )}
+        </section>
+      </div>
+
+      {enumeration && (
+        <AddPlaylistModal
+          sessionId={enumeration.sessionId}
+          sourceTitle={enumeration.sourceTitle}
+          onClose={closeEnum}
+        />
       )}
+
+      {showSettings && (
+        <SettingsDialog onClose={() => setShowSettings(false)} />
+      )}
+
+      {needsFirstRun && <FirstRunDialog />}
     </main>
+    </DropZone>
   )
 }
