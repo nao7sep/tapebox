@@ -14,7 +14,7 @@ import type { Item } from '@shared/domain'
  *
  * Cancellation is awaitable: cancel() returns the same Promise that run()
  * returns. The queue manager awaits this when other handlers (library:remove,
- * downloads:pause) need the yt-dlp process to be gone before they touch disk.
+ * downloads:cancel) need the yt-dlp process to be gone before they touch disk.
  */
 export class Job {
   readonly itemId: string
@@ -116,11 +116,9 @@ export class Job {
         sourceUrl: cur.sourceUrl,
         originalTitle: cur.originalTitle,
         slug: null,
-        slugSource: null,
         addedAtUtc: cur.addedAtUtc,
         downloadedAtUtc: nowUtcIso(),
         renamedAtUtc: null,
-        slugGeneratedAtUtc: null,
       },
     })
 

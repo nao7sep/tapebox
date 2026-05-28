@@ -54,13 +54,3 @@ export async function clearApiKey(profileId: string): Promise<void> {
   delete all.keys[profileId]
   await writeJsonAtomic(paths.apiKeys, all, SCHEMA)
 }
-
-export async function hasApiKey(profileId: string): Promise<boolean> {
-  const all = await readAll()
-  return !!all.keys[profileId]
-}
-
-export async function listProfileIdsWithKeys(): Promise<string[]> {
-  const all = await readAll()
-  return Object.keys(all.keys)
-}

@@ -24,13 +24,6 @@ export const itemStates = [
 
 export type ItemState = (typeof itemStates)[number]
 
-export const ChapterSchema = z.object({
-  startSeconds: z.number().nonnegative(),
-  endSeconds: z.number().nonnegative(),
-  title: z.string(),
-})
-export type Chapter = z.infer<typeof ChapterSchema>
-
 export const ItemSchema = z.object({
   // Required at insertion.
   id: z.string(),                  // internal nanoid; stable for the Item's lifetime
@@ -80,11 +73,9 @@ export const SidecarTapeboxSchema = z.object({
   sourceUrl: z.string().url(),
   originalTitle: z.string().nullable(),
   slug: z.string().nullable(),
-  slugSource: z.enum(['manual', 'openrouter']).nullable(),
   addedAtUtc: z.string(),
   downloadedAtUtc: z.string().nullable(),
   renamedAtUtc: z.string().nullable(),
-  slugGeneratedAtUtc: z.string().nullable(),
 })
 export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
 

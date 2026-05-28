@@ -28,10 +28,3 @@ export function utcTimestampForFilename(date: Date = new Date()): string {
   const ss = pad(date.getUTCSeconds(), 2)
   return `${y}${m}${d}-${hh}${mm}${ss}-utc`
 }
-
-export function utcDateForFilename(date: Date = new Date()): string {
-  const y = date.getUTCFullYear()
-  const m = pad(date.getUTCMonth() + 1, 2)
-  const d = pad(date.getUTCDate(), 2)
-  return `${y}${m}${d}-utc`
-}

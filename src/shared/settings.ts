@@ -20,12 +20,7 @@ export const AiProfileSchema = z.object({
 })
 export type AiProfile = z.infer<typeof AiProfileSchema>
 
-export const binaryUpdatePolicies = ['always', 'daily', 'weekly', 'prompt', 'manual'] as const
-export const BinaryUpdatePolicySchema = z.enum(binaryUpdatePolicies)
-export type BinaryUpdatePolicy = z.infer<typeof BinaryUpdatePolicySchema>
-
 export const BinaryEntrySchema = z.object({
-  updatePolicy: BinaryUpdatePolicySchema,
   installedVersion: z.string().nullable(),
   lastCheckedAtUtc: z.string().nullable(),
 })
@@ -64,9 +59,9 @@ export function defaultSettings(libraryDir: string): Settings {
     aiProfiles: [],
     activeAiProfileId: null,
     binaries: {
-      'yt-dlp': { updatePolicy: 'always', installedVersion: null, lastCheckedAtUtc: null },
-      ffmpeg:   { updatePolicy: 'manual', installedVersion: null, lastCheckedAtUtc: null },
-      deno:     { updatePolicy: 'manual', installedVersion: null, lastCheckedAtUtc: null },
+      'yt-dlp': { installedVersion: null, lastCheckedAtUtc: null },
+      ffmpeg:   { installedVersion: null, lastCheckedAtUtc: null },
+      deno:     { installedVersion: null, lastCheckedAtUtc: null },
     },
     retainLogCount: 50,
   }

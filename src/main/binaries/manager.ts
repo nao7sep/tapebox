@@ -40,7 +40,7 @@ async function verifyVersion(name: BinaryName): Promise<string> {
   return spec.parseVersion(stdout)
 }
 
-export async function getStatus(name: BinaryName): Promise<BinaryStatus> {
+async function getStatus(name: BinaryName): Promise<BinaryStatus> {
   const settings = getSettings()
   const entry = settings.binaries[name]
   const installed = await isInstalled(name)
@@ -133,32 +133,4 @@ async function performInstall(name: BinaryName): Promise<void> {
   })
 
   emit('binaries:ready', { name, version })
-}
-
-export async function checkForUpdates(name?: BinaryName): Promise<BinaryStatus[]> {
-  const targets = name ? [name] : binaryNames.slice()
-  for (const n of targets) {
-    try {
-      const resolved = await binarySpecs[n].resolveLatest()
-      latestKnown.set(n, resolved.version)
-      const current = getSettings().binaries
-      await updateSettings({
-        binaries: {
-          ...current,
-          [n]: { ...current[n], lastCheckedAtUtc: nowUtcIso() },
-        },
-      })
-      const installed = current[n].installedVersion
-      if (installed && installed !== resolved.version) {
-        emit('binaries:updateAvailable', {
-          name: n,
-          currentVersion: installed,
-          latestVersion: resolved.version,
-        })
-      }
-    } catch (err) {
-      log.warn(`update check failed: ${n}`, { error: String(err) })
-    }
-  }
-  return getAllStatuses()
 }

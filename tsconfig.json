@@ -22,6 +22,6 @@
       "@renderer/*": ["./src/renderer/*"]
     }
   },
-  "include": ["src/**/*", "electron.vite.config.ts", "tailwind.config.ts"],
+  "include": ["src/**/*", "electron.vite.config.ts"],
   "exclude": ["node_modules", "out", "dist"]
 }

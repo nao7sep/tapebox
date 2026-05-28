@@ -18,11 +18,9 @@ export const paths = {
   logs:           join(tapeboxRoot, 'logs'),
   work:           join(tapeboxRoot, 'work'),
   workDownloads:  join(tapeboxRoot, 'work', 'downloads'),
-  workThumbs:     join(tapeboxRoot, 'work', 'thumbnails'),
   config:         join(tapeboxRoot, 'config.json'),
   session:        join(tapeboxRoot, 'session.json'),
   apiKeys:        join(tapeboxRoot, 'api-keys.json'),
-  devPidFile:     join(tapeboxRoot, '.dev.pid'),
 } as const
 
 export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
@@ -41,5 +39,4 @@ export const requiredDirs: readonly string[] = [
   paths.logs,
   paths.work,
   paths.workDownloads,
-  paths.workThumbs,
 ]

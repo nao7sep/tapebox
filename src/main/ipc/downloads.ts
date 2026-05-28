@@ -32,16 +32,6 @@ export function registerDownloadHandlers(): void {
     transition(itemId, { state: 'queued', lastError: null })
     queue.tick()
   })
-
-  handle('downloads:pause', async ({ itemId }) => {
-    await queue.cancel(itemId)
-    transition(itemId, { state: 'paused' })
-  })
-
-  handle('downloads:resume', async ({ itemId }) => {
-    transition(itemId, { state: 'queued', lastError: null })
-    queue.tick()
-  })
 }
 
 function transition(itemId: string, patch: Partial<Item>): void {

@@ -27,15 +27,6 @@ export async function readJsonOptional<S extends z.ZodType>(
   return schema.parse(JSON.parse(text)) as z.infer<S>
 }
 
-export async function readJson<S extends z.ZodType>(
-  path: string,
-  schema: S,
-): Promise<z.infer<S>> {
-  const value = await readJsonOptional(path, schema)
-  if (value === null) throw new Error(`Required JSON file missing: ${path}`)
-  return value
-}
-
 export async function writeJsonAtomic<S extends z.ZodType>(
   path: string,
   data: z.input<S> | z.infer<S>,

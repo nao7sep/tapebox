@@ -169,13 +169,6 @@ export function registerLibraryHandlers(): void {
     return updated
   })
 
-  handle('library:refreshMetadata', async ({ itemId }) => {
-    const item = session.getItem(itemId)
-    if (!item) throw new Error(`Item not found: ${itemId}`)
-    log.warn('library:refreshMetadata not yet implemented', { itemId })
-    return item
-  })
-
   handle('library:import', async ({ mediaPaths }) => {
     const settings = getSettings()
     const imported: Item[] = []

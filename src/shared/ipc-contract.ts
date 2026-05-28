@@ -15,8 +15,6 @@ export type IpcCalls = {
   'downloads:addBulk':     { req: { urls: string[] };               res: Item[] }
   'downloads:cancel':      { req: { itemId: string };               res: void }
   'downloads:retry':       { req: { itemId: string };               res: void }
-  'downloads:pause':       { req: { itemId: string };               res: void }
-  'downloads:resume':      { req: { itemId: string };               res: void }
 
   // ── Library ──────────────────────────────────────────────────────────────
   'library:list':            { req: undefined;                                       res: Item[] }
@@ -25,7 +23,6 @@ export type IpcCalls = {
   'library:import':          { req: { mediaPaths: string[] };                        res: ImportResult }
   'library:archive':         { req: { itemIds: string[] };                           res: void }
   'library:unarchive':       { req: { itemIds: string[] };                           res: void }
-  'library:refreshMetadata': { req: { itemId: string };                              res: Item }
   'library:getSidecar':      { req: { itemId: string };                              res: SidecarRaw }
 
   // ── Export (outside the box) ─────────────────────────────────────────────
@@ -51,7 +48,6 @@ export type IpcCalls = {
 
   // ── Binaries ─────────────────────────────────────────────────────────────
   'binaries:status':       { req: undefined;                         res: BinaryStatus[] }
-  'binaries:checkUpdates': { req: { name?: BinaryName };             res: BinaryStatus[] }
   'binaries:update':       { req: { name: BinaryName };              res: void }
 
   // ── Enumeration (playlist/channel pre-add) ───────────────────────────────
@@ -143,9 +139,5 @@ export type IpcEvents = {
   'enum:error':        { sessionId: string; error: string }
 
   'binaries:progress':        { name: BinaryName; percent: number; phase: 'download' | 'verify' | 'install' }
-  'binaries:updateAvailable': { name: BinaryName; currentVersion: string | null; latestVersion: string }
   'binaries:ready':           { name: BinaryName; version: string }
 }
-
-export type IpcChannel = keyof IpcCalls
-export type IpcEvent = keyof IpcEvents

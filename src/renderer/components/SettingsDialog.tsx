@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AiProfile, Settings } from '@shared/settings'
+import { defaultAiProfileSuggestions, type AiProfile, type Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
 
@@ -10,8 +10,8 @@ type Props = { onClose: () => void }
  *   - Behavior (autostart, concurrency)
  *   - AI profiles (add/select/delete, set/clear API key)
  *
- * Library directory, binary update policies, and log retention are intentionally
- * left out of the UI for v1 — defaults are sensible; advanced users can edit
+ * Library directory and log retention are intentionally left out of the UI
+ * for v1 — defaults are sensible; advanced users can edit
  * ~/.tapebox/config.json directly. Surfaced in a later phase if needed.
  */
 export function SettingsDialog({ onClose }: Props) {
@@ -181,12 +181,8 @@ export function SettingsDialog({ onClose }: Props) {
 }
 
 function presetButtons(existing: AiProfile[]): AiProfile[] {
-  const presets: AiProfile[] = [
-    { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini', kind: 'openai-compatible' },
-    { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'google/gemini-2.5-flash-lite', kind: 'openai-compatible' },
-  ]
   const existingIds = new Set(existing.map((p) => p.id))
-  return presets.filter((p) => !existingIds.has(p.id))
+  return defaultAiProfileSuggestions().filter((p) => !existingIds.has(p.id))
 }
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {

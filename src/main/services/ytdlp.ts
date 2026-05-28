@@ -1,6 +1,5 @@
 import { dirname, extname, join } from 'node:path'
 import { binaryPath, paths } from '@main/paths'
-import { log } from '@main/io/logger'
 import {
   execCapture,
   makeLineBuffer,
@@ -33,7 +32,6 @@ export type ProbeResult = {
   duration: number | null
   thumbnail: string | null
   chapters: ProbeChapter[] | null
-  isPlaylist: boolean
 }
 
 const PROBE_IDLE_TIMEOUT_MS = 30_000
@@ -41,7 +39,7 @@ const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000
 
 /**
  * Single-video probe. Returns parsed --dump-json output.
- * For playlist URLs use enumeratePlaylist (phase 6).
+ * For playlist URLs use startEnumeration in ytdlp-enum.ts.
  */
 export async function probe(url: string, signal: AbortSignal): Promise<ProbeResult> {
   const { stdout } = await execCapture(
@@ -60,7 +58,6 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
     duration: typeof info['duration'] === 'number' ? info['duration'] : null,
     thumbnail: stringOrNull(info['thumbnail']),
     chapters: Array.isArray(info['chapters']) ? (info['chapters'] as ProbeChapter[]) : null,
-    isPlaylist: false,
   }
 }
 
@@ -143,18 +140,4 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
     mediaPath: finalPath,
     infoJsonPath: join(dir, `${stem}.info.json`),
   }
-}
-
-/**
- * Best-effort: ensure yt-dlp can run. Logs the version. Throws if missing.
- */
-export async function ensureRunnable(): Promise<string> {
-  const { stdout } = await execCapture(
-    binaryPath('yt-dlp'),
-    ['--version'],
-    { env: ytdlpEnv() },
-  )
-  const version = stdout.trim().split('\n')[0] ?? 'unknown'
-  log.info('yt-dlp ready', { version })
-  return version
 }
