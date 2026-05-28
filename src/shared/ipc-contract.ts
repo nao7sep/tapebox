@@ -19,7 +19,7 @@ export type IpcCalls = {
   'downloads:resume':      { req: { itemId: string };               res: void }
 
   // ── Library ──────────────────────────────────────────────────────────────
-  'library:list':            { req: void;                                            res: Item[] }
+  'library:list':            { req: undefined;                                       res: Item[] }
   'library:remove':          { req: { itemIds: string[]; deleteFiles: boolean };     res: void }
   'library:renameToSlug':    { req: { itemId: string; slug: string };                res: Item }
   'library:import':          { req: { mediaPaths: string[] };                        res: ImportResult }
@@ -43,13 +43,13 @@ export type IpcCalls = {
   'ai:generateSlug':       { req: { itemId: string };               res: { slug: string } }
 
   // ── Settings ─────────────────────────────────────────────────────────────
-  'settings:get':          { req: void;                              res: Settings }
+  'settings:get':          { req: undefined;                         res: Settings }
   'settings:update':       { req: Partial<Settings>;                 res: Settings }
   'settings:setApiKey':    { req: { profileId: string; apiKey: string }; res: void }
   'settings:clearApiKey':  { req: { profileId: string };             res: void }
 
   // ── Binaries ─────────────────────────────────────────────────────────────
-  'binaries:status':       { req: void;                              res: BinaryStatus[] }
+  'binaries:status':       { req: undefined;                         res: BinaryStatus[] }
   'binaries:checkUpdates': { req: { name?: BinaryName };             res: BinaryStatus[] }
   'binaries:update':       { req: { name: BinaryName };              res: void }
 

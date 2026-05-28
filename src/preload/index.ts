@@ -1,12 +1,21 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 
 /**
- * Preload script — the only thing the renderer can see from Node.
+ * Minimal, generic bridge. The renderer wraps these in typed helpers
+ * (renderer/ipc/client.ts) derived from src/shared/ipc-contract.ts.
  *
- * In the next phase this exposes a typed API surface backed by ipcRenderer
- * (invoke + on), derived from src/shared/ipc-contract.ts. For now it's a
- * placeholder so the scaffold runs.
+ * We intentionally do NOT expose ipcRenderer directly across the bridge —
+ * only the two operations we need: invoke (request/response) and on (events).
  */
-contextBridge.exposeInMainWorld('tapebox', {
-  ping: (): string => 'pong',
-})
+const api = {
+  invoke(channel: string, req: unknown): Promise<unknown> {
+    return ipcRenderer.invoke(channel, req)
+  },
+  on(channel: string, listener: (payload: unknown) => void): () => void {
+    const wrapped = (_event: IpcRendererEvent, payload: unknown) => listener(payload)
+    ipcRenderer.on(channel, wrapped)
+    return () => ipcRenderer.off(channel, wrapped)
+  },
+}
+
+contextBridge.exposeInMainWorld('tapebox', api)
