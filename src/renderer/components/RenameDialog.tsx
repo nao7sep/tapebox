@@ -58,7 +58,7 @@ export function RenameDialog({ item, onClose }: Props) {
             onChange={(e) => setSlug(e.target.value)}
             placeholder="lowercase-kebab-slug"
             spellCheck={false}
-            className="w-full rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-none"
+            className="w-full rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden"
           />
           <button
             onClick={generate}

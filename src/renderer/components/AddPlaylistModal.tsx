@@ -162,7 +162,7 @@ export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search title…"
-            className="flex-1 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs placeholder-zinc-600 focus:border-zinc-600 focus:outline-none"
+            className="flex-1 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden"
           />
         </div>
 

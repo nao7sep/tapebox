@@ -241,7 +241,7 @@ function NumberField({ label, value, min, max, disabled, onChange }: {
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Math.max(min, Math.min(max, parseInt(e.target.value || '1', 10))))}
-        className="w-20 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-none"
+        className="w-20 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-hidden"
       />
     </label>
   )
@@ -318,7 +318,7 @@ function ProfileRow({ profile, active, busy, canSaveKey, onActive, onChange, onD
           placeholder={canSaveKey ? 'API key…' : 'Keychain unavailable'}
           spellCheck={false}
           disabled={!canSaveKey}
-          className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs placeholder-zinc-600 focus:border-zinc-600 focus:outline-none disabled:opacity-50"
+          className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
         />
         <button
           onClick={saveKey}
@@ -355,7 +355,7 @@ function Field({ label, value, disabled, onChange }: {
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         spellCheck={false}
-        className="mt-0.5 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-200 focus:border-zinc-600 focus:outline-none"
+        className="mt-0.5 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
       />
     </label>
   )

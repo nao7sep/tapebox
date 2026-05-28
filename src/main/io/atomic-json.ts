@@ -8,13 +8,12 @@ import { z } from 'zod'
  * Write semantics: write to temp -> fsync -> rename -> fsync parent dir.
  * Crash-safe: a partially-written temp file never replaces the target.
  *
- * Generic shape: <S extends ZodTypeAny> captures the actual schema so that
+ * Generic shape: <S extends z.ZodType> captures the actual schema so that
  * z.infer<S> resolves to the OUTPUT type (defaults applied, transforms run),
- * not the input shape. Avoids the zod 3.25 ZodType<T> ambiguity where T
- * collapses to the input side.
+ * not the input shape.
  */
 
-export async function readJsonOptional<S extends z.ZodTypeAny>(
+export async function readJsonOptional<S extends z.ZodType>(
   path: string,
   schema: S,
 ): Promise<z.infer<S> | null> {
@@ -28,7 +27,7 @@ export async function readJsonOptional<S extends z.ZodTypeAny>(
   return schema.parse(JSON.parse(text)) as z.infer<S>
 }
 
-export async function readJson<S extends z.ZodTypeAny>(
+export async function readJson<S extends z.ZodType>(
   path: string,
   schema: S,
 ): Promise<z.infer<S>> {
@@ -37,7 +36,7 @@ export async function readJson<S extends z.ZodTypeAny>(
   return value
 }
 
-export async function writeJsonAtomic<S extends z.ZodTypeAny>(
+export async function writeJsonAtomic<S extends z.ZodType>(
   path: string,
   data: z.input<S> | z.infer<S>,
   schema?: S,

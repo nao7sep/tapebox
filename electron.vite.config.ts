@@ -1,5 +1,6 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'node:path'
 
 /**
@@ -8,7 +9,8 @@ import { resolve } from 'node:path'
  *     consume ESM-only deps (nanoid, write-file-atomic) directly.
  *   - preload: CommonJS output. Preload runs in a sandboxed context where ESM
  *     loading is not supported in Electron 42; CJS is the standard there.
- *   - renderer: standard Vite browser ESM.
+ *   - renderer: standard Vite browser ESM + Tailwind v4 via its native Vite
+ *     plugin (replaces the v3 PostCSS-based pipeline).
  */
 export default defineConfig({
   main: {
@@ -39,7 +41,7 @@ export default defineConfig({
     },
   },
   renderer: {
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),
