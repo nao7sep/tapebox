@@ -57,6 +57,37 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
   return Promise.all(binaryNames.map(getStatus))
 }
 
+/**
+ * Resolve the latest upstream version of every binary and cache it in
+ * `latestKnown`, so getStatus can report whether an update is available.
+ *
+ * Resilient: a binary whose resolveLatest throws (e.g. ffmpeg on Linux) is
+ * logged and skipped — the others still update. lastCheckedAtUtc is persisted
+ * only for binaries that resolved successfully.
+ */
+export async function checkForUpdates(): Promise<BinaryStatus[]> {
+  const now = nowUtcIso()
+  const current = getSettings().binaries
+  const nextBinaries = { ...current }
+  let changed = false
+
+  await Promise.all(
+    binaryNames.map(async (name) => {
+      try {
+        const resolved = await binarySpecs[name].resolveLatest()
+        latestKnown.set(name, resolved.version)
+        nextBinaries[name] = { ...current[name], lastCheckedAtUtc: now }
+        changed = true
+      } catch (err) {
+        log.warn(`binary update check failed: ${name}`, { error: String(err) })
+      }
+    }),
+  )
+
+  if (changed) await updateSettings({ binaries: nextBinaries })
+  return getAllStatuses()
+}
+
 export async function installOrUpdate(name: BinaryName): Promise<void> {
   if (installing.has(name)) {
     throw new Error(`${name} install already in progress`)

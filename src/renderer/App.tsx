@@ -1,18 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useItemsStore } from '@renderer/store/items'
 import { useSelectionStore } from '@renderer/store/selection'
-import { useBinariesStore } from '@renderer/store/binaries'
+import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
 import { useEnumerationStore } from '@renderer/store/enumeration'
-import { FirstRunDialog, allBinariesInstalled } from '@renderer/components/FirstRunDialog'
+import { BinariesDialog } from '@renderer/components/BinariesDialog'
 import { TopBar } from '@renderer/components/TopBar'
 import { ItemList } from '@renderer/components/ItemList'
 import { DetailPane } from '@renderer/components/DetailPane'
 import { FilterChips } from '@renderer/components/FilterChips'
 import { AddPlaylistModal } from '@renderer/components/AddPlaylistModal'
 import { SettingsDialog } from '@renderer/components/SettingsDialog'
+import { StatusBar } from '@renderer/components/StatusBar'
 import { DropZone } from '@renderer/components/DropZone'
 
 export default function App() {
@@ -20,14 +21,22 @@ export default function App() {
   const selectedId = useSelectionStore((s) => s.selectedId)
   const select = useSelectionStore((s) => s.select)
   const binaryStatuses = useBinariesStore((s) => s.statuses)
+  const binariesModalOpen = useBinariesStore((s) => s.modalOpen)
+  const openBinariesModal = useBinariesStore((s) => s.openModal)
   const pendingEnum = useEnumerationStore((s) => s.pending)
   const closeEnum = useEnumerationStore((s) => s.close)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const decidedFirstRun = useRef(false)
 
   useEffect(() => {
     const stop = startIpcSync()
-    void ipcInvoke('settings:get').then(setSettings)
+    void ipcInvoke('settings:get').then((s) => {
+      setSettings(s)
+      if (s.autoCheckBinaryUpdates) {
+        void ipcInvoke('binaries:checkUpdates').then(useBinariesStore.getState().setStatuses)
+      }
+    })
     return stop
   }, [])
 
@@ -35,12 +44,20 @@ export default function App() {
     if (!showSettings) void ipcInvoke('settings:get').then(setSettings)
   }, [showSettings])
 
+  // Once the first status snapshot arrives, open the setup modal if any tool is
+  // missing. Non-dismissible only on the very first decision so the user is
+  // nudged to install, but can still Skip into the app.
+  useEffect(() => {
+    if (decidedFirstRun.current || binaryStatuses.length === 0) return
+    decidedFirstRun.current = true
+    if (!allBinariesInstalled(binaryStatuses)) openBinariesModal({ dismissible: true })
+  }, [binaryStatuses, openBinariesModal])
+
   useEffect(() => {
     if (selectedId && !items.some((i) => i.id === selectedId)) select(null)
   }, [items, selectedId, select])
 
   const selectedItem = items.find((i) => i.id === selectedId) ?? null
-  const needsFirstRun = !allBinariesInstalled(binaryStatuses)
 
   return (
     <DropZone>
@@ -97,7 +114,9 @@ export default function App() {
           <SettingsDialog onClose={() => setShowSettings(false)} />
         )}
 
-        {needsFirstRun && <FirstRunDialog />}
+        {binariesModalOpen && <BinariesDialog />}
+
+        <StatusBar />
       </main>
     </DropZone>
   )

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useEnumerationStore } from '@renderer/store/enumeration'
+import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
 
 const URL_PATTERN = /^https?:\/\//i
 
@@ -17,6 +18,8 @@ export function TopBar() {
   const [error, setError] = useState<string | null>(null)
   const [suggestion, setSuggestion] = useState<string | null>(null)
   const openEnum = useEnumerationStore((s) => s.open)
+  const toolsReady = useBinariesStore((s) => allBinariesInstalled(s.statuses))
+  const openBinariesModal = useBinariesStore((s) => s.openModal)
 
   useEffect(() => {
     const onFocus = async () => {
@@ -33,7 +36,7 @@ export function TopBar() {
 
   async function add(value: string) {
     const v = value.trim()
-    if (!v) return
+    if (!v || !toolsReady) return
     setBusy(true)
     setError(null)
     try {
@@ -66,12 +69,24 @@ export function TopBar() {
         />
         <button
           onClick={() => void add(url)}
-          disabled={busy || !url.trim()}
+          disabled={busy || !url.trim() || !toolsReady}
           className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
         >
           {busy ? 'Adding…' : 'Add'}
         </button>
       </div>
+
+      {!toolsReady && (
+        <p className="text-xs text-amber-300">
+          Downloading needs yt-dlp and its helpers.{' '}
+          <button
+            onClick={() => openBinariesModal({ dismissible: true })}
+            className="underline hover:text-amber-200"
+          >
+            Install tools
+          </button>
+        </p>
+      )}
 
       {suggestion && (
         <button

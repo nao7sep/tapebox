@@ -2,12 +2,11 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * All TapeBox state lives under ~/.tapebox by convention.
- * Electron's userData is also redirected here (see main/index.ts).
+ * All TapeBox app state lives under ~/.tapebox by convention — this is our own
+ * data only. Electron/Chromium state (cache, cookies, GPU cache, etc.) is left
+ * in the OS-default userData location and never mixed in here.
  *
- * 'work' is our own scratch space. 'cache' is left for Electron's HTTP cache
- * (Cache_Data, Code Cache, GPUCache) so the two subsystems never race over
- * the same directory.
+ * 'work' is our own scratch space for in-progress downloads.
  */
 export const tapeboxRoot = join(homedir(), '.tapebox')
 

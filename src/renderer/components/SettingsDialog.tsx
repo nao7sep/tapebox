@@ -120,6 +120,13 @@ export function SettingsDialog({ onClose }: Props) {
               disabled={busy}
               onChange={(v) => updateSetting('maxConcurrentDownloads', v)}
             />
+            <Toggle
+              label="Check for tool updates on startup"
+              description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
+              checked={settings.autoCheckBinaryUpdates}
+              disabled={busy}
+              onChange={(v) => updateSetting('autoCheckBinaryUpdates', v)}
+            />
           </Section>
 
           <Section title="AI profiles" hint="Used for slug generation. Currently only OpenAI-compatible endpoints.">

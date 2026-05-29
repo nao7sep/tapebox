@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { paths, requiredDirs } from './paths.js'
+import { requiredDirs } from './paths.js'
 import { closeLogger, initLogger, log, pruneOldLogs } from './io/logger.js'
 import { loadSettings, getSettings } from './store/config.js'
 import { loadSession, persistNow } from './store/session.js'
@@ -28,10 +28,6 @@ app.on('second-instance', () => {
   if (win.isMinimized()) win.restore()
   win.focus()
 })
-
-// Redirect Electron's own state into ~/.tapebox so everything lives in one
-// place. Must happen before app is ready and before any path queries.
-app.setPath('userData', paths.root)
 
 // Privileged scheme registration must happen before app is ready.
 registerMediaSchemeAsPrivileged()

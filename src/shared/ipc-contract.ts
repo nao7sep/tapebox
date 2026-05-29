@@ -49,6 +49,7 @@ export type IpcCalls = {
   // ── Binaries ─────────────────────────────────────────────────────────────
   'binaries:status':       { req: undefined;                         res: BinaryStatus[] }
   'binaries:update':       { req: { name: BinaryName };              res: void }
+  'binaries:checkUpdates': { req: undefined;                         res: BinaryStatus[] }
 
   // ── Enumeration (playlist/channel pre-add) ───────────────────────────────
   // Split into detect + start so the renderer can attach event subscribers

@@ -33,6 +33,9 @@ export const SettingsSchema = z.object({
   autoStartDownloads: z.boolean(),
   maxConcurrentDownloads: z.number().int().min(1).max(8),
 
+  // Check GitHub/upstream for newer yt-dlp/ffmpeg/deno releases once at startup.
+  autoCheckBinaryUpdates: z.boolean(),
+
   aiProfiles: z.array(AiProfileSchema),
   activeAiProfileId: z.string().nullable(),
 
@@ -56,6 +59,7 @@ export function defaultSettings(libraryDir: string): Settings {
     libraryDir,
     autoStartDownloads: true,
     maxConcurrentDownloads: 2,
+    autoCheckBinaryUpdates: true,
     aiProfiles: [],
     activeAiProfileId: null,
     binaries: {
