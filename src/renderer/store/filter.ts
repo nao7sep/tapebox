@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type Filter = 'inbox' | 'archived'
+export type Filter = 'shelf' | 'archived'
 
 type FilterState = {
   filter: Filter
@@ -8,6 +8,6 @@ type FilterState = {
 }
 
 export const useFilterStore = create<FilterState>((set) => ({
-  filter: 'inbox',
+  filter: 'shelf',
   setFilter: (filter) => set({ filter }),
 }))

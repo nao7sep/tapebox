@@ -1,5 +1,6 @@
 import { useState, type DragEvent, type ReactNode } from 'react'
 import { ipcInvoke, pathForFile } from '@renderer/ipc/client'
+import { useNoticeStore } from '@renderer/store/notice'
 
 type Props = { children: ReactNode }
 
@@ -11,10 +12,12 @@ type Props = { children: ReactNode }
  * Drop UX:
  *   - Files dragged from the OS get their real paths via webUtils.
  *   - .json files alone are ignored at the renderer (no media to pair).
- *   - Result of import is alerted; lateral feedback can come later as a toast.
+ *   - Outcome surfaces as a transient app notice (see store/notice); the
+ *     status bar shows the headline, the console keeps the per-file reasons.
  */
 export function DropZone({ children }: Props) {
   const [active, setActive] = useState(false)
+  const notify = useNoticeStore((s) => s.notify)
 
   function isFileDrag(e: DragEvent): boolean {
     return Array.from(e.dataTransfer?.types ?? []).includes('Files')
@@ -52,18 +55,22 @@ export function DropZone({ children }: Props) {
       mediaPaths.push(path)
     }
     if (mediaPaths.length === 0) {
-      alert('Drop media files (the JSON sidecars are picked up automatically by name).')
+      notify('Drop media files — sidecar JSON is paired automatically by name.', 'info')
       return
     }
 
     try {
-      const result = await ipcInvoke('library:import', { mediaPaths })
-      if (result.rejected.length > 0) {
-        const lines = result.rejected.map((r) => `${r.path}\n  → ${r.reason}`).join('\n\n')
-        alert(`Imported ${result.imported.length}, rejected ${result.rejected.length}:\n\n${lines}`)
+      const { imported, rejected } = await ipcInvoke('library:import', { mediaPaths })
+      if (rejected.length > 0) {
+        // The status bar shows only the headline; keep the reasons reachable.
+        console.warn('import rejected:', rejected)
       }
+      notify(
+        `Imported ${imported.length}${rejected.length ? `, ${rejected.length} rejected` : ''}`,
+        rejected.length > 0 ? 'error' : 'info',
+      )
     } catch (err) {
-      alert(`Import failed: ${String(err)}`)
+      notify(`Import failed: ${String(err)}`, 'error')
     }
   }
 

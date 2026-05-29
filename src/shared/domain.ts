@@ -9,6 +9,8 @@ import { z } from 'zod'
  *   downloaded -> media + sidecar present in library/
  *   failed
  *   paused
+ *   playlist   -> probe found a playlist/channel, not a single video; a resting
+ *                 dead-end the user resolves via the scanner (Copy URL / Open scanner)
  *
  * 'archivedAtUtc' is orthogonal to state — any state can be archived.
  */
@@ -20,6 +22,7 @@ export const itemStates = [
   'downloaded',
   'failed',
   'paused',
+  'playlist',
 ] as const
 
 export type ItemState = (typeof itemStates)[number]
@@ -58,11 +61,6 @@ export const ItemSchema = z.object({
   pausedAtUtc: z.string().nullable().default(null),          // when state → 'paused'
   failedAtUtc: z.string().nullable().default(null),          // when state → 'failed'
   lastError: z.string().nullable(),
-
-  // A probe found the URL is a playlist/channel, not a single video. The item
-  // parks in 'failed' but renders as an informational dead-end (DetailPane
-  // offers Copy URL / Open scanner), never as an error to retry.
-  isPlaylist: z.boolean().default(false),
 })
 export type Item = z.infer<typeof ItemSchema>
 

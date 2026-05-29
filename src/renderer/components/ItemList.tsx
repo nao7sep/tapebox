@@ -7,7 +7,7 @@ import { ItemRow } from './ItemRow'
 /**
  * One continuous list per tab.
  *
- * Inbox (everything not archived) is sorted by bucket, each bucket newest-first:
+ * Shelf (everything not archived) is sorted by bucket, each bucket newest-first:
  *   1. Failed       (failedAtUtc)
  *   2. Downloading  (downloadStartedAtUtc)
  *   3. Pending      (addedAtUtc) — queued, probing, ready, paused
@@ -53,25 +53,29 @@ function matchesFilter(item: Item, filter: Filter): boolean {
   return filter === 'archived' ? !!item.archivedAtUtc : !item.archivedAtUtc
 }
 
-type Bucket = 'failed' | 'downloading' | 'pending' | 'downloaded'
+type Bucket = 'playlist' | 'failed' | 'downloading' | 'pending' | 'downloaded'
 
 function bucketOf(item: Item): Bucket {
+  if (item.state === 'playlist') return 'playlist'
   if (item.state === 'failed') return 'failed'
   if (item.state === 'downloading') return 'downloading'
   if (item.state === 'downloaded') return 'downloaded'
   return 'pending' // queued, probing, ready, paused
 }
 
+// Playlist dead-ends and failures sort to the top — both want the user's attention.
 const BUCKET_RANK: Record<Bucket, number> = {
-  failed: 0,
-  downloading: 1,
-  pending: 2,
-  downloaded: 3,
+  playlist: 0,
+  failed: 1,
+  downloading: 2,
+  pending: 3,
+  downloaded: 4,
 }
 
 /** Newest-first key per bucket; falls back to addedAtUtc if the marker is missing. */
 function sortKey(item: Item, bucket: Bucket): string {
   switch (bucket) {
+    case 'playlist':    return item.probedAtUtc ?? item.addedAtUtc
     case 'failed':      return item.failedAtUtc ?? item.addedAtUtc
     case 'downloading': return item.downloadStartedAtUtc ?? item.addedAtUtc
     case 'pending':     return item.addedAtUtc

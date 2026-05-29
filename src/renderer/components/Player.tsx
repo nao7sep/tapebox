@@ -17,7 +17,10 @@ export const Player = forwardRef<HTMLVideoElement, Props>(function Player({ src,
       poster={poster}
       controls
       preload="metadata"
-      className="w-full rounded bg-black"
+      // Fit the whole frame inside the available box (object-contain) so the
+      // entire video is always visible — tall/vertical clips render narrow,
+      // wide clips render short, neither is cropped or pushed off-screen.
+      className="max-h-full max-w-full rounded bg-black object-contain"
     />
   )
 })

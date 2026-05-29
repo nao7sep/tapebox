@@ -10,6 +10,7 @@ import { Player } from './Player'
 import { ChapterList } from './ChapterList'
 import { RenameModal } from './RenameModal'
 import { ExportModal } from './ExportModal'
+import { ConfirmModal } from './ConfirmModal'
 
 /**
  * Chapter shape as yt-dlp writes it into the sidecar. We validate at the
@@ -35,6 +36,7 @@ export function DetailPane({
   const [sidecarError, setSidecarError] = useState<string | null>(null)
   const [showRename, setShowRename] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
   const [copied, setCopied] = useState(false)
   const select = useSelectionStore((s) => s.select)
   const progress = useItemsStore((s) => s.progress[item.id])
@@ -95,12 +97,10 @@ export function DetailPane({
   async function cancel()    { await ipcInvoke('downloads:cancel',  { itemId: item.id }) }
   async function retry()     { await ipcInvoke('downloads:retry',   { itemId: item.id }) }
 
-  async function remove() {
-    const ok = confirm('Remove this item and delete its files?')
-    if (!ok) return
+  async function doRemove() {
     releaseMedia()
     await ipcInvoke('library:remove', { itemIds: [item.id], deleteFiles: true })
-    select(null)
+    select(null) // unmounts the pane (and this confirm modal with it)
   }
 
   function openRename() {
@@ -109,14 +109,14 @@ export function DetailPane({
   }
 
   return (
-    <div className="space-y-5 p-6">
-      <div>
+    <div className="flex h-full flex-col p-6">
+      <div className="shrink-0">
         <h2 className="text-lg font-medium">{item.title ?? item.sourceUrl}</h2>
         <p className="mt-1 text-xs text-zinc-400">
           {item.uploader ?? 'unknown uploader'}
           {item.durationSeconds != null && ` · ${formatTime(item.durationSeconds)}`}
           {' · '}
-          {item.isPlaylist ? 'playlist or channel' : item.state}
+          {item.state === 'playlist' ? 'playlist or channel' : item.state}
           {item.archivedAtUtc && ' · archived'}
         </p>
         <p className="mt-1 truncate text-xs text-zinc-400">
@@ -131,12 +131,29 @@ export function DetailPane({
         )}
       </div>
 
-      {item.state === 'downloaded' && mediaUrl && !showRename && (
-        <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} />
-      )}
-
-      {item.isPlaylist ? (
-        <div className="rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-5">
+      {/* Middle region. For a downloaded tape: video (fit entirely) on the left,
+          chapters on the right — header above and buttons below stay fixed while
+          the video shrinks to fit. Other states show a single status panel. */}
+      {item.state === 'downloaded' ? (
+        <div className="mt-5 flex min-h-0 flex-1 gap-4">
+          <div className="flex min-h-[200px] min-w-0 flex-1 items-center justify-center">
+            {mediaUrl && !showRename && (
+              <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} />
+            )}
+          </div>
+          {(chapters.length > 0 || sidecarError) && (
+            <aside className="flex w-72 shrink-0 flex-col">
+              <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {sidecarError
+                  ? <p className="text-xs text-red-400">{sidecarError}</p>
+                  : <ChapterList chapters={chapters} onSeek={seek} />}
+              </div>
+            </aside>
+          )}
+        </div>
+      ) : item.state === 'playlist' ? (
+        <div className="mt-5 rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-5">
           <h3 className="flex items-center gap-2 text-sm font-medium text-indigo-200">
             <PlaylistGlyph />
             This is a playlist or channel
@@ -151,24 +168,22 @@ export function DetailPane({
           </div>
         </div>
       ) : (
-        item.state !== 'downloaded' && (
-          <div className="rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
-            {progress
-              ? `${progress.phase}… ${progress.percent.toFixed(0)}%`
-              : item.state === 'failed'
-                ? `Failed: ${item.lastError ?? 'unknown error'}`
-                : item.state === 'paused'
-                  ? 'Paused. Click Resume below to continue.'
-                  : 'Waiting in queue…'}
-          </div>
-        )
+        <div className="mt-5 rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
+          {progress
+            ? `${progress.phase}… ${progress.percent.toFixed(0)}%`
+            : item.state === 'failed'
+              ? `Failed: ${item.lastError ?? 'unknown error'}`
+              : item.state === 'paused'
+                ? 'Paused. Click Resume below to continue.'
+                : 'Waiting in queue…'}
+        </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {!item.isPlaylist && (item.state === 'queued' || item.state === 'probing' || item.state === 'downloading') && (
+      <div className="mt-5 flex shrink-0 flex-wrap gap-2">
+        {(item.state === 'queued' || item.state === 'probing' || item.state === 'downloading') && (
           <ActionButton onClick={cancel}>Cancel</ActionButton>
         )}
-        {!item.isPlaylist && (item.state === 'failed' || item.state === 'paused') && (
+        {(item.state === 'failed' || item.state === 'paused') && (
           <ActionButton onClick={retry}>Resume</ActionButton>
         )}
         {item.state === 'downloaded' && (
@@ -176,31 +191,32 @@ export function DetailPane({
             <ActionButton onClick={() => setShowExport(true)}>Export audio…</ActionButton>
             <ActionButton onClick={openRename}>Rename…</ActionButton>
             {item.archivedAtUtc
-              ? <ActionButton onClick={unarchive}>Move to Inbox</ActionButton>
+              ? <ActionButton onClick={unarchive}>Move to Shelf</ActionButton>
               : <ActionButton onClick={archive}>Archive</ActionButton>}
           </>
         )}
-        <ActionButton onClick={remove} danger>Remove</ActionButton>
+        <ActionButton onClick={() => setConfirmRemove(true)} danger>Remove</ActionButton>
       </div>
-
-      {item.state === 'downloaded' && (
-        <section>
-          <h3 className="mb-2 text-sm font-medium text-zinc-300">Chapters</h3>
-          {sidecarError && (
-            <p className="text-xs text-red-400">{sidecarError}</p>
-          )}
-          {!sidecar && !sidecarError && (
-            <p className="text-xs text-zinc-400">Loading…</p>
-          )}
-          {sidecar && <ChapterList chapters={chapters} onSeek={seek} />}
-        </section>
-      )}
 
       {showRename && (
         <RenameModal item={item} onClose={() => setShowRename(false)} />
       )}
       {showExport && (
         <ExportModal item={item} onClose={() => setShowExport(false)} />
+      )}
+      {confirmRemove && (
+        <ConfirmModal
+          title="Remove tape"
+          message={
+            item.filename
+              ? 'Remove this tape and delete its files?'
+              : 'Remove this tape?'
+          }
+          confirmLabel="Remove"
+          danger
+          onCancel={() => setConfirmRemove(false)}
+          onConfirm={() => void doRemove()}
+        />
       )}
     </div>
   )

@@ -77,12 +77,11 @@ export class Job {
     this.update({ state: 'probing' })
     const result = await ytdlp.probe(this.current()!.sourceUrl, this.controller.signal)
     if (result.kind === 'playlist') {
-      this.update({ state: 'failed', isPlaylist: true, lastError: null, failedAtUtc: nowUtcIso() })
+      this.update({ state: 'playlist', lastError: null, probedAtUtc: nowUtcIso() })
       return false
     }
     this.update({
       state: 'ready',
-      isPlaylist: false,
       sourceId: result.id,
       title: result.title,
       originalTitle: result.originalTitle,

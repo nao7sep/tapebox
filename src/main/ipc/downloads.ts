@@ -68,6 +68,5 @@ function makeQueuedItem(url: string): Item {
     pausedAtUtc: autostart ? null : now,
     failedAtUtc: null,
     lastError: null,
-    isPlaylist: false,
   }
 }

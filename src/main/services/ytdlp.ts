@@ -41,14 +41,16 @@ export type ProbeVideo = {
 export type ProbeResult = ProbeVideo | { kind: 'playlist' }
 
 /**
- * Single-video probe. Returns the parsed --dump-json video, or { kind:
- * 'playlist' } when the URL is a playlist/channel rather than one video.
+ * Single-video probe. Returns the parsed video info, or { kind: 'playlist' }
+ * when the URL is a playlist/channel rather than one video.
  *
- * Detection: --no-playlist isolates a single video for watch?v=…&list=… URLs,
- * but for a pure playlist/channel URL it has nothing to isolate, so yt-dlp
- * dumps one compact JSON line per entry. >1 line therefore means "not a single
- * video" — we report 'playlist' so the caller can steer the user to the scanner
- * instead of failing on a JSON parse error.
+ * The flags do double duty: --dump-single-json yields one JSON object whose
+ * _type is 'playlist' for a playlist/channel and 'video' for a video, so the
+ * kind is a field read, not a parse heuristic. --flat-playlist + --playlist-items 1
+ * keep detection O(1): yt-dlp reports the kind without extracting the whole
+ * channel (extracting every entry is what used to wedge the queue forever).
+ * --no-playlist still isolates the video for watch?v=…&list=… URLs, and single
+ * videos keep full metadata, chapters included (verified against a full probe).
  *
  * Retries only on a stall (IdleTimeoutError): a clean non-zero exit means
  * yt-dlp already ran its own --retries and the URL is genuinely unusable.
@@ -60,15 +62,14 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
     () =>
       execCapture(
         binaryPath('yt-dlp'),
-        ['--dump-json', '--skip-download', '--no-warnings', '--no-playlist', url],
+        ['--dump-single-json', '--flat-playlist', '--no-playlist', '--playlist-items', '1', '--no-warnings', url],
         { env: ytdlpEnv(), signal, idleTimeoutMs: policy.timeoutMs },
       ),
     { signal, isRetryable: (e) => e instanceof IdleTimeoutError },
   )
-  const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean)
-  if (lines.length > 1) return { kind: 'playlist' }
+  const info = JSON.parse(stdout) as Record<string, unknown>
+  if (info['_type'] === 'playlist') return { kind: 'playlist' }
 
-  const info = JSON.parse(lines[0] ?? '') as Record<string, unknown>
   return {
     kind: 'video',
     id: String(info['id'] ?? ''),
