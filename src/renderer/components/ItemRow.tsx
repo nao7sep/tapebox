@@ -25,10 +25,10 @@ export function ItemRow({ item, progress, selected, onSelect }: Props) {
           {item.title ?? item.sourceUrl}
         </div>
         {item.durationSeconds != null && (
-          <div className="text-xs text-zinc-500">{formatTime(item.durationSeconds)}</div>
+          <div className="text-xs text-zinc-400">{formatTime(item.durationSeconds)}</div>
         )}
       </div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
+      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
         <span>{stateLabel}</span>
         {item.chapterCount != null && item.chapterCount > 0 && (
           <span>· {item.chapterCount} chapters</span>

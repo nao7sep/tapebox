@@ -52,7 +52,7 @@ export function ExportDialog({ item, onClose }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
         <h2 className="text-base font-medium">Export audio</h2>
-        <p className="mt-1 truncate text-xs text-zinc-500">
+        <p className="mt-1 truncate text-xs text-zinc-400">
           {item.title ?? item.sourceUrl}
         </p>
 
@@ -80,7 +80,7 @@ export function ExportDialog({ item, onClose }: Props) {
                 FLAC
               </Radio>
             </div>
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-zinc-400">
               Lossless copy re-uses the original audio stream — fast, bit-perfect when source codec is compatible.
             </p>
           </Field>
@@ -122,7 +122,7 @@ export function ExportDialog({ item, onClose }: Props) {
             <button
               onClick={run}
               disabled={busy || !destinationDir}
-              className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:bg-zinc-700 disabled:text-zinc-400"
             >
               {busy ? 'Exporting…' : 'Export'}
             </button>

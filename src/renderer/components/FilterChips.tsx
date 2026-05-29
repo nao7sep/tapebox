@@ -38,7 +38,7 @@ export function FilterChips() {
             }
           >
             {labels[f]}
-            <span className={'ml-1.5 ' + (active ? 'text-zinc-500' : 'text-zinc-500')}>
+            <span className={'ml-1.5 ' + (active ? 'text-zinc-400' : 'text-zinc-400')}>
               {counts[f]}
             </span>
           </button>

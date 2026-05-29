@@ -8,9 +8,12 @@ type BinariesState = {
   progress: Partial<Record<BinaryName, { percent: number; phase: Phase }>>
   /** The shared install/update modal. Always dismissible (Esc / backdrop / ✕). */
   modalOpen: boolean
+  /** An update check is in flight (startup auto-check or modal-opened check). */
+  checking: boolean
   setStatuses: (s: BinaryStatus[]) => void
   setProgress: (name: BinaryName, percent: number, phase: Phase) => void
   markReady: (name: BinaryName, version: string) => void
+  setChecking: (checking: boolean) => void
   openModal: () => void
   closeModal: () => void
 }
@@ -19,7 +22,9 @@ export const useBinariesStore = create<BinariesState>((set) => ({
   statuses: [],
   progress: {},
   modalOpen: false,
+  checking: false,
   setStatuses: (statuses) => set({ statuses }),
+  setChecking: (checking) => set({ checking }),
   setProgress: (name, percent, phase) =>
     set((state) => ({ progress: { ...state.progress, [name]: { percent, phase } } })),
   markReady: (name, version) =>
@@ -50,4 +55,14 @@ export function binariesWithUpdate(statuses: BinaryStatus[]): BinaryStatus[] {
       s.latestKnownVersion !== null &&
       s.latestKnownVersion !== s.installedVersion,
   )
+}
+
+/**
+ * True when every installed binary has a known latest version — i.e. a check
+ * actually resolved. False covers both "auto-check off / never ran" and "the
+ * check failed", since a failed lookup leaves latestKnownVersion null.
+ */
+export function updatesChecked(statuses: BinaryStatus[]): boolean {
+  const installed = statuses.filter((s) => s.installedVersion !== null)
+  return installed.length > 0 && installed.every((s) => s.latestKnownVersion !== null)
 }

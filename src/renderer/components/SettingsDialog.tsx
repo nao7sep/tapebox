@@ -162,7 +162,7 @@ export function SettingsDialog({ onClose }: Props) {
                 />
               ))}
               {settings.aiProfiles.length === 0 && (
-                <p className="text-xs text-zinc-500">No profiles yet. Add one below.</p>
+                <p className="text-xs text-zinc-400">No profiles yet. Add one below.</p>
               )}
             </div>
 
@@ -189,7 +189,7 @@ export function SettingsDialog({ onClose }: Props) {
 
           <Section title="Network" hint="Timeouts and retries for internet actions. The defaults are sensible.">
             <details className="rounded border border-zinc-800 p-3">
-              <summary className="cursor-pointer text-xs text-zinc-400 hover:text-zinc-200">
+              <summary className="text-xs text-zinc-400 hover:text-zinc-200">
                 Advanced timeout &amp; retry settings
               </summary>
               <div className="mt-4 space-y-4">
@@ -278,7 +278,7 @@ function IntervalsField({ intervals, disabled, onChange }: {
 
   return (
     <label className="block">
-      <span className="text-xs text-zinc-500">
+      <span className="text-xs text-zinc-400">
         Retry intervals in seconds — {intervals.length} {intervals.length === 1 ? 'retry' : 'retries'}
       </span>
       <input
@@ -300,7 +300,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   return (
     <section>
       <h3 className="text-sm font-medium text-zinc-300">{title}</h3>
-      {hint && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-zinc-400">{hint}</p>}
       <div className="mt-3 space-y-3">{children}</div>
     </section>
   )
@@ -324,7 +324,7 @@ function Toggle({ label, description, checked, disabled, onChange }: {
       />
       <div>
         <div className="text-sm">{label}</div>
-        {description && <div className="text-xs text-zinc-500">{description}</div>}
+        {description && <div className="text-xs text-zinc-400">{description}</div>}
       </div>
     </label>
   )
@@ -401,7 +401,7 @@ function ProfileRow({ profile, active, busy, canSaveKey, onActive, onChange, onD
         <label className="flex items-center gap-2 text-sm">
           <input type="radio" checked={active} onChange={onActive} disabled={busy} />
           <span className="font-medium">{profile.name}</span>
-          <span className="text-xs text-zinc-500">({profile.id})</span>
+          <span className="text-xs text-zinc-400">({profile.id})</span>
         </label>
         <button
           onClick={onDelete}
@@ -455,7 +455,7 @@ function Field({ label, value, disabled, onChange }: {
 }) {
   return (
     <label className="block">
-      <span className="text-zinc-500">{label}</span>
+      <span className="text-zinc-400">{label}</span>
       <input
         type="text"
         value={value}

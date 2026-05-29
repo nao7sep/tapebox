@@ -70,7 +70,7 @@ export function TopBar() {
         <button
           onClick={() => void add(url)}
           disabled={busy || !url.trim() || !toolsReady}
-          className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+          className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:bg-zinc-700 disabled:text-zinc-400"
         >
           {busy ? 'Adding…' : 'Add'}
         </button>

@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+/* Nudge the two smallest type tiers up a notch — the defaults read too small
+   on this dark UI. Applied centrally so the utility classes don't change. */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+}

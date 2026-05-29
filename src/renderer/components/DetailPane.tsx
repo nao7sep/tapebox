@@ -97,20 +97,20 @@ export function DetailPane({ item }: { item: Item }) {
     <div className="space-y-5 p-6">
       <div>
         <h2 className="text-lg font-medium">{item.title ?? item.sourceUrl}</h2>
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="mt-1 text-xs text-zinc-400">
           {item.uploader ?? 'unknown uploader'}
           {item.durationSeconds != null && ` · ${formatTime(item.durationSeconds)}`}
           {' · '}
           {item.state}
           {item.archivedAtUtc && ' · archived'}
         </p>
-        <p className="mt-1 truncate text-xs text-zinc-500">
+        <p className="mt-1 truncate text-xs text-zinc-400">
           <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="hover:text-zinc-300">
             {item.sourceUrl}
           </a>
         </p>
         {item.slug && (
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-zinc-400">
             Slug: <span className="text-zinc-300">{item.slug}</span>
           </p>
         )}
@@ -158,7 +158,7 @@ export function DetailPane({ item }: { item: Item }) {
             <p className="text-xs text-red-400">{sidecarError}</p>
           )}
           {!sidecar && !sidecarError && (
-            <p className="text-xs text-zinc-500">Loading…</p>
+            <p className="text-xs text-zinc-400">Loading…</p>
           )}
           {sidecar && <ChapterList chapters={chapters} onSeek={seek} />}
         </section>

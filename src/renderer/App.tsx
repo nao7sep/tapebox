@@ -13,6 +13,9 @@ import { DetailPane } from '@renderer/components/DetailPane'
 import { FilterChips } from '@renderer/components/FilterChips'
 import { AddPlaylistModal } from '@renderer/components/AddPlaylistModal'
 import { SettingsDialog } from '@renderer/components/SettingsDialog'
+import { AboutModal } from '@renderer/components/AboutModal'
+import { ShortcutsModal } from '@renderer/components/ShortcutsModal'
+import { HeaderMenu } from '@renderer/components/HeaderMenu'
 import { StatusBar } from '@renderer/components/StatusBar'
 import { DropZone } from '@renderer/components/DropZone'
 
@@ -27,6 +30,8 @@ export default function App() {
   const closeEnum = useEnumerationStore((s) => s.close)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
   const decidedFirstRun = useRef(false)
 
   useEffect(() => {
@@ -34,7 +39,15 @@ export default function App() {
     void ipcInvoke('settings:get').then((s) => {
       setSettings(s)
       if (s.autoCheckBinaryUpdates) {
-        void ipcInvoke('binaries:checkUpdates').then(useBinariesStore.getState().setStatuses)
+        // Best-effort background check: main logs any failure (per-binary +
+        // summary). Swallow here so it never surfaces as an unhandled rejection
+        // — the user didn't trigger it, so we don't interrupt them on failure.
+        const store = useBinariesStore.getState()
+        store.setChecking(true)
+        void ipcInvoke('binaries:checkUpdates')
+          .then(store.setStatuses)
+          .catch(() => {})
+          .finally(() => useBinariesStore.getState().setChecking(false))
       }
     })
     return stop
@@ -62,11 +75,11 @@ export default function App() {
     <DropZone>
       <main className="flex h-screen flex-col">
         <header className="shrink-0 space-y-3 border-b border-zinc-800 p-4">
-          <div className="flex items-baseline justify-between gap-4">
+          <div className="flex items-center justify-between gap-4">
             <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
-            <div className="flex items-baseline gap-4">
+            <div className="flex items-center gap-4">
               {settings && (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-zinc-400">
                   <span className="text-zinc-300">{settings.libraryDir}</span>
                   {' · '}
                   Autostart <span className="text-zinc-300">{settings.autoStartDownloads ? 'on' : 'off'}</span>
@@ -74,12 +87,12 @@ export default function App() {
                   Concurrency <span className="text-zinc-300">{settings.maxConcurrentDownloads}</span>
                 </p>
               )}
-              <button
-                onClick={() => setShowSettings(true)}
-                className="text-xs text-zinc-400 hover:text-zinc-100"
-              >
-                Settings
-              </button>
+              <HeaderMenu
+                onSettings={() => setShowSettings(true)}
+                onTools={() => openBinariesModal()}
+                onShortcuts={() => setShowShortcuts(true)}
+                onAbout={() => setShowAbout(true)}
+              />
             </div>
           </div>
           <TopBar />
@@ -94,7 +107,7 @@ export default function App() {
             {selectedItem ? (
               <DetailPane item={selectedItem} />
             ) : (
-              <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-500">
+              <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-400">
                 Select a tape from the list.
               </div>
             )}
@@ -112,6 +125,10 @@ export default function App() {
         {showSettings && (
           <SettingsDialog onClose={() => setShowSettings(false)} />
         )}
+
+        {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+
+        {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
 
         {binariesModalOpen && <BinariesDialog />}
 

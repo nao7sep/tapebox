@@ -47,7 +47,7 @@ export function RenameDialog({ item, onClose }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
         <h2 className="text-base font-medium">Rename to slug</h2>
-        <p className="mt-1 text-xs text-zinc-500 truncate">
+        <p className="mt-1 text-xs text-zinc-400 truncate">
           Current: <span className="text-zinc-300">{item.filename ?? '—'}</span>
         </p>
 
@@ -63,7 +63,7 @@ export function RenameDialog({ item, onClose }: Props) {
           <button
             onClick={generate}
             disabled={busy !== null}
-            className="text-xs text-zinc-400 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
           >
             {busy === 'generate' ? 'Generating…' : '✨ Generate with AI'}
           </button>
@@ -86,7 +86,7 @@ export function RenameDialog({ item, onClose }: Props) {
           <button
             onClick={apply}
             disabled={busy !== null || !slug.trim()}
-            className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:bg-zinc-700 disabled:text-zinc-400"
           >
             {busy === 'apply' ? 'Renaming…' : 'Rename'}
           </button>

@@ -70,22 +70,25 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
   const now = nowUtcIso()
   const current = getSettings().binaries
   const nextBinaries = { ...current }
-  let changed = false
+  let resolved = 0
+  let failed = 0
 
   await Promise.all(
     binaryNames.map(async (name) => {
       try {
-        const resolved = await binarySpecs[name].resolveLatest()
-        latestKnown.set(name, resolved.version)
+        const asset = await binarySpecs[name].resolveLatest()
+        latestKnown.set(name, asset.version)
         nextBinaries[name] = { ...current[name], lastCheckedAtUtc: now }
-        changed = true
+        resolved++
       } catch (err) {
+        failed++
         log.warn(`binary update check failed: ${name}`, { error: String(err) })
       }
     }),
   )
 
-  if (changed) await updateSettings({ binaries: nextBinaries })
+  log.info('binary update check complete', { resolved, failed })
+  if (resolved > 0) await updateSettings({ binaries: nextBinaries })
   return getAllStatuses()
 }
 
@@ -153,8 +156,12 @@ async function performInstall(name: BinaryName): Promise<void> {
   }
 
   emit('binaries:progress', { name, percent: 100, phase: 'verify' })
-  const version = await verifyVersion(name)
-  log.info(`binary installed: ${name} ${version}`)
+  // Confirm the binary executes, but record resolved.version rather than the
+  // self-reported one: ffmpeg reports a builder suffix ("8.1.1-tessus") and
+  // deno a "v" prefix, which would otherwise never equal the upstream version
+  // the update check compares against, flagging a phantom update on install.
+  const selfReported = await verifyVersion(name)
+  log.info(`binary installed: ${name} ${resolved.version}`, { selfReported })
 
   const current = getSettings().binaries
   await updateSettings({
@@ -162,11 +169,11 @@ async function performInstall(name: BinaryName): Promise<void> {
       ...current,
       [name]: {
         ...current[name],
-        installedVersion: version,
+        installedVersion: resolved.version,
         lastCheckedAtUtc: nowUtcIso(),
       },
     },
   })
 
-  emit('binaries:ready', { name, version })
+  emit('binaries:ready', { name, version: resolved.version })
 }

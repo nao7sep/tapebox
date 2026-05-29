@@ -8,7 +8,10 @@ type DialogProps = {
   children: ReactNode
   /** Action buttons. Rendered right-aligned, so the primary action goes last. */
   footer?: ReactNode
+  /** Upper bound on width. The panel fills this unless fitContent shrinks it. */
   size?: DialogSize
+  /** Size the panel to its content (capped by size) instead of always filling size. */
+  fitContent?: boolean
   /** Block Esc / backdrop / ✕ while a non-interruptible action runs (e.g. install). */
   closeDisabled?: boolean
 }
@@ -25,7 +28,7 @@ const SIZE_CLASS: Record<DialogSize, string> = {
  * click, and the ✕ — funnel through onClose. Escape only closes the topmost
  * dialog so stacked modals unwind one at a time.
  */
-export function Dialog({ title, onClose, children, footer, size = 'md', closeDisabled = false }: DialogProps) {
+export function Dialog({ title, onClose, children, footer, size = 'md', fitContent = false, closeDisabled = false }: DialogProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -51,7 +54,7 @@ export function Dialog({ title, onClose, children, footer, size = 'md', closeDis
         role="dialog"
         aria-modal="true"
         data-dialog-surface
-        className={`flex max-h-[85vh] w-full ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-800 bg-zinc-900 shadow-xl`}
+        className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-800 bg-zinc-900 shadow-xl`}
       >
         <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 p-4">
           <h2 className="text-base font-medium">{title}</h2>
