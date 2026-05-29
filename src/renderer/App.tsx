@@ -19,6 +19,18 @@ import { HeaderMenu } from '@renderer/components/HeaderMenu'
 import { StatusBar } from '@renderer/components/StatusBar'
 import { DropZone } from '@renderer/components/DropZone'
 
+/** Skip the startup auto-check if any binary was checked within this window. */
+const AUTO_CHECK_STALE_MS = 24 * 60 * 60 * 1000
+
+function lastCheckedStale(binaries: Settings['binaries']): boolean {
+  const timestamps = Object.values(binaries)
+    .map((b) => b.lastCheckedAtUtc)
+    .filter((t): t is string => t !== null)
+  if (timestamps.length === 0) return true
+  const mostRecent = timestamps.sort().at(-1)!
+  return Date.now() - Date.parse(mostRecent) > AUTO_CHECK_STALE_MS
+}
+
 export default function App() {
   const items = useItemsStore((s) => s.items)
   const selectedId = useSelectionStore((s) => s.selectedId)
@@ -28,7 +40,6 @@ export default function App() {
   const openBinariesModal = useBinariesStore((s) => s.openModal)
   const pendingEnum = useEnumerationStore((s) => s.pending)
   const closeEnum = useEnumerationStore((s) => s.close)
-  const [settings, setSettings] = useState<Settings | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -37,25 +48,20 @@ export default function App() {
   useEffect(() => {
     const stop = startIpcSync()
     void ipcInvoke('settings:get').then((s) => {
-      setSettings(s)
-      if (s.autoCheckBinaryUpdates) {
-        // Best-effort background check: main logs any failure (per-binary +
-        // summary). Swallow here so it never surfaces as an unhandled rejection
-        // — the user didn't trigger it, so we don't interrupt them on failure.
-        const store = useBinariesStore.getState()
-        store.setChecking(true)
-        void ipcInvoke('binaries:checkUpdates')
-          .then(store.setStatuses)
-          .catch(() => {})
-          .finally(() => useBinariesStore.getState().setChecking(false))
-      }
+      if (!s.autoCheckBinaryUpdates) return
+      if (!lastCheckedStale(s.binaries)) return
+      // Best-effort background check: main logs any failure (per-binary +
+      // summary). Swallow here so it never surfaces as an unhandled rejection
+      // — the user didn't trigger it, so we don't interrupt them on failure.
+      const store = useBinariesStore.getState()
+      store.setChecking(true)
+      void ipcInvoke('binaries:checkUpdates')
+        .then(store.setStatuses)
+        .catch(() => {})
+        .finally(() => useBinariesStore.getState().setChecking(false))
     })
     return stop
   }, [])
-
-  useEffect(() => {
-    if (!showSettings) void ipcInvoke('settings:get').then(setSettings)
-  }, [showSettings])
 
   // Once the first status snapshot arrives, open the tools modal if anything is
   // missing. Decided once so it doesn't reopen after the user closes it.
@@ -77,23 +83,12 @@ export default function App() {
         <header className="shrink-0 space-y-3 border-b border-zinc-800 p-4">
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
-            <div className="flex items-center gap-4">
-              {settings && (
-                <p className="text-xs text-zinc-400">
-                  <span className="text-zinc-300">{settings.libraryDir}</span>
-                  {' · '}
-                  Autostart <span className="text-zinc-300">{settings.autoStartDownloads ? 'on' : 'off'}</span>
-                  {' · '}
-                  Concurrency <span className="text-zinc-300">{settings.maxConcurrentDownloads}</span>
-                </p>
-              )}
-              <HeaderMenu
-                onSettings={() => setShowSettings(true)}
-                onTools={() => openBinariesModal()}
-                onShortcuts={() => setShowShortcuts(true)}
-                onAbout={() => setShowAbout(true)}
-              />
-            </div>
+            <HeaderMenu
+              onSettings={() => setShowSettings(true)}
+              onTools={() => openBinariesModal()}
+              onShortcuts={() => setShowShortcuts(true)}
+              onAbout={() => setShowAbout(true)}
+            />
           </div>
           <TopBar />
           <FilterChips />

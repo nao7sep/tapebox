@@ -22,9 +22,9 @@ machine. No account, no cloud; your media and metadata stay under `~/.tapebox`.
 - **Built-in player** — play items with chapter navigation.
 - **Managed binaries** — `yt-dlp`, `ffmpeg`, and `deno` are downloaded and
   updated by the app itself into `~/.tapebox/bin`; nothing to install by hand.
-- **Encrypted API keys** — provider API keys are stored with the OS keychain
-  via Electron `safeStorage` (Keychain / DPAPI / libsecret); the plaintext key
-  never touches disk.
+- **Encrypted API key** — the AI provider API key is stored with the OS
+  keychain via Electron `safeStorage` (Keychain / DPAPI / libsecret); the
+  plaintext key never touches disk.
 
 ## Requirements
 
@@ -39,8 +39,7 @@ npm install
 npm run dev
 ```
 
-Convenience launchers are provided that stop any leftover dev processes, install
-dependencies, and start the app:
+Convenience launchers are provided that install dependencies and start the app:
 
 - macOS / Linux: `scripts/run.command`
 - Windows: `scripts/run.ps1`
@@ -69,7 +68,7 @@ All state lives under `~/.tapebox`:
   work/           scratch space (in-progress downloads)
   config.json     settings
   session.json    queue/library state
-  api-keys.json   encrypted provider API keys
+  api-keys.json   encrypted AI API key
 ```
 
 ## Architecture
@@ -95,9 +94,13 @@ Shared code lives in `src/shared`:
 Path aliases `@main/*`, `@renderer/*`, and `@shared/*` map to the corresponding
 `src` directories.
 
-AI slug generation targets OpenAI-compatible providers; profiles (base URL,
-model, name) are user-editable in Settings, and the API key is stored encrypted
-per profile.
+AI slug generation targets a single OpenAI-compatible endpoint (base URL +
+model) configured in Settings. The API key is stored encrypted via the OS
+keychain.
+
+Note: only TapeBox's own state lives under `~/.tapebox`. Electron/Chromium
+internal state (cache, cookies, GPU cache) stays in the OS-default
+`userData` location and never mixes in here.
 
 ## License
 

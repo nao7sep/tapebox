@@ -21,10 +21,16 @@ import { extractFileFromZip } from './archive'
  *
  * Install is atomic: download to temp, extract/move to final, then chmod.
  * Concurrent installOrUpdate for the same name is serialized by a Set lock.
+ *
+ * Update-check policy: settings.binaries.<name>.{latestKnownVersion,
+ * lastCheckedAtUtc} are the single source of truth — there's no in-memory
+ * cache. The modal renders what's persisted; a fresh upstream lookup happens
+ * only on startup (gated by autoCheckBinaryUpdates) or via an explicit user
+ * action. This keeps GitHub API hits well under the unauthenticated rate
+ * limit.
  */
 
 const installing = new Set<BinaryName>()
-const latestKnown = new Map<BinaryName, string>()
 
 async function isInstalled(name: BinaryName): Promise<boolean> {
   try {
@@ -48,7 +54,7 @@ async function getStatus(name: BinaryName): Promise<BinaryStatus> {
   return {
     name,
     installedVersion: installed ? entry.installedVersion : null,
-    latestKnownVersion: latestKnown.get(name) ?? null,
+    latestKnownVersion: entry.latestKnownVersion,
     lastCheckedAtUtc: entry.lastCheckedAtUtc,
     isUpdating: installing.has(name),
   }
@@ -59,12 +65,11 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
 }
 
 /**
- * Resolve the latest upstream version of every binary and cache it in
- * `latestKnown`, so getStatus can report whether an update is available.
+ * Resolve the latest upstream version of every binary and persist them.
  *
  * Resilient: a binary whose resolveLatest throws (e.g. ffmpeg on Linux) is
- * logged and skipped — the others still update. lastCheckedAtUtc is persisted
- * only for binaries that resolved successfully.
+ * logged and skipped — the others still update. lastCheckedAtUtc and
+ * latestKnownVersion are persisted only for binaries that resolved successfully.
  */
 export async function checkForUpdates(): Promise<BinaryStatus[]> {
   const now = nowUtcIso()
@@ -77,8 +82,11 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
     binaryNames.map(async (name) => {
       try {
         const asset = await binarySpecs[name].resolveLatest()
-        latestKnown.set(name, asset.version)
-        nextBinaries[name] = { ...current[name], lastCheckedAtUtc: now }
+        nextBinaries[name] = {
+          ...current[name],
+          latestKnownVersion: asset.version,
+          lastCheckedAtUtc: now,
+        }
         resolved++
       } catch (err) {
         failed++
@@ -110,7 +118,6 @@ async function performInstall(name: BinaryName): Promise<void> {
 
   const spec = binarySpecs[name]
   const resolved = await spec.resolveLatest()
-  latestKnown.set(name, resolved.version)
   log.info(`binary resolved: ${name} ${resolved.version}`, { url: resolved.downloadUrl })
 
   await mkdir(paths.workDownloads, { recursive: true })
@@ -170,6 +177,7 @@ async function performInstall(name: BinaryName): Promise<void> {
       [name]: {
         ...current[name],
         installedVersion: resolved.version,
+        latestKnownVersion: resolved.version,
         lastCheckedAtUtc: nowUtcIso(),
       },
     },

@@ -6,6 +6,7 @@ import { Modal } from '@renderer/components/Modal'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
 import {
   Button,
+  INPUT_CLASS,
   IntervalsField,
   NumberField,
   TextField,
@@ -13,7 +14,7 @@ import {
 } from '@renderer/components/ui'
 
 type Props = { onClose: () => void }
-type Tab = 'behavior' | 'ai' | 'network'
+type Tab = 'general' | 'ai' | 'network'
 
 /**
  * Settings is a draft form: every edit lives in local state, the footer Save
@@ -27,7 +28,7 @@ type Tab = 'behavior' | 'ai' | 'network'
  */
 export function SettingsModal({ onClose }: Props) {
   const runtime = useRuntimeStore((s) => s.info)
-  const [tab, setTab] = useState<Tab>('behavior')
+  const [tab, setTab] = useState<Tab>('general')
   const [original, setOriginal] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Settings | null>(null)
   const [hadApiKey, setHadApiKey] = useState(false)
@@ -99,7 +100,7 @@ export function SettingsModal({ onClose }: Props) {
 
   if (!draft) {
     return (
-      <Modal title="Settings" onClose={onClose} size="xl">
+      <Modal title="Settings" onClose={onClose} size="2xl">
         <p className="text-sm text-zinc-400">Loading…</p>
       </Modal>
     )
@@ -121,15 +122,15 @@ export function SettingsModal({ onClose }: Props) {
       <Modal
         title="Settings"
         onClose={requestClose}
-        size="xl"
+        size="2xl"
         footer={footer}
         closeDisabled={busy}
       >
         <div className="flex gap-6">
           <TabBar tab={tab} onTab={setTab} />
           <div className="min-w-0 flex-1">
-            {tab === 'behavior' && (
-              <BehaviorTab draft={draft} busy={busy} onPatch={patchDraft} />
+            {tab === 'general' && (
+              <GeneralTab draft={draft} busy={busy} onPatch={patchDraft} />
             )}
             {tab === 'ai' && (
               <AiTab
@@ -190,7 +191,7 @@ function pickEditable(s: Settings) {
 }
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'behavior', label: 'Behavior' },
+  { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI' },
   { id: 'network', label: 'Network' },
 ]
@@ -219,9 +220,9 @@ function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   )
 }
 
-// ── Behavior tab ────────────────────────────────────────────────────────────
+// ── General tab ─────────────────────────────────────────────────────────────
 
-function BehaviorTab({
+function GeneralTab({
   draft,
   busy,
   onPatch,
@@ -286,6 +287,10 @@ function AiTab({
 
   return (
     <div className="space-y-4">
+      <p className="text-sm text-zinc-400">
+        Used to suggest a file slug from each tape&apos;s title. TapeBox currently supports OpenAI-compatible providers only.
+      </p>
+
       {!encryptionAvailable && (
         <div className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
           The OS keychain is unavailable on this system, so the API key can't be saved securely.
@@ -301,22 +306,24 @@ function AiTab({
       />
 
       <div>
-        <TextField
-          label="API key"
-          type="password"
-          value={apiKeyDraft}
-          placeholder={keyIsSet ? '••••••••' : 'sk-…'}
-          disabled={busy || !encryptionAvailable}
-          onChange={onApiKeyChange}
-        />
-        {keyIsSet && (
-          <div className="mt-1 flex items-center justify-between text-xs">
-            <span className="text-zinc-400">Key is set</span>
-            <Button variant="ghostDanger" size="sm" onClick={onClearKey} disabled={busy}>
+        <div className="text-xs font-medium text-zinc-400">API key</div>
+        {keyIsSet && <div className="mt-0.5 text-xs text-zinc-400">Key is set</div>}
+        <div className="mt-1 flex items-center gap-2">
+          <input
+            type="password"
+            value={apiKeyDraft}
+            onChange={(e) => onApiKeyChange(e.target.value)}
+            placeholder={keyIsSet ? '••••••••' : 'sk-…'}
+            spellCheck={false}
+            disabled={busy || !encryptionAvailable}
+            className={`flex-1 ${INPUT_CLASS}`}
+          />
+          {keyIsSet && (
+            <Button variant="danger" onClick={onClearKey} disabled={busy}>
               Clear
             </Button>
-          </div>
-        )}
+          )}
+        </div>
         {willClear && (
           <p className="mt-1 text-xs text-amber-300">Key will be cleared on save.</p>
         )}

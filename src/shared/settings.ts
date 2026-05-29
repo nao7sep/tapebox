@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const BinaryEntrySchema = z.object({
   installedVersion: z.string().nullable(),
+  latestKnownVersion: z.string().nullable(),
   lastCheckedAtUtc: z.string().nullable(),
 })
 export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
@@ -91,15 +92,15 @@ export function defaultSettings(libraryDir: string): Settings {
       model: 'gpt-5.4-mini',
     },
     binaries: {
-      'yt-dlp': { installedVersion: null, lastCheckedAtUtc: null },
-      ffmpeg:   { installedVersion: null, lastCheckedAtUtc: null },
-      deno:     { installedVersion: null, lastCheckedAtUtc: null },
+      'yt-dlp': { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
+      ffmpeg:   { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
+      deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
     },
     retainLogCount: 50,
     network: {
-      lookups:  { timeoutMs: 30_000, retries: 3, intervals: [1_000, 3_000, 8_000], jitterRatio: 0.2 },
-      download: { timeoutMs: 60_000, retries: 2, intervals: [3_000, 15_000],       jitterRatio: 0.2 },
-      ai:       { timeoutMs: 60_000, retries: 3, intervals: [2_000, 5_000, 15_000], jitterRatio: 0.3 },
+      lookups:  { timeoutMs: 30_000,  retries: 3, intervals: [1_000, 3_000, 8_000],   jitterRatio: 0.2 },
+      download: { timeoutMs: 60_000,  retries: 3, intervals: [3_000, 15_000, 60_000], jitterRatio: 0.2 },
+      ai:       { timeoutMs: 120_000, retries: 3, intervals: [3_000, 10_000, 30_000], jitterRatio: 0.2 },
     },
   }
 }
