@@ -40,43 +40,6 @@ function Invoke-Native {
     }
 }
 
-# ── Safe kill of any leftover tapebox dev processes ──────────────────────────
-# Only kills processes whose command line contains this repo's absolute path.
-# Skips this script's own PID and any other run.ps1 invocations. Uses
-# Win32_Process via CIM so we never have to parse tasklist output.
-
-function Stop-LeftoverTapebox {
-    param([string]$RepoDir)
-
-    $escapedRepo = [Regex]::Escape($RepoDir)
-    $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.CommandLine `
-        -and $_.CommandLine -match $escapedRepo `
-        -and $_.CommandLine -notmatch 'run\.ps1' `
-        -and $_.ProcessId -ne $PID
-    })
-
-    if ($procs.Count -eq 0) { return }
-
-    Write-Step ("Stopping {0} leftover tapebox process(es): {1}" -f $procs.Count, ($procs.ProcessId -join ', '))
-    foreach ($p in $procs) {
-        try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch { }
-    }
-
-    # Wait up to 5 seconds for them to exit; refresh state on each check.
-    $waited = 0
-    while ($waited -lt 5) {
-        $alive = @($procs | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue })
-        if ($alive.Count -eq 0) { return }
-        Start-Sleep -Seconds 1
-        $waited += 1
-    }
-
-    foreach ($p in $procs) {
-        try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch { }
-    }
-}
-
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 
@@ -86,9 +49,6 @@ try {
     Require-Command npm
 
     Set-Location $repoDir
-
-    Write-Step "Stopping any leftover tapebox processes"
-    Stop-LeftoverTapebox -RepoDir $repoDir
 
     Write-Step "Installing dependencies"
     Invoke-Native -FilePath "npm" -ArgumentList @("install")
