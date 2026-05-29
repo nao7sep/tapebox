@@ -1,6 +1,6 @@
-import { access, chmod, constants, mkdir, rename, unlink } from 'node:fs/promises'
+import { access, chmod, constants, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { binaryPath, paths } from '@main/paths'
+import { binaryPath, ensureDirs, paths } from '@main/paths'
 import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
 import { getSettings, updateSettings } from '@main/store/config'
@@ -120,7 +120,7 @@ async function performInstall(name: BinaryName): Promise<void> {
   const resolved = await spec.resolveLatest()
   log.info(`binary resolved: ${name} ${resolved.version}`, { url: resolved.downloadUrl })
 
-  await mkdir(paths.workDownloads, { recursive: true })
+  await ensureDirs()
   const tempPath = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
 
   const downloadPolicy = getSettings().network.download

@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { mkdir } from 'node:fs/promises'
 
 /**
  * All TapeBox app state lives under ~/.tapebox by convention — this is our own
@@ -29,9 +30,12 @@ export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
 
 /**
  * Directories that must exist before the app reads/writes state.
- * Called once at startup; safe to call repeatedly (mkdir { recursive: true }).
+ * Safe to call repeatedly (mkdir { recursive: true }) and cheap — operations
+ * that depend on a particular dir should call this defensively rather than
+ * trust startup, so they keep working if the user wipes ~/.tapebox between
+ * startup and the operation.
  */
-export const requiredDirs: readonly string[] = [
+const REQUIRED_DIRS: readonly string[] = [
   paths.root,
   paths.bin,
   paths.library,
@@ -39,3 +43,9 @@ export const requiredDirs: readonly string[] = [
   paths.work,
   paths.workDownloads,
 ]
+
+export async function ensureDirs(): Promise<void> {
+  for (const dir of REQUIRED_DIRS) {
+    await mkdir(dir, { recursive: true })
+  }
+}

@@ -1,8 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
-import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { requiredDirs } from './paths.js'
+import { ensureDirs } from './paths.js'
 import { closeLogger, initLogger, log, pruneOldLogs } from './io/logger.js'
 import { loadSettings, getSettings } from './store/config.js'
 import { loadSession, persistNow } from './store/session.js'
@@ -31,12 +30,6 @@ app.on('second-instance', () => {
 
 // Privileged scheme registration must happen before app is ready.
 registerMediaSchemeAsPrivileged()
-
-async function ensureDirs(): Promise<void> {
-  for (const dir of requiredDirs) {
-    await mkdir(dir, { recursive: true })
-  }
-}
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
