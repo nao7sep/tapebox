@@ -1,22 +1,22 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 
-type DialogSize = 'md' | 'lg' | 'xl'
+type ModalSize = 'md' | 'lg' | 'xl'
 
-type DialogProps = {
+type ModalProps = {
   title: string
   onClose: () => void
   children: ReactNode
   /** Action buttons. Rendered right-aligned, so the primary action goes last. */
   footer?: ReactNode
   /** Upper bound on width. The panel fills this unless fitContent shrinks it. */
-  size?: DialogSize
+  size?: ModalSize
   /** Size the panel to its content (capped by size) instead of always filling size. */
   fitContent?: boolean
   /** Block Esc / backdrop / ✕ while a non-interruptible action runs (e.g. install). */
   closeDisabled?: boolean
 }
 
-const SIZE_CLASS: Record<DialogSize, string> = {
+const SIZE_CLASS: Record<ModalSize, string> = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-2xl',
@@ -28,7 +28,7 @@ const SIZE_CLASS: Record<DialogSize, string> = {
  * click, and the ✕ — funnel through onClose. Escape only closes the topmost
  * dialog so stacked modals unwind one at a time.
  */
-export function Dialog({ title, onClose, children, footer, size = 'md', fitContent = false, closeDisabled = false }: DialogProps) {
+export function Modal({ title, onClose, children, footer, size = 'md', fitContent = false, closeDisabled = false }: ModalProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {

@@ -2,8 +2,15 @@ import { useEffect, useState } from 'react'
 import type { AiSettings, NetworkGroup, RetryPolicy, Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
-import { Dialog } from '@renderer/components/Dialog'
-import { ConfirmDialog } from '@renderer/components/ConfirmDialog'
+import { Modal } from '@renderer/components/Modal'
+import { ConfirmModal } from '@renderer/components/ConfirmModal'
+import {
+  Button,
+  IntervalsField,
+  NumberField,
+  TextField,
+  Toggle,
+} from '@renderer/components/ui'
 
 type Props = { onClose: () => void }
 type Tab = 'behavior' | 'ai' | 'network'
@@ -11,14 +18,14 @@ type Tab = 'behavior' | 'ai' | 'network'
 /**
  * Settings is a draft form: every edit lives in local state, the footer Save
  * button persists everything in one IPC roundtrip, and closing with unsaved
- * changes prompts a shared ConfirmDialog to discard. The AI tab folds the API
+ * changes prompts a shared ConfirmModal to discard. The AI tab folds the API
  * key into the same save (no separate "Save key" button).
  *
  * Library directory and log retention are intentionally left out of the UI for
  * v1 — defaults are sensible; advanced users can edit ~/.tapebox/config.json
  * directly.
  */
-export function SettingsDialog({ onClose }: Props) {
+export function SettingsModal({ onClose }: Props) {
   const runtime = useRuntimeStore((s) => s.info)
   const [tab, setTab] = useState<Tab>('behavior')
   const [original, setOriginal] = useState<Settings | null>(null)
@@ -92,34 +99,26 @@ export function SettingsDialog({ onClose }: Props) {
 
   if (!draft) {
     return (
-      <Dialog title="Settings" onClose={onClose} size="xl">
+      <Modal title="Settings" onClose={onClose} size="xl">
         <p className="text-sm text-zinc-400">Loading…</p>
-      </Dialog>
+      </Modal>
     )
   }
 
   const footer = (
     <>
-      <button
-        onClick={requestClose}
-        disabled={busy}
-        className="rounded px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
-      >
+      <Button variant="ghost" onClick={requestClose} disabled={busy}>
         Cancel
-      </button>
-      <button
-        onClick={() => void save()}
-        disabled={busy || !dirty}
-        className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 transition disabled:bg-zinc-700 disabled:text-zinc-400"
-      >
+      </Button>
+      <Button variant="primary" onClick={() => void save()} disabled={busy || !dirty}>
         {busy ? 'Saving…' : 'Save'}
-      </button>
+      </Button>
     </>
   )
 
   return (
     <>
-      <Dialog
+      <Modal
         title="Settings"
         onClose={requestClose}
         size="xl"
@@ -130,11 +129,7 @@ export function SettingsDialog({ onClose }: Props) {
           <TabBar tab={tab} onTab={setTab} />
           <div className="min-w-0 flex-1">
             {tab === 'behavior' && (
-              <BehaviorTab
-                draft={draft}
-                busy={busy}
-                onPatch={patchDraft}
-              />
+              <BehaviorTab draft={draft} busy={busy} onPatch={patchDraft} />
             )}
             {tab === 'ai' && (
               <AiTab
@@ -156,11 +151,7 @@ export function SettingsDialog({ onClose }: Props) {
               />
             )}
             {tab === 'network' && (
-              <NetworkTab
-                draft={draft}
-                busy={busy}
-                onPatch={patchPolicy}
-              />
+              <NetworkTab draft={draft} busy={busy} onPatch={patchPolicy} />
             )}
           </div>
         </div>
@@ -168,10 +159,10 @@ export function SettingsDialog({ onClose }: Props) {
         {error && (
           <p className="mt-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
         )}
-      </Dialog>
+      </Modal>
 
       {confirmDiscard && (
-        <ConfirmDialog
+        <ConfirmModal
           title="Unsaved changes"
           message="Discard your changes?"
           cancelLabel="Keep editing"
@@ -310,28 +301,20 @@ function AiTab({
       />
 
       <div>
-        <label className="block">
-          <span className="text-xs font-medium text-zinc-400">API key</span>
-          <input
-            type="password"
-            value={apiKeyDraft}
-            onChange={(e) => onApiKeyChange(e.target.value)}
-            placeholder={keyIsSet ? '••••••••' : 'sk-…'}
-            spellCheck={false}
-            disabled={busy || !encryptionAvailable}
-            className="mt-1 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
-          />
-        </label>
+        <TextField
+          label="API key"
+          type="password"
+          value={apiKeyDraft}
+          placeholder={keyIsSet ? '••••••••' : 'sk-…'}
+          disabled={busy || !encryptionAvailable}
+          onChange={onApiKeyChange}
+        />
         {keyIsSet && (
           <div className="mt-1 flex items-center justify-between text-xs">
             <span className="text-zinc-400">Key is set</span>
-            <button
-              onClick={onClearKey}
-              disabled={busy}
-              className="text-red-400 hover:text-red-300 disabled:opacity-50"
-            >
+            <Button variant="ghostDanger" size="sm" onClick={onClearKey} disabled={busy}>
               Clear
-            </button>
+            </Button>
           </div>
         )}
         {willClear && (
@@ -434,141 +417,12 @@ function PolicyEditor({
           onChange={(p) => onChange({ jitterRatio: p / 100 })}
         />
       </div>
-      <IntervalsField intervals={policy.intervals} disabled={busy} onChange={(arr) => onChange({ intervals: arr })} />
+      <IntervalsField
+        label="Retry intervals in seconds — last reused if retries > intervals"
+        intervals={policy.intervals}
+        disabled={busy}
+        onChange={(arr) => onChange({ intervals: arr })}
+      />
     </div>
-  )
-}
-
-function IntervalsField({
-  intervals,
-  disabled,
-  onChange,
-}: {
-  intervals: number[]
-  disabled?: boolean
-  onChange: (intervalsMs: number[]) => void
-}) {
-  const [text, setText] = useState(() => intervals.map((ms) => ms / 1000).join(', '))
-
-  function commit() {
-    const arr = text
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0)
-      .map((t) => Math.round(parseFloat(t) * 1000))
-      .filter((ms) => Number.isFinite(ms) && ms >= 0)
-    onChange(arr)
-    setText(arr.map((ms) => ms / 1000).join(', '))
-  }
-
-  return (
-    <label className="block">
-      <span className="text-xs text-zinc-400">
-        Retry intervals in seconds — last reused if retries &gt; intervals
-      </span>
-      <input
-        type="text"
-        value={text}
-        disabled={disabled}
-        spellCheck={false}
-        placeholder="1, 3, 8"
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') commit() }}
-        className="mt-1 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
-      />
-    </label>
-  )
-}
-
-// ── Form primitives ────────────────────────────────────────────────────────
-
-function Toggle({
-  label,
-  description,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string
-  description?: string
-  checked: boolean
-  disabled?: boolean
-  onChange: (v: boolean) => void
-}) {
-  return (
-    <label className="flex items-start gap-3">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5"
-      />
-      <div>
-        <div className="text-sm">{label}</div>
-        {description && <div className="text-xs text-zinc-400">{description}</div>}
-      </div>
-    </label>
-  )
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  disabled,
-  onChange,
-}: {
-  label: string
-  value: number
-  min: number
-  max: number
-  disabled?: boolean
-  onChange: (v: number) => void
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs text-zinc-400">{label}</span>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(Math.max(min, Math.min(max, parseInt(e.target.value || '0', 10))))}
-        className="mt-1 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
-      />
-    </label>
-  )
-}
-
-function TextField({
-  label,
-  value,
-  placeholder,
-  disabled,
-  onChange,
-}: {
-  label: string
-  value: string
-  placeholder?: string
-  disabled?: boolean
-  onChange: (v: string) => void
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-zinc-400">{label}</span>
-      <input
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        spellCheck={false}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
-      />
-    </label>
   )
 }

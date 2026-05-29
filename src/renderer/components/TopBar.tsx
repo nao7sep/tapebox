@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useEnumerationStore } from '@renderer/store/enumeration'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
+import { Button } from '@renderer/components/ui'
 
 const URL_PATTERN = /^https?:\/\//i
 
@@ -67,13 +68,13 @@ export function TopBar() {
           spellCheck={false}
           className="flex-1 rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden"
         />
-        <button
+        <Button
+          variant="primary"
           onClick={() => void add(url)}
           disabled={busy || !url.trim() || !toolsReady}
-          className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:bg-zinc-700 disabled:text-zinc-400"
         >
           {busy ? 'Adding…' : 'Add'}
-        </button>
+        </Button>
       </div>
 
       {!toolsReady && (

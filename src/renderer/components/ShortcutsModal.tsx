@@ -1,13 +1,13 @@
-import { Dialog } from '@renderer/components/Dialog'
+import { Modal } from '@renderer/components/Modal'
 
 const SHORTCUTS: { label: string; keys: string }[] = [
   { label: 'Add the URL in the input', keys: 'Enter' },
-  { label: 'Close a dialog', keys: 'Esc' },
+  { label: 'Close a modal', keys: 'Esc' },
 ]
 
 export function ShortcutsModal({ onClose }: { onClose: () => void }) {
   return (
-    <Dialog title="Keyboard shortcuts" onClose={onClose} size="md">
+    <Modal title="Keyboard shortcuts" onClose={onClose} size="md">
       <div className="space-y-2 text-sm">
         {SHORTCUTS.map((s) => (
           <div key={s.label} className="flex items-center justify-between">
@@ -16,6 +16,6 @@ export function ShortcutsModal({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </div>
-    </Dialog>
+    </Modal>
   )
 }

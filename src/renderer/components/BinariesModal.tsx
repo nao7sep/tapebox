@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useBinariesStore } from '@renderer/store/binaries'
-import { Dialog } from '@renderer/components/Dialog'
+import { Modal } from '@renderer/components/Modal'
+import { Button } from '@renderer/components/ui'
 
 /**
  * Shared modal for installing and updating yt-dlp / ffmpeg / Deno. Each row's
@@ -22,7 +23,7 @@ function rowKind(s: BinaryStatus): RowKind {
   return 'current'
 }
 
-export function BinariesDialog() {
+export function BinariesModal() {
   const statuses = useBinariesStore((s) => s.statuses)
   const progress = useBinariesStore((s) => s.progress)
   const checking = useBinariesStore((s) => s.checking)
@@ -72,21 +73,15 @@ export function BinariesDialog() {
 
   const footer = (
     <>
-      <button onClick={closeModal} className="rounded px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100">
-        Close
-      </button>
-      <button
-        onClick={() => void install(actionable)}
-        disabled={actionable.length === 0}
-        className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 transition disabled:bg-zinc-700 disabled:text-zinc-400"
-      >
+      <Button variant="ghost" onClick={closeModal}>Close</Button>
+      <Button variant="primary" onClick={() => void install(actionable)} disabled={actionable.length === 0}>
         Install all
-      </button>
+      </Button>
     </>
   )
 
   return (
-    <Dialog title="Required tools" onClose={closeModal} size="xl" fitContent footer={footer}>
+    <Modal title="Required tools" onClose={closeModal} size="xl" fitContent footer={footer}>
       <p className="text-sm text-zinc-400">
         yt-dlp, ffmpeg, and Deno handle downloading and media processing.
       </p>
@@ -117,7 +112,7 @@ export function BinariesDialog() {
       {error && (
         <p className="mt-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
       )}
-    </Dialog>
+    </Modal>
   )
 }
 
@@ -152,16 +147,9 @@ function BinaryRow({
         ) : pending ? (
           <span className="text-xs text-zinc-400">starting…</span>
         ) : (
-          <button
-            onClick={onAction}
-            className={
-              warm
-                ? 'rounded bg-amber-500 px-3 py-1 text-xs font-medium text-zinc-950 hover:bg-amber-400'
-                : 'rounded border border-zinc-700 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800'
-            }
-          >
+          <Button variant={warm ? 'warm' : 'secondary'} size="sm" onClick={onAction}>
             {actionLabel(kind)}
-          </button>
+          </Button>
         )}
       </td>
     </tr>

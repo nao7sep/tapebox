@@ -8,8 +8,8 @@ import { useSelectionStore } from '@renderer/store/selection'
 import { formatTime } from '@renderer/lib/format'
 import { Player } from './Player'
 import { ChapterList } from './ChapterList'
-import { RenameDialog } from './RenameDialog'
-import { ExportDialog } from './ExportDialog'
+import { RenameModal } from './RenameModal'
+import { ExportModal } from './ExportModal'
 
 /**
  * Chapter shape as yt-dlp writes it into the sidecar. We validate at the
@@ -165,10 +165,10 @@ export function DetailPane({ item }: { item: Item }) {
       )}
 
       {showRename && (
-        <RenameDialog item={item} onClose={() => setShowRename(false)} />
+        <RenameModal item={item} onClose={() => setShowRename(false)} />
       )}
       {showExport && (
-        <ExportDialog item={item} onClose={() => setShowExport(false)} />
+        <ExportModal item={item} onClose={() => setShowExport(false)} />
       )}
     </div>
   )

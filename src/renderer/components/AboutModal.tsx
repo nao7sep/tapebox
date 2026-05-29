@@ -1,4 +1,4 @@
-import { Dialog } from '@renderer/components/Dialog'
+import { Modal } from '@renderer/components/Modal'
 import { useRuntimeStore } from '@renderer/store/runtime'
 
 const GITHUB_URL = 'https://github.com/nao7sep/tapebox'
@@ -6,7 +6,7 @@ const GITHUB_URL = 'https://github.com/nao7sep/tapebox'
 export function AboutModal({ onClose }: { onClose: () => void }) {
   const version = useRuntimeStore((s) => s.info?.version)
   return (
-    <Dialog title="About TapeBox" onClose={onClose} size="md">
+    <Modal title="About TapeBox" onClose={onClose} size="md">
       <div className="space-y-4 text-sm">
         <div>
           <p className="text-base font-medium text-zinc-100">TapeBox</p>
@@ -25,6 +25,6 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
         </div>
         <p className="text-zinc-400">© 2026 Yoshinao Inoguchi — MIT License</p>
       </div>
-    </Dialog>
+    </Modal>
   )
 }

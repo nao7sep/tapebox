@@ -1,0 +1,139 @@
+import { useState } from 'react'
+import type { Item } from '@shared/domain'
+import { ipcInvoke } from '@renderer/ipc/client'
+import { Modal } from '@renderer/components/Modal'
+import { Button, Field } from '@renderer/components/ui'
+
+type Mode = 'whole' | 'perChapter'
+type Codec = 'copy' | 'mp3' | 'flac'
+
+type Props = { item: Item; onClose: () => void }
+
+/**
+ * Export the item's audio outside the box.
+ *   - "Lossless copy" (codec=copy) avoids re-encoding when source format permits.
+ *   - perChapter requires chapter markers in the sidecar.
+ */
+export function ExportModal({ item, onClose }: Props) {
+  const [mode, setMode] = useState<Mode>(
+    item.chapterCount && item.chapterCount > 0 ? 'perChapter' : 'whole',
+  )
+  const [codec, setCodec] = useState<Codec>('copy')
+  const [destinationDir, setDestinationDir] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ writtenPaths: string[] } | null>(null)
+
+  const canPerChapter = (item.chapterCount ?? 0) > 0
+
+  async function pickDir() {
+    const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose export destination' })
+    if (dir) setDestinationDir(dir)
+  }
+
+  async function run() {
+    if (!destinationDir) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await ipcInvoke('export:audio', {
+        itemId: item.id,
+        destinationDir,
+        mode,
+        codec,
+      })
+      setResult(r)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const footer = (
+    <>
+      <Button variant="ghost" onClick={onClose} disabled={busy}>
+        {result ? 'Done' : 'Cancel'}
+      </Button>
+      {!result && (
+        <Button variant="primary" onClick={() => void run()} disabled={busy || !destinationDir}>
+          {busy ? 'Exporting…' : 'Export'}
+        </Button>
+      )}
+    </>
+  )
+
+  return (
+    <Modal title="Export audio" onClose={onClose} size="md" footer={footer} closeDisabled={busy}>
+      <p className="-mt-2 mb-4 truncate text-xs text-zinc-400">{item.title ?? item.sourceUrl}</p>
+
+      <div className="space-y-4">
+        <Field label="Mode">
+          <div className="flex gap-2">
+            <Radio name="mode" value="whole" checked={mode === 'whole'} onChange={() => setMode('whole')}>
+              Whole audio
+            </Radio>
+            <Radio name="mode" value="perChapter" checked={mode === 'perChapter'} disabled={!canPerChapter} onChange={() => setMode('perChapter')}>
+              Per chapter ({item.chapterCount ?? 0})
+            </Radio>
+          </div>
+        </Field>
+
+        <Field label="Codec">
+          <div className="flex gap-2">
+            <Radio name="codec" value="copy" checked={codec === 'copy'} onChange={() => setCodec('copy')}>
+              Lossless copy
+            </Radio>
+            <Radio name="codec" value="mp3" checked={codec === 'mp3'} onChange={() => setCodec('mp3')}>
+              MP3
+            </Radio>
+            <Radio name="codec" value="flac" checked={codec === 'flac'} onChange={() => setCodec('flac')}>
+              FLAC
+            </Radio>
+          </div>
+          <p className="mt-1 text-xs text-zinc-400">
+            Lossless copy re-uses the original audio stream — fast, bit-perfect when source codec is compatible.
+          </p>
+        </Field>
+
+        <Field label="Destination">
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs">
+              {destinationDir ?? '(not chosen)'}
+            </code>
+            <Button variant="secondary" size="sm" onClick={() => void pickDir()} disabled={busy}>
+              Choose…
+            </Button>
+          </div>
+        </Field>
+      </div>
+
+      {error && (
+        <p className="mt-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
+      )}
+      {result && (
+        <div className="mt-4 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300">
+          Wrote {result.writtenPaths.length} {result.writtenPaths.length === 1 ? 'file' : 'files'}.
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function Radio({
+  name, value, checked, disabled, onChange, children,
+}: {
+  name: string
+  value: string
+  checked: boolean
+  disabled?: boolean
+  onChange: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <label className={'flex items-center gap-2 text-sm ' + (disabled ? 'opacity-50' : '')}>
+      <input type="radio" name={name} value={value} checked={checked} disabled={disabled} onChange={onChange} />
+      {children}
+    </label>
+  )
+}

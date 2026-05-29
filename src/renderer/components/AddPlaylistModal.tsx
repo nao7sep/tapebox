@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EnumEntry } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { formatTime } from '@renderer/lib/format'
+import { Button } from '@renderer/components/ui'
 
 type Props = {
   url: string
@@ -133,9 +134,7 @@ export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
             {!done ? (
               <>
                 <span>Loading {entries.length}…</span>
-                <button onClick={stopLoading} className="text-zinc-300 hover:text-zinc-100">
-                  Stop loading
-                </button>
+                <Button variant="ghost" size="sm" onClick={stopLoading}>Stop loading</Button>
               </>
             ) : (
               <span>{entries.length} items</span>
@@ -145,18 +144,8 @@ export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
         </header>
 
         <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800 p-3">
-          <button
-            onClick={() => bulkSelect(true)}
-            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
-          >
-            Select all
-          </button>
-          <button
-            onClick={() => bulkSelect(false)}
-            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
-          >
-            Clear
-          </button>
+          <Button variant="secondary" size="sm" onClick={() => bulkSelect(true)}>Select all</Button>
+          <Button variant="secondary" size="sm" onClick={() => bulkSelect(false)}>Clear</Button>
           <input
             type="text"
             value={search}
@@ -205,19 +194,10 @@ export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
         <footer className="flex shrink-0 items-center justify-between border-t border-zinc-800 p-4">
           <span className="text-xs text-zinc-400">{selected.size} selected</span>
           <div className="flex gap-2">
-            <button
-              onClick={cancel}
-              className="rounded border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-800"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={confirm}
-              disabled={selected.size === 0 || adding}
-              className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 disabled:bg-zinc-700 disabled:text-zinc-400"
-            >
+            <Button variant="ghost" onClick={cancel}>Cancel</Button>
+            <Button variant="primary" onClick={confirm} disabled={selected.size === 0 || adding}>
               {adding ? 'Adding…' : `Add ${selected.size} ${selected.size === 1 ? 'item' : 'items'}`}
-            </button>
+            </Button>
           </div>
         </footer>
       </div>

@@ -6,13 +6,13 @@ import { useItemsStore } from '@renderer/store/items'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
 import { useEnumerationStore } from '@renderer/store/enumeration'
-import { BinariesDialog } from '@renderer/components/BinariesDialog'
+import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
 import { ItemList } from '@renderer/components/ItemList'
 import { DetailPane } from '@renderer/components/DetailPane'
 import { FilterChips } from '@renderer/components/FilterChips'
 import { AddPlaylistModal } from '@renderer/components/AddPlaylistModal'
-import { SettingsDialog } from '@renderer/components/SettingsDialog'
+import { SettingsModal } from '@renderer/components/SettingsModal'
 import { AboutModal } from '@renderer/components/AboutModal'
 import { ShortcutsModal } from '@renderer/components/ShortcutsModal'
 import { HeaderMenu } from '@renderer/components/HeaderMenu'
@@ -123,14 +123,14 @@ export default function App() {
         )}
 
         {showSettings && (
-          <SettingsDialog onClose={() => setShowSettings(false)} />
+          <SettingsModal onClose={() => setShowSettings(false)} />
         )}
 
         {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
         {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
 
-        {binariesModalOpen && <BinariesDialog />}
+        {binariesModalOpen && <BinariesModal />}
 
         <StatusBar />
       </main>
