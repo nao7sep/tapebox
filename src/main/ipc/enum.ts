@@ -7,11 +7,9 @@ import { log } from '@main/io/logger'
 import type { EnumEntry } from '@shared/ipc-contract'
 
 /**
- * Enumeration session lifecycle, split into two IPC calls so the renderer can
- * attach event subscribers before any streaming begins:
- *   - enum:detect — one-shot probe. Returns kind (single/multi) + source title.
- *   - enum:start  — once the modal is mounted and subscribed, start streaming.
- *                   Returns the sessionId used to filter events and cancel.
+ * Enumeration session lifecycle. The playlist modal subscribes to the events
+ * below, then calls enum:start (which returns the sessionId used to filter
+ * events and cancel the stream).
  *
  * Events:
  *   enum:entry  — per video as it arrives
@@ -20,27 +18,16 @@ import type { EnumEntry } from '@shared/ipc-contract'
  */
 
 const active = new Map<string, enumService.EnumerationHandle>()
-const detectAbortDeadlineMs = 20_000
 
 export function registerEnumHandlers(): void {
-  handle('enum:detect', async ({ url }) => {
-    const ctl = new AbortController()
-    const t = setTimeout(() => ctl.abort(), detectAbortDeadlineMs)
-    try {
-      const detected = await enumService.detectKind(url, ctl.signal)
-      return { kind: detected.kind, sourceTitle: detected.title }
-    } finally {
-      clearTimeout(t)
-    }
-  })
-
   handle('enum:start', async ({ url }) => {
     const sessionId = nanoid(8)
-    const knownSourceIds = new Set(
-      session.getItems()
-        .map((i) => i.sourceId)
-        .filter((x): x is string => !!x),
-    )
+    // Dedupe against the library by video id AND url. id is the reliable key but
+    // is only set once an item has been probed; url is the fallback that catches
+    // items still queued unprobed (added with autostart off).
+    const items = session.getItems()
+    const knownSourceIds = new Set(items.map((i) => i.sourceId).filter((x): x is string => !!x))
+    const knownSourceUrls = new Set(items.map((i) => i.sourceUrl))
 
     const handle_ = enumService.startEnumeration(url, (raw) => {
       const entry: EnumEntry = {
@@ -50,7 +37,7 @@ export function registerEnumHandlers(): void {
         durationSeconds: raw.duration,
         uploadDateUtc: raw.uploadDate ? ymdToUtcIso(raw.uploadDate) : null,
         thumbnailUrl: raw.thumbnailUrl,
-        alreadyInLibrary: knownSourceIds.has(raw.id),
+        alreadyInLibrary: knownSourceIds.has(raw.id) || knownSourceUrls.has(raw.url),
         unavailable: null,
       }
       emit('enum:entry', { sessionId, entry })

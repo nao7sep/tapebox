@@ -47,6 +47,22 @@ export function tick(): void {
 }
 
 /**
+ * Resume every paused item: transition to 'queued' and let tick() schedule them
+ * under the concurrency cap. Called when the user switches autostart on — items
+ * that were parked because autostart was off should start flowing immediately.
+ * Playlist dead-ends park in 'failed', not 'paused', so they're untouched here.
+ */
+export function resumePaused(): void {
+  for (const item of session.getItems()) {
+    if (item.state !== 'paused') continue
+    const next = { ...item, state: 'queued' as const, lastError: null }
+    session.upsertItem(next)
+    emit('items:updated', next)
+  }
+  tick()
+}
+
+/**
  * Awaitable cancel. Resolves only after the Job's run() has settled — i.e.,
  * yt-dlp has exited and disk state is no longer being mutated by this job.
  */

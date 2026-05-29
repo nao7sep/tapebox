@@ -248,6 +248,7 @@ export function registerLibraryHandlers(): void {
         pausedAtUtc: null,
         failedAtUtc: null,
         lastError: null,
+        isPlaylist: false,
       }
       session.upsertItem(item)
       imported.push(item)

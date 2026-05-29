@@ -67,7 +67,9 @@ function paletteFor(item: Item, selected: boolean): string {
 
   const baseBgBorder = archived
     ? 'bg-zinc-950/40 border-zinc-800/70 hover:border-zinc-700'
-    : bgBorderForState(state)
+    : item.isPlaylist
+      ? 'bg-indigo-950/20 border-indigo-900/40 hover:border-indigo-700/60'
+      : bgBorderForState(state)
 
   return `${baseBgBorder} ${selectionRing}`
 }
@@ -92,6 +94,7 @@ function bgBorderForState(state: ItemState): string {
 
 function labelFor(item: Item, progress: Props['progress']): string {
   if (progress) return `${progress.phase} · ${progress.percent.toFixed(0)}%`
+  if (item.isPlaylist) return 'playlist or channel'
   if (item.state === 'downloaded') return 'in box'
   if (item.state === 'failed') return 'failed'
   if (item.state === 'paused') return 'paused'

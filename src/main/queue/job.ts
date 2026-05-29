@@ -45,8 +45,8 @@ export class Job {
 
   private async runInner(): Promise<void> {
     try {
-      await this.probe()
-      if (this.cancelled) return
+      const isVideo = await this.probe()
+      if (!isVideo || this.cancelled) return
       await this.download()
     } catch (err) {
       if (this.cancelled) {
@@ -72,11 +72,17 @@ export class Job {
     emit('items:updated', next)
   }
 
-  private async probe(): Promise<void> {
+  /** Returns true if a downloadable video; false if the URL is a playlist. */
+  private async probe(): Promise<boolean> {
     this.update({ state: 'probing' })
     const result = await ytdlp.probe(this.current()!.sourceUrl, this.controller.signal)
+    if (result.kind === 'playlist') {
+      this.update({ state: 'failed', isPlaylist: true, lastError: null, failedAtUtc: nowUtcIso() })
+      return false
+    }
     this.update({
       state: 'ready',
+      isPlaylist: false,
       sourceId: result.id,
       title: result.title,
       originalTitle: result.originalTitle,
@@ -86,6 +92,7 @@ export class Job {
       thumbnailUrl: result.thumbnail,
       probedAtUtc: nowUtcIso(),
     })
+    return true
   }
 
   private async download(): Promise<void> {

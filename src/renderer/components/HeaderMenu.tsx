@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 type Props = {
+  onPlaylist: () => void
   onSettings: () => void
   onTools: () => void
   onShortcuts: () => void
@@ -11,7 +12,7 @@ type Props = {
  * Hamburger menu in the header. Opens the app's modeless entry points; closes
  * on outside click, Esc, or selecting an item.
  */
-export function HeaderMenu({ onSettings, onTools, onShortcuts, onAbout }: Props) {
+export function HeaderMenu({ onPlaylist, onSettings, onTools, onShortcuts, onAbout }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
 
@@ -32,6 +33,7 @@ export function HeaderMenu({ onSettings, onTools, onShortcuts, onAbout }: Props)
   }, [open])
 
   const items: { label: string; action: () => void }[] = [
+    { label: 'Add playlist / channel', action: onPlaylist },
     { label: 'Settings', action: onSettings },
     { label: 'Required tools', action: onTools },
     { label: 'Keyboard shortcuts', action: onShortcuts },
@@ -67,7 +69,7 @@ export function HeaderMenu({ onSettings, onTools, onShortcuts, onAbout }: Props)
         </svg>
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-44 overflow-hidden rounded-md border border-zinc-800 bg-zinc-900 py-1 shadow-xl">
+        <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-md border border-zinc-800 bg-zinc-900 py-1 shadow-xl">
           {items.map(({ label, action }) => (
             <button
               key={label}

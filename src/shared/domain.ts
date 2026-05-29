@@ -58,6 +58,11 @@ export const ItemSchema = z.object({
   pausedAtUtc: z.string().nullable().default(null),          // when state → 'paused'
   failedAtUtc: z.string().nullable().default(null),          // when state → 'failed'
   lastError: z.string().nullable(),
+
+  // A probe found the URL is a playlist/channel, not a single video. The item
+  // parks in 'failed' but renders as an informational dead-end (DetailPane
+  // offers Copy URL / Open scanner), never as an error to retry.
+  isPlaylist: z.boolean().default(false),
 })
 export type Item = z.infer<typeof ItemSchema>
 

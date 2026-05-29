@@ -52,11 +52,9 @@ export type IpcCalls = {
   'binaries:update':       { req: { name: BinaryName };              res: void }
   'binaries:checkUpdates': { req: undefined;                         res: BinaryStatus[] }
 
-  // ── Enumeration (playlist/channel pre-add) ───────────────────────────────
-  // Split into detect + start so the renderer can attach event subscribers
-  // BEFORE any streaming begins. Race-free: enum:detect is pure probe, and
-  // events for enum:start only fire after subscribers are in place.
-  'enum:detect':           { req: { url: string };                   res: EnumDetectResult }
+  // ── Enumeration (playlist/channel scan) ──────────────────────────────────
+  // The playlist modal subscribes to enum:* events, then calls enum:start.
+  // Returns a sessionId used to filter events and cancel the stream.
   'enum:start':            { req: { url: string };                   res: { sessionId: string } }
   'enum:cancel':           { req: { sessionId: string };             res: void }
 
@@ -94,11 +92,6 @@ export type BinaryStatus = {
 export type ImportResult = {
   imported: Item[]
   rejected: { path: string; reason: string }[]
-}
-
-export type EnumDetectResult = {
-  kind: 'single' | 'multi'
-  sourceTitle: string | null
 }
 
 export type RuntimeInfo = {

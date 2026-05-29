@@ -23,12 +23,19 @@ const SidecarChapterSchema = z.object({
 })
 type Chapter = z.infer<typeof SidecarChapterSchema>
 
-export function DetailPane({ item }: { item: Item }) {
+export function DetailPane({
+  item,
+  onOpenPlaylist,
+}: {
+  item: Item
+  onOpenPlaylist: (url: string) => void
+}) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [sidecar, setSidecar] = useState<SidecarRaw | null>(null)
   const [sidecarError, setSidecarError] = useState<string | null>(null)
   const [showRename, setShowRename] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [copied, setCopied] = useState(false)
   const select = useSelectionStore((s) => s.select)
   const progress = useItemsStore((s) => s.progress[item.id])
 
@@ -75,6 +82,14 @@ export function DetailPane({ item }: { item: Item }) {
     v.load()
   }
 
+  async function copyUrl() {
+    try {
+      await navigator.clipboard.writeText(item.sourceUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* clipboard unavailable; nothing actionable to show */ }
+  }
+
   async function archive()   { await ipcInvoke('library:archive',   { itemIds: [item.id] }) }
   async function unarchive() { await ipcInvoke('library:unarchive', { itemIds: [item.id] }) }
   async function cancel()    { await ipcInvoke('downloads:cancel',  { itemId: item.id }) }
@@ -101,7 +116,7 @@ export function DetailPane({ item }: { item: Item }) {
           {item.uploader ?? 'unknown uploader'}
           {item.durationSeconds != null && ` · ${formatTime(item.durationSeconds)}`}
           {' · '}
-          {item.state}
+          {item.isPlaylist ? 'playlist or channel' : item.state}
           {item.archivedAtUtc && ' · archived'}
         </p>
         <p className="mt-1 truncate text-xs text-zinc-400">
@@ -120,23 +135,40 @@ export function DetailPane({ item }: { item: Item }) {
         <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} />
       )}
 
-      {item.state !== 'downloaded' && (
-        <div className="rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
-          {progress
-            ? `${progress.phase}… ${progress.percent.toFixed(0)}%`
-            : item.state === 'failed'
-              ? `Failed: ${item.lastError ?? 'unknown error'}`
-              : item.state === 'paused'
-                ? 'Paused. Click Resume below to continue.'
-                : 'Waiting in queue…'}
+      {item.isPlaylist ? (
+        <div className="rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-5">
+          <h3 className="flex items-center gap-2 text-sm font-medium text-indigo-200">
+            <PlaylistGlyph />
+            This is a playlist or channel
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-300">
+            TapeBox adds one video at a time here. To choose which videos to take
+            from this, open the scanner — it lists every video so you can pick.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <ActionButton onClick={() => onOpenPlaylist(item.sourceUrl)}>Open scanner</ActionButton>
+            <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
+          </div>
         </div>
+      ) : (
+        item.state !== 'downloaded' && (
+          <div className="rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
+            {progress
+              ? `${progress.phase}… ${progress.percent.toFixed(0)}%`
+              : item.state === 'failed'
+                ? `Failed: ${item.lastError ?? 'unknown error'}`
+                : item.state === 'paused'
+                  ? 'Paused. Click Resume below to continue.'
+                  : 'Waiting in queue…'}
+          </div>
+        )
       )}
 
       <div className="flex flex-wrap gap-2">
-        {(item.state === 'queued' || item.state === 'probing' || item.state === 'downloading') && (
+        {!item.isPlaylist && (item.state === 'queued' || item.state === 'probing' || item.state === 'downloading') && (
           <ActionButton onClick={cancel}>Cancel</ActionButton>
         )}
-        {(item.state === 'failed' || item.state === 'paused') && (
+        {!item.isPlaylist && (item.state === 'failed' || item.state === 'paused') && (
           <ActionButton onClick={retry}>Resume</ActionButton>
         )}
         {item.state === 'downloaded' && (
@@ -195,5 +227,18 @@ function ActionButton({
     >
       {children}
     </button>
+  )
+}
+
+/** Stacked-lines glyph (a "list" mark) for the playlist/channel pane. */
+function PlaylistGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="13" y2="17" />
+      <polygon points="17,15 22,18 17,21" fill="currentColor" stroke="none" />
+    </svg>
   )
 }

@@ -5,7 +5,6 @@ import { startIpcSync } from '@renderer/ipc/sync'
 import { useItemsStore } from '@renderer/store/items'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
-import { useEnumerationStore } from '@renderer/store/enumeration'
 import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
 import { ItemList } from '@renderer/components/ItemList'
@@ -38,12 +37,17 @@ export default function App() {
   const binaryStatuses = useBinariesStore((s) => s.statuses)
   const binariesModalOpen = useBinariesStore((s) => s.modalOpen)
   const openBinariesModal = useBinariesStore((s) => s.openModal)
-  const pendingEnum = useEnumerationStore((s) => s.pending)
-  const closeEnum = useEnumerationStore((s) => s.close)
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [showPlaylist, setShowPlaylist] = useState(false)
+  const [playlistInitialUrl, setPlaylistInitialUrl] = useState('')
   const decidedFirstRun = useRef(false)
+
+  function openPlaylist(initialUrl = '') {
+    setPlaylistInitialUrl(initialUrl)
+    setShowPlaylist(true)
+  }
 
   useEffect(() => {
     const stop = startIpcSync()
@@ -84,13 +88,14 @@ export default function App() {
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
             <HeaderMenu
+              onPlaylist={() => openPlaylist()}
               onSettings={() => setShowSettings(true)}
               onTools={() => openBinariesModal()}
               onShortcuts={() => setShowShortcuts(true)}
               onAbout={() => setShowAbout(true)}
             />
           </div>
-          <TopBar />
+          <TopBar clipboardEnabled={!showPlaylist} />
           <FilterChips />
         </header>
 
@@ -100,7 +105,7 @@ export default function App() {
           </aside>
           <section className="flex-1 overflow-y-auto">
             {selectedItem ? (
-              <DetailPane item={selectedItem} />
+              <DetailPane item={selectedItem} onOpenPlaylist={openPlaylist} />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-400">
                 Select a tape from the list.
@@ -109,12 +114,8 @@ export default function App() {
           </section>
         </div>
 
-        {pendingEnum && (
-          <AddPlaylistModal
-            url={pendingEnum.url}
-            sourceTitle={pendingEnum.sourceTitle}
-            onClose={closeEnum}
-          />
+        {showPlaylist && (
+          <AddPlaylistModal initialUrl={playlistInitialUrl} onClose={() => setShowPlaylist(false)} />
         )}
 
         {showSettings && (

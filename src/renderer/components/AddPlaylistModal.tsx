@@ -2,30 +2,25 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EnumEntry } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { formatTime } from '@renderer/lib/format'
-import { Button } from '@renderer/components/ui'
+import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
+import { Modal } from '@renderer/components/Modal'
+import { Button, INPUT_CLASS } from '@renderer/components/ui'
 
-type Props = {
-  url: string
-  sourceTitle: string | null
-  onClose: () => void
-}
+type Props = { onClose: () => void; initialUrl?: string }
 
 /**
- * Playlist / channel adder.
+ * Add a playlist or channel. The user pastes/scans a URL, reviews the videos in
+ * a checkable table, and adds the selected ones in bulk.
  *
- * The modal owns the enum:start lifecycle. The flow:
- *   1. useEffect runs once on mount.
- *   2. Subscriptions for enum:entry / enum:done / enum:error are attached
- *      FIRST. They use a sessionId ref to filter events; the ref starts null
- *      and is populated when enum:start returns.
- *   3. Only after subscriptions are wired does the modal call enum:start.
- *
- * Result: there is no window in which main can emit events before the
- * renderer is listening, even if the renderer's event loop is busy.
+ * The modal owns the enum session: it subscribes to enum:* once on mount and
+ * filters events by the current sessionId (set when enum:start resolves), so a
+ * re-scan cleanly supersedes the previous stream.
  */
-export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
+export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
+  const { url, setUrl, onPaste } = useClipboardUrl(true, initialUrl)
+  const [scanning, setScanning] = useState(false)
+  const [scanned, setScanned] = useState(false)
   const [entries, setEntries] = useState<EnumEntry[]>([])
-  const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
@@ -47,27 +42,42 @@ export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
         }
       }),
       ipcOn('enum:done', (e) => {
-        if (e.sessionId === sessionIdRef.current) setDone(true)
+        if (e.sessionId === sessionIdRef.current) { setScanning(false); setScanned(true) }
       }),
       ipcOn('enum:error', (e) => {
-        if (e.sessionId === sessionIdRef.current) { setDone(true); setError(e.error) }
+        if (e.sessionId === sessionIdRef.current) { setScanning(false); setScanned(true); setError(e.error) }
       }),
     ]
-
-    // Subscriptions are now live. Safe to start streaming.
-    ipcInvoke('enum:start', { url })
-      .then((r) => { sessionIdRef.current = r.sessionId })
-      .catch((err) => { setError(String(err)); setDone(true) })
-
     return () => {
       offs.forEach((off) => off())
-      // Best-effort cancel on unmount. If the modal closes via Cancel button
-      // we've already called enum:cancel; this is a safety net for other
-      // unmount paths (programmatic close, page navigation in dev mode, etc.).
       const sid = sessionIdRef.current
       if (sid) void ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
     }
-  }, [url])
+  }, [])
+
+  function scan() {
+    const v = url.trim()
+    if (!v || scanning) return
+    const prev = sessionIdRef.current
+    if (prev) void ipcInvoke('enum:cancel', { sessionId: prev }).catch(() => {})
+    sessionIdRef.current = null
+    setEntries([])
+    setSelected(new Set())
+    setSearch('')
+    setError(null)
+    setScanned(false)
+    setScanning(true)
+    void ipcInvoke('enum:start', { url: v })
+      .then((r) => { sessionIdRef.current = r.sessionId })
+      .catch((err) => { setError(String(err)); setScanning(false); setScanned(true) })
+  }
+
+  async function stopScan() {
+    const sid = sessionIdRef.current
+    if (sid) await ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
+    setScanning(false)
+    setScanned(true)
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -75,11 +85,11 @@ export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
     return entries.filter((e) => (e.title ?? '').toLowerCase().includes(q))
   }, [entries, search])
 
-  function toggle(url: string) {
+  function toggle(sourceUrl: string) {
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(url)) next.delete(url)
-      else next.add(url)
+      if (next.has(sourceUrl)) next.delete(sourceUrl)
+      else next.add(sourceUrl)
       return next
     })
   }
@@ -96,18 +106,9 @@ export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
     })
   }
 
-  async function stopLoading() {
-    const sid = sessionIdRef.current
-    if (sid) await ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
-    setDone(true)
-  }
-
   async function confirm() {
     const urls = Array.from(selected)
-    if (urls.length === 0) {
-      onClose()
-      return
-    }
+    if (urls.length === 0) return
     setAdding(true)
     try {
       await ipcInvoke('downloads:addBulk', { urls })
@@ -117,90 +118,102 @@ export function AddPlaylistModal({ url, sourceTitle, onClose }: Props) {
     }
   }
 
-  async function cancel() {
-    const sid = sessionIdRef.current
-    if (sid && !done) await ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
-    onClose()
-  }
+  const inBoxCount = entries.filter((e) => e.alreadyInLibrary).length
+  const footer = (
+    <>
+      {inBoxCount > 0 && (
+        <span className="mr-auto text-xs text-amber-400">{inBoxCount} already in box</span>
+      )}
+      <Button variant="ghost" onClick={onClose} disabled={adding}>Cancel</Button>
+      <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0 || adding}>
+        {adding ? 'Adding…' : `Add ${selected.size} ${selected.size === 1 ? 'item' : 'items'}`}
+      </Button>
+    </>
+  )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm">
-      <div className="flex h-[80vh] w-full max-w-3xl flex-col rounded-lg border border-zinc-800 bg-zinc-900 shadow-xl">
-        <header className="shrink-0 border-b border-zinc-800 p-4">
-          <h2 className="text-base font-medium">
-            Add from {sourceTitle ? <span className="text-zinc-200">{sourceTitle}</span> : 'playlist'}
-          </h2>
-          <div className="mt-2 flex items-center gap-3 text-xs text-zinc-400">
-            {!done ? (
-              <>
-                <span>Loading {entries.length}…</span>
-                <Button variant="ghost" size="sm" onClick={stopLoading}>Stop loading</Button>
-              </>
-            ) : (
-              <span>{entries.length} items</span>
-            )}
-            {error && <span className="text-red-400">· {error}</span>}
-          </div>
-        </header>
-
-        <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800 p-3">
-          <Button variant="secondary" size="sm" onClick={() => bulkSelect(true)}>Select all</Button>
-          <Button variant="secondary" size="sm" onClick={() => bulkSelect(false)}>Clear</Button>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search title…"
-            className="flex-1 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden"
-          />
-        </div>
-
-        <ul className="flex-1 overflow-y-auto p-2">
-          {filtered.map((e) => {
-            const disabled = e.alreadyInLibrary || e.unavailable !== null
-            const checked = selected.has(e.sourceUrl) && !disabled
-            return (
-              <li key={e.sourceUrl}>
-                <label
-                  className={
-                    'flex items-center gap-3 rounded px-2 py-1.5 text-sm ' +
-                    (disabled ? 'opacity-50' : 'hover:bg-zinc-800/60')
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggle(e.sourceUrl)}
-                    disabled={disabled}
-                  />
-                  <span className="min-w-0 flex-1 truncate">
-                    {e.title ?? e.sourceUrl}
-                    {e.alreadyInLibrary && (
-                      <span className="ml-2 text-xs text-zinc-400">(in box)</span>
-                    )}
-                    {e.unavailable && (
-                      <span className="ml-2 text-xs text-zinc-400">({e.unavailable.reason})</span>
-                    )}
-                  </span>
-                  <span className="text-xs tabular-nums text-zinc-400">
-                    {e.durationSeconds != null ? formatTime(e.durationSeconds) : ''}
-                  </span>
-                </label>
-              </li>
-            )
-          })}
-        </ul>
-
-        <footer className="flex shrink-0 items-center justify-between border-t border-zinc-800 p-4">
-          <span className="text-xs text-zinc-400">{selected.size} selected</span>
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={cancel}>Cancel</Button>
-            <Button variant="primary" onClick={confirm} disabled={selected.size === 0 || adding}>
-              {adding ? 'Adding…' : `Add ${selected.size} ${selected.size === 1 ? 'item' : 'items'}`}
-            </Button>
-          </div>
-        </footer>
+    <Modal title="Add playlist or channel" onClose={onClose} size="2xl" footer={footer}>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onPaste={onPaste}
+          onKeyDown={(e) => { if (e.key === 'Enter') scan() }}
+          placeholder="Paste a playlist or channel URL"
+          spellCheck={false}
+          className={`flex-1 ${INPUT_CLASS}`}
+        />
+        <Button
+          variant={scanning ? 'secondary' : 'primary'}
+          onClick={() => (scanning ? void stopScan() : scan())}
+          disabled={!scanning && !url.trim()}
+        >
+          {scanning ? 'Stop' : 'Scan'}
+        </Button>
       </div>
-    </div>
+
+      {!scanning && !scanned ? (
+        <p className="mt-3 text-center text-sm text-zinc-400">
+          Paste a playlist or channel URL, then Scan.
+        </p>
+      ) : (
+        <div className="mt-3 text-center">
+          <div className="text-2xl font-semibold tabular-nums text-sky-300">{entries.length}</div>
+          <div className="mt-0.5 text-xs text-zinc-400">
+            {scanning ? 'scanning…' : entries.length === 1 ? 'video found' : 'videos found'}
+          </div>
+          {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
+        </div>
+      )}
+
+      {entries.length > 0 && (
+        <>
+          <div className="mt-3 flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => bulkSelect(true)}>Select all</Button>
+            <Button variant="secondary" size="sm" onClick={() => bulkSelect(false)}>Clear</Button>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search title…"
+              className={`flex-1 ${INPUT_CLASS}`}
+            />
+          </div>
+
+          <ul className="mt-2 max-h-[45vh] overflow-y-auto">
+            {filtered.map((e) => {
+              const disabled = e.alreadyInLibrary || e.unavailable !== null
+              const checked = selected.has(e.sourceUrl) && !disabled
+              return (
+                <li key={e.sourceUrl}>
+                  <label
+                    className={
+                      'flex items-center gap-3 rounded px-2 py-1.5 text-sm ' +
+                      (disabled ? 'opacity-50' : 'hover:bg-zinc-800/60')
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(e.sourceUrl)}
+                      disabled={disabled}
+                    />
+                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-amber-400">in box</span>}
+                    <span className="min-w-0 flex-1 truncate">
+                      {e.title ?? e.sourceUrl}
+                      {e.unavailable && <span className="ml-2 text-xs text-zinc-400">({e.unavailable.reason})</span>}
+                    </span>
+                    <span className="text-xs tabular-nums text-zinc-400">
+                      {e.durationSeconds != null ? formatTime(e.durationSeconds) : ''}
+                    </span>
+                  </label>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
+    </Modal>
   )
 }

@@ -67,7 +67,7 @@ export function BinariesModal() {
   }
 
   return (
-    <Modal title="Required tools" onClose={closeModal} size="xl" fitContent>
+    <Modal title="Required tools" onClose={closeModal} size="2xl" fitContent>
       <p className="text-sm text-zinc-400">
         yt-dlp, ffmpeg, and Deno handle downloading and media processing.
       </p>

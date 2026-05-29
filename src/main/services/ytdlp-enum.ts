@@ -1,10 +1,7 @@
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 import { getSettings } from '@main/store/config'
-import { withRetry } from '@main/io/retry'
 import {
-  execCapture,
-  IdleTimeoutError,
   makeLineBuffer,
   spawnStreaming,
   waitForExit,
@@ -12,13 +9,8 @@ import {
 import { ytdlpEnv } from './ytdlp'
 
 /**
- * Playlist / channel enumeration via yt-dlp.
- *
- * Two operations:
- *   - detectKind: one-shot, runs --dump-single-json to learn if URL points to
- *     a single video or a multi-entry container.
- *   - startEnumeration: streams entries from --flat-playlist -j, one JSON
- *     per line, calling onEntry as each arrives.
+ * Playlist / channel enumeration via yt-dlp. startEnumeration streams entries
+ * from --flat-playlist -j, one JSON per line, calling onEntry as each arrives.
  */
 
 export type EnumeratedEntry = {
@@ -28,27 +20,6 @@ export type EnumeratedEntry = {
   duration: number | null
   uploadDate: string | null
   thumbnailUrl: string | null
-}
-
-export async function detectKind(
-  url: string,
-  signal: AbortSignal,
-): Promise<{ kind: 'single' | 'multi'; title: string | null }> {
-  const policy = getSettings().network.lookups
-  const { stdout } = await withRetry(
-    policy,
-    () =>
-      execCapture(
-        binaryPath('yt-dlp'),
-        ['--flat-playlist', '--dump-single-json', '--no-warnings', url],
-        { env: ytdlpEnv(), signal, idleTimeoutMs: policy.timeoutMs },
-      ),
-    { signal, isRetryable: (e) => e instanceof IdleTimeoutError },
-  )
-  const info = JSON.parse(stdout) as Record<string, unknown>
-  const isMulti = info['_type'] === 'playlist' || Array.isArray(info['entries'])
-  const title = typeof info['title'] === 'string' ? info['title'] : null
-  return { kind: isMulti ? 'multi' : 'single', title }
 }
 
 export type EnumerationHandle = {

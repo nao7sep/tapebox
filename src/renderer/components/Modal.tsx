@@ -1,6 +1,11 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 
-type ModalSize = 'md' | 'lg' | 'xl' | '2xl'
+/**
+ * Two tiers, by content:
+ *   md  — prompts & short forms (Confirm, About, Shortcuts, Export, Rename)
+ *   2xl — data-dense panels (Settings, Add-playlist, Required-tools)
+ */
+type ModalSize = 'md' | '2xl'
 
 type ModalProps = {
   title: string
@@ -18,8 +23,6 @@ type ModalProps = {
 
 const SIZE_CLASS: Record<ModalSize, string> = {
   md: 'max-w-md',
-  lg: 'max-w-lg',
-  xl: 'max-w-2xl',
   '2xl': 'max-w-3xl',
 }
 

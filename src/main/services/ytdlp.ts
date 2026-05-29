@@ -27,7 +27,8 @@ export function ytdlpEnv(): NodeJS.ProcessEnv {
 }
 
 export type ProbeChapter = { start_time: number; end_time: number; title: string }
-export type ProbeResult = {
+export type ProbeVideo = {
+  kind: 'video'
   id: string
   title: string
   originalTitle: string | null
@@ -36,10 +37,18 @@ export type ProbeResult = {
   thumbnail: string | null
   chapters: ProbeChapter[] | null
 }
+/** A single video to download, or a playlist/channel the caller should reject. */
+export type ProbeResult = ProbeVideo | { kind: 'playlist' }
 
 /**
- * Single-video probe. Returns parsed --dump-json output.
- * For playlist URLs use startEnumeration in ytdlp-enum.ts.
+ * Single-video probe. Returns the parsed --dump-json video, or { kind:
+ * 'playlist' } when the URL is a playlist/channel rather than one video.
+ *
+ * Detection: --no-playlist isolates a single video for watch?v=…&list=… URLs,
+ * but for a pure playlist/channel URL it has nothing to isolate, so yt-dlp
+ * dumps one compact JSON line per entry. >1 line therefore means "not a single
+ * video" — we report 'playlist' so the caller can steer the user to the scanner
+ * instead of failing on a JSON parse error.
  *
  * Retries only on a stall (IdleTimeoutError): a clean non-zero exit means
  * yt-dlp already ran its own --retries and the URL is genuinely unusable.
@@ -56,8 +65,12 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
       ),
     { signal, isRetryable: (e) => e instanceof IdleTimeoutError },
   )
-  const info = JSON.parse(stdout) as Record<string, unknown>
+  const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length > 1) return { kind: 'playlist' }
+
+  const info = JSON.parse(lines[0] ?? '') as Record<string, unknown>
   return {
+    kind: 'video',
     id: String(info['id'] ?? ''),
     title: String(info['title'] ?? ''),
     // TODO: yt-dlp can return locale-translated titles. Use --extractor-args
