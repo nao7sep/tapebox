@@ -7,7 +7,7 @@ import { withRetry, withRequestTimeout } from './retry'
  * lookups (GitHub releases, evermeet ffmpeg info).
  */
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const policy = getSettings().network.metadata
+  const policy = getSettings().network.lookups
   return withRetry(policy, () =>
     withRequestTimeout(policy.timeoutMs, undefined, async (signal) => {
       const res = await fetch(url, { ...init, signal })

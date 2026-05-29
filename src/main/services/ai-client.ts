@@ -2,50 +2,26 @@ import OpenAI from 'openai'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { withRetry } from '@main/io/retry'
-import type { AiProfile } from '@shared/settings'
-import { readApiKey } from './api-keys'
+import { readAiKey } from './api-keys'
 
 /**
- * AI operations dispatch.
- *
- * For v1 we only support kind === 'openai-compatible', so the dispatcher is
- * trivial. When Anthropic / Gemini native APIs are added later, switch on
- * profile.kind here.
+ * Slug generation against the single OpenAI-compatible endpoint configured in
+ * Settings. The client is constructed per-call so config edits take effect
+ * without restart. withRetry owns the retry schedule (SDK retries disabled to
+ * avoid compounding).
  */
-
-function activeProfile(): AiProfile {
-  const settings = getSettings()
-  if (!settings.activeAiProfileId) throw new Error('No active AI profile selected')
-  const profile = settings.aiProfiles.find((p) => p.id === settings.activeAiProfileId)
-  if (!profile) throw new Error(`Active AI profile not found: ${settings.activeAiProfileId}`)
-  return profile
-}
-
 export async function generateSlug(opts: {
   title: string | null
   uploader?: string | null
 }): Promise<string> {
-  const profile = activeProfile()
-  const apiKey = await readApiKey(profile.id)
-  if (!apiKey) throw new Error(`No API key configured for profile "${profile.name}"`)
+  const { ai, network } = getSettings()
+  const apiKey = await readAiKey()
+  if (!apiKey) throw new Error('No AI API key configured')
 
-  switch (profile.kind) {
-    case 'openai-compatible':
-      return generateSlugOpenAiCompat(profile, apiKey, opts)
-  }
-}
-
-async function generateSlugOpenAiCompat(
-  profile: AiProfile,
-  apiKey: string,
-  opts: { title: string | null; uploader?: string | null },
-): Promise<string> {
-  const policy = getSettings().network.ai
-  // maxRetries: 0 — our withRetry owns the retry schedule, so the SDK's own
-  // backoff doesn't compound with it. timeout bounds each individual attempt.
+  const policy = network.ai
   const client = new OpenAI({
     apiKey,
-    baseURL: profile.baseUrl,
+    baseURL: ai.baseUrl,
     maxRetries: 0,
     timeout: policy.timeoutMs,
   })
@@ -59,12 +35,12 @@ async function generateSlugOpenAiCompat(
     opts.uploader ? `Uploader: ${opts.uploader}` : '',
   ].filter(Boolean).join('\n')
 
-  log.info('ai: generateSlug request', { profile: profile.id, model: profile.model })
+  log.info('ai: generateSlug request', { model: ai.model })
   const res = await withRetry(
     policy,
     () =>
       client.chat.completions.create({
-        model: profile.model,
+        model: ai.model,
         messages: [
           { role: 'system', content: 'You generate short, descriptive, English file slugs.' },
           { role: 'user', content: userPrompt },

@@ -1,4 +1,4 @@
-import { safeStorage } from 'electron'
+import { app, safeStorage } from 'electron'
 import { handle } from './handle'
 
 /**
@@ -12,5 +12,6 @@ export function registerAppHandlers(): void {
     platform: process.platform,
     arch: process.arch,
     encryptionAvailable: safeStorage.isEncryptionAvailable(),
+    version: app.getVersion(),
   }))
 }

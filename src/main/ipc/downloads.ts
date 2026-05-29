@@ -44,11 +44,12 @@ function transition(itemId: string, patch: Partial<Item>): void {
 
 function makeQueuedItem(url: string): Item {
   const autostart = getSettings().autoStartDownloads
+  const now = nowUtcIso()
   return {
     id: nanoid(10),
     sourceUrl: url,
     state: autostart ? 'queued' : 'paused',
-    addedAtUtc: nowUtcIso(),
+    addedAtUtc: now,
     sourceId: null,
     title: null,
     originalTitle: null,
@@ -59,10 +60,13 @@ function makeQueuedItem(url: string): Item {
     probedAtUtc: null,
     filename: null,
     sidecarFilename: null,
+    downloadStartedAtUtc: null,
     downloadedAtUtc: null,
     slug: null,
     renamedAtUtc: null,
     archivedAtUtc: null,
+    pausedAtUtc: autostart ? null : now,
+    failedAtUtc: null,
     lastError: null,
   }
 }

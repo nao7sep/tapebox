@@ -1,25 +1,5 @@
 import { z } from 'zod'
 
-/**
- * An OpenAI-compatible provider profile. The API key is NOT stored here —
- * it's encrypted with Electron's safeStorage and persisted alongside in a
- * separate file, keyed by profile id. Config is safe to read/share without
- * leaking credentials.
- */
-/**
- * 'kind' is forward-looking: 'openai-compatible' covers OpenAI, OpenRouter,
- * Groq, Together, etc. When native Anthropic or Gemini providers are added
- * later, the enum grows and ai-client dispatches on kind.
- */
-export const AiProfileSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  baseUrl: z.string().url(),
-  model: z.string(),
-  kind: z.enum(['openai-compatible']).default('openai-compatible'),
-})
-export type AiProfile = z.infer<typeof AiProfileSchema>
-
 export const BinaryEntrySchema = z.object({
   installedVersion: z.string().nullable(),
   lastCheckedAtUtc: z.string().nullable(),
@@ -27,28 +7,44 @@ export const BinaryEntrySchema = z.object({
 export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
 
 /**
+ * Single OpenAI-compatible provider configuration. The API key is NOT stored
+ * here — it's encrypted with Electron's safeStorage and persisted alongside in
+ * a separate file under a fixed slot. Config is safe to read/share without
+ * leaking credentials.
+ */
+export const AiSettingsSchema = z.object({
+  baseUrl: z.string().url(),
+  model: z.string().min(1),
+})
+export type AiSettings = z.infer<typeof AiSettingsSchema>
+
+/**
  * Retry/timeout policy for one class of network work.
- *   - timeoutMs: per-attempt deadline (a request timeout, or an idle/stall
- *     watchdog for streaming transfers).
- *   - intervals: wait-before-retry schedule in ms. Its LENGTH is the retry
- *     count, so [] means no retries and attempts = intervals.length + 1.
+ *   - timeoutMs:   per-attempt deadline (a request timeout, or an idle/stall
+ *                  watchdog for streaming transfers).
+ *   - retries:     number of retry attempts after the first failure.
+ *                  Total attempts = retries + 1.
+ *   - intervals:   wait-before-retry schedule in ms. If retries > intervals.length,
+ *                  the last interval is reused for further retries.
  *   - jitterRatio: each interval is randomized by ±ratio to avoid thundering herd.
  */
 export const RetryPolicySchema = z.object({
   timeoutMs: z.number().int().min(1000),
-  intervals: z.array(z.number().int().min(0)).max(10),
+  retries: z.number().int().min(0).max(20),
+  intervals: z.array(z.number().int().min(0)).max(20),
   jitterRatio: z.number().min(0).max(1),
 })
 export type RetryPolicy = z.infer<typeof RetryPolicySchema>
 
 /**
- * Network work split into the few groups that share a retry/timeout shape:
- *   - metadata: quick request→response (yt-dlp probe/detect, version lookups)
- *   - download: large transfers (binary downloads, yt-dlp media download)
- *   - ai:       slug generation via the AI provider
+ * Network work split into the groups that share a retry/timeout shape:
+ *   - lookups:  small request→response — yt-dlp probe/detect/enumerate,
+ *               GitHub releases, evermeet.cx ffmpeg info.
+ *   - download: large transfers — binary downloads, yt-dlp media download.
+ *   - ai:       slug generation via the AI provider.
  */
 export const NetworkSettingsSchema = z.object({
-  metadata: RetryPolicySchema,
+  lookups: RetryPolicySchema,
   download: RetryPolicySchema,
   ai: RetryPolicySchema,
 })
@@ -65,8 +61,7 @@ export const SettingsSchema = z.object({
   // Check GitHub/upstream for newer yt-dlp/ffmpeg/deno releases once at startup.
   autoCheckBinaryUpdates: z.boolean(),
 
-  aiProfiles: z.array(AiProfileSchema),
-  activeAiProfileId: z.string().nullable(),
+  ai: AiSettingsSchema,
 
   binaries: z.object({
     'yt-dlp': BinaryEntrySchema,
@@ -91,8 +86,10 @@ export function defaultSettings(libraryDir: string): Settings {
     autoStartDownloads: true,
     maxConcurrentDownloads: 2,
     autoCheckBinaryUpdates: true,
-    aiProfiles: [],
-    activeAiProfileId: null,
+    ai: {
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5.4-mini',
+    },
     binaries: {
       'yt-dlp': { installedVersion: null, lastCheckedAtUtc: null },
       ffmpeg:   { installedVersion: null, lastCheckedAtUtc: null },
@@ -100,32 +97,9 @@ export function defaultSettings(libraryDir: string): Settings {
     },
     retainLogCount: 50,
     network: {
-      metadata: { timeoutMs: 30_000, intervals: [1_000, 3_000, 8_000], jitterRatio: 0.2 },
-      download: { timeoutMs: 60_000, intervals: [2_000, 10_000], jitterRatio: 0.2 },
-      ai:       { timeoutMs: 60_000, intervals: [1_000, 4_000, 10_000], jitterRatio: 0.25 },
+      lookups:  { timeoutMs: 30_000, retries: 3, intervals: [1_000, 3_000, 8_000], jitterRatio: 0.2 },
+      download: { timeoutMs: 60_000, retries: 2, intervals: [3_000, 15_000],       jitterRatio: 0.2 },
+      ai:       { timeoutMs: 60_000, retries: 3, intervals: [2_000, 5_000, 15_000], jitterRatio: 0.3 },
     },
   }
-}
-
-/**
- * Default AI profiles offered when the user opens Settings for the first time.
- * Models chosen for cheap, fast slug generation (May 2026 lineup); user can edit.
- */
-export function defaultAiProfileSuggestions(): AiProfile[] {
-  return [
-    {
-      id: 'openai',
-      name: 'OpenAI',
-      baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-5.4-mini',
-      kind: 'openai-compatible',
-    },
-    {
-      id: 'openrouter',
-      name: 'OpenRouter',
-      baseUrl: 'https://openrouter.ai/api/v1',
-      model: 'google/gemini-2.5-flash-lite',
-      kind: 'openai-compatible',
-    },
-  ]
 }

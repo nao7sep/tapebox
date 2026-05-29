@@ -240,10 +240,13 @@ export function registerLibraryHandlers(): void {
         probedAtUtc: nowUtcIso(),
         filename: mediaBasename,
         sidecarFilename: `${stem}.json`,
+        downloadStartedAtUtc: null,
         downloadedAtUtc: typeof tb['downloadedAtUtc'] === 'string' ? tb['downloadedAtUtc'] : nowUtcIso(),
         slug: typeof tb['slug'] === 'string' ? tb['slug'] : null,
         renamedAtUtc: typeof tb['renamedAtUtc'] === 'string' ? tb['renamedAtUtc'] : null,
         archivedAtUtc: null,
+        pausedAtUtc: null,
+        failedAtUtc: null,
         lastError: null,
       }
       session.upsertItem(item)

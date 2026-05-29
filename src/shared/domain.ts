@@ -42,18 +42,21 @@ export const ItemSchema = z.object({
   probedAtUtc: z.string().nullable(),
 
   // Filled by download.
-  filename: z.string().nullable(),         // basename only, no path
-  sidecarFilename: z.string().nullable(),  // basename only, no path
+  filename: z.string().nullable(),                          // basename only, no path
+  sidecarFilename: z.string().nullable(),                   // basename only, no path
+  downloadStartedAtUtc: z.string().nullable().default(null), // when state → 'downloading'
   downloadedAtUtc: z.string().nullable(),
 
   // Filled by rename.
   slug: z.string().nullable(),
   renamedAtUtc: z.string().nullable(),
 
-  // Archive (inbox-zero).
+  // Archive marker (orthogonal to state).
   archivedAtUtc: z.string().nullable(),
 
-  // Live error tracking.
+  // State-transition markers.
+  pausedAtUtc: z.string().nullable().default(null),          // when state → 'paused'
+  failedAtUtc: z.string().nullable().default(null),          // when state → 'failed'
   lastError: z.string().nullable(),
 })
 export type Item = z.infer<typeof ItemSchema>

@@ -1,37 +1,96 @@
 import { useEffect, useState } from 'react'
-import {
-  defaultAiProfileSuggestions,
-  type AiProfile,
-  type NetworkGroup,
-  type RetryPolicy,
-  type Settings,
-} from '@shared/settings'
+import type { AiSettings, NetworkGroup, RetryPolicy, Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
 import { Dialog } from '@renderer/components/Dialog'
+import { ConfirmDialog } from '@renderer/components/ConfirmDialog'
 
 type Props = { onClose: () => void }
+type Tab = 'behavior' | 'ai' | 'network'
 
 /**
- * Settings dialog covering the user-editable surfaces in v1:
- *   - Behavior (autostart, concurrency)
- *   - AI profiles (add/select/delete, set/clear API key)
+ * Settings is a draft form: every edit lives in local state, the footer Save
+ * button persists everything in one IPC roundtrip, and closing with unsaved
+ * changes prompts a shared ConfirmDialog to discard. The AI tab folds the API
+ * key into the same save (no separate "Save key" button).
  *
- * Library directory and log retention are intentionally left out of the UI
- * for v1 — defaults are sensible; advanced users can edit
- * ~/.tapebox/config.json directly. Surfaced in a later phase if needed.
+ * Library directory and log retention are intentionally left out of the UI for
+ * v1 — defaults are sensible; advanced users can edit ~/.tapebox/config.json
+ * directly.
  */
 export function SettingsDialog({ onClose }: Props) {
-  const [settings, setSettings] = useState<Settings | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const runtime = useRuntimeStore((s) => s.info)
+  const [tab, setTab] = useState<Tab>('behavior')
+  const [original, setOriginal] = useState<Settings | null>(null)
+  const [draft, setDraft] = useState<Settings | null>(null)
+  const [hadApiKey, setHadApiKey] = useState(false)
+  const [apiKeyDraft, setApiKeyDraft] = useState('')
+  const [wantsClearKey, setWantsClearKey] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
 
   useEffect(() => {
-    void ipcInvoke('settings:get').then(setSettings)
+    void Promise.all([
+      ipcInvoke('settings:get'),
+      ipcInvoke('settings:hasApiKey').catch(() => false),
+    ]).then(([s, has]) => {
+      setOriginal(s)
+      setDraft(s)
+      setHadApiKey(has)
+    })
   }, [])
 
-  if (!settings) {
+  function patchDraft(patch: Partial<Settings>) {
+    setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
+  }
+
+  function patchAi(patch: Partial<AiSettings>) {
+    if (!draft) return
+    patchDraft({ ai: { ...draft.ai, ...patch } })
+  }
+
+  function patchPolicy(group: NetworkGroup, patch: Partial<RetryPolicy>) {
+    if (!draft) return
+    patchDraft({
+      network: {
+        ...draft.network,
+        [group]: { ...draft.network[group], ...patch },
+      },
+    })
+  }
+
+  const settingsDirty =
+    !!original && !!draft && JSON.stringify(pickEditable(original)) !== JSON.stringify(pickEditable(draft))
+  const apiKeyDirty = apiKeyDraft.length > 0 || wantsClearKey
+  const dirty = settingsDirty || apiKeyDirty
+
+  async function save() {
+    if (!draft) return
+    setBusy(true)
+    setError(null)
+    try {
+      await ipcInvoke('settings:update', pickEditable(draft))
+      if (apiKeyDraft.length > 0) {
+        await ipcInvoke('settings:setApiKey', { apiKey: apiKeyDraft })
+      } else if (wantsClearKey) {
+        await ipcInvoke('settings:clearApiKey')
+      }
+      onClose()
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function requestClose() {
+    if (busy) return
+    if (dirty) setConfirmDiscard(true)
+    else onClose()
+  }
+
+  if (!draft) {
     return (
       <Dialog title="Settings" onClose={onClose} size="xl">
         <p className="text-sm text-zinc-400">Loading…</p>
@@ -39,203 +98,317 @@ export function SettingsDialog({ onClose }: Props) {
     )
   }
 
-  async function updateSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
-    setBusy(true)
-    setError(null)
-    try {
-      const next = await ipcInvoke('settings:update', { [key]: value } as Partial<Settings>)
-      setSettings(next)
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function setActiveProfile(id: string | null) {
-    await updateSetting('activeAiProfileId', id)
-  }
-
-  async function updatePolicy(group: NetworkGroup, patch: Partial<RetryPolicy>) {
-    if (!settings) return
-    await updateSetting('network', {
-      ...settings.network,
-      [group]: { ...settings.network[group], ...patch },
-    })
-  }
-
-  async function addProfileFromSuggestion(p: AiProfile) {
-    if (!settings) return
-    if (settings.aiProfiles.some((x) => x.id === p.id)) return
-    await updateSetting('aiProfiles', [...settings.aiProfiles, p])
-  }
-
-  async function addCustomProfile() {
-    if (!settings) return
-    const id = `custom-${Date.now()}`
-    const created: AiProfile = {
-      id,
-      name: 'Custom',
-      baseUrl: 'https://example.com/v1',
-      model: 'model-id',
-      kind: 'openai-compatible',
-    }
-    await updateSetting('aiProfiles', [...settings.aiProfiles, created])
-  }
-
-  async function updateProfile(id: string, patch: Partial<AiProfile>) {
-    if (!settings) return
-    await updateSetting(
-      'aiProfiles',
-      settings.aiProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-    )
-  }
-
-  async function deleteProfile(id: string) {
-    if (!settings) return
-    setBusy(true)
-    setError(null)
-    try {
-      await ipcInvoke('settings:clearApiKey', { profileId: id }).catch(() => {})
-      const nextProfiles = settings.aiProfiles.filter((p) => p.id !== id)
-      const next = await ipcInvoke('settings:update', {
-        aiProfiles: nextProfiles,
-        activeAiProfileId: settings.activeAiProfileId === id ? null : settings.activeAiProfileId,
-      })
-      setSettings(next)
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const footer = (
+    <>
+      <button
+        onClick={requestClose}
+        disabled={busy}
+        className="rounded px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={() => void save()}
+        disabled={busy || !dirty}
+        className="rounded bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-950 transition disabled:bg-zinc-700 disabled:text-zinc-400"
+      >
+        {busy ? 'Saving…' : 'Save'}
+      </button>
+    </>
+  )
 
   return (
-    <Dialog title="Settings" onClose={onClose} size="xl">
-      <div className="space-y-8">
-          <Section title="Behavior">
-            <Toggle
-              label="Autostart downloads"
-              description="Newly added items start downloading immediately. Off = added as paused."
-              checked={settings.autoStartDownloads}
-              disabled={busy}
-              onChange={(v) => updateSetting('autoStartDownloads', v)}
-            />
-            <NumberField
-              label="Max concurrent downloads"
-              value={settings.maxConcurrentDownloads}
-              min={1}
-              max={8}
-              disabled={busy}
-              onChange={(v) => updateSetting('maxConcurrentDownloads', v)}
-            />
-            <Toggle
-              label="Check for tool updates on startup"
-              description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
-              checked={settings.autoCheckBinaryUpdates}
-              disabled={busy}
-              onChange={(v) => updateSetting('autoCheckBinaryUpdates', v)}
-            />
-          </Section>
-
-          <Section title="AI profiles" hint="Used for slug generation. Currently only OpenAI-compatible endpoints.">
-            {runtime && !runtime.encryptionAvailable && (
-              <div className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
-                The OS keychain is unavailable on this system, so API keys can't be saved securely.
-                {' '}
-                {runtime.platform === 'linux'
-                  ? 'Install libsecret (or gnome-keyring) and restart TapeBox.'
-                  : 'Saving API keys is disabled until OS encryption becomes available.'}
-              </div>
+    <>
+      <Dialog
+        title="Settings"
+        onClose={requestClose}
+        size="xl"
+        footer={footer}
+        closeDisabled={busy}
+      >
+        <div className="flex gap-6">
+          <TabBar tab={tab} onTab={setTab} />
+          <div className="min-w-0 flex-1">
+            {tab === 'behavior' && (
+              <BehaviorTab
+                draft={draft}
+                busy={busy}
+                onPatch={patchDraft}
+              />
             )}
-            <div className="space-y-2">
-              {settings.aiProfiles.map((p) => (
-                <ProfileRow
-                  key={p.id}
-                  profile={p}
-                  active={p.id === settings.activeAiProfileId}
-                  busy={busy}
-                  canSaveKey={runtime?.encryptionAvailable ?? false}
-                  onActive={() => setActiveProfile(p.id)}
-                  onChange={(patch) => updateProfile(p.id, patch)}
-                  onDelete={() => deleteProfile(p.id)}
-                />
-              ))}
-              {settings.aiProfiles.length === 0 && (
-                <p className="text-xs text-zinc-400">No profiles yet. Add one below.</p>
-              )}
-            </div>
+            {tab === 'ai' && (
+              <AiTab
+                ai={draft.ai}
+                busy={busy}
+                hadKey={hadApiKey}
+                apiKeyDraft={apiKeyDraft}
+                wantsClearKey={wantsClearKey}
+                encryptionAvailable={runtime?.encryptionAvailable ?? false}
+                onAiPatch={patchAi}
+                onApiKeyChange={(v) => {
+                  setApiKeyDraft(v)
+                  if (v.length > 0) setWantsClearKey(false)
+                }}
+                onClearKey={() => {
+                  setApiKeyDraft('')
+                  setWantsClearKey(true)
+                }}
+              />
+            )}
+            {tab === 'network' && (
+              <NetworkTab
+                draft={draft}
+                busy={busy}
+                onPatch={patchPolicy}
+              />
+            )}
+          </div>
+        </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              {presetButtons(settings.aiProfiles).map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => addProfileFromSuggestion(p)}
-                  disabled={busy}
-                  className="rounded border border-zinc-700 px-3 py-1.5 text-xs hover:bg-zinc-800 disabled:opacity-50"
-                >
-                  + {p.name} ({p.model})
-                </button>
-              ))}
-              <button
-                onClick={addCustomProfile}
-                disabled={busy}
-                className="rounded border border-zinc-700 px-3 py-1.5 text-xs hover:bg-zinc-800 disabled:opacity-50"
-              >
-                + Custom
-              </button>
-            </div>
-          </Section>
+        {error && (
+          <p className="mt-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
+        )}
+      </Dialog>
 
-          <Section title="Network" hint="Timeouts and retries for internet actions. The defaults are sensible.">
-            <details className="rounded border border-zinc-800 p-3">
-              <summary className="text-xs text-zinc-400 hover:text-zinc-200">
-                Advanced timeout &amp; retry settings
-              </summary>
-              <div className="mt-4 space-y-4">
-                {NETWORK_GROUPS.map((group) => (
-                  <PolicyEditor
-                    key={group}
-                    group={group}
-                    policy={settings.network[group]}
-                    busy={busy}
-                    onChange={(patch) => updatePolicy(group, patch)}
-                  />
-                ))}
-              </div>
-            </details>
-          </Section>
-
-          {error && (
-            <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
-          )}
-      </div>
-    </Dialog>
+      {confirmDiscard && (
+        <ConfirmDialog
+          title="Unsaved changes"
+          message="Discard your changes?"
+          cancelLabel="Keep editing"
+          confirmLabel="Discard"
+          danger
+          onCancel={() => setConfirmDiscard(false)}
+          onConfirm={() => {
+            setConfirmDiscard(false)
+            onClose()
+          }}
+        />
+      )}
+    </>
   )
 }
 
-function presetButtons(existing: AiProfile[]): AiProfile[] {
-  const existingIds = new Set(existing.map((p) => p.id))
-  return defaultAiProfileSuggestions().filter((p) => !existingIds.has(p.id))
+function pickEditable(s: Settings) {
+  return {
+    autoStartDownloads: s.autoStartDownloads,
+    maxConcurrentDownloads: s.maxConcurrentDownloads,
+    autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
+    ai: s.ai,
+    network: s.network,
+  }
 }
 
-const NETWORK_GROUPS: NetworkGroup[] = ['metadata', 'download', 'ai']
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'behavior', label: 'Behavior' },
+  { id: 'ai', label: 'AI' },
+  { id: 'network', label: 'Network' },
+]
+
+function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+  return (
+    <nav className="w-32 shrink-0">
+      <ul className="space-y-0.5">
+        {TABS.map((t) => (
+          <li key={t.id}>
+            <button
+              onClick={() => onTab(t.id)}
+              className={
+                'w-full rounded px-3 py-1.5 text-left text-sm transition ' +
+                (tab === t.id
+                  ? 'bg-zinc-800 text-zinc-100'
+                  : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100')
+              }
+            >
+              {t.label}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+// ── Behavior tab ────────────────────────────────────────────────────────────
+
+function BehaviorTab({
+  draft,
+  busy,
+  onPatch,
+}: {
+  draft: Settings
+  busy: boolean
+  onPatch: (p: Partial<Settings>) => void
+}) {
+  return (
+    <div className="space-y-4">
+      <Toggle
+        label="Autostart downloads"
+        description="Newly added items start downloading immediately. Off = added as paused."
+        checked={draft.autoStartDownloads}
+        disabled={busy}
+        onChange={(v) => onPatch({ autoStartDownloads: v })}
+      />
+      <NumberField
+        label="Max concurrent downloads"
+        value={draft.maxConcurrentDownloads}
+        min={1}
+        max={8}
+        disabled={busy}
+        onChange={(v) => onPatch({ maxConcurrentDownloads: v })}
+      />
+      <Toggle
+        label="Check for tool updates on startup"
+        description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
+        checked={draft.autoCheckBinaryUpdates}
+        disabled={busy}
+        onChange={(v) => onPatch({ autoCheckBinaryUpdates: v })}
+      />
+    </div>
+  )
+}
+
+// ── AI tab ──────────────────────────────────────────────────────────────────
+
+function AiTab({
+  ai,
+  busy,
+  hadKey,
+  apiKeyDraft,
+  wantsClearKey,
+  encryptionAvailable,
+  onAiPatch,
+  onApiKeyChange,
+  onClearKey,
+}: {
+  ai: AiSettings
+  busy: boolean
+  hadKey: boolean
+  apiKeyDraft: string
+  wantsClearKey: boolean
+  encryptionAvailable: boolean
+  onAiPatch: (p: Partial<AiSettings>) => void
+  onApiKeyChange: (v: string) => void
+  onClearKey: () => void
+}) {
+  const keyIsSet = hadKey && !wantsClearKey && apiKeyDraft.length === 0
+  const willClear = wantsClearKey && apiKeyDraft.length === 0
+
+  return (
+    <div className="space-y-4">
+      {!encryptionAvailable && (
+        <div className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+          The OS keychain is unavailable on this system, so the API key can't be saved securely.
+        </div>
+      )}
+
+      <TextField
+        label="Base URL"
+        value={ai.baseUrl}
+        placeholder="https://api.openai.com/v1"
+        disabled={busy}
+        onChange={(v) => onAiPatch({ baseUrl: v })}
+      />
+
+      <div>
+        <label className="block">
+          <span className="text-xs font-medium text-zinc-400">API key</span>
+          <input
+            type="password"
+            value={apiKeyDraft}
+            onChange={(e) => onApiKeyChange(e.target.value)}
+            placeholder={keyIsSet ? '••••••••' : 'sk-…'}
+            spellCheck={false}
+            disabled={busy || !encryptionAvailable}
+            className="mt-1 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
+          />
+        </label>
+        {keyIsSet && (
+          <div className="mt-1 flex items-center justify-between text-xs">
+            <span className="text-zinc-400">Key is set</span>
+            <button
+              onClick={onClearKey}
+              disabled={busy}
+              className="text-red-400 hover:text-red-300 disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+        {willClear && (
+          <p className="mt-1 text-xs text-amber-300">Key will be cleared on save.</p>
+        )}
+      </div>
+
+      <TextField
+        label="Model"
+        value={ai.model}
+        placeholder="gpt-5.4-mini"
+        disabled={busy}
+        onChange={(v) => onAiPatch({ model: v })}
+      />
+    </div>
+  )
+}
+
+// ── Network tab ─────────────────────────────────────────────────────────────
+
+const NETWORK_GROUPS: NetworkGroup[] = ['lookups', 'download', 'ai']
 const GROUP_LABEL: Record<NetworkGroup, string> = {
-  metadata: 'Metadata & probes',
+  lookups: 'Lookups',
   download: 'Downloads',
   ai: 'AI',
 }
+const GROUP_HINT: Record<NetworkGroup, string> = {
+  lookups: 'yt-dlp probe / playlist enumeration, GitHub & evermeet version checks.',
+  download: 'Binary downloads (yt-dlp, ffmpeg, Deno) and yt-dlp media downloads.',
+  ai: 'AI provider calls (slug generation).',
+}
 
-function PolicyEditor({ group, policy, busy, onChange }: {
-  group: NetworkGroup
+function NetworkTab({
+  draft,
+  busy,
+  onPatch,
+}: {
+  draft: Settings
+  busy: boolean
+  onPatch: (group: NetworkGroup, patch: Partial<RetryPolicy>) => void
+}) {
+  return (
+    <div className="space-y-4">
+      {NETWORK_GROUPS.map((group) => (
+        <PolicyEditor
+          key={group}
+          label={GROUP_LABEL[group]}
+          hint={GROUP_HINT[group]}
+          policy={draft.network[group]}
+          busy={busy}
+          onChange={(patch) => onPatch(group, patch)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function PolicyEditor({
+  label,
+  hint,
+  policy,
+  busy,
+  onChange,
+}: {
+  label: string
+  hint: string
   policy: RetryPolicy
   busy: boolean
   onChange: (patch: Partial<RetryPolicy>) => void
 }) {
   return (
     <div className="space-y-3 rounded border border-zinc-800 p-3">
-      <div className="text-sm font-medium">{GROUP_LABEL[group]}</div>
-      <div className="grid grid-cols-2 gap-3">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        <div className="text-xs text-zinc-400">{hint}</div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
         <NumberField
           label="Timeout (s)"
           value={Math.round(policy.timeoutMs / 1000)}
@@ -243,6 +416,14 @@ function PolicyEditor({ group, policy, busy, onChange }: {
           max={600}
           disabled={busy}
           onChange={(s) => onChange({ timeoutMs: s * 1000 })}
+        />
+        <NumberField
+          label="Retries"
+          value={policy.retries}
+          min={0}
+          max={20}
+          disabled={busy}
+          onChange={(r) => onChange({ retries: r })}
         />
         <NumberField
           label="Jitter (%)"
@@ -258,7 +439,11 @@ function PolicyEditor({ group, policy, busy, onChange }: {
   )
 }
 
-function IntervalsField({ intervals, disabled, onChange }: {
+function IntervalsField({
+  intervals,
+  disabled,
+  onChange,
+}: {
   intervals: number[]
   disabled?: boolean
   onChange: (intervalsMs: number[]) => void
@@ -279,7 +464,7 @@ function IntervalsField({ intervals, disabled, onChange }: {
   return (
     <label className="block">
       <span className="text-xs text-zinc-400">
-        Retry intervals in seconds — {intervals.length} {intervals.length === 1 ? 'retry' : 'retries'}
+        Retry intervals in seconds — last reused if retries &gt; intervals
       </span>
       <input
         type="text"
@@ -290,23 +475,21 @@ function IntervalsField({ intervals, disabled, onChange }: {
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter') commit() }}
-        className="mt-0.5 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
+        className="mt-1 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
       />
     </label>
   )
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="text-sm font-medium text-zinc-300">{title}</h3>
-      {hint && <p className="mt-1 text-xs text-zinc-400">{hint}</p>}
-      <div className="mt-3 space-y-3">{children}</div>
-    </section>
-  )
-}
+// ── Form primitives ────────────────────────────────────────────────────────
 
-function Toggle({ label, description, checked, disabled, onChange }: {
+function Toggle({
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
   label: string
   description?: string
   checked: boolean
@@ -330,7 +513,14 @@ function Toggle({ label, description, checked, disabled, onChange }: {
   )
 }
 
-function NumberField({ label, value, min, max, disabled, onChange }: {
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+}: {
   label: string
   value: number
   min: number
@@ -339,130 +529,45 @@ function NumberField({ label, value, min, max, disabled, onChange }: {
   onChange: (v: number) => void
 }) {
   return (
-    <label className="flex items-center gap-3">
-      <span className="text-sm">{label}</span>
+    <label className="block">
+      <span className="text-xs text-zinc-400">{label}</span>
       <input
         type="number"
         min={min}
         max={max}
         value={value}
         disabled={disabled}
-        onChange={(e) => onChange(Math.max(min, Math.min(max, parseInt(e.target.value || '1', 10))))}
-        className="w-20 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-hidden"
+        onChange={(e) => onChange(Math.max(min, Math.min(max, parseInt(e.target.value || '0', 10))))}
+        className="mt-1 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
       />
     </label>
   )
 }
 
-function ProfileRow({ profile, active, busy, canSaveKey, onActive, onChange, onDelete }: {
-  profile: AiProfile
-  active: boolean
-  busy: boolean
-  canSaveKey: boolean
-  onActive: () => void
-  onChange: (patch: Partial<AiProfile>) => void
-  onDelete: () => void
-}) {
-  const [apiKey, setApiKey] = useState('')
-  const [keyBusy, setKeyBusy] = useState(false)
-  const [keyMsg, setKeyMsg] = useState<string | null>(null)
-
-  async function saveKey() {
-    if (!apiKey.trim()) return
-    setKeyBusy(true)
-    setKeyMsg(null)
-    try {
-      await ipcInvoke('settings:setApiKey', { profileId: profile.id, apiKey: apiKey.trim() })
-      setApiKey('')
-      setKeyMsg('Saved')
-    } catch (err) {
-      setKeyMsg(String(err))
-    } finally {
-      setKeyBusy(false)
-    }
-  }
-
-  async function clearKey() {
-    setKeyBusy(true)
-    setKeyMsg(null)
-    try {
-      await ipcInvoke('settings:clearApiKey', { profileId: profile.id })
-      setKeyMsg('Cleared')
-    } catch (err) {
-      setKeyMsg(String(err))
-    } finally {
-      setKeyBusy(false)
-    }
-  }
-
-  return (
-    <div className="rounded border border-zinc-800 bg-zinc-900/40 p-3">
-      <div className="flex items-center justify-between">
-        <label className="flex items-center gap-2 text-sm">
-          <input type="radio" checked={active} onChange={onActive} disabled={busy} />
-          <span className="font-medium">{profile.name}</span>
-          <span className="text-xs text-zinc-400">({profile.id})</span>
-        </label>
-        <button
-          onClick={onDelete}
-          disabled={busy}
-          className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
-        >
-          Delete
-        </button>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <Field label="Base URL" value={profile.baseUrl} disabled={busy} onChange={(v) => onChange({ baseUrl: v })} />
-        <Field label="Model" value={profile.model} disabled={busy} onChange={(v) => onChange({ model: v })} />
-      </div>
-
-      <div className="mt-3 flex items-center gap-2">
-        <input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={canSaveKey ? 'API key…' : 'Keychain unavailable'}
-          spellCheck={false}
-          disabled={!canSaveKey}
-          className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
-        />
-        <button
-          onClick={saveKey}
-          disabled={keyBusy || !apiKey.trim() || !canSaveKey}
-          className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
-        >
-          Save key
-        </button>
-        <button
-          onClick={clearKey}
-          disabled={keyBusy || !canSaveKey}
-          className="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
-        >
-          Clear
-        </button>
-      </div>
-      {keyMsg && <div className="mt-1 text-xs text-zinc-400">{keyMsg}</div>}
-    </div>
-  )
-}
-
-function Field({ label, value, disabled, onChange }: {
+function TextField({
+  label,
+  value,
+  placeholder,
+  disabled,
+  onChange,
+}: {
   label: string
   value: string
+  placeholder?: string
   disabled?: boolean
   onChange: (v: string) => void
 }) {
   return (
     <label className="block">
-      <span className="text-zinc-400">{label}</span>
+      <span className="text-xs font-medium text-zinc-400">{label}</span>
       <input
         type="text"
         value={value}
+        placeholder={placeholder}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
         spellCheck={false}
-        className="mt-0.5 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
       />
     </label>
   )

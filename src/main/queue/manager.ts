@@ -2,6 +2,7 @@ import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
+import { nowUtcIso } from '@shared/utc'
 import { Job } from './job'
 
 /**
@@ -70,8 +71,11 @@ export function start(): void {
     .getItems()
     .filter((i) => i.state === 'probing' || i.state === 'downloading')
 
+  const now = nowUtcIso()
   for (const item of orphaned) {
-    const next = { ...item, state: autostart ? ('queued' as const) : ('paused' as const) }
+    const next = autostart
+      ? { ...item, state: 'queued' as const }
+      : { ...item, state: 'paused' as const, pausedAtUtc: now }
     session.upsertItem(next)
     emit('items:updated', next)
   }

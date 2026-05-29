@@ -50,12 +50,12 @@ export class Job {
       await this.download()
     } catch (err) {
       if (this.cancelled) {
-        this.update({ state: 'paused', lastError: null })
+        this.update({ state: 'paused', lastError: null, pausedAtUtc: nowUtcIso() })
         return
       }
       const message = String(err)
       log.error(`job failed: ${this.itemId}`, { error: message })
-      this.update({ state: 'failed', lastError: message })
+      this.update({ state: 'failed', lastError: message, failedAtUtc: nowUtcIso() })
       emit('items:failed', { itemId: this.itemId, error: message })
     }
   }
@@ -92,7 +92,7 @@ export class Job {
     const cur = this.current()
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
-    this.update({ state: 'downloading' })
+    this.update({ state: 'downloading', downloadStartedAtUtc: nowUtcIso() })
 
     const settings = getSettings()
     const result = await ytdlp.download({

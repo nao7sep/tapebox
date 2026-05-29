@@ -45,7 +45,7 @@ export type ProbeResult = {
  * yt-dlp already ran its own --retries and the URL is genuinely unusable.
  */
 export async function probe(url: string, signal: AbortSignal): Promise<ProbeResult> {
-  const policy = getSettings().network.metadata
+  const policy = getSettings().network.lookups
   const { stdout } = await withRetry(
     policy,
     () =>

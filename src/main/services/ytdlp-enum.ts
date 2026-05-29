@@ -34,7 +34,7 @@ export async function detectKind(
   url: string,
   signal: AbortSignal,
 ): Promise<{ kind: 'single' | 'multi'; title: string | null }> {
-  const policy = getSettings().network.metadata
+  const policy = getSettings().network.lookups
   const { stdout } = await withRetry(
     policy,
     () =>
@@ -64,7 +64,7 @@ export function startEnumeration(
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
     ['--flat-playlist', '-j', '--no-warnings', url],
-    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.metadata.timeoutMs },
+    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.lookups.timeoutMs },
   )
 
   let total = 0

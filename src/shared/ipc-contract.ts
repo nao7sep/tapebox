@@ -43,8 +43,9 @@ export type IpcCalls = {
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }
   'settings:update':       { req: Partial<Settings>;                 res: Settings }
-  'settings:setApiKey':    { req: { profileId: string; apiKey: string }; res: void }
-  'settings:clearApiKey':  { req: { profileId: string };             res: void }
+  'settings:setApiKey':    { req: { apiKey: string };                res: void }
+  'settings:clearApiKey':  { req: undefined;                         res: void }
+  'settings:hasApiKey':    { req: undefined;                         res: boolean }
 
   // ── Binaries ─────────────────────────────────────────────────────────────
   'binaries:status':       { req: undefined;                         res: BinaryStatus[] }
@@ -104,6 +105,7 @@ export type RuntimeInfo = {
   platform: NodeJS.Platform
   arch: string
   encryptionAvailable: boolean
+  version: string
 }
 
 export type EnumEntry = {

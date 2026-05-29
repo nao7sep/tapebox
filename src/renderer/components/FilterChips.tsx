@@ -4,9 +4,9 @@ import { useFilterStore, type Filter } from '@renderer/store/filter'
 const labels: Record<Filter, string> = {
   inbox: 'Inbox',
   archived: 'Archived',
-  failed: 'Failed',
-  all: 'All',
 }
+
+const order: Filter[] = ['inbox', 'archived']
 
 export function FilterChips() {
   const filter = useFilterStore((s) => s.filter)
@@ -14,13 +14,9 @@ export function FilterChips() {
   const items = useItemsStore((s) => s.items)
 
   const counts: Record<Filter, number> = {
-    inbox: items.filter((i) => !i.archivedAtUtc && i.state !== 'failed').length,
+    inbox: items.filter((i) => !i.archivedAtUtc).length,
     archived: items.filter((i) => !!i.archivedAtUtc).length,
-    failed: items.filter((i) => i.state === 'failed').length,
-    all: items.length,
   }
-
-  const order: Filter[] = ['inbox', 'archived', 'failed', 'all']
 
   return (
     <div className="flex gap-1">
@@ -38,9 +34,7 @@ export function FilterChips() {
             }
           >
             {labels[f]}
-            <span className={'ml-1.5 ' + (active ? 'text-zinc-400' : 'text-zinc-400')}>
-              {counts[f]}
-            </span>
+            <span className="ml-1.5 text-zinc-400">{counts[f]}</span>
           </button>
         )
       })}

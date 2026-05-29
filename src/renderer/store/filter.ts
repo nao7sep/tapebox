@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type Filter = 'inbox' | 'archived' | 'failed' | 'all'
+export type Filter = 'inbox' | 'archived'
 
 type FilterState = {
   filter: Filter

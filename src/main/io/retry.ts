@@ -27,13 +27,23 @@ export async function withRetry<T>(
     } catch (err) {
       // Caller cancellation always wins over the retry schedule.
       if (hooks.signal?.aborted) throw err
-      const canRetry = i < policy.intervals.length && (hooks.isRetryable?.(err) ?? true)
+      const canRetry = i < policy.retries && (hooks.isRetryable?.(err) ?? true)
       if (!canRetry) throw err
-      const delayMs = jitter(policy.intervals[i]!, policy.jitterRatio)
+      const delayMs = jitter(intervalAt(policy.intervals, i), policy.jitterRatio)
       hooks.onRetry?.({ attempt: i + 1, delayMs, error: err })
       await sleep(delayMs, hooks.signal)
     }
   }
+}
+
+/**
+ * The interval for retry attempt i. When retries exceeds intervals.length we
+ * keep reusing the last interval, so e.g. retries=5 with intervals=[1s, 3s]
+ * gives [1s, 3s, 3s, 3s, 3s]. An empty schedule means 0ms (immediate retry).
+ */
+function intervalAt(intervals: number[], i: number): number {
+  if (intervals.length === 0) return 0
+  return intervals[Math.min(i, intervals.length - 1)]!
 }
 
 /**
