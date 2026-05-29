@@ -1,3 +1,5 @@
+import { fetchJson } from '@main/io/fetch-json'
+
 /**
  * Minimal GitHub Releases API helper.
  * Unauthenticated; rate limit is 60 requests/hour per IP, which is plenty
@@ -18,14 +20,10 @@ export type GitHubRelease = {
 
 export async function fetchLatestRelease(owner: string, repo: string): Promise<GitHubRelease> {
   const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`
-  const res = await fetch(url, {
+  return fetchJson<GitHubRelease>(url, {
     headers: {
       Accept: 'application/vnd.github+json',
       'User-Agent': 'tapebox',
     },
   })
-  if (!res.ok) {
-    throw new Error(`GitHub API ${res.status} ${res.statusText} for ${owner}/${repo}`)
-  }
-  return res.json() as Promise<GitHubRelease>
 }

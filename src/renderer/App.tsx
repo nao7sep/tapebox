@@ -44,13 +44,12 @@ export default function App() {
     if (!showSettings) void ipcInvoke('settings:get').then(setSettings)
   }, [showSettings])
 
-  // Once the first status snapshot arrives, open the setup modal if any tool is
-  // missing. Non-dismissible only on the very first decision so the user is
-  // nudged to install, but can still Skip into the app.
+  // Once the first status snapshot arrives, open the tools modal if anything is
+  // missing. Decided once so it doesn't reopen after the user closes it.
   useEffect(() => {
     if (decidedFirstRun.current || binaryStatuses.length === 0) return
     decidedFirstRun.current = true
-    if (!allBinariesInstalled(binaryStatuses)) openBinariesModal({ dismissible: true })
+    if (!allBinariesInstalled(binaryStatuses)) openBinariesModal()
   }, [binaryStatuses, openBinariesModal])
 
   useEffect(() => {

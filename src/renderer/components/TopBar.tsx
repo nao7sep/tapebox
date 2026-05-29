@@ -80,7 +80,7 @@ export function TopBar() {
         <p className="text-xs text-amber-300">
           Downloading needs yt-dlp and its helpers.{' '}
           <button
-            onClick={() => openBinariesModal({ dismissible: true })}
+            onClick={() => openBinariesModal()}
             className="underline hover:text-amber-200"
           >
             Install tools

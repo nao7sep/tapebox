@@ -33,7 +33,7 @@ export function StatusBar() {
         )}
       </div>
       <button
-        onClick={() => openModal({ dismissible: true })}
+        onClick={() => openModal()}
         className="text-zinc-400 hover:text-zinc-100"
       >
         {missing > 0 ? 'Install' : updates > 0 ? 'Review' : 'Manage tools'}

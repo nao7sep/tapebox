@@ -26,6 +26,35 @@ export const BinaryEntrySchema = z.object({
 })
 export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
 
+/**
+ * Retry/timeout policy for one class of network work.
+ *   - timeoutMs: per-attempt deadline (a request timeout, or an idle/stall
+ *     watchdog for streaming transfers).
+ *   - intervals: wait-before-retry schedule in ms. Its LENGTH is the retry
+ *     count, so [] means no retries and attempts = intervals.length + 1.
+ *   - jitterRatio: each interval is randomized by ±ratio to avoid thundering herd.
+ */
+export const RetryPolicySchema = z.object({
+  timeoutMs: z.number().int().min(1000),
+  intervals: z.array(z.number().int().min(0)).max(10),
+  jitterRatio: z.number().min(0).max(1),
+})
+export type RetryPolicy = z.infer<typeof RetryPolicySchema>
+
+/**
+ * Network work split into the few groups that share a retry/timeout shape:
+ *   - metadata: quick request→response (yt-dlp probe/detect, version lookups)
+ *   - download: large transfers (binary downloads, yt-dlp media download)
+ *   - ai:       slug generation via the AI provider
+ */
+export const NetworkSettingsSchema = z.object({
+  metadata: RetryPolicySchema,
+  download: RetryPolicySchema,
+  ai: RetryPolicySchema,
+})
+export type NetworkSettings = z.infer<typeof NetworkSettingsSchema>
+export type NetworkGroup = keyof NetworkSettings
+
 export const SettingsSchema = z.object({
   schemaVersion: z.literal(1),
 
@@ -46,6 +75,8 @@ export const SettingsSchema = z.object({
   }),
 
   retainLogCount: z.number().int().min(0),
+
+  network: NetworkSettingsSchema,
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
@@ -68,6 +99,11 @@ export function defaultSettings(libraryDir: string): Settings {
       deno:     { installedVersion: null, lastCheckedAtUtc: null },
     },
     retainLogCount: 50,
+    network: {
+      metadata: { timeoutMs: 30_000, intervals: [1_000, 3_000, 8_000], jitterRatio: 0.2 },
+      download: { timeoutMs: 60_000, intervals: [2_000, 10_000], jitterRatio: 0.2 },
+      ai:       { timeoutMs: 60_000, intervals: [1_000, 4_000, 10_000], jitterRatio: 0.25 },
+    },
   }
 }
 

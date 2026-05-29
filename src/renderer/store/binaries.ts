@@ -6,13 +6,12 @@ type Phase = 'download' | 'verify' | 'install'
 type BinariesState = {
   statuses: BinaryStatus[]
   progress: Partial<Record<BinaryName, { percent: number; phase: Phase }>>
-  /** The shared install/update modal. `dismissible` controls whether Skip shows. */
+  /** The shared install/update modal. Always dismissible (Esc / backdrop / ✕). */
   modalOpen: boolean
-  modalDismissible: boolean
   setStatuses: (s: BinaryStatus[]) => void
   setProgress: (name: BinaryName, percent: number, phase: Phase) => void
   markReady: (name: BinaryName, version: string) => void
-  openModal: (opts?: { dismissible?: boolean }) => void
+  openModal: () => void
   closeModal: () => void
 }
 
@@ -20,7 +19,6 @@ export const useBinariesStore = create<BinariesState>((set) => ({
   statuses: [],
   progress: {},
   modalOpen: false,
-  modalDismissible: true,
   setStatuses: (statuses) => set({ statuses }),
   setProgress: (name, percent, phase) =>
     set((state) => ({ progress: { ...state.progress, [name]: { percent, phase } } })),
@@ -35,7 +33,7 @@ export const useBinariesStore = create<BinariesState>((set) => ({
         ),
       }
     }),
-  openModal: (opts) => set({ modalOpen: true, modalDismissible: opts?.dismissible ?? true }),
+  openModal: () => set({ modalOpen: true }),
   closeModal: () => set({ modalOpen: false }),
 }))
 

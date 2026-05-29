@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
-import { defaultAiProfileSuggestions, type AiProfile, type Settings } from '@shared/settings'
+import {
+  defaultAiProfileSuggestions,
+  type AiProfile,
+  type NetworkGroup,
+  type RetryPolicy,
+  type Settings,
+} from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
+import { Dialog } from '@renderer/components/Dialog'
 
 type Props = { onClose: () => void }
 
@@ -26,9 +33,9 @@ export function SettingsDialog({ onClose }: Props) {
 
   if (!settings) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80">
-        <div className="rounded bg-zinc-900 p-6 text-sm text-zinc-400">Loading…</div>
-      </div>
+      <Dialog title="Settings" onClose={onClose} size="xl">
+        <p className="text-sm text-zinc-400">Loading…</p>
+      </Dialog>
     )
   }
 
@@ -47,6 +54,14 @@ export function SettingsDialog({ onClose }: Props) {
 
   async function setActiveProfile(id: string | null) {
     await updateSetting('activeAiProfileId', id)
+  }
+
+  async function updatePolicy(group: NetworkGroup, patch: Partial<RetryPolicy>) {
+    if (!settings) return
+    await updateSetting('network', {
+      ...settings.network,
+      [group]: { ...settings.network[group], ...patch },
+    })
   }
 
   async function addProfileFromSuggestion(p: AiProfile) {
@@ -96,14 +111,8 @@ export function SettingsDialog({ onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm">
-      <div className="flex h-[80vh] w-full max-w-2xl flex-col rounded-lg border border-zinc-800 bg-zinc-900 shadow-xl">
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 p-4">
-          <h2 className="text-base font-medium">Settings</h2>
-          <button onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-100">Close</button>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
+    <Dialog title="Settings" onClose={onClose} size="xl">
+      <div className="space-y-8">
           <Section title="Behavior">
             <Toggle
               label="Autostart downloads"
@@ -178,18 +187,113 @@ export function SettingsDialog({ onClose }: Props) {
             </div>
           </Section>
 
+          <Section title="Network" hint="Timeouts and retries for internet actions. The defaults are sensible.">
+            <details className="rounded border border-zinc-800 p-3">
+              <summary className="cursor-pointer text-xs text-zinc-400 hover:text-zinc-200">
+                Advanced timeout &amp; retry settings
+              </summary>
+              <div className="mt-4 space-y-4">
+                {NETWORK_GROUPS.map((group) => (
+                  <PolicyEditor
+                    key={group}
+                    group={group}
+                    policy={settings.network[group]}
+                    busy={busy}
+                    onChange={(patch) => updatePolicy(group, patch)}
+                  />
+                ))}
+              </div>
+            </details>
+          </Section>
+
           {error && (
             <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
           )}
-        </div>
       </div>
-    </div>
+    </Dialog>
   )
 }
 
 function presetButtons(existing: AiProfile[]): AiProfile[] {
   const existingIds = new Set(existing.map((p) => p.id))
   return defaultAiProfileSuggestions().filter((p) => !existingIds.has(p.id))
+}
+
+const NETWORK_GROUPS: NetworkGroup[] = ['metadata', 'download', 'ai']
+const GROUP_LABEL: Record<NetworkGroup, string> = {
+  metadata: 'Metadata & probes',
+  download: 'Downloads',
+  ai: 'AI',
+}
+
+function PolicyEditor({ group, policy, busy, onChange }: {
+  group: NetworkGroup
+  policy: RetryPolicy
+  busy: boolean
+  onChange: (patch: Partial<RetryPolicy>) => void
+}) {
+  return (
+    <div className="space-y-3 rounded border border-zinc-800 p-3">
+      <div className="text-sm font-medium">{GROUP_LABEL[group]}</div>
+      <div className="grid grid-cols-2 gap-3">
+        <NumberField
+          label="Timeout (s)"
+          value={Math.round(policy.timeoutMs / 1000)}
+          min={1}
+          max={600}
+          disabled={busy}
+          onChange={(s) => onChange({ timeoutMs: s * 1000 })}
+        />
+        <NumberField
+          label="Jitter (%)"
+          value={Math.round(policy.jitterRatio * 100)}
+          min={0}
+          max={100}
+          disabled={busy}
+          onChange={(p) => onChange({ jitterRatio: p / 100 })}
+        />
+      </div>
+      <IntervalsField intervals={policy.intervals} disabled={busy} onChange={(arr) => onChange({ intervals: arr })} />
+    </div>
+  )
+}
+
+function IntervalsField({ intervals, disabled, onChange }: {
+  intervals: number[]
+  disabled?: boolean
+  onChange: (intervalsMs: number[]) => void
+}) {
+  const [text, setText] = useState(() => intervals.map((ms) => ms / 1000).join(', '))
+
+  function commit() {
+    const arr = text
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0)
+      .map((t) => Math.round(parseFloat(t) * 1000))
+      .filter((ms) => Number.isFinite(ms) && ms >= 0)
+    onChange(arr)
+    setText(arr.map((ms) => ms / 1000).join(', '))
+  }
+
+  return (
+    <label className="block">
+      <span className="text-xs text-zinc-500">
+        Retry intervals in seconds — {intervals.length} {intervals.length === 1 ? 'retry' : 'retries'}
+      </span>
+      <input
+        type="text"
+        value={text}
+        disabled={disabled}
+        spellCheck={false}
+        placeholder="1, 3, 8"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit() }}
+        className="mt-0.5 w-full rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm focus:border-zinc-600 focus:outline-hidden disabled:opacity-50"
+      />
+    </label>
+  )
 }
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {

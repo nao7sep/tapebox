@@ -1,7 +1,10 @@
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
+import { getSettings } from '@main/store/config'
+import { withRetry } from '@main/io/retry'
 import {
   execCapture,
+  IdleTimeoutError,
   makeLineBuffer,
   spawnStreaming,
   waitForExit,
@@ -18,9 +21,6 @@ import { ytdlpEnv } from './ytdlp'
  *     per line, calling onEntry as each arrives.
  */
 
-const DETECT_IDLE_TIMEOUT_MS = 20_000
-const ENUM_IDLE_TIMEOUT_MS = 30_000
-
 export type EnumeratedEntry = {
   id: string
   url: string
@@ -34,10 +34,16 @@ export async function detectKind(
   url: string,
   signal: AbortSignal,
 ): Promise<{ kind: 'single' | 'multi'; title: string | null }> {
-  const { stdout } = await execCapture(
-    binaryPath('yt-dlp'),
-    ['--flat-playlist', '--dump-single-json', '--no-warnings', url],
-    { env: ytdlpEnv(), signal, idleTimeoutMs: DETECT_IDLE_TIMEOUT_MS },
+  const policy = getSettings().network.metadata
+  const { stdout } = await withRetry(
+    policy,
+    () =>
+      execCapture(
+        binaryPath('yt-dlp'),
+        ['--flat-playlist', '--dump-single-json', '--no-warnings', url],
+        { env: ytdlpEnv(), signal, idleTimeoutMs: policy.timeoutMs },
+      ),
+    { signal, isRetryable: (e) => e instanceof IdleTimeoutError },
   )
   const info = JSON.parse(stdout) as Record<string, unknown>
   const isMulti = info['_type'] === 'playlist' || Array.isArray(info['entries'])
@@ -58,7 +64,7 @@ export function startEnumeration(
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
     ['--flat-playlist', '-j', '--no-warnings', url],
-    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: ENUM_IDLE_TIMEOUT_MS },
+    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.metadata.timeoutMs },
   )
 
   let total = 0

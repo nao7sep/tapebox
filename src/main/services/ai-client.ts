@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
+import { withRetry } from '@main/io/retry'
 import type { AiProfile } from '@shared/settings'
 import { readApiKey } from './api-keys'
 
@@ -39,7 +40,15 @@ async function generateSlugOpenAiCompat(
   apiKey: string,
   opts: { title: string | null; uploader?: string | null },
 ): Promise<string> {
-  const client = new OpenAI({ apiKey, baseURL: profile.baseUrl })
+  const policy = getSettings().network.ai
+  // maxRetries: 0 — our withRetry owns the retry schedule, so the SDK's own
+  // backoff doesn't compound with it. timeout bounds each individual attempt.
+  const client = new OpenAI({
+    apiKey,
+    baseURL: profile.baseUrl,
+    maxRetries: 0,
+    timeout: policy.timeoutMs,
+  })
 
   const userPrompt = [
     'Suggest a short kebab-case file slug for this media item.',
@@ -51,16 +60,34 @@ async function generateSlugOpenAiCompat(
   ].filter(Boolean).join('\n')
 
   log.info('ai: generateSlug request', { profile: profile.id, model: profile.model })
-  const res = await client.chat.completions.create({
-    model: profile.model,
-    messages: [
-      { role: 'system', content: 'You generate short, descriptive, English file slugs.' },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.3,
-    max_tokens: 60,
-  })
+  const res = await withRetry(
+    policy,
+    () =>
+      client.chat.completions.create({
+        model: profile.model,
+        messages: [
+          { role: 'system', content: 'You generate short, descriptive, English file slugs.' },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 60,
+      }),
+    { isRetryable: isRetryableAiError },
+  )
   const text = res.choices[0]?.message?.content?.trim() ?? ''
   if (!text) throw new Error('AI returned an empty response')
   return text
+}
+
+/**
+ * Retry transient AI failures only: rate limits (429), server errors (5xx),
+ * and connection/timeout errors (no status). A 4xx like 400/401/403 is a
+ * config/auth problem that won't fix itself, so don't waste retries on it.
+ */
+function isRetryableAiError(err: unknown): boolean {
+  if (err instanceof OpenAI.APIError) {
+    const status = err.status
+    return status === 429 || (typeof status === 'number' && status >= 500)
+  }
+  return true
 }

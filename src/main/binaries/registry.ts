@@ -1,4 +1,5 @@
 import { fetchLatestRelease } from './github'
+import { fetchJson } from '@main/io/fetch-json'
 import type { BinaryName } from '@shared/ipc-contract'
 
 /**
@@ -87,9 +88,7 @@ type EvermeetInfo = {
 }
 
 async function resolveFfmpegMacOS(): Promise<ResolvedAsset> {
-  const res = await fetch('https://evermeet.cx/ffmpeg/info/ffmpeg/release')
-  if (!res.ok) throw new Error(`evermeet.cx ${res.status}`)
-  const info = (await res.json()) as EvermeetInfo
+  const info = await fetchJson<EvermeetInfo>('https://evermeet.cx/ffmpeg/info/ffmpeg/release')
   return {
     version: info.version,
     downloadUrl: info.download.zip.url,

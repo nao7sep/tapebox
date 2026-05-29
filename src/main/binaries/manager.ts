@@ -6,6 +6,7 @@ import { emit } from '@main/ipc/events'
 import { getSettings, updateSettings } from '@main/store/config'
 import { execCapture } from '@main/io/spawn'
 import { nowUtcIso } from '@shared/utc'
+import { withRetry } from '@main/io/retry'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import { downloadWithProgress } from './http'
@@ -112,18 +113,22 @@ async function performInstall(name: BinaryName): Promise<void> {
   await mkdir(paths.workDownloads, { recursive: true })
   const tempPath = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
 
+  const downloadPolicy = getSettings().network.download
   let lastEmittedPct = -1
-  await downloadWithProgress({
-    url: resolved.downloadUrl,
-    destPath: tempPath,
-    onProgress: (received, total) => {
-      const pct = total > 0 ? Math.floor((received / total) * 100) : 0
-      if (pct !== lastEmittedPct) {
-        lastEmittedPct = pct
-        emit('binaries:progress', { name, percent: pct, phase: 'download' })
-      }
-    },
-  })
+  await withRetry(downloadPolicy, () =>
+    downloadWithProgress({
+      url: resolved.downloadUrl,
+      destPath: tempPath,
+      idleTimeoutMs: downloadPolicy.timeoutMs,
+      onProgress: (received, total) => {
+        const pct = total > 0 ? Math.floor((received / total) * 100) : 0
+        if (pct !== lastEmittedPct) {
+          lastEmittedPct = pct
+          emit('binaries:progress', { name, percent: pct, phase: 'download' })
+        }
+      },
+    }),
+  )
 
   emit('binaries:progress', { name, percent: 0, phase: 'install' })
 
