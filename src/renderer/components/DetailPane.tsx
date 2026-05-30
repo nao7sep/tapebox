@@ -13,6 +13,7 @@ import { ChapterList } from './ChapterList'
 import { RenameModal } from './RenameModal'
 import { ExportModal } from './ExportModal'
 import { ResizeHandle } from './ResizeHandle'
+import { MoveToBoxButton } from './MoveToBoxButton'
 
 /**
  * Chapter shape as yt-dlp writes it into the sidecar. We validate at the
@@ -205,9 +206,14 @@ export function DetailPane({
             <>
               <ActionButton onClick={() => setShowExport(true)}>Export audio…</ActionButton>
               <ActionButton onClick={openRename}>Rename…</ActionButton>
-              {item.archivedAtUtc
-                ? <ActionButton onClick={unarchive}>Move to Shelf</ActionButton>
-                : <ActionButton onClick={archive}>Archive</ActionButton>}
+              {item.archivedAtUtc ? (
+                <>
+                  <MoveToBoxButton item={item} />
+                  <ActionButton onClick={unarchive}>Move to Shelf</ActionButton>
+                </>
+              ) : (
+                <ActionButton onClick={archive}>Archive</ActionButton>
+              )}
             </>
           )}
           <ActionButton onClick={() => onRequestRemove(item)} danger>Remove</ActionButton>

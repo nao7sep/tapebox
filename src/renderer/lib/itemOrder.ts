@@ -1,6 +1,7 @@
 import type { Item } from '@shared/domain'
 import { useItemsStore } from '@renderer/store/items'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
+import { useArchiveStore } from '@renderer/store/archive'
 
 /**
  * The on-screen order of the item list — the single source of truth shared by
@@ -65,14 +66,27 @@ function sortFor(filter: Filter, items: Item[]): Item[] {
   })
 }
 
-/** Pure: the filtered, sorted items for a given filter. */
-export function visibleItems(items: Item[], filter: Filter): Item[] {
+/**
+ * Pure: the on-screen item order. The shelf is auto-sorted by bucket/recency;
+ * the archived view shows one box at a time (selectedGroupId, null = Ungrouped)
+ * in manual order, falling back to recency for tapes not yet hand-ordered.
+ */
+export function visibleItems(items: Item[], filter: Filter, selectedGroupId: string | null = null): Item[] {
+  if (filter === 'archived') {
+    return items
+      .filter((i) => !!i.archivedAtUtc && i.groupId === selectedGroupId)
+      .sort((a, b) =>
+        a.archiveOrder - b.archiveOrder ||
+        (b.downloadedAtUtc ?? b.addedAtUtc).localeCompare(a.downloadedAtUtc ?? a.addedAtUtc),
+      )
+  }
   return sortFor(filter, items.filter((i) => matchesFilter(i, filter)))
 }
 
-/** Reactive: the on-screen item order for the current filter. */
+/** Reactive: the on-screen item order for the current filter and selected box. */
 export function useVisibleItems(): Item[] {
   const items = useItemsStore((s) => s.items)
   const filter = useFilterStore((s) => s.filter)
-  return visibleItems(items, filter)
+  const selectedGroupId = useArchiveStore((s) => s.selectedGroupId)
+  return visibleItems(items, filter, selectedGroupId)
 }

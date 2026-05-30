@@ -1,5 +1,6 @@
 import { ipcInvoke, ipcOn } from './client'
 import { useItemsStore } from '@renderer/store/items'
+import { useGroupsStore } from '@renderer/store/groups'
 import { useBinariesStore } from '@renderer/store/binaries'
 import { useRuntimeStore } from '@renderer/store/runtime'
 
@@ -11,13 +12,16 @@ import { useRuntimeStore } from '@renderer/store/runtime'
  */
 export function startIpcSync(): () => void {
   void ipcInvoke('library:list').then((items) => useItemsStore.getState().setAll(items))
+  void ipcInvoke('archive:listGroups').then((g) => useGroupsStore.getState().setGroups(g))
   void ipcInvoke('binaries:status').then((s) => useBinariesStore.getState().setStatuses(s))
   void ipcInvoke('app:runtimeInfo').then((info) => useRuntimeStore.getState().setInfo(info))
 
   const offs = [
-    ipcOn('items:added',     (items) => useItemsStore.getState().upsertMany(items)),
-    ipcOn('items:updated',   (item)  => useItemsStore.getState().upsert(item)),
-    ipcOn('items:removed',   ({ itemIds }) => useItemsStore.getState().removeMany(itemIds)),
+    ipcOn('items:added',       (items) => useItemsStore.getState().upsertMany(items)),
+    ipcOn('items:updated',     (item)  => useItemsStore.getState().upsert(item)),
+    ipcOn('items:updatedMany', (items) => useItemsStore.getState().upsertMany(items)),
+    ipcOn('items:removed',     ({ itemIds }) => useItemsStore.getState().removeMany(itemIds)),
+    ipcOn('groups:changed',    (groups) => useGroupsStore.getState().setGroups(groups)),
     ipcOn('items:progress',  ({ itemId, phase, percent }) =>
       useItemsStore.getState().setProgress(itemId, { phase, percent }),
     ),

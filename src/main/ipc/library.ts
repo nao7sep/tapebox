@@ -247,6 +247,8 @@ export function registerLibraryHandlers(): void {
         slug: typeof tb['slug'] === 'string' ? tb['slug'] : null,
         renamedAtUtc: typeof tb['renamedAtUtc'] === 'string' ? tb['renamedAtUtc'] : null,
         archivedAtUtc: null,
+        groupId: null,
+        archiveOrder: 0,
         pausedAtUtc: null,
         failedAtUtc: null,
         lastError: null,

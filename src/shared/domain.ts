@@ -57,6 +57,12 @@ export const ItemSchema = z.object({
   // Archive marker (orthogonal to state).
   archivedAtUtc: z.string().nullable(),
 
+  // Archive organization (only meaningful while archived): which box the tape is
+  // filed in (null = Ungrouped) and its manual position within that box. Defaulted
+  // so sessions written before boxes existed load unchanged.
+  groupId: z.string().nullable().default(null),
+  archiveOrder: z.number().int().default(0),
+
   // State-transition markers.
   pausedAtUtc: z.string().nullable().default(null),          // when state → 'paused'
   failedAtUtc: z.string().nullable().default(null),          // when state → 'failed'
@@ -86,6 +92,18 @@ export const SidecarTapeboxSchema = z.object({
 export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
 
 /**
+ * A box: a named, ordered collection of archived tapes. Membership is single — a
+ * tape belongs to one box (via Item.groupId) or to Ungrouped. `order` is the
+ * box's position in the box list.
+ */
+export const ArchiveGroupSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  order: z.number().int(),
+})
+export type ArchiveGroup = z.infer<typeof ArchiveGroupSchema>
+
+/**
  * Session file shape — persisted in ~/.tapebox/session.json.
  * Live progress data (percent, speed, ETA) is intentionally absent;
  * it's rebuilt by the queue at runtime.
@@ -93,5 +111,6 @@ export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
 export const SessionSchema = z.object({
   schemaVersion: z.literal(1),
   items: z.array(ItemSchema),
+  groups: z.array(ArchiveGroupSchema).default([]),
 })
 export type Session = z.infer<typeof SessionSchema>

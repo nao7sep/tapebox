@@ -1,4 +1,4 @@
-import type { Item } from './domain'
+import type { ArchiveGroup, Item } from './domain'
 import type { Settings } from './settings'
 
 /**
@@ -24,6 +24,21 @@ export type IpcCalls = {
   'library:archive':         { req: { itemIds: string[] };                           res: void }
   'library:unarchive':       { req: { itemIds: string[] };                           res: void }
   'library:getSidecar':      { req: { itemId: string };                              res: SidecarRaw }
+
+  // ── Archive organization (boxes for archived tapes) ──────────────────────
+  // A box holds archived tapes in manual order; a tape is in one box or none.
+  // placeItems is the workhorse behind assign / reorder / move-between: drop
+  // these tapes into `groupId` (null = Ungrouped) before `beforeItemId` (or at
+  // the end), reindexing that box's order.
+  'archive:listGroups':    { req: undefined;                         res: ArchiveGroup[] }
+  'archive:createGroup':   { req: { name: string };                  res: ArchiveGroup }
+  'archive:renameGroup':   { req: { groupId: string; name: string }; res: ArchiveGroup }
+  'archive:deleteGroup':   { req: { groupId: string };               res: void }
+  'archive:reorderGroups': { req: { orderedIds: string[] };          res: void }
+  'archive:placeItems': {
+    req: { itemIds: string[]; groupId: string | null; beforeItemId: string | null }
+    res: void
+  }
 
   // ── Export (outside the box) ─────────────────────────────────────────────
   'export:audio': {
@@ -135,6 +150,11 @@ export type IpcEvents = {
   'items:completed':   { itemId: string }
   'items:failed':      { itemId: string; error: string }
   'items:removed':     { itemIds: string[] }
+  // Bulk item update (e.g. a box reorder touches many tapes at once).
+  'items:updatedMany': Item[]
+
+  // The box list changed (created / renamed / deleted / reordered).
+  'groups:changed':    ArchiveGroup[]
 
   'enum:entry':        { sessionId: string; entry: EnumEntry }
   'enum:done':         { sessionId: string; totalCount: number }

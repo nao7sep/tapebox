@@ -65,6 +65,8 @@ function makeQueuedItem(url: string): Item {
     slug: null,
     renamedAtUtc: null,
     archivedAtUtc: null,
+    groupId: null,
+    archiveOrder: 0,
     pausedAtUtc: autostart ? null : now,
     failedAtUtc: null,
     lastError: null,

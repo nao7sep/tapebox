@@ -4,6 +4,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useItemsStore } from '@renderer/store/items'
 import { useSelectionStore } from '@renderer/store/selection'
+import { useFilterStore } from '@renderer/store/filter'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore, updatePaneWidth } from '@renderer/store/settings'
@@ -14,6 +15,7 @@ import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
 import { ItemList } from '@renderer/components/ItemList'
+import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
 import { DetailPane } from '@renderer/components/DetailPane'
 import { FilterChips } from '@renderer/components/FilterChips'
 import { AddPlaylistModal } from '@renderer/components/AddPlaylistModal'
@@ -53,6 +55,7 @@ export default function App() {
   const { requestRemove, confirmModal } = useItemRemoval(videoRef)
   useListKeyboard(requestRemove)
   const leftPaneWidth = useSettingsStore((s) => s.settings?.leftPaneWidth ?? 320)
+  const filter = useFilterStore((s) => s.filter)
   const importMedia = useImportMedia()
 
   function openPlaylist(initialUrl = '') {
@@ -133,9 +136,13 @@ export default function App() {
             <div className="shrink-0 border-b border-zinc-800 px-3 py-2.5">
               <FilterChips />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <ItemList />
-            </div>
+            {filter === 'archived' ? (
+              <ArchiveOrganizer />
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <ItemList />
+              </div>
+            )}
             <ResizeHandle
               edge="right"
               width={leftPaneWidth}

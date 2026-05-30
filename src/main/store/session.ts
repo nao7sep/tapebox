@@ -1,7 +1,7 @@
 import { paths } from '@main/paths'
 import { readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { SessionSchema, type Item, type Session } from '@shared/domain'
+import { SessionSchema, type ArchiveGroup, type Item, type Session } from '@shared/domain'
 
 /**
  * In-memory session cache, debounced atomic persistence to session.json.
@@ -11,7 +11,7 @@ import { SessionSchema, type Item, type Session } from '@shared/domain'
 
 const SAVE_DEBOUNCE_MS = 500
 
-let cache: Session = { schemaVersion: 1, items: [] }
+let cache: Session = { schemaVersion: 1, items: [], groups: [] }
 let saveTimer: NodeJS.Timeout | null = null
 let loaded = false
 
@@ -52,6 +52,25 @@ export function removeItems(ids: string[]): void {
   assertLoaded()
   const set = new Set(ids)
   cache.items = cache.items.filter((i) => !set.has(i.id))
+  scheduleSave()
+}
+
+export function getGroups(): ArchiveGroup[] {
+  assertLoaded()
+  return cache.groups
+}
+
+export function upsertGroup(group: ArchiveGroup): void {
+  assertLoaded()
+  const idx = cache.groups.findIndex((g) => g.id === group.id)
+  if (idx >= 0) cache.groups[idx] = group
+  else cache.groups.push(group)
+  scheduleSave()
+}
+
+export function removeGroup(id: string): void {
+  assertLoaded()
+  cache.groups = cache.groups.filter((g) => g.id !== id)
   scheduleSave()
 }
 
