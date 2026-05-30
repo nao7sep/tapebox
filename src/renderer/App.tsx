@@ -9,6 +9,7 @@ import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore, updatePaneWidth } from '@renderer/store/settings'
 import { useItemRemoval } from '@renderer/lib/useItemRemoval'
 import { useListKeyboard } from '@renderer/lib/useListKeyboard'
+import { useImportMedia } from '@renderer/lib/useImportMedia'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
@@ -52,10 +53,17 @@ export default function App() {
   const { requestRemove, confirmModal } = useItemRemoval(videoRef)
   useListKeyboard(requestRemove)
   const leftPaneWidth = useSettingsStore((s) => s.settings?.leftPaneWidth ?? 320)
+  const importMedia = useImportMedia()
 
   function openPlaylist(initialUrl = '') {
     setPlaylistInitialUrl(initialUrl)
     setShowPlaylist(true)
+  }
+
+  async function importFiles() {
+    const picked = await ipcInvoke('dialog:pickFiles', { title: 'Import media files' })
+    // Drop any sidecar picked alongside media — it's paired by stem automatically.
+    await importMedia(picked.filter((p) => !p.toLowerCase().endsWith('.json')))
   }
 
   useEffect(() => {
@@ -109,6 +117,7 @@ export default function App() {
           </div>
           <HeaderMenu
             onPlaylist={() => openPlaylist()}
+            onImport={() => void importFiles()}
             onSettings={() => setShowSettings(true)}
             onTools={() => openBinariesModal()}
             onShortcuts={() => setShowShortcuts(true)}

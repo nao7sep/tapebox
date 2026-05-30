@@ -1,6 +1,7 @@
 import { useState, type DragEvent, type ReactNode } from 'react'
-import { ipcInvoke, pathForFile } from '@renderer/ipc/client'
+import { pathForFile } from '@renderer/ipc/client'
 import { useNoticeStore } from '@renderer/store/notice'
+import { useImportMedia } from '@renderer/lib/useImportMedia'
 
 type Props = { children: ReactNode }
 
@@ -18,6 +19,7 @@ type Props = { children: ReactNode }
 export function DropZone({ children }: Props) {
   const [active, setActive] = useState(false)
   const notify = useNoticeStore((s) => s.notify)
+  const importMedia = useImportMedia()
 
   function isFileDrag(e: DragEvent): boolean {
     return Array.from(e.dataTransfer?.types ?? []).includes('Files')
@@ -59,19 +61,7 @@ export function DropZone({ children }: Props) {
       return
     }
 
-    try {
-      const { imported, rejected } = await ipcInvoke('library:import', { mediaPaths })
-      if (rejected.length > 0) {
-        // The status bar shows only the headline; keep the reasons reachable.
-        console.warn('import rejected:', rejected)
-      }
-      notify(
-        `Imported ${imported.length}${rejected.length ? `, ${rejected.length} rejected` : ''}`,
-        rejected.length > 0 ? 'error' : 'info',
-      )
-    } catch (err) {
-      notify(`Import failed: ${String(err)}`, 'error')
-    }
+    await importMedia(mediaPaths)
   }
 
   return (

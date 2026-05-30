@@ -60,6 +60,7 @@ export type IpcCalls = {
 
   // ── Native dialogs ───────────────────────────────────────────────────────
   'dialog:pickDirectory':  { req: { title?: string };                res: string | null }
+  'dialog:pickFiles':      { req: { title?: string };                res: string[] }
 
   // ── Media (loopback playback server) ─────────────────────────────────────
   // Base URL of the in-process loopback HTTP server that streams library files

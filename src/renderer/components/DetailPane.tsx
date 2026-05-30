@@ -100,9 +100,11 @@ export function DetailPane({
       {/* Left column: title, video (or status panel), and action buttons stacked
           full height. Chapters sit alongside as a sibling so they run the whole
           height of the pane, not just the space under the title. Padding lives on
-          each column (not the row) so the chapters divider can span edge to edge. */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
-        <div className="shrink-0 border-b border-zinc-800 pb-3">
+          each column (not the row) so the chapters divider can span edge to edge.
+          Horizontal padding lives on each row (not the column) so the title and
+          button borders span full width and meet the side dividers. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col py-4">
+        <div className="shrink-0 border-b border-zinc-800 px-4 pb-3">
           {/* Title is always shown; clicking it discloses the optional metadata.
               The chevron sits in a fixed-width slot so the title's wrapped lines
               and the disclosed metadata both align under the title text. */}
@@ -160,13 +162,13 @@ export function DetailPane({
         {/* For a downloaded tape the video fills the height between the title and
             the buttons. Other states show a single status panel here. */}
         {item.state === 'downloaded' ? (
-          <div className="mt-3 flex min-h-[200px] min-w-0 flex-1 items-center justify-center">
+          <div className="mt-3 flex min-h-[200px] min-w-0 flex-1 items-center justify-center px-4">
             {mediaUrl && !showRename && (
               <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} autoPlay={autoplay} />
             )}
           </div>
         ) : item.state === 'playlist' ? (
-          <div className="mt-3 rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-5">
+          <div className="mx-4 mt-3 rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-5">
             <h3 className="flex items-center gap-2 text-sm font-medium text-indigo-200">
               <PlaylistGlyph />
               This is a playlist or channel
@@ -181,7 +183,7 @@ export function DetailPane({
             </div>
           </div>
         ) : (
-          <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
+          <div className="mx-4 mt-3 rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
             {progress
               ? `${progress.phase}… ${progress.percent.toFixed(0)}%`
               : item.state === 'failed'
@@ -192,7 +194,7 @@ export function DetailPane({
           </div>
         )}
 
-        <div className="mt-3 flex shrink-0 flex-wrap gap-2 border-t border-zinc-800 pt-3">
+        <div className="mt-3 flex shrink-0 flex-wrap gap-2 border-t border-zinc-800 px-4 pt-3">
           {(item.state === 'queued' || item.state === 'probing' || item.state === 'downloading') && (
             <ActionButton onClick={cancel}>Cancel</ActionButton>
           )}
