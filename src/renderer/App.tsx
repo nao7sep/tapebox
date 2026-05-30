@@ -7,7 +7,7 @@ import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
-import { useSettingsStore, updatePaneWidth } from '@renderer/store/settings'
+import { useSettingsStore, patchSettings } from '@renderer/store/settings'
 import { useItemRemoval } from '@renderer/lib/useItemRemoval'
 import { useListKeyboard } from '@renderer/lib/useListKeyboard'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
@@ -18,6 +18,7 @@ import { ItemList } from '@renderer/components/ItemList'
 import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
 import { DetailPane } from '@renderer/components/DetailPane'
 import { FilterChips } from '@renderer/components/FilterChips'
+import { PlaybackToggles } from '@renderer/components/PlaybackToggles'
 import { AddPlaylistModal } from '@renderer/components/AddPlaylistModal'
 import { SettingsModal } from '@renderer/components/SettingsModal'
 import { AboutModal } from '@renderer/components/AboutModal'
@@ -133,8 +134,9 @@ export default function App() {
             style={{ width: leftPaneWidth }}
             className="relative flex shrink-0 flex-col border-r border-zinc-800"
           >
-            <div className="shrink-0 border-b border-zinc-800 px-3 py-2.5">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2.5">
               <FilterChips />
+              <PlaybackToggles />
             </div>
             {filter === 'archived' ? (
               <ArchiveOrganizer />
@@ -145,11 +147,11 @@ export default function App() {
             )}
             <ResizeHandle
               edge="right"
-              width={leftPaneWidth}
+              size={leftPaneWidth}
               min={200}
               max={720}
-              onResize={(w) => updatePaneWidth({ leftPaneWidth: w }, false)}
-              onCommit={(w) => updatePaneWidth({ leftPaneWidth: w }, true)}
+              onResize={(w) => patchSettings({ leftPaneWidth: w }, false)}
+              onCommit={(w) => patchSettings({ leftPaneWidth: w }, true)}
             />
           </aside>
           <section className="flex-1 overflow-y-auto">

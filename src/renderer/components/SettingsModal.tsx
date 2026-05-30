@@ -187,6 +187,7 @@ function pickEditable(s: Settings) {
     autoStartDownloads: s.autoStartDownloads,
     maxConcurrentDownloads: s.maxConcurrentDownloads,
     autoplay: s.autoplay,
+    playSound: s.playSound,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
     autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
@@ -259,6 +260,13 @@ function GeneralTab({
         checked={draft.autoplay}
         disabled={busy}
         onChange={(v) => onPatch({ autoplay: v })}
+      />
+      <Toggle
+        label="Play sound"
+        description="Play video audio. When off, every video is muted and the volume control can't unmute it."
+        checked={draft.playSound}
+        disabled={busy}
+        onChange={(v) => onPatch({ playSound: v })}
       />
       <Toggle
         label="Confirm before removing"

@@ -4,19 +4,21 @@ type Props = {
   src: string
   poster?: string
   autoPlay?: boolean
+  muted?: boolean
 }
 
 /**
  * Thin wrapper around the native <video> element. Forwards a ref so the
  * parent (DetailPane) can call .currentTime = x when a chapter is clicked.
  */
-export const Player = forwardRef<HTMLVideoElement, Props>(function Player({ src, poster, autoPlay }, ref) {
+export const Player = forwardRef<HTMLVideoElement, Props>(function Player({ src, poster, autoPlay, muted }, ref) {
   return (
     <video
       ref={ref}
       src={src}
       poster={poster}
       autoPlay={autoPlay}
+      muted={muted}
       controls
       preload="metadata"
       // Fit the whole frame inside the available box (object-contain) so the

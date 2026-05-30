@@ -67,26 +67,42 @@ function sortFor(filter: Filter, items: Item[]): Item[] {
 }
 
 /**
- * Pure: the on-screen item order. The shelf is auto-sorted by bucket/recency;
- * the archived view shows one box at a time (selectedGroupId, null = Ungrouped)
- * in manual order, falling back to recency for tapes not yet hand-ordered.
+ * Pure: the on-screen item order. The shelf is auto-sorted by bucket/recency.
+ * The archived view shows one box at a time (selectedGroupId, null = Ungrouped)
+ * in manual order, falling back to recency for tapes not yet hand-ordered —
+ * unless a search query is active, in which case it shows matching tapes across
+ * ALL boxes by recency (read-only, the order isn't a box order).
  */
-export function visibleItems(items: Item[], filter: Filter, selectedGroupId: string | null = null): Item[] {
-  if (filter === 'archived') {
-    return items
-      .filter((i) => !!i.archivedAtUtc && i.groupId === selectedGroupId)
-      .sort((a, b) =>
-        a.archiveOrder - b.archiveOrder ||
-        (b.downloadedAtUtc ?? b.addedAtUtc).localeCompare(a.downloadedAtUtc ?? a.addedAtUtc),
-      )
+export function visibleItems(
+  items: Item[],
+  filter: Filter,
+  selectedGroupId: string | null = null,
+  query = '',
+): Item[] {
+  if (filter !== 'archived') {
+    return sortFor(filter, items.filter((i) => matchesFilter(i, filter)))
   }
-  return sortFor(filter, items.filter((i) => matchesFilter(i, filter)))
+
+  const archived = items.filter((i) => !!i.archivedAtUtc)
+  const byRecency = (a: Item, b: Item) =>
+    (b.downloadedAtUtc ?? b.addedAtUtc).localeCompare(a.downloadedAtUtc ?? a.addedAtUtc)
+
+  const q = query.trim().toLowerCase()
+  if (q) {
+    return archived
+      .filter((i) => (i.title ?? i.sourceUrl).toLowerCase().includes(q))
+      .sort(byRecency)
+  }
+  return archived
+    .filter((i) => i.groupId === selectedGroupId)
+    .sort((a, b) => a.archiveOrder - b.archiveOrder || byRecency(a, b))
 }
 
-/** Reactive: the on-screen item order for the current filter and selected box. */
+/** Reactive: the on-screen item order for the current filter, box, and search. */
 export function useVisibleItems(): Item[] {
   const items = useItemsStore((s) => s.items)
   const filter = useFilterStore((s) => s.filter)
   const selectedGroupId = useArchiveStore((s) => s.selectedGroupId)
-  return visibleItems(items, filter, selectedGroupId)
+  const query = useArchiveStore((s) => s.query)
+  return visibleItems(items, filter, selectedGroupId, query)
 }

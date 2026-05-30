@@ -79,6 +79,10 @@ export async function stopMediaServer(): Promise<void> {
   server = null
   token = null
   port = null
+  // The <video> element keeps a connection alive; without destroying it,
+  // server.close() waits on it forever and hangs app quit. Destroy open
+  // connections first so close() resolves immediately.
+  s.closeAllConnections()
   await new Promise<void>((resolve) => s.close(() => resolve()))
 }
 

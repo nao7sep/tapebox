@@ -1,31 +1,45 @@
+type Edge = 'left' | 'right' | 'top' | 'bottom'
+
 type Props = {
-  /** Which edge of the pane the handle sits on. 'right' for a left pane, 'left' for a right pane. */
-  edge: 'left' | 'right'
-  width: number
+  /** Which edge of the region the handle sits on. Left/right resize width; top/bottom resize height. */
+  edge: Edge
+  /** Current size (width for left/right, height for top/bottom). */
+  size: number
   min: number
   max: number
-  /** Live width during the drag (in-memory only). */
-  onResize: (width: number) => void
-  /** Final width when the drag ends (persist to disk). */
-  onCommit: (width: number) => void
+  /** Live size during the drag (in-memory only). */
+  onResize: (size: number) => void
+  /** Final size when the drag ends (persist to disk). */
+  onCommit: (size: number) => void
+}
+
+const POSITION: Record<Edge, string> = {
+  left: 'inset-y-0 -left-px w-1.5',
+  right: 'inset-y-0 -right-px w-1.5',
+  top: 'inset-x-0 -top-px h-1.5',
+  bottom: 'inset-x-0 -bottom-px h-1.5',
 }
 
 /**
- * A thin vertical drag handle pinned to a side pane's edge. Dragging resizes the
- * pane live and commits the final width on release. It highlights on hover rather
- * than swapping the mouse cursor, per the project's no-cursor-change rule.
+ * A thin drag handle pinned to a region's edge. Dragging resizes the region live
+ * and commits the final size on release. It highlights on hover rather than
+ * swapping the mouse cursor, per the project's no-cursor-change rule.
  */
-export function ResizeHandle({ edge, width, min, max, onResize, onCommit }: Props) {
+export function ResizeHandle({ edge, size, min, max, onResize, onCommit }: Props) {
+  const alongY = edge === 'top' || edge === 'bottom'
+  const grows = edge === 'right' || edge === 'bottom' // moving toward this edge grows the region
+
   function onMouseDown(e: React.MouseEvent) {
     e.preventDefault()
-    const startX = e.clientX
-    const startW = width
-    const clamp = (w: number) => Math.max(min, Math.min(max, Math.round(w)))
-    let current = startW
+    const start = alongY ? e.clientY : e.clientX
+    const startSize = size
+    const clamp = (s: number) => Math.max(min, Math.min(max, Math.round(s)))
+    let current = startSize
 
     function onMove(ev: MouseEvent) {
-      const delta = edge === 'right' ? ev.clientX - startX : startX - ev.clientX
-      current = clamp(startW + delta)
+      const pos = alongY ? ev.clientY : ev.clientX
+      const delta = grows ? pos - start : start - pos
+      current = clamp(startSize + delta)
       onResize(current)
     }
     function onUp() {
@@ -35,7 +49,6 @@ export function ResizeHandle({ edge, width, min, max, onResize, onCommit }: Prop
       onCommit(current)
     }
 
-    // Suppress text selection while dragging across the window.
     document.body.style.userSelect = 'none'
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -45,11 +58,8 @@ export function ResizeHandle({ edge, width, min, max, onResize, onCommit }: Prop
     <div
       onMouseDown={onMouseDown}
       role="separator"
-      aria-orientation="vertical"
-      className={
-        'absolute inset-y-0 z-10 w-1.5 transition-colors hover:bg-zinc-600/70 ' +
-        (edge === 'right' ? '-right-px' : '-left-px')
-      }
+      aria-orientation={alongY ? 'horizontal' : 'vertical'}
+      className={'absolute z-10 transition-colors hover:bg-zinc-600/70 ' + POSITION[edge]}
     />
   )
 }

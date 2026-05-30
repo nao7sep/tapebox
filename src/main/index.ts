@@ -82,8 +82,9 @@ async function startup(): Promise<void> {
 }
 
 /**
- * Idempotent cleanup. Called from both window-all-closed (so macOS persists
- * on close without quitting) and before-quit (so explicit Cmd+Q persists too).
+ * Idempotent teardown, run once on before-quit: flush session, stop the media
+ * server, close the logger. The media server is in-process, so it dies with this
+ * process — there is no separate server to leave stale.
  */
 let shutdownPromise: Promise<void> | null = null
 function shutdown(): Promise<void> {
@@ -112,12 +113,14 @@ void app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  void shutdown()
+  // macOS keeps the app (and its media server) alive in the dock for reactivation;
+  // teardown belongs to the actual quit below. Other platforms quit on last close.
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', (event) => {
   if (shutdownPromise) return
   event.preventDefault()
-  void shutdown().then(() => app.exit(0))
+  // finally (not then) so a teardown error still exits — quit must never hang.
+  void shutdown().finally(() => app.exit(0))
 })

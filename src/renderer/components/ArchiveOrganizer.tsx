@@ -11,9 +11,12 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useItemsStore } from '@renderer/store/items'
 import { useGroupsStore } from '@renderer/store/groups'
 import { useArchiveStore } from '@renderer/store/archive'
+import { useSettingsStore, patchSettings } from '@renderer/store/settings'
 import { useVisibleItems } from '@renderer/lib/itemOrder'
 import { BoxList, UNGROUPED_DROP_ID } from './BoxList'
 import { ArchiveTapeList } from './ArchiveTapeList'
+import { SearchResults } from './SearchResults'
+import { ResizeHandle } from './ResizeHandle'
 
 /**
  * The archived view's left-pane layout and drag handling: boxes on top, the
@@ -25,7 +28,11 @@ import { ArchiveTapeList } from './ArchiveTapeList'
 export function ArchiveOrganizer() {
   const groups = useGroupsStore((s) => s.groups)
   const selectedGroupId = useArchiveStore((s) => s.selectedGroupId)
+  const query = useArchiveStore((s) => s.query)
+  const setQuery = useArchiveStore((s) => s.setQuery)
+  const boxesHeight = useSettingsStore((s) => s.settings?.archiveBoxesHeight ?? 240)
   const tapes = useVisibleItems()
+  const searching = query.trim().length > 0
 
   // A small movement threshold so plain clicks (select box/tape, rename, delete)
   // don't start a drag.
@@ -78,11 +85,28 @@ export function ArchiveOrganizer() {
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex max-h-[45%] min-h-0 flex-col border-b border-zinc-800">
+        <div className="shrink-0 px-3 py-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search archived…"
+            spellCheck={false}
+            className="w-full rounded border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden"
+          />
+        </div>
+        <div className="relative flex shrink-0 flex-col border-b border-zinc-800" style={{ height: boxesHeight }}>
           <BoxList />
+          <ResizeHandle
+            edge="bottom"
+            size={boxesHeight}
+            min={120}
+            max={800}
+            onResize={(h) => patchSettings({ archiveBoxesHeight: h }, false)}
+            onCommit={(h) => patchSettings({ archiveBoxesHeight: h }, true)}
+          />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <ArchiveTapeList />
+          {searching ? <SearchResults /> : <ArchiveTapeList />}
         </div>
       </div>
     </DndContext>

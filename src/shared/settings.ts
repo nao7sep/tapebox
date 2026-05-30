@@ -63,6 +63,9 @@ export const SettingsSchema = z.object({
   // Defaulted so configs written before this field existed still load cleanly.
   autoplay: z.boolean().default(true),
 
+  // Play video audio. When off, every video is muted and can't be unmuted.
+  playSound: z.boolean().default(true),
+
   // Removing a tape moves its files to the OS Trash (recoverable) when on, or
   // deletes them permanently when off. confirmRemove gates a confirmation
   // dialog before any removal. Both default on (and are defaulted so older
@@ -75,6 +78,8 @@ export const SettingsSchema = z.object({
   // so older configs still load.
   leftPaneWidth: z.number().int().min(200).max(720).default(320),
   chaptersPaneWidth: z.number().int().min(200).max(720).default(288),
+  // Height (px) of the boxes list above the tape list in the archive organizer.
+  archiveBoxesHeight: z.number().int().min(120).max(800).default(240),
 
   // Check GitHub/upstream for newer yt-dlp/ffmpeg/deno releases once at startup.
   autoCheckBinaryUpdates: z.boolean(),
@@ -104,10 +109,12 @@ export function defaultSettings(libraryDir: string): Settings {
     autoStartDownloads: true,
     maxConcurrentDownloads: 2,
     autoplay: true,
+    playSound: true,
     trashOnRemove: true,
     confirmRemove: true,
     leftPaneWidth: 320,
     chaptersPaneWidth: 288,
+    archiveBoxesHeight: 240,
     autoCheckBinaryUpdates: true,
     ai: {
       baseUrl: 'https://api.openai.com/v1',

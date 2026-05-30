@@ -5,8 +5,9 @@ import type { SidecarRaw } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useItemsStore } from '@renderer/store/items'
 import { useMediaStore } from '@renderer/store/media'
-import { useSettingsStore, updatePaneWidth } from '@renderer/store/settings'
+import { useSettingsStore, patchSettings } from '@renderer/store/settings'
 import { releaseVideo } from '@renderer/lib/video'
+import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { formatTime } from '@renderer/lib/format'
 import { Player } from './Player'
 import { ChapterList } from './ChapterList'
@@ -47,6 +48,7 @@ export function DetailPane({
   const progress = useItemsStore((s) => s.progress[item.id])
   const mediaBase = useMediaStore((s) => s.baseUrl)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
+  const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
   const chaptersPaneWidth = useSettingsStore((s) => s.settings?.chaptersPaneWidth ?? 288)
 
   useEffect(() => {
@@ -70,6 +72,8 @@ export function DetailPane({
   const mediaUrl = item.filename && mediaBase
     ? `${mediaBase}/${encodeURIComponent(item.filename)}`
     : null
+
+  useEnforcedMute(videoRef, !playSound, mediaUrl)
 
   function seek(seconds: number) {
     const v = videoRef.current
@@ -165,7 +169,7 @@ export function DetailPane({
         {item.state === 'downloaded' ? (
           <div className="mt-3 flex min-h-[200px] min-w-0 flex-1 items-center justify-center px-4">
             {mediaUrl && !showRename && (
-              <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} autoPlay={autoplay} />
+              <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} autoPlay={autoplay} muted={!playSound} />
             )}
           </div>
         ) : item.state === 'playlist' ? (
@@ -229,11 +233,11 @@ export function DetailPane({
         >
           <ResizeHandle
             edge="left"
-            width={chaptersPaneWidth}
+            size={chaptersPaneWidth}
             min={200}
             max={720}
-            onResize={(w) => updatePaneWidth({ chaptersPaneWidth: w }, false)}
-            onCommit={(w) => updatePaneWidth({ chaptersPaneWidth: w }, true)}
+            onResize={(w) => patchSettings({ chaptersPaneWidth: w }, false)}
+            onCommit={(w) => patchSettings({ chaptersPaneWidth: w }, true)}
           />
           <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
           <div className="min-h-0 flex-1 overflow-y-auto">
