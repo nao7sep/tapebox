@@ -2,6 +2,8 @@ import { Modal } from '@renderer/components/Modal'
 
 const SHORTCUTS: { label: string; keys: string }[] = [
   { label: 'Add the URL in the input', keys: 'Enter' },
+  { label: 'Move selection up / down', keys: '↑ / ↓' },
+  { label: 'Move the selected tape to Trash', keys: 'Backspace / Delete' },
   { label: 'Close a modal', keys: 'Esc' },
 ]
 

@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { z } from 'zod'
 import type { Item } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useItemsStore } from '@renderer/store/items'
-import { useSelectionStore } from '@renderer/store/selection'
+import { useMediaStore } from '@renderer/store/media'
+import { useSettingsStore, updatePaneWidth } from '@renderer/store/settings'
+import { releaseVideo } from '@renderer/lib/video'
 import { formatTime } from '@renderer/lib/format'
 import { Player } from './Player'
 import { ChapterList } from './ChapterList'
 import { RenameModal } from './RenameModal'
 import { ExportModal } from './ExportModal'
-import { ConfirmModal } from './ConfirmModal'
+import { ResizeHandle } from './ResizeHandle'
 
 /**
  * Chapter shape as yt-dlp writes it into the sidecar. We validate at the
@@ -26,20 +28,25 @@ type Chapter = z.infer<typeof SidecarChapterSchema>
 
 export function DetailPane({
   item,
+  videoRef,
+  onRequestRemove,
   onOpenPlaylist,
 }: {
   item: Item
+  videoRef: RefObject<HTMLVideoElement | null>
+  onRequestRemove: (item: Item) => void
   onOpenPlaylist: (url: string) => void
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
   const [sidecar, setSidecar] = useState<SidecarRaw | null>(null)
   const [sidecarError, setSidecarError] = useState<string | null>(null)
   const [showRename, setShowRename] = useState(false)
   const [showExport, setShowExport] = useState(false)
-  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [infoOpen, setInfoOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const select = useSelectionStore((s) => s.select)
   const progress = useItemsStore((s) => s.progress[item.id])
+  const mediaBase = useMediaStore((s) => s.baseUrl)
+  const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
+  const chaptersPaneWidth = useSettingsStore((s) => s.settings?.chaptersPaneWidth ?? 288)
 
   useEffect(() => {
     setSidecar(null)
@@ -59,8 +66,8 @@ export function DetailPane({
     return parsed.success ? parsed.data : []
   })()
 
-  const mediaUrl = item.filename
-    ? `tapebox-media:///${encodeURIComponent(item.filename)}`
+  const mediaUrl = item.filename && mediaBase
+    ? `${mediaBase}/${encodeURIComponent(item.filename)}`
     : null
 
   function seek(seconds: number) {
@@ -68,20 +75,6 @@ export function DetailPane({
     if (!v) return
     v.currentTime = seconds
     void v.play().catch(() => {})
-  }
-
-  /**
-   * Release the file handle before any operation that touches the file's
-   * name or existence on disk. On Windows the OS refuses rename/unlink while
-   * the file is open in a <video> element. On macOS/Linux it works but the
-   * sidecar may be stale if the read happened before release.
-   */
-  function releaseMedia() {
-    const v = videoRef.current
-    if (!v) return
-    v.pause()
-    v.removeAttribute('src')
-    v.load()
   }
 
   async function copyUrl() {
@@ -97,126 +90,157 @@ export function DetailPane({
   async function cancel()    { await ipcInvoke('downloads:cancel',  { itemId: item.id }) }
   async function retry()     { await ipcInvoke('downloads:retry',   { itemId: item.id }) }
 
-  async function doRemove() {
-    releaseMedia()
-    await ipcInvoke('library:remove', { itemIds: [item.id], deleteFiles: true })
-    select(null) // unmounts the pane (and this confirm modal with it)
-  }
-
   function openRename() {
-    releaseMedia()
+    releaseVideo(videoRef.current)
     setShowRename(true)
   }
 
   return (
-    <div className="flex h-full flex-col p-6">
-      <div className="shrink-0">
-        <h2 className="text-lg font-medium">{item.title ?? item.sourceUrl}</h2>
-        <p className="mt-1 text-xs text-zinc-400">
-          {item.uploader ?? 'unknown uploader'}
-          {item.durationSeconds != null && ` · ${formatTime(item.durationSeconds)}`}
-          {' · '}
-          {item.state === 'playlist' ? 'playlist or channel' : item.state}
-          {item.archivedAtUtc && ' · archived'}
-        </p>
-        <p className="mt-1 truncate text-xs text-zinc-400">
-          <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="hover:text-zinc-300">
-            {item.sourceUrl}
-          </a>
-        </p>
-        {item.slug && (
-          <p className="mt-1 text-xs text-zinc-400">
-            Slug: <span className="text-zinc-300">{item.slug}</span>
-          </p>
-        )}
-      </div>
-
-      {/* Middle region. For a downloaded tape: video (fit entirely) on the left,
-          chapters on the right — header above and buttons below stay fixed while
-          the video shrinks to fit. Other states show a single status panel. */}
-      {item.state === 'downloaded' ? (
-        <div className="mt-5 flex min-h-0 flex-1 gap-4">
-          <div className="flex min-h-[200px] min-w-0 flex-1 items-center justify-center">
-            {mediaUrl && !showRename && (
-              <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} />
-            )}
-          </div>
-          {(chapters.length > 0 || sidecarError) && (
-            <aside className="flex w-72 shrink-0 flex-col">
-              <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                {sidecarError
-                  ? <p className="text-xs text-red-400">{sidecarError}</p>
-                  : <ChapterList chapters={chapters} onSeek={seek} />}
-              </div>
-            </aside>
+    <div className="flex h-full">
+      {/* Left column: title, video (or status panel), and action buttons stacked
+          full height. Chapters sit alongside as a sibling so they run the whole
+          height of the pane, not just the space under the title. Padding lives on
+          each column (not the row) so the chapters divider can span edge to edge. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
+        <div className="shrink-0 border-b border-zinc-800 pb-3">
+          {/* Title is always shown; clicking it discloses the optional metadata.
+              The chevron sits in a fixed-width slot so the title's wrapped lines
+              and the disclosed metadata both align under the title text. */}
+          <button
+            onClick={() => setInfoOpen((v) => !v)}
+            aria-expanded={infoOpen}
+            className="group flex w-full text-left"
+          >
+            <span className="flex h-7 w-5 shrink-0 items-center justify-center">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                className={
+                  'text-zinc-500 transition-transform group-hover:text-zinc-300 ' +
+                  (infoOpen ? 'rotate-90' : '')
+                }
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="9 6 15 12 9 18" />
+              </svg>
+            </span>
+            <h2 className="min-w-0 flex-1 text-lg font-medium leading-7 group-hover:text-zinc-300">
+              {item.title ?? item.sourceUrl}
+            </h2>
+          </button>
+          {infoOpen && (
+            <div className="mt-1 space-y-1 pl-5">
+              <p className="text-xs text-zinc-400">
+                {item.uploader ?? 'unknown uploader'}
+                {item.durationSeconds != null && ` · ${formatTime(item.durationSeconds)}`}
+                {' · '}
+                {item.state === 'playlist' ? 'playlist or channel' : item.state}
+                {item.archivedAtUtc && ' · archived'}
+              </p>
+              <p className="truncate text-xs text-zinc-400">
+                <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="hover:text-zinc-300">
+                  {item.sourceUrl}
+                </a>
+              </p>
+              {item.slug && (
+                <p className="text-xs text-zinc-400">
+                  Slug: <span className="text-zinc-300">{item.slug}</span>
+                </p>
+              )}
+            </div>
           )}
         </div>
-      ) : item.state === 'playlist' ? (
-        <div className="mt-5 rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-5">
-          <h3 className="flex items-center gap-2 text-sm font-medium text-indigo-200">
-            <PlaylistGlyph />
-            This is a playlist or channel
-          </h3>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-300">
-            TapeBox adds one video at a time here. To choose which videos to take
-            from this, open the scanner — it lists every video so you can pick.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <ActionButton onClick={() => onOpenPlaylist(item.sourceUrl)}>Open scanner</ActionButton>
-            <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-5 rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
-          {progress
-            ? `${progress.phase}… ${progress.percent.toFixed(0)}%`
-            : item.state === 'failed'
-              ? `Failed: ${item.lastError ?? 'unknown error'}`
-              : item.state === 'paused'
-                ? 'Paused. Click Resume below to continue.'
-                : 'Waiting in queue…'}
-        </div>
-      )}
 
-      <div className="mt-5 flex shrink-0 flex-wrap gap-2">
-        {(item.state === 'queued' || item.state === 'probing' || item.state === 'downloading') && (
-          <ActionButton onClick={cancel}>Cancel</ActionButton>
+        {/* For a downloaded tape the video fills the height between the title and
+            the buttons. Other states show a single status panel here. */}
+        {item.state === 'downloaded' ? (
+          <div className="mt-3 flex min-h-[200px] min-w-0 flex-1 items-center justify-center">
+            {mediaUrl && !showRename && (
+              <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} autoPlay={autoplay} />
+            )}
+          </div>
+        ) : item.state === 'playlist' ? (
+          <div className="mt-3 rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-5">
+            <h3 className="flex items-center gap-2 text-sm font-medium text-indigo-200">
+              <PlaylistGlyph />
+              This is a playlist or channel
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-zinc-300">
+              TapeBox adds one video at a time here. To choose which videos to take
+              from this, open the scanner — it lists every video so you can pick.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton onClick={() => onOpenPlaylist(item.sourceUrl)}>Open scanner</ActionButton>
+              <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
+            {progress
+              ? `${progress.phase}… ${progress.percent.toFixed(0)}%`
+              : item.state === 'failed'
+                ? `Failed: ${item.lastError ?? 'unknown error'}`
+                : item.state === 'paused'
+                  ? 'Paused. Click Resume below to continue.'
+                  : 'Waiting in queue…'}
+          </div>
         )}
-        {(item.state === 'failed' || item.state === 'paused') && (
-          <ActionButton onClick={retry}>Resume</ActionButton>
-        )}
-        {item.state === 'downloaded' && (
-          <>
-            <ActionButton onClick={() => setShowExport(true)}>Export audio…</ActionButton>
-            <ActionButton onClick={openRename}>Rename…</ActionButton>
-            {item.archivedAtUtc
-              ? <ActionButton onClick={unarchive}>Move to Shelf</ActionButton>
-              : <ActionButton onClick={archive}>Archive</ActionButton>}
-          </>
-        )}
-        <ActionButton onClick={() => setConfirmRemove(true)} danger>Remove</ActionButton>
+
+        <div className="mt-3 flex shrink-0 flex-wrap gap-2 border-t border-zinc-800 pt-3">
+          {(item.state === 'queued' || item.state === 'probing' || item.state === 'downloading') && (
+            <ActionButton onClick={cancel}>Cancel</ActionButton>
+          )}
+          {(item.state === 'failed' || item.state === 'paused') && (
+            <ActionButton onClick={retry}>Resume</ActionButton>
+          )}
+          {item.state === 'downloaded' && (
+            <>
+              <ActionButton onClick={() => setShowExport(true)}>Export audio…</ActionButton>
+              <ActionButton onClick={openRename}>Rename…</ActionButton>
+              {item.archivedAtUtc
+                ? <ActionButton onClick={unarchive}>Move to Shelf</ActionButton>
+                : <ActionButton onClick={archive}>Archive</ActionButton>}
+            </>
+          )}
+          <ActionButton onClick={() => onRequestRemove(item)} danger>Remove</ActionButton>
+        </div>
       </div>
+
+      {/* Chapters: full-height side pane, divided from the video by a border like
+          the left pane's. Its own padding keeps the divider running edge to edge. */}
+      {item.state === 'downloaded' && (chapters.length > 0 || sidecarError) && (
+        <aside
+          style={{ width: chaptersPaneWidth }}
+          className="relative flex shrink-0 flex-col border-l border-zinc-800 p-4"
+        >
+          <ResizeHandle
+            edge="left"
+            width={chaptersPaneWidth}
+            min={200}
+            max={720}
+            onResize={(w) => updatePaneWidth({ chaptersPaneWidth: w }, false)}
+            onCommit={(w) => updatePaneWidth({ chaptersPaneWidth: w }, true)}
+          />
+          <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {sidecarError
+              ? <p className="text-xs text-red-400">{sidecarError}</p>
+              : <ChapterList chapters={chapters} onSeek={seek} />}
+          </div>
+        </aside>
+      )}
 
       {showRename && (
         <RenameModal item={item} onClose={() => setShowRename(false)} />
       )}
       {showExport && (
         <ExportModal item={item} onClose={() => setShowExport(false)} />
-      )}
-      {confirmRemove && (
-        <ConfirmModal
-          title="Remove tape"
-          message={
-            item.filename
-              ? 'Remove this tape and delete its files?'
-              : 'Remove this tape?'
-          }
-          confirmLabel="Remove"
-          danger
-          onCancel={() => setConfirmRemove(false)}
-          onConfirm={() => void doRemove()}
-        />
       )}
     </div>
   )

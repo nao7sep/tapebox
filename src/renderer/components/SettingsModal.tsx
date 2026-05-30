@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AiSettings, NetworkGroup, RetryPolicy, Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
+import { useSettingsStore } from '@renderer/store/settings'
 import { Modal } from '@renderer/components/Modal'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
 import {
@@ -78,7 +79,8 @@ export function SettingsModal({ onClose }: Props) {
     setBusy(true)
     setError(null)
     try {
-      await ipcInvoke('settings:update', pickEditable(draft))
+      const updated = await ipcInvoke('settings:update', pickEditable(draft))
+      useSettingsStore.getState().setSettings(updated)
       if (apiKeyDraft.length > 0) {
         await ipcInvoke('settings:setApiKey', { apiKey: apiKeyDraft })
       } else if (wantsClearKey) {
@@ -184,6 +186,9 @@ function pickEditable(s: Settings) {
   return {
     autoStartDownloads: s.autoStartDownloads,
     maxConcurrentDownloads: s.maxConcurrentDownloads,
+    autoplay: s.autoplay,
+    trashOnRemove: s.trashOnRemove,
+    confirmRemove: s.confirmRemove,
     autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
     ai: s.ai,
     network: s.network,
@@ -247,6 +252,27 @@ function GeneralTab({
         max={8}
         disabled={busy}
         onChange={(v) => onPatch({ maxConcurrentDownloads: v })}
+      />
+      <Toggle
+        label="Autoplay"
+        description="Start playback automatically when a downloaded tape is opened."
+        checked={draft.autoplay}
+        disabled={busy}
+        onChange={(v) => onPatch({ autoplay: v })}
+      />
+      <Toggle
+        label="Confirm before removing"
+        description="Ask for confirmation before a tape is removed."
+        checked={draft.confirmRemove}
+        disabled={busy}
+        onChange={(v) => onPatch({ confirmRemove: v })}
+      />
+      <Toggle
+        label="Move removed tapes to Trash"
+        description="Removed tapes go to the OS Trash (recoverable). Off = deleted permanently."
+        checked={draft.trashOnRemove}
+        disabled={busy}
+        onChange={(v) => onPatch({ trashOnRemove: v })}
       />
       <Toggle
         label="Check for tool updates on startup"

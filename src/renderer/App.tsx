@@ -5,6 +5,11 @@ import { startIpcSync } from '@renderer/ipc/sync'
 import { useItemsStore } from '@renderer/store/items'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
+import { useMediaStore } from '@renderer/store/media'
+import { useSettingsStore, updatePaneWidth } from '@renderer/store/settings'
+import { useItemRemoval } from '@renderer/lib/useItemRemoval'
+import { useListKeyboard } from '@renderer/lib/useListKeyboard'
+import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
 import { ItemList } from '@renderer/components/ItemList'
@@ -43,6 +48,10 @@ export default function App() {
   const [showPlaylist, setShowPlaylist] = useState(false)
   const [playlistInitialUrl, setPlaylistInitialUrl] = useState('')
   const decidedFirstRun = useRef(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const { requestRemove, confirmModal } = useItemRemoval(videoRef)
+  useListKeyboard(requestRemove)
+  const leftPaneWidth = useSettingsStore((s) => s.settings?.leftPaneWidth ?? 320)
 
   function openPlaylist(initialUrl = '') {
     setPlaylistInitialUrl(initialUrl)
@@ -51,7 +60,14 @@ export default function App() {
 
   useEffect(() => {
     const stop = startIpcSync()
+    // Hydrate the loopback media server's base URL. Without it the player can't
+    // build a source; the server is already listening before this window loaded,
+    // so this resolves effectively immediately.
+    void ipcInvoke('media:endpoint')
+      .then((e) => useMediaStore.getState().setBaseUrl(e.baseUrl))
+      .catch((err) => console.error('failed to get media endpoint', err))
     void ipcInvoke('settings:get').then((s) => {
+      useSettingsStore.getState().setSettings(s)
       if (!s.autoCheckBinaryUpdates) return
       if (!lastCheckedStale(s.binaries)) return
       // Best-effort background check: main logs any failure (per-binary +
@@ -84,28 +100,50 @@ export default function App() {
   return (
     <DropZone>
       <main className="flex h-screen flex-col">
-        <header className="shrink-0 space-y-3 border-b border-zinc-800 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
-            <HeaderMenu
-              onPlaylist={() => openPlaylist()}
-              onSettings={() => setShowSettings(true)}
-              onTools={() => openBinariesModal()}
-              onShortcuts={() => setShowShortcuts(true)}
-              onAbout={() => setShowAbout(true)}
-            />
+        <header className="flex shrink-0 items-center gap-4 border-b border-zinc-800 px-4 py-2.5">
+          <h1 className="shrink-0 text-xl font-medium tracking-tight">TapeBox</h1>
+          <div className="flex min-w-0 flex-1 justify-center">
+            <div className="w-full max-w-5xl">
+              <TopBar clipboardEnabled={!showPlaylist} />
+            </div>
           </div>
-          <TopBar clipboardEnabled={!showPlaylist} />
-          <FilterChips />
+          <HeaderMenu
+            onPlaylist={() => openPlaylist()}
+            onSettings={() => setShowSettings(true)}
+            onTools={() => openBinariesModal()}
+            onShortcuts={() => setShowShortcuts(true)}
+            onAbout={() => setShowAbout(true)}
+          />
         </header>
 
         <div className="flex flex-1 overflow-hidden">
-          <aside className="w-80 shrink-0 overflow-y-auto border-r border-zinc-800">
-            <ItemList />
+          <aside
+            style={{ width: leftPaneWidth }}
+            className="relative flex shrink-0 flex-col border-r border-zinc-800"
+          >
+            <div className="shrink-0 border-b border-zinc-800 px-3 py-2.5">
+              <FilterChips />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ItemList />
+            </div>
+            <ResizeHandle
+              edge="right"
+              width={leftPaneWidth}
+              min={200}
+              max={720}
+              onResize={(w) => updatePaneWidth({ leftPaneWidth: w }, false)}
+              onCommit={(w) => updatePaneWidth({ leftPaneWidth: w }, true)}
+            />
           </aside>
           <section className="flex-1 overflow-y-auto">
             {selectedItem ? (
-              <DetailPane item={selectedItem} onOpenPlaylist={openPlaylist} />
+              <DetailPane
+                item={selectedItem}
+                videoRef={videoRef}
+                onRequestRemove={requestRemove}
+                onOpenPlaylist={openPlaylist}
+              />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-400">
                 Select a tape from the list.
@@ -127,6 +165,8 @@ export default function App() {
         {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
 
         {binariesModalOpen && <BinariesModal />}
+
+        {confirmModal}
 
         <StatusBar />
       </main>

@@ -7,7 +7,7 @@ import { loadSettings, getSettings } from './store/config.js'
 import { loadSession, persistNow } from './store/session.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import * as queue from './queue/manager.js'
-import { registerMediaProtocolHandler, registerMediaSchemeAsPrivileged } from './protocol.js'
+import { startMediaServer, stopMediaServer } from './media-server.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -28,9 +28,6 @@ app.on('second-instance', () => {
   win.focus()
 })
 
-// Privileged scheme registration must happen before app is ready.
-registerMediaSchemeAsPrivileged()
-
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
@@ -44,6 +41,10 @@ function createMainWindow(): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // Let the player's autoplay setting take effect without requiring a
+      // per-load user gesture. Whether a tape actually autoplays is still
+      // gated by the in-app setting (passed as <video autoPlay>).
+      autoplayPolicy: 'no-user-gesture-required',
     },
   })
 
@@ -74,8 +75,8 @@ async function startup(): Promise<void> {
   await pruneOldLogs(getSettings().retainLogCount)
   await loadSession()
 
+  await startMediaServer()
   registerIpcHandlers()
-  registerMediaProtocolHandler()
   queue.start()
   createMainWindow()
 }
@@ -93,6 +94,7 @@ function shutdown(): Promise<void> {
     } catch {
       // already logged
     }
+    await stopMediaServer()
     await closeLogger()
   })()
   return shutdownPromise

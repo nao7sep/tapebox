@@ -61,6 +61,11 @@ export type IpcCalls = {
   // ── Native dialogs ───────────────────────────────────────────────────────
   'dialog:pickDirectory':  { req: { title?: string };                res: string | null }
 
+  // ── Media (loopback playback server) ─────────────────────────────────────
+  // Base URL of the in-process loopback HTTP server that streams library files
+  // to <video>/<audio>. Renderer appends '/<encodeURIComponent(filename)>'.
+  'media:endpoint':        { req: undefined;                         res: { baseUrl: string } }
+
   // ── Runtime info ─────────────────────────────────────────────────────────
   // Read-only facts about the current process: platform, arch, whether the
   // OS keychain is available for safeStorage. Renderer uses this to gate UI

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { Item, ItemState } from '@shared/domain'
 import { formatTime } from '@renderer/lib/format'
 
@@ -17,9 +18,20 @@ type Props = {
 export function ItemRow({ item, progress, selected, onSelect }: Props) {
   const stateLabel = labelFor(item, progress)
   const palette = paletteFor(item, selected)
+  const ref = useRef<HTMLButtonElement>(null)
+
+  // When a row becomes selected — by click, arrow keys, or after a removal —
+  // move keyboard focus to it (and scroll it into view) so selection and focus
+  // never land on different rows.
+  useEffect(() => {
+    if (!selected) return
+    ref.current?.focus({ preventScroll: true })
+    ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [selected])
 
   return (
     <button
+      ref={ref}
       onClick={onSelect}
       className={
         'block w-full rounded-md border px-3 py-2 text-left transition focus:outline-none ' +

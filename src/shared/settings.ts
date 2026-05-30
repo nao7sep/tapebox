@@ -59,6 +59,23 @@ export const SettingsSchema = z.object({
   autoStartDownloads: z.boolean(),
   maxConcurrentDownloads: z.number().int().min(1).max(8),
 
+  // Start playback automatically when a downloaded tape is opened in the player.
+  // Defaulted so configs written before this field existed still load cleanly.
+  autoplay: z.boolean().default(true),
+
+  // Removing a tape moves its files to the OS Trash (recoverable) when on, or
+  // deletes them permanently when off. confirmRemove gates a confirmation
+  // dialog before any removal. Both default on (and are defaulted so older
+  // configs still load).
+  trashOnRemove: z.boolean().default(true),
+  confirmRemove: z.boolean().default(true),
+
+  // Persisted widths (px) of the resizable side panes — the library list on the
+  // left and the chapters list on the right. Clamped to a sane range; defaulted
+  // so older configs still load.
+  leftPaneWidth: z.number().int().min(200).max(720).default(320),
+  chaptersPaneWidth: z.number().int().min(200).max(720).default(288),
+
   // Check GitHub/upstream for newer yt-dlp/ffmpeg/deno releases once at startup.
   autoCheckBinaryUpdates: z.boolean(),
 
@@ -86,6 +103,11 @@ export function defaultSettings(libraryDir: string): Settings {
     libraryDir,
     autoStartDownloads: true,
     maxConcurrentDownloads: 2,
+    autoplay: true,
+    trashOnRemove: true,
+    confirmRemove: true,
+    leftPaneWidth: 320,
+    chaptersPaneWidth: 288,
     autoCheckBinaryUpdates: true,
     ai: {
       baseUrl: 'https://api.openai.com/v1',

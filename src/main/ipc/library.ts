@@ -1,5 +1,6 @@
 import { access, constants, copyFile, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
+import { shell } from 'electron'
 import { nanoid } from 'nanoid'
 import { handle } from './handle'
 import { emit } from './events'
@@ -52,12 +53,13 @@ export function registerLibraryHandlers(): void {
 
       if (deleteFiles) {
         if (item.filename) {
-          await unlink(join(settings.libraryDir, item.filename)).catch(() => {})
+          await discardFile(join(settings.libraryDir, item.filename), settings.trashOnRemove)
         }
         if (item.sidecarFilename) {
-          await unlink(join(settings.libraryDir, item.sidecarFilename)).catch(() => {})
+          await discardFile(join(settings.libraryDir, item.sidecarFilename), settings.trashOnRemove)
         }
         // Sweep any .part / .ytdl files yt-dlp left when cancelled mid-download.
+        // These are incomplete junk, always deleted outright (never trashed).
         if (item.sourceId) {
           await sweepPartials(settings.libraryDir, item.sourceId)
         }
@@ -257,6 +259,25 @@ export function registerLibraryHandlers(): void {
     log.info('library:import', { imported: imported.length, rejected: rejected.length })
     return { imported, rejected }
   })
+}
+
+/**
+ * Discard one file on removal: move it to the OS Trash (recoverable) when
+ * trashing is on, else delete it permanently. A missing file is a no-op either
+ * way. trashItem rejects on real failure — surfaced via log, not swallowed, so
+ * a claimed "moved to Trash" is actually true.
+ */
+async function discardFile(path: string, toTrash: boolean): Promise<void> {
+  if (!toTrash) {
+    await unlink(path).catch(() => {})
+    return
+  }
+  if (!(await fileExists(path))) return
+  try {
+    await shell.trashItem(path)
+  } catch (err) {
+    log.error('library:remove: trashItem failed', { path, error: String(err) })
+  }
 }
 
 async function assertMissing(path: string): Promise<void> {
