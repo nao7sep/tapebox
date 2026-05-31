@@ -4,73 +4,136 @@ import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 import { execCapture } from '@main/io/spawn'
 import type { SidecarMedia } from '@shared/domain'
+import {
+  type AudioCodec,
+  type ExportPreset,
+  DEFAULT_AUDIO_BITRATE_KBPS,
+} from '@shared/export-presets'
 
 /**
  * ffmpeg subprocess service.
  *
- * Two operations matter for now:
- *   - extractWholeAudio: pulls the audio track from a media file.
- *   - extractChapterAudio: same, but limited to one chapter's [start, end] range.
+ * `transcode` is the one export workhorse: it copies or re-encodes the selected
+ * streams of a media file into a chosen container, optionally limited to a
+ * single chapter's [start, end] range. The shape of the job is fully described
+ * by an ExportPreset (see @shared/export-presets) plus two optional quality
+ * knobs — audio bitrate and a video downscale cap.
  *
- * codec 'copy' avoids re-encoding — bit-perfect, fast — when the source codec
- * is compatible with the chosen container. For YouTube's typical AAC-in-MP4
- * output, copy lands as .m4a. If the user picks 'mp3'/'flac' we re-encode.
+ * Copy/remux presets re-use the source streams bit-for-bit (fast, lossless) and
+ * derive their container from the source file; encoded presets fix the
+ * container and re-encode.
  */
 
-export type Codec = 'copy' | 'mp3' | 'flac'
-
-export type ExtractOptions = {
+export type TranscodeRequest = {
   mediaPath: string
   destinationDir: string
   filenameStem: string
-  codec: Codec
+  preset: ExportPreset
+  /** Lossy-audio bitrate in kbps; ignored unless the preset re-encodes audio. */
+  audioBitrateKbps?: number | null
+  /** Downscale cap (px height); ignored unless the preset re-encodes video. */
+  maxHeight?: number | null
   chapter?: { startSeconds: number; endSeconds: number } | null
   signal?: AbortSignal
 }
 
-const EXTRACT_IDLE_TIMEOUT_MS = 30_000
+// "Idle" means no stdout/stderr for this long — ffmpeg prints progress
+// continuously while working, so this trips only on a genuine stall, not on a
+// long-but-healthy encode.
+const TRANSCODE_IDLE_TIMEOUT_MS = 30_000
 
-export async function extractAudio(opts: ExtractOptions): Promise<string> {
-  const ext = audioExtension(opts.codec, opts.mediaPath)
-  const outPath = join(opts.destinationDir, `${opts.filenameStem}.${ext}`)
+export async function transcode(req: TranscodeRequest): Promise<string> {
+  const ext = resolveExt(req.preset, req.mediaPath)
+  const outPath = join(req.destinationDir, `${req.filenameStem}.${ext}`)
 
   if (await exists(outPath)) {
     throw new Error(`Output already exists: ${outPath}`)
   }
 
-  const args: string[] = ['-i', opts.mediaPath]
-  if (opts.chapter) {
-    args.push('-ss', String(opts.chapter.startSeconds))
-    args.push('-to', String(opts.chapter.endSeconds))
+  const args: string[] = ['-i', req.mediaPath]
+  if (req.chapter) {
+    args.push('-ss', String(req.chapter.startSeconds))
+    args.push('-to', String(req.chapter.endSeconds))
   }
-  args.push('-vn')
-  if (opts.codec === 'copy') {
-    args.push('-c:a', 'copy')
-  } else if (opts.codec === 'mp3') {
-    args.push('-c:a', 'libmp3lame', '-q:a', '2')
-  } else if (opts.codec === 'flac') {
-    args.push('-c:a', 'flac')
+
+  if (req.preset.kind === 'audio') {
+    args.push('-vn')
+    appendAudioArgs(args, req.preset.acodec, req.audioBitrateKbps)
+  } else {
+    const { vcodec, acodec } = req.preset
+    if (vcodec === 'copy') {
+      args.push('-c:v', 'copy')
+    } else {
+      args.push('-c:v', vcodec)
+      if (req.maxHeight) {
+        // Cap height without ever upscaling; -2 keeps width even & proportional.
+        // The comma inside min() is escaped for ffmpeg's filtergraph parser.
+        args.push('-vf', `scale=-2:min(ih\\,${req.maxHeight})`)
+      }
+      if (vcodec === 'libx264') {
+        args.push('-crf', '23', '-preset', 'medium')
+      } else if (vcodec === 'libx265') {
+        args.push('-crf', '28', '-preset', 'medium', '-tag:v', 'hvc1')
+      } else if (vcodec === 'libvpx-vp9') {
+        args.push('-crf', '32', '-b:v', '0')
+      }
+    }
+    appendAudioArgs(args, acodec, null)
   }
   args.push(outPath)
 
-  log.info('ffmpeg extract', { outPath, codec: opts.codec, hasChapter: !!opts.chapter })
+  log.info('ffmpeg transcode', {
+    outPath,
+    preset: req.preset.id,
+    maxHeight: req.maxHeight ?? null,
+    hasChapter: !!req.chapter,
+  })
   await execCapture(binaryPath('ffmpeg'), args, {
-    signal: opts.signal,
-    idleTimeoutMs: EXTRACT_IDLE_TIMEOUT_MS,
+    signal: req.signal,
+    idleTimeoutMs: TRANSCODE_IDLE_TIMEOUT_MS,
   })
   return outPath
 }
 
-export function audioExtension(codec: Codec, sourcePath: string): string {
-  if (codec === 'mp3') return 'mp3'
-  if (codec === 'flac') return 'flac'
-  // codec === 'copy' — choose a container compatible with the source codec.
-  const ext = extname(sourcePath).slice(1).toLowerCase()
-  if (ext === 'mp4' || ext === 'm4a' || ext === 'aac') return 'm4a'
-  if (ext === 'webm') return 'webm'
-  if (ext === 'opus') return 'opus'
-  if (ext === 'mkv') return 'mka'
-  return ext || 'm4a'
+function appendAudioArgs(args: string[], acodec: AudioCodec, bitrateKbps?: number | null): void {
+  if (acodec === 'copy') {
+    args.push('-c:a', 'copy')
+    return
+  }
+  if (acodec === 'flac') {
+    args.push('-c:a', 'flac')
+    return
+  }
+  if (acodec === 'libmp3lame') {
+    args.push('-c:a', 'libmp3lame')
+    // VBR -q:a 2 (~190k) is the sensible MP3 default; honour an explicit bitrate.
+    if (bitrateKbps) args.push('-b:a', `${bitrateKbps}k`)
+    else args.push('-q:a', '2')
+    return
+  }
+  // aac / libopus — CBR-ish target.
+  args.push('-c:a', acodec, '-b:a', `${bitrateKbps ?? DEFAULT_AUDIO_BITRATE_KBPS}k`)
+}
+
+/**
+ * Output container extension for a preset. Encoded presets carry a fixed `ext`;
+ * copy/remux presets (ext === null) derive it from the source so the kept stream
+ * lands in a compatible container.
+ */
+export function resolveExt(preset: ExportPreset, sourcePath: string): string {
+  if (preset.ext) return preset.ext
+  const src = extname(sourcePath).slice(1).toLowerCase()
+  if (preset.kind === 'video') {
+    // Remux: keep the source container when it's one we recognise.
+    if (src === 'mp4' || src === 'webm' || src === 'mkv') return src
+    return src || 'mp4'
+  }
+  // Audio copy: pick a container that holds the source's audio codec.
+  if (src === 'mp4' || src === 'm4a' || src === 'aac') return 'm4a'
+  if (src === 'webm') return 'webm'
+  if (src === 'opus') return 'opus'
+  if (src === 'mkv') return 'mka'
+  return src || 'm4a'
 }
 
 /**

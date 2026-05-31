@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { nanoid } from 'nanoid'
 import type { AiSettings, NetworkGroup, RetryPolicy, Settings, SiteProfile } from '@shared/settings'
+import { DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
 import { useSettingsStore } from '@renderer/store/settings'
@@ -8,6 +9,7 @@ import { Modal } from '@renderer/components/Modal'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
 import {
   Button,
+  Field,
   INPUT_CLASS,
   IntervalsField,
   NumberField,
@@ -58,6 +60,11 @@ export function SettingsModal({ onClose }: Props) {
   function patchAi(patch: Partial<AiSettings>) {
     if (!draft) return
     patchDraft({ ai: { ...draft.ai, ...patch } })
+  }
+
+  function patchPrompts(patch: Partial<Settings['prompts']>) {
+    if (!draft) return
+    patchDraft({ prompts: { ...draft.prompts, ...patch } })
   }
 
   function patchPolicy(group: NetworkGroup, patch: Partial<RetryPolicy>) {
@@ -138,6 +145,8 @@ export function SettingsModal({ onClose }: Props) {
             {tab === 'ai' && (
               <AiTab
                 ai={draft.ai}
+                prompts={draft.prompts}
+                onPromptsPatch={patchPrompts}
                 busy={busy}
                 hadKey={hadApiKey}
                 apiKeyDraft={apiKeyDraft}
@@ -197,6 +206,7 @@ function pickEditable(s: Settings) {
     autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
     externalPlayer: s.externalPlayer,
     ai: s.ai,
+    prompts: s.prompts,
     network: s.network,
     ytdlpArgs: s.ytdlpArgs,
     siteProfiles: s.siteProfiles,
@@ -312,6 +322,8 @@ function GeneralTab({
 
 function AiTab({
   ai,
+  prompts,
+  onPromptsPatch,
   busy,
   hadKey,
   apiKeyDraft,
@@ -322,6 +334,8 @@ function AiTab({
   onClearKey,
 }: {
   ai: AiSettings
+  prompts: Settings['prompts']
+  onPromptsPatch: (p: Partial<Settings['prompts']>) => void
   busy: boolean
   hadKey: boolean
   apiKeyDraft: string
@@ -385,6 +399,32 @@ function AiTab({
         disabled={busy}
         onChange={(v) => onAiPatch({ model: v })}
       />
+
+      <div className="border-t border-zinc-700 pt-4">
+        <Field label="Slug prompt">
+          <textarea
+            value={prompts.slug}
+            rows={7}
+            spellCheck={false}
+            disabled={busy}
+            onChange={(e) => onPromptsPatch({ slug: e.target.value })}
+            className={`w-full resize-y font-mono ${INPUT_CLASS}`}
+          />
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p className="text-xs text-zinc-300">
+              Tokens: <code>{'{title}'}</code>, <code>{'{uploader}'}</code>.
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || prompts.slug === DEFAULT_SLUG_PROMPT}
+              onClick={() => onPromptsPatch({ slug: DEFAULT_SLUG_PROMPT })}
+            >
+              Restore default
+            </Button>
+          </div>
+        </Field>
+      </div>
     </div>
   )
 }

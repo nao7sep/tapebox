@@ -20,6 +20,29 @@ export const AiSettingsSchema = z.object({
 export type AiSettings = z.infer<typeof AiSettingsSchema>
 
 /**
+ * Configurable AI prompts. Each default lives here in code, so a key missing
+ * from a user's config auto-fills (Zod .default) — prompts added by a future
+ * app update simply appear. Editing is opt-in via Settings → AI; a Restore
+ * button rewrites a field back to its in-code default. Because .default only
+ * fills missing keys, a newer app default never overwrites a value the user has
+ * saved — they adopt it explicitly by Restoring, then saving.
+ *
+ * Template tokens are substituted before the call: {title}, {uploader}.
+ */
+export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
+Output ONLY the slug — lowercase ASCII letters, digits, and hyphens.
+No quotes, no explanation, no trailing period. Aim for under 60 characters;
+prefer descriptive English keywords drawn from the title.
+
+<title>{title}</title>
+<uploader>{uploader}</uploader>`
+
+export const PromptsSettingsSchema = z.object({
+  slug: z.string().default(DEFAULT_SLUG_PROMPT),
+})
+export type PromptsSettings = z.infer<typeof PromptsSettingsSchema>
+
+/**
  * Retry/timeout policy for one class of network work.
  *   - timeoutMs:   per-attempt deadline (a request timeout, or an idle/stall
  *                  watchdog for streaming transfers).
@@ -101,6 +124,10 @@ export const SettingsSchema = z.object({
 
   ai: AiSettingsSchema,
 
+  // Configurable AI prompts; defaulted so older configs (and newly-added
+  // prompts) auto-fill from code. See PromptsSettingsSchema.
+  prompts: PromptsSettingsSchema.default({ slug: DEFAULT_SLUG_PROMPT }),
+
   binaries: z.object({
     'yt-dlp': BinaryEntrySchema,
     ffmpeg: BinaryEntrySchema,
@@ -144,6 +171,9 @@ export function defaultSettings(libraryDir: string): Settings {
     ai: {
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-5.4-mini',
+    },
+    prompts: {
+      slug: DEFAULT_SLUG_PROMPT,
     },
     binaries: {
       'yt-dlp': { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },

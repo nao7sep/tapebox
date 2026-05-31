@@ -4,15 +4,18 @@ import { handle } from './handle'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import * as ffmpeg from '@main/services/ffmpeg'
+import { getPreset } from '@shared/export-presets'
 import { sanitizeFilename } from '@main/core/filename'
 import { log } from '@main/io/logger'
 
 /**
- * export:audio — bring tape out of the box, copy tracks to the user's choice.
+ * export:media — bring a tape out of the box, transcoding/extracting it to the
+ * user's chosen format (see @shared/export-presets).
  *
  * Modes:
- *   - whole:      one file = the entire audio track.
- *   - perChapter: one file per chapter, named via filenameTemplate.
+ *   - whole:      one file = the entire tape in the chosen format.
+ *   - perChapter: one file per chapter, named via filenameTemplate. Works for
+ *                 any preset — audio or video.
  *
  * Pre-flight: resolve all output paths and refuse if any already exists. Avoids
  * partially-done exports leaving the destination in a weird state.
@@ -31,30 +34,37 @@ type ExportArgs = {
   itemId: string
   destinationDir: string
   mode: 'whole' | 'perChapter'
-  codec: 'copy' | 'mp3' | 'flac'
+  presetId: string
+  maxHeight?: number | null
+  audioBitrateKbps?: number | null
   filenameTemplate?: string
 }
 
 const DEFAULT_TEMPLATE = '{slug}-{index:02}-{chapterTitle}'
 
 export function registerExportHandlers(): void {
-  handle('export:audio', async (args: ExportArgs) => {
+  handle('export:media', async (args: ExportArgs) => {
     const item = session.getItem(args.itemId)
     if (!item) throw new Error(`Item not found: ${args.itemId}`)
     if (!item.filename || !item.sidecarFilename) {
       throw new Error('Item has no media on disk yet')
     }
 
+    const preset = getPreset(args.presetId)
+    if (!preset) throw new Error(`Unknown export preset: ${args.presetId}`)
+
     const settings = getSettings()
     const mediaPath = join(settings.libraryDir, item.filename)
     const baseStem = item.slug ?? item.sourceId ?? item.id
 
     if (args.mode === 'whole') {
-      const out = await ffmpeg.extractAudio({
+      const out = await ffmpeg.transcode({
         mediaPath,
         destinationDir: args.destinationDir,
         filenameStem: baseStem,
-        codec: args.codec,
+        preset,
+        maxHeight: args.maxHeight,
+        audioBitrateKbps: args.audioBitrateKbps,
         chapter: null,
       })
       log.info('export:whole done', { itemId: args.itemId, out })
@@ -97,8 +107,8 @@ export function registerExportHandlers(): void {
     }
 
     // Pre-flight: no existing destination files.
+    const ext = ffmpeg.resolveExt(preset, mediaPath)
     for (const p of planned) {
-      const ext = ffmpeg.audioExtension(args.codec, mediaPath)
       const full = join(args.destinationDir, `${p.stem}.${ext}`)
       if (await fileExists(full)) {
         throw new Error(`Output already exists: ${full}`)
@@ -107,11 +117,13 @@ export function registerExportHandlers(): void {
 
     const writtenPaths: string[] = []
     for (const p of planned) {
-      const out = await ffmpeg.extractAudio({
+      const out = await ffmpeg.transcode({
         mediaPath,
         destinationDir: args.destinationDir,
         filenameStem: p.stem,
-        codec: args.codec,
+        preset,
+        maxHeight: args.maxHeight,
+        audioBitrateKbps: args.audioBitrateKbps,
         chapter: { startSeconds: p.chapter.start_time, endSeconds: p.chapter.end_time },
       })
       writtenPaths.push(out)

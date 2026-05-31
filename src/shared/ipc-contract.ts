@@ -43,12 +43,18 @@ export type IpcCalls = {
   }
 
   // ── Export (outside the box) ─────────────────────────────────────────────
-  'export:audio': {
+  // Transcode/extract a tape to the user's chosen format. `presetId` selects a
+  // container+codec from @shared/export-presets; maxHeight (video downscale) and
+  // audioBitrateKbps (lossy audio) are optional quality knobs the preset may
+  // ignore. `mode` splits per-chapter or exports the whole tape.
+  'export:media': {
     req: {
       itemId: string
       destinationDir: string
       mode: 'whole' | 'perChapter'
-      codec: 'copy' | 'mp3' | 'flac'
+      presetId: string
+      maxHeight?: number | null
+      audioBitrateKbps?: number | null
       filenameTemplate?: string
     }
     res: { writtenPaths: string[] }

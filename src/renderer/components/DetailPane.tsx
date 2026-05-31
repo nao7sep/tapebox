@@ -236,7 +236,7 @@ export function DetailPane({
             <>
               <ActionButton onClick={() => void ipcInvoke('library:playExternal', { itemId: item.id })}>Open in player</ActionButton>
               <ActionButton onClick={() => void ipcInvoke('library:reveal', { itemId: item.id })}>Show in folder</ActionButton>
-              <ActionButton onClick={() => setShowExport(true)}>Export audio</ActionButton>
+              <ActionButton onClick={() => setShowExport(true)}>Export</ActionButton>
               <ActionButton onClick={openRename}>Rename</ActionButton>
               {item.archivedAtUtc ? (
                 <>

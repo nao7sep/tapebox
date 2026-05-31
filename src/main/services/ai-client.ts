@@ -14,7 +14,7 @@ export async function generateSlug(opts: {
   title: string | null
   uploader?: string | null
 }): Promise<string> {
-  const { ai, network } = getSettings()
+  const { ai, network, prompts } = getSettings()
   const apiKey = await readAiKey()
   if (!apiKey) throw new Error('No AI API key configured')
 
@@ -26,14 +26,12 @@ export async function generateSlug(opts: {
     timeout: policy.timeoutMs,
   })
 
-  const userPrompt = [
-    'Suggest a short kebab-case file slug for this media item.',
-    'Output ONLY the slug — lowercase ASCII letters, digits, and hyphens. No quotes, no explanation, no period.',
-    'Aim for under 60 characters. Prefer descriptive English keywords drawn from the title.',
-    '',
-    `Title: ${opts.title ?? '(unknown title)'}`,
-    opts.uploader ? `Uploader: ${opts.uploader}` : '',
-  ].filter(Boolean).join('\n')
+  // The instruction text is user-configurable (Settings → AI); we only fill the
+  // {title}/{uploader} tokens. A missing field substitutes to empty — the
+  // surrounding tag stays, which the model handles fine.
+  const userPrompt = prompts.slug
+    .replace(/\{title\}/g, opts.title ?? '')
+    .replace(/\{uploader\}/g, opts.uploader ?? '')
 
   log.info('ai: generateSlug request', { model: ai.model })
   const res = await withRetry(
