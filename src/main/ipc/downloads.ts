@@ -36,8 +36,8 @@ export function registerDownloadHandlers(): void {
   })
 
   handle('downloads:retry', async ({ itemId }) => {
-    // The job clears any stale .part at the start of every attempt, so retry and
-    // resume both just re-queue.
+    // The download clears any stale .part at the start of every attempt, so
+    // retry and resume both just re-queue.
     transition(itemId, { state: 'queued', lastError: null })
     queue.tick()
   })

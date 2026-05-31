@@ -12,6 +12,10 @@ import { resolveYtdlpArgs } from './ytdlp-args'
 /**
  * Playlist / channel enumeration via yt-dlp. startEnumeration streams entries
  * from --flat-playlist -j, one JSON per line, calling onEntry as each arrives.
+ *
+ * Borrows the ytdlpProbe timeout for its idle watchdog. The policy's retries
+ * don't apply here — a streaming enumeration can't be retried without re-emitting
+ * entries already delivered to onEntry.
  */
 
 export type EnumeratedEntry = {
@@ -36,7 +40,7 @@ export function startEnumeration(
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
     [...resolveYtdlpArgs(url), '--flat-playlist', '-j', '--no-warnings', url],
-    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.ytdlpProbe.timeoutMs },
+    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.ytdlpProbe.timeoutMs ?? undefined },
   )
 
   let total = 0
@@ -78,7 +82,8 @@ function parseEntry(info: Record<string, unknown>): EnumeratedEntry | null {
   const url =
     typeof info['url'] === 'string'        ? info['url']
     : typeof info['webpage_url'] === 'string' ? info['webpage_url']
-    : `https://www.youtube.com/watch?v=${id}`
+    : null
+  if (!url) return null
   return {
     id,
     url,

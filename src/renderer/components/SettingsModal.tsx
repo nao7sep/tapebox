@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { nanoid } from 'nanoid'
-import type { AiSettings, RetryPolicy, Settings, SiteProfile } from '@shared/settings'
+import type { AiSettings, NetworkPolicy, Settings, SiteProfile } from '@shared/settings'
 import { DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
@@ -15,6 +15,7 @@ import {
   IntervalsField,
   NumberField,
   TextField,
+  TimeoutField,
   Toggle,
 } from '@renderer/components/ui'
 
@@ -443,34 +444,20 @@ function NetworkTab({
 }) {
   return (
     <div className="space-y-4">
-      <div className="space-y-3 rounded border border-zinc-700 p-3">
-        <div>
-          <div className="text-sm font-medium">yt-dlp (media site)</div>
-          <div className="text-xs text-zinc-300">
-            Probe, playlist scan, and media downloads. Not auto-retried — a failure surfaces with the log
-            so you can decide and retry manually; re-hammering a site risks an IP block.
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField
-            label="Probe / scan timeout (s)"
-            value={Math.round(draft.network.ytdlpProbe.timeoutMs / 1000)}
-            min={1}
-            max={600}
-            disabled={busy}
-            onChange={(s) => onPatch('ytdlpProbe', { timeoutMs: s * 1000 })}
-          />
-          <NumberField
-            label="Download timeout (s)"
-            value={Math.round(draft.network.ytdlpDownload.timeoutMs / 1000)}
-            min={1}
-            max={600}
-            disabled={busy}
-            onChange={(s) => onPatch('ytdlpDownload', { timeoutMs: s * 1000 })}
-          />
-        </div>
-      </div>
-
+      <PolicyEditor
+        label="yt-dlp probe & scan"
+        hint="Single-video probe and playlist/channel scan. Defaults to one attempt — retrying a media site risks an IP block. Empty timeout = no idle watchdog."
+        policy={draft.network.ytdlpProbe}
+        busy={busy}
+        onChange={(patch) => onPatch('ytdlpProbe', patch)}
+      />
+      <PolicyEditor
+        label="yt-dlp download"
+        hint="Media downloads. Defaults to no timeout (a watchdog would kill a large file mid-merge) and no retry. Opt in deliberately."
+        policy={draft.network.ytdlpDownload}
+        busy={busy}
+        onChange={(patch) => onPatch('ytdlpDownload', patch)}
+      />
       <PolicyEditor
         label="Version checks"
         hint="GitHub releases & evermeet ffmpeg info."
@@ -505,9 +492,9 @@ function PolicyEditor({
 }: {
   label: string
   hint: string
-  policy: RetryPolicy
+  policy: NetworkPolicy
   busy: boolean
-  onChange: (patch: Partial<RetryPolicy>) => void
+  onChange: (patch: Partial<NetworkPolicy>) => void
 }) {
   return (
     <div className="space-y-3 rounded border border-zinc-700 p-3">
@@ -516,13 +503,13 @@ function PolicyEditor({
         <div className="text-xs text-zinc-300">{hint}</div>
       </div>
       <div className="grid grid-cols-3 gap-3">
-        <NumberField
+        <TimeoutField
           label="Timeout (s)"
-          value={Math.round(policy.timeoutMs / 1000)}
+          ms={policy.timeoutMs}
           min={1}
           max={600}
           disabled={busy}
-          onChange={(s) => onChange({ timeoutMs: s * 1000 })}
+          onChange={(ms) => onChange({ timeoutMs: ms })}
         />
         <NumberField
           label="Retries"

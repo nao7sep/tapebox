@@ -1,4 +1,4 @@
-import type { RetryPolicy } from '@shared/settings'
+import type { NetworkPolicy } from '@shared/settings'
 
 /**
  * Generic retry + timeout primitives for network work. Pure and app-agnostic:
@@ -16,7 +16,7 @@ export type RetryHooks = {
 }
 
 export async function withRetry<T>(
-  policy: RetryPolicy,
+  policy: NetworkPolicy,
   attempt: () => Promise<T>,
   hooks: RetryHooks = {},
 ): Promise<T> {
@@ -49,13 +49,17 @@ function intervalAt(intervals: number[], i: number): number {
 /**
  * Run fn with a per-attempt request deadline. Combines the caller's signal (if
  * any) with a fresh timeout signal, so fn aborts on whichever fires first.
- * On timeout the rejection is a DOMException named 'TimeoutError'.
+ * On timeout the rejection is a DOMException named 'TimeoutError'. A null
+ * timeout means no deadline — fn runs under the caller's signal alone.
  */
 export function withRequestTimeout<T>(
-  timeoutMs: number,
+  timeoutMs: number | null,
   parentSignal: AbortSignal | undefined,
   fn: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
+  if (timeoutMs == null) {
+    return fn(parentSignal ?? new AbortController().signal)
+  }
   const signal = parentSignal
     ? AbortSignal.any([parentSignal, AbortSignal.timeout(timeoutMs)])
     : AbortSignal.timeout(timeoutMs)

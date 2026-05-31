@@ -136,7 +136,7 @@ async function performInstall(name: BinaryName): Promise<void> {
     downloadWithProgress({
       url: resolved.downloadUrl,
       destPath: tempPath,
-      idleTimeoutMs: downloadPolicy.timeoutMs,
+      idleTimeoutMs: downloadPolicy.timeoutMs ?? undefined,
       onProgress: (received, total) => {
         const pct = total > 0 ? Math.floor((received / total) * 100) : 0
         if (pct !== lastEmittedPct) {

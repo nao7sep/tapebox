@@ -23,7 +23,7 @@ export async function generateSlug(opts: {
     apiKey,
     baseURL: ai.baseUrl,
     maxRetries: 0,
-    timeout: policy.timeoutMs,
+    timeout: policy.timeoutMs ?? undefined,
   })
 
   // The instruction text is user-configurable (Settings → AI); we only fill the

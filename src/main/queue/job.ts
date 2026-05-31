@@ -100,12 +100,6 @@ export class Job {
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
     const settings = getSettings()
-    // Start every attempt from a clean slate: a leftover .part from a prior
-    // failed/cancelled run can be stale or oversized and makes yt-dlp's resume
-    // fail with HTTP 416. yt-dlp re-fetches the incomplete stream (completed
-    // sub-streams are kept and reused); within an attempt, its own retries and
-    // our stall-retry still resume the in-progress file.
-    await ytdlp.clearPartials(settings.libraryDir, cur.sourceId)
 
     this.update({ state: 'downloading', downloadStartedAtUtc: nowUtcIso() })
 

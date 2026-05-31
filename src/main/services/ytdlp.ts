@@ -3,6 +3,7 @@ import { readdir, unlink } from 'node:fs/promises'
 import { binaryPath, paths } from '@main/paths'
 import { getSettings } from '@main/store/config'
 import { resolveYtdlpArgs } from './ytdlp-args'
+import { withRetry } from '@main/io/retry'
 import {
   execCapture,
   makeLineBuffer,
@@ -14,8 +15,7 @@ import {
  * yt-dlp subprocess service.
  *
  * Adds ~/.tapebox/bin to PATH when spawning so yt-dlp can locate the bundled
- * ffmpeg (for merge) and Deno (for the JS runtime YouTube requires since
- * 2025.11.12).
+ * ffmpeg and Deno.
  */
 
 export function ytdlpEnv(): NodeJS.ProcessEnv {
@@ -52,32 +52,35 @@ export type ProbeResult = ProbeVideo | { kind: 'playlist' }
  * --no-playlist still isolates the video for watch?v=…&list=… URLs, and single
  * videos keep full metadata, chapters included (verified against a full probe).
  *
- * Never auto-retried: re-hammering a media site risks an IP block, and a probe
- * failure is the user's call (read the log, retry manually). The idle watchdog
- * still kills a silent stall so the queue never hangs.
+ * Retries follow the ytdlpProbe policy, which defaults to a single attempt:
+ * re-hammering a media site risks an IP block, so opting into retries is the
+ * user's deliberate call. The idle watchdog (when set) kills a silent stall so
+ * the queue never hangs.
  */
 export async function probe(url: string, signal: AbortSignal): Promise<ProbeResult> {
-  const { timeoutMs } = getSettings().network.ytdlpProbe
-  const { stdout } = await execCapture(
-    binaryPath('yt-dlp'),
-    [...resolveYtdlpArgs(url), '--dump-single-json', '--flat-playlist', '--no-playlist', '--playlist-items', '1', '--no-warnings', url],
-    { env: ytdlpEnv(), signal, idleTimeoutMs: timeoutMs },
-  )
-  const info = JSON.parse(stdout) as Record<string, unknown>
-  if (info['_type'] === 'playlist') return { kind: 'playlist' }
+  const policy = getSettings().network.ytdlpProbe
+  return withRetry(policy, async () => {
+    const { stdout } = await execCapture(
+      binaryPath('yt-dlp'),
+      [...resolveYtdlpArgs(url), '--dump-single-json', '--flat-playlist', '--no-playlist', '--playlist-items', '1', '--no-warnings', url],
+      { env: ytdlpEnv(), signal, idleTimeoutMs: policy.timeoutMs ?? undefined },
+    )
+    const info = JSON.parse(stdout) as Record<string, unknown>
+    if (info['_type'] === 'playlist') return { kind: 'playlist' }
 
-  return {
-    kind: 'video',
-    id: String(info['id'] ?? ''),
-    title: String(info['title'] ?? ''),
-    // TODO: yt-dlp can return locale-translated titles. Use --extractor-args
-    // for the original title when we figure out the reliable flag.
-    originalTitle: typeof info['title'] === 'string' ? info['title'] : null,
-    uploader: stringOrNull(info['uploader'] ?? info['channel']),
-    duration: typeof info['duration'] === 'number' ? info['duration'] : null,
-    thumbnail: stringOrNull(info['thumbnail']),
-    chapters: Array.isArray(info['chapters']) ? (info['chapters'] as ProbeChapter[]) : null,
-  }
+    return {
+      kind: 'video',
+      id: String(info['id'] ?? ''),
+      title: String(info['title'] ?? ''),
+      // TODO: yt-dlp can return locale-translated titles. Use --extractor-args
+      // for the original title when we figure out the reliable flag.
+      originalTitle: typeof info['title'] === 'string' ? info['title'] : null,
+      uploader: stringOrNull(info['uploader'] ?? info['channel']),
+      duration: typeof info['duration'] === 'number' ? info['duration'] : null,
+      thumbnail: stringOrNull(info['thumbnail']),
+      chapters: Array.isArray(info['chapters']) ? (info['chapters'] as ProbeChapter[]) : null,
+    }
+  }, { signal })
 }
 
 function stringOrNull(v: unknown): string | null {
@@ -108,16 +111,26 @@ const MAX_LOG_LINES = 60
  * stable until the user renames to a slug.
  */
 export async function download(opts: DownloadOptions): Promise<DownloadResult> {
-  const { timeoutMs } = getSettings().network.ytdlpDownload
-  // Never auto-retried (same reasoning as probe): re-running a download hammers
-  // the site and risks a block. yt-dlp still runs its own internal --retries for
-  // transient blips within the single attempt; the idle watchdog kills a silent
-  // stall. On failure the item surfaces with the log and the user hits Retry,
-  // which re-runs the job after clearing partials (see queue/job).
-  return runDownloadOnce(opts, timeoutMs)
+  const policy = getSettings().network.ytdlpDownload
+  // Retries follow the ytdlpDownload policy (default: a single attempt — auto-
+  // retrying a media site risks an IP block). yt-dlp still runs its own internal
+  // --retries for transient blips within an attempt. The download has no idle
+  // watchdog by default: yt-dlp goes silent during the post-download merge of a
+  // large file, so a watchdog would kill a healthy job mid-merge.
+  return withRetry(
+    policy,
+    async () => {
+      // Start every attempt from a clean slate: a leftover .part from a prior
+      // attempt can be stale or oversized and makes yt-dlp's resume fail with
+      // HTTP 416. Completed per-format streams are kept and reused.
+      await clearPartials(opts.libraryDir, opts.outputId)
+      return runDownloadOnce(opts, policy.timeoutMs ?? undefined)
+    },
+    { signal: opts.signal },
+  )
 }
 
-async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number): Promise<DownloadResult> {
+async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | undefined): Promise<DownloadResult> {
   const captured: { finalPath: string | null } = { finalPath: null }
   let lastPct = -1
 
