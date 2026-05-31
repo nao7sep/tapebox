@@ -1,5 +1,6 @@
 import type { ArchiveGroup, Item } from './domain'
 import type { Settings } from './settings'
+import type { Layout } from './layout'
 
 /**
  * Request/response contract for ipcMain.handle / ipcRenderer.invoke channels.
@@ -69,6 +70,10 @@ export type IpcCalls = {
   'settings:setApiKey':    { req: { apiKey: string };                res: void }
   'settings:clearApiKey':  { req: undefined;                         res: void }
   'settings:hasApiKey':    { req: undefined;                         res: boolean }
+
+  // ── Layout (window/view geometry, separate from settings) ────────────────
+  'layout:get':            { req: undefined;                         res: Layout }
+  'layout:update':         { req: Partial<Layout>;                   res: Layout }
 
   // ── Binaries ─────────────────────────────────────────────────────────────
   'binaries:status':       { req: undefined;                         res: BinaryStatus[] }

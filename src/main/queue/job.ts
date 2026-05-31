@@ -125,7 +125,6 @@ export class Job {
       infoJsonPath: result.infoJsonPath,
       sidecarPath,
       tapeboxAdditions: {
-        schemaVersion: 1,
         sourceUrl: cur.sourceUrl,
         originalTitle: cur.originalTitle,
         slug: null,

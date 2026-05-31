@@ -7,6 +7,7 @@ import { getSettings, updateSettings } from '@main/store/config'
 import { execCapture } from '@main/io/spawn'
 import { nowUtcIso } from '@shared/utc'
 import { withRetry } from '@main/io/retry'
+import { BINARY_DOWNLOAD_IDLE_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import { downloadWithProgress } from './http'
@@ -130,13 +131,12 @@ async function performInstall(name: BinaryName): Promise<void> {
   await ensureDirs()
   const tempPath = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
 
-  const downloadPolicy = getSettings().network.binaryDownload
   let lastEmittedPct = -1
-  await withRetry(downloadPolicy, () =>
+  await withRetry(HTTP_RETRY, () =>
     downloadWithProgress({
       url: resolved.downloadUrl,
       destPath: tempPath,
-      idleTimeoutMs: downloadPolicy.timeoutMs ?? undefined,
+      idleTimeoutMs: BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
       onProgress: (received, total) => {
         const pct = total > 0 ? Math.floor((received / total) * 100) : 0
         if (pct !== lastEmittedPct) {

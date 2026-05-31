@@ -20,6 +20,7 @@ export const paths = {
   workDownloads:  join(tapeboxRoot, 'work', 'downloads'),
   config:         join(tapeboxRoot, 'config.json'),
   session:        join(tapeboxRoot, 'session.json'),
+  layout:         join(tapeboxRoot, 'layout.json'),
   apiKeys:        join(tapeboxRoot, 'api-keys.json'),
 } as const
 

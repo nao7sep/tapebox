@@ -20,10 +20,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
 /**
  * Patch one or more settings. With persist=false the change is applied only to
- * the in-memory mirror — used for smooth live dragging without a disk write per
- * pixel. With persist=true it is also saved via settings:update; the disk write
- * merges, so omitting other fields never clobbers them. Both the layout drags and
- * the playback toggles flow through here, so every surface stays in sync.
+ * the in-memory mirror; with persist=true it is also saved via settings:update.
+ * The disk write merges, so omitting other fields never clobbers them. Playback
+ * toggles flow through here so every surface stays in sync. (Window geometry has
+ * its own store — see store/layout.ts.)
  */
 export function patchSettings(patch: Partial<Settings>, persist: boolean): void {
   const cur = useSettingsStore.getState().settings

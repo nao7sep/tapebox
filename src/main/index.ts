@@ -5,6 +5,7 @@ import { ensureDirs } from './paths.js'
 import { closeLogger, initLogger, log, pruneOldLogs } from './io/logger.js'
 import { loadSettings, getSettings } from './store/config.js'
 import { loadSession, persistNow } from './store/session.js'
+import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
@@ -74,6 +75,7 @@ async function startup(): Promise<void> {
   await loadSettings()
   await pruneOldLogs(getSettings().retainLogCount)
   await loadSession()
+  await layout.loadLayout()
 
   await startMediaServer()
   registerIpcHandlers()
@@ -95,6 +97,7 @@ function shutdown(): Promise<void> {
     } catch {
       // already logged
     }
+    await layout.persistNow()
     await stopMediaServer()
     await closeLogger()
   })()

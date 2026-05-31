@@ -7,7 +7,8 @@ import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
-import { useSettingsStore, patchSettings } from '@renderer/store/settings'
+import { useSettingsStore } from '@renderer/store/settings'
+import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { useItemRemoval } from '@renderer/lib/useItemRemoval'
 import { useListKeyboard } from '@renderer/lib/useListKeyboard'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
@@ -57,7 +58,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { requestRemove, confirmModal } = useItemRemoval(videoRef)
   useListKeyboard(requestRemove)
-  const leftPaneWidth = useSettingsStore((s) => s.settings?.leftPaneWidth ?? 320)
+  const leftPaneWidth = useLayoutStore((s) => s.layout.leftPaneWidth)
   const filter = useFilterStore((s) => s.filter)
   const importMedia = useImportMedia()
   const importResult = useImportResultStore((s) => s.result)
@@ -82,6 +83,7 @@ export default function App() {
     void ipcInvoke('media:endpoint')
       .then((e) => useMediaStore.getState().setBaseUrl(e.baseUrl))
       .catch((err) => console.error('failed to get media endpoint', err))
+    void ipcInvoke('layout:get').then((l) => useLayoutStore.getState().setLayout(l))
     void ipcInvoke('settings:get').then((s) => {
       useSettingsStore.getState().setSettings(s)
       if (!s.autoCheckBinaryUpdates) return
@@ -154,8 +156,8 @@ export default function App() {
               size={leftPaneWidth}
               min={200}
               max={720}
-              onResize={(w) => patchSettings({ leftPaneWidth: w }, false)}
-              onCommit={(w) => patchSettings({ leftPaneWidth: w }, true)}
+              onResize={(w) => patchLayout({ leftPaneWidth: w }, false)}
+              onCommit={(w) => patchLayout({ leftPaneWidth: w }, true)}
             />
           </aside>
           <section className="flex-1 overflow-y-auto">

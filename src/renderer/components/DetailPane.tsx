@@ -5,7 +5,8 @@ import type { SidecarRaw } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useItemsStore } from '@renderer/store/items'
 import { useMediaStore } from '@renderer/store/media'
-import { useSettingsStore, patchSettings } from '@renderer/store/settings'
+import { useSettingsStore } from '@renderer/store/settings'
+import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { releaseVideo } from '@renderer/lib/video'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { formatBytes, formatTime } from '@renderer/lib/format'
@@ -51,7 +52,7 @@ export function DetailPane({
   const mediaBase = useMediaStore((s) => s.baseUrl)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
-  const chaptersPaneWidth = useSettingsStore((s) => s.settings?.chaptersPaneWidth ?? 288)
+  const chaptersPaneWidth = useLayoutStore((s) => s.layout.chaptersPaneWidth)
 
   useEffect(() => {
     setSidecar(null)
@@ -260,8 +261,8 @@ export function DetailPane({
             size={chaptersPaneWidth}
             min={200}
             max={720}
-            onResize={(w) => patchSettings({ chaptersPaneWidth: w }, false)}
-            onCommit={(w) => patchSettings({ chaptersPaneWidth: w }, true)}
+            onResize={(w) => patchLayout({ chaptersPaneWidth: w }, false)}
+            onCommit={(w) => patchLayout({ chaptersPaneWidth: w }, true)}
           />
           <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
           <div className="min-h-0 flex-1 overflow-y-auto">

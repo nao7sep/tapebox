@@ -1,6 +1,6 @@
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
-import { getSettings } from '@main/store/config'
+import { YTDLP_PROBE_IDLE_TIMEOUT_MS } from '@main/io/network'
 import {
   makeLineBuffer,
   spawnStreaming,
@@ -13,9 +13,9 @@ import { resolveYtdlpArgs } from './ytdlp-args'
  * Playlist / channel enumeration via yt-dlp. startEnumeration streams entries
  * from --flat-playlist -j, one JSON per line, calling onEntry as each arrives.
  *
- * Borrows the ytdlpProbe timeout for its idle watchdog. The policy's retries
- * don't apply here — a streaming enumeration can't be retried without re-emitting
- * entries already delivered to onEntry.
+ * Uses the same idle watchdog as the probe; never retried — a streaming
+ * enumeration can't be retried without re-emitting entries already delivered
+ * to onEntry.
  */
 
 export type EnumeratedEntry = {
@@ -40,7 +40,7 @@ export function startEnumeration(
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
     [...resolveYtdlpArgs(url), '--flat-playlist', '-j', '--no-warnings', url],
-    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.ytdlpProbe.timeoutMs ?? undefined },
+    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS },
   )
 
   let total = 0

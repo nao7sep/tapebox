@@ -1,15 +1,14 @@
-import { getSettings } from '@main/store/config'
 import { withRetry, withRequestTimeout } from './retry'
+import { HTTP_RETRY, VERSION_CHECK_TIMEOUT_MS } from './network'
 
 /**
- * GET + parse JSON under the 'versionCheck' policy: per-attempt request timeout
- * plus retries with jittered backoff. Used for the small upstream lookups
- * (GitHub releases, evermeet ffmpeg info) — safe to retry, no block risk.
+ * GET + parse JSON with a per-attempt request timeout plus retries with backoff.
+ * Used for the small upstream lookups (GitHub releases, evermeet ffmpeg info) —
+ * safe to retry, no block risk.
  */
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const policy = getSettings().network.versionCheck
-  return withRetry(policy, () =>
-    withRequestTimeout(policy.timeoutMs, undefined, async (signal) => {
+  return withRetry(HTTP_RETRY, () =>
+    withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, undefined, async (signal) => {
       const res = await fetch(url, { ...init, signal })
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
       return res.json() as Promise<T>

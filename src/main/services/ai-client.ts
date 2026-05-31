@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { withRetry } from '@main/io/retry'
+import { AI_REQUEST_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
 import { readAiKey } from './api-keys'
 
 /**
@@ -14,16 +15,15 @@ export async function generateSlug(opts: {
   title: string | null
   uploader?: string | null
 }): Promise<string> {
-  const { ai, network, prompts } = getSettings()
+  const { ai, prompts } = getSettings()
   const apiKey = await readAiKey()
   if (!apiKey) throw new Error('No AI API key configured')
 
-  const policy = network.ai
   const client = new OpenAI({
     apiKey,
     baseURL: ai.baseUrl,
     maxRetries: 0,
-    timeout: policy.timeoutMs ?? undefined,
+    timeout: AI_REQUEST_TIMEOUT_MS,
   })
 
   // The instruction text is user-configurable (Settings → AI); we only fill the
@@ -35,7 +35,7 @@ export async function generateSlug(opts: {
 
   log.info('ai: generateSlug request', { model: ai.model })
   const res = await withRetry(
-    policy,
+    HTTP_RETRY,
     () =>
       client.chat.completions.create({
         model: ai.model,

@@ -11,7 +11,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useItemsStore } from '@renderer/store/items'
 import { useGroupsStore } from '@renderer/store/groups'
 import { useArchiveStore } from '@renderer/store/archive'
-import { useSettingsStore, patchSettings } from '@renderer/store/settings'
+import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { useVisibleItems } from '@renderer/lib/itemOrder'
 import { BoxList, UNGROUPED_DROP_ID } from './BoxList'
 import { ArchiveTapeList } from './ArchiveTapeList'
@@ -30,7 +30,7 @@ export function ArchiveOrganizer() {
   const selectedGroupId = useArchiveStore((s) => s.selectedGroupId)
   const query = useArchiveStore((s) => s.query)
   const setQuery = useArchiveStore((s) => s.setQuery)
-  const boxesHeight = useSettingsStore((s) => s.settings?.archiveBoxesHeight ?? 240)
+  const boxesHeight = useLayoutStore((s) => s.layout.archiveBoxesHeight)
   const tapes = useVisibleItems()
   const searching = query.trim().length > 0
 
@@ -101,8 +101,8 @@ export function ArchiveOrganizer() {
             size={boxesHeight}
             min={120}
             max={800}
-            onResize={(h) => patchSettings({ archiveBoxesHeight: h }, false)}
-            onCommit={(h) => patchSettings({ archiveBoxesHeight: h }, true)}
+            onResize={(h) => patchLayout({ archiveBoxesHeight: h }, false)}
+            onCommit={(h) => patchLayout({ archiveBoxesHeight: h }, true)}
           />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { nanoid } from 'nanoid'
-import type { AiSettings, NetworkPolicy, Settings, SiteProfile } from '@shared/settings'
+import type { AiSettings, Settings, SiteProfile } from '@shared/settings'
 import { DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
@@ -12,15 +12,13 @@ import {
   Button,
   Field,
   INPUT_CLASS,
-  IntervalsField,
   NumberField,
   TextField,
-  TimeoutField,
   Toggle,
 } from '@renderer/components/ui'
 
 type Props = { onClose: () => void }
-type Tab = 'general' | 'ai' | 'network' | 'ytdlp'
+type Tab = 'general' | 'ai' | 'ytdlp'
 
 /**
  * Settings is a draft form: every edit lives in local state, the footer Save
@@ -67,16 +65,6 @@ export function SettingsModal({ onClose }: Props) {
   function patchPrompts(patch: Partial<Settings['prompts']>) {
     if (!draft) return
     patchDraft({ prompts: { ...draft.prompts, ...patch } })
-  }
-
-  function patchNetwork<K extends keyof Settings['network']>(group: K, patch: Partial<Settings['network'][K]>) {
-    if (!draft) return
-    patchDraft({
-      network: {
-        ...draft.network,
-        [group]: { ...draft.network[group], ...patch },
-      },
-    })
   }
 
   const settingsDirty =
@@ -165,9 +153,6 @@ export function SettingsModal({ onClose }: Props) {
                 }}
               />
             )}
-            {tab === 'network' && (
-              <NetworkTab draft={draft} busy={busy} onPatch={patchNetwork} />
-            )}
             {tab === 'ytdlp' && (
               <YtdlpTab draft={draft} busy={busy} onPatch={patchDraft} />
             )}
@@ -209,7 +194,6 @@ function pickEditable(s: Settings) {
     externalPlayer: s.externalPlayer,
     ai: s.ai,
     prompts: s.prompts,
-    network: s.network,
     ytdlpArgs: s.ytdlpArgs,
     siteProfiles: s.siteProfiles,
   }
@@ -218,7 +202,6 @@ function pickEditable(s: Settings) {
 const TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI' },
-  { id: 'network', label: 'Network' },
   { id: 'ytdlp', label: 'yt-dlp' },
 ]
 
@@ -427,113 +410,6 @@ function AiTab({
           </div>
         </Field>
       </div>
-    </div>
-  )
-}
-
-// ── Network tab ─────────────────────────────────────────────────────────────
-
-function NetworkTab({
-  draft,
-  busy,
-  onPatch,
-}: {
-  draft: Settings
-  busy: boolean
-  onPatch: <K extends keyof Settings['network']>(group: K, patch: Partial<Settings['network'][K]>) => void
-}) {
-  return (
-    <div className="space-y-4">
-      <PolicyEditor
-        label="yt-dlp probe & scan"
-        hint="Single-video probe and playlist/channel scan. Defaults to one attempt — retrying a media site risks an IP block. Empty timeout = no idle watchdog."
-        policy={draft.network.ytdlpProbe}
-        busy={busy}
-        onChange={(patch) => onPatch('ytdlpProbe', patch)}
-      />
-      <PolicyEditor
-        label="yt-dlp download"
-        hint="Media downloads. Defaults to no timeout (a watchdog would kill a large file mid-merge) and no retry. Opt in deliberately."
-        policy={draft.network.ytdlpDownload}
-        busy={busy}
-        onChange={(patch) => onPatch('ytdlpDownload', patch)}
-      />
-      <PolicyEditor
-        label="Version checks"
-        hint="GitHub releases & evermeet ffmpeg info."
-        policy={draft.network.versionCheck}
-        busy={busy}
-        onChange={(patch) => onPatch('versionCheck', patch)}
-      />
-      <PolicyEditor
-        label="Binary downloads"
-        hint="yt-dlp, ffmpeg, and Deno binary downloads from GitHub."
-        policy={draft.network.binaryDownload}
-        busy={busy}
-        onChange={(patch) => onPatch('binaryDownload', patch)}
-      />
-      <PolicyEditor
-        label="AI"
-        hint="AI provider calls (slug generation)."
-        policy={draft.network.ai}
-        busy={busy}
-        onChange={(patch) => onPatch('ai', patch)}
-      />
-    </div>
-  )
-}
-
-function PolicyEditor({
-  label,
-  hint,
-  policy,
-  busy,
-  onChange,
-}: {
-  label: string
-  hint: string
-  policy: NetworkPolicy
-  busy: boolean
-  onChange: (patch: Partial<NetworkPolicy>) => void
-}) {
-  return (
-    <div className="space-y-3 rounded border border-zinc-700 p-3">
-      <div>
-        <div className="text-sm font-medium">{label}</div>
-        <div className="text-xs text-zinc-300">{hint}</div>
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        <TimeoutField
-          label="Timeout (s)"
-          ms={policy.timeoutMs}
-          min={1}
-          max={600}
-          disabled={busy}
-          onChange={(ms) => onChange({ timeoutMs: ms })}
-        />
-        <NumberField
-          label="Retries"
-          value={policy.retries}
-          min={0}
-          max={20}
-          disabled={busy}
-          onChange={(r) => onChange({ retries: r })}
-        />
-        <NumberField
-          label="Jitter (%)"
-          value={Math.round(policy.jitterRatio * 100)}
-          min={0}
-          max={100}
-          disabled={busy}
-          onChange={(p) => onChange({ jitterRatio: p / 100 })}
-        />
-      </div>
-      <IntervalsField
-        label="Retry intervals in seconds — last reused if retries > intervals"
-        intervals={policy.intervals}
-        disabled={busy}
-        onChange={(arr) => onChange({ intervals: arr })}
-      />
     </div>
   )
 }

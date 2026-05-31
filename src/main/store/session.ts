@@ -11,7 +11,7 @@ import { SessionSchema, type ArchiveGroup, type Item, type Session } from '@shar
 
 const SAVE_DEBOUNCE_MS = 500
 
-let cache: Session = { schemaVersion: 1, items: [], groups: [] }
+let cache: Session = { items: [], groups: [] }
 let saveTimer: NodeJS.Timeout | null = null
 let loaded = false
 

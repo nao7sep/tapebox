@@ -1,11 +1,19 @@
-import type { NetworkPolicy } from '@shared/settings'
-
 /**
  * Generic retry + timeout primitives for network work. Pure and app-agnostic:
- * the policy is supplied by the caller (from settings), and the per-attempt
+ * the policy is a code-level constant supplied by the caller, and the per-attempt
  * timeout mechanism (request deadline vs idle watchdog) is the attempt's job —
- * withRetry only owns the loop, intervals, jitter, and cancellation.
+ * withRetry only owns the loop, intervals, and cancellation.
  */
+
+export type RetryPolicy = {
+  /** Retry attempts after the first failure (total attempts = retries + 1). */
+  retries: number
+  /**
+   * Wait-before-retry schedule in ms. If retries exceeds its length the last
+   * value is reused; an empty schedule means retry immediately.
+   */
+  intervals: number[]
+}
 
 export type RetryHooks = {
   /** Caller cancellation. An abort here stops retrying immediately. */
@@ -16,7 +24,7 @@ export type RetryHooks = {
 }
 
 export async function withRetry<T>(
-  policy: NetworkPolicy,
+  policy: RetryPolicy,
   attempt: () => Promise<T>,
   hooks: RetryHooks = {},
 ): Promise<T> {
@@ -29,7 +37,7 @@ export async function withRetry<T>(
       if (hooks.signal?.aborted) throw err
       const canRetry = i < policy.retries && (hooks.isRetryable?.(err) ?? true)
       if (!canRetry) throw err
-      const delayMs = jitter(intervalAt(policy.intervals, i), policy.jitterRatio)
+      const delayMs = intervalAt(policy.intervals, i)
       hooks.onRetry?.({ attempt: i + 1, delayMs, error: err })
       await sleep(delayMs, hooks.signal)
     }
@@ -49,26 +57,17 @@ function intervalAt(intervals: number[], i: number): number {
 /**
  * Run fn with a per-attempt request deadline. Combines the caller's signal (if
  * any) with a fresh timeout signal, so fn aborts on whichever fires first.
- * On timeout the rejection is a DOMException named 'TimeoutError'. A null
- * timeout means no deadline — fn runs under the caller's signal alone.
+ * On timeout the rejection is a DOMException named 'TimeoutError'.
  */
 export function withRequestTimeout<T>(
-  timeoutMs: number | null,
+  timeoutMs: number,
   parentSignal: AbortSignal | undefined,
   fn: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  if (timeoutMs == null) {
-    return fn(parentSignal ?? new AbortController().signal)
-  }
   const signal = parentSignal
     ? AbortSignal.any([parentSignal, AbortSignal.timeout(timeoutMs)])
     : AbortSignal.timeout(timeoutMs)
   return fn(signal)
-}
-
-function jitter(intervalMs: number, ratio: number): number {
-  const delta = intervalMs * ratio * (Math.random() * 2 - 1)
-  return Math.max(0, Math.round(intervalMs + delta))
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

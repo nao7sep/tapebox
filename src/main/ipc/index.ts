@@ -1,5 +1,6 @@
 import { registerLibraryHandlers } from './library'
 import { registerSettingsHandlers } from './settings'
+import { registerLayoutHandlers } from './layout'
 import { registerBinaryHandlers } from './binaries'
 import { registerDownloadHandlers } from './downloads'
 import { registerEnumHandlers } from './enum'
@@ -17,6 +18,7 @@ import { registerArchiveHandlers } from './archive'
 export function registerIpcHandlers(): void {
   registerLibraryHandlers()
   registerSettingsHandlers()
+  registerLayoutHandlers()
   registerBinaryHandlers()
   registerDownloadHandlers()
   registerEnumHandlers()

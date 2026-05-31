@@ -20,13 +20,12 @@ import { readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
 const AI_SLOT = 'ai'
 
 const SCHEMA = z.object({
-  schemaVersion: z.literal(1),
   keys: z.record(z.string(), z.string()),
 })
 type ApiKeysFile = z.infer<typeof SCHEMA>
 
 async function readAll(): Promise<ApiKeysFile> {
-  return (await readJsonOptional(paths.apiKeys, SCHEMA)) ?? { schemaVersion: 1, keys: {} }
+  return (await readJsonOptional(paths.apiKeys, SCHEMA)) ?? { keys: {} }
 }
 
 function requireEncryption(): void {

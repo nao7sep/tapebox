@@ -68,8 +68,9 @@ All state lives under `~/.tapebox`:
   library/        downloaded media + sidecar JSON
   logs/           per-launch log files (yyyymmdd-hhmmss-utc.log)
   work/           scratch space (in-progress downloads)
-  config.json     settings
-  session.json    queue/library state
+  config.json     settings (self-heals to defaults if missing or invalid)
+  session.json    queue/library state (load fails loud — never silently reset)
+  layout.json     window/pane geometry (disposable; self-heals to defaults)
   api-keys.json   encrypted AI API key
 ```
 
@@ -91,8 +92,8 @@ Shared code lives in `src/shared`:
 
 - `ipc-contract.ts` is the single source of truth for IPC channels and events;
   both the main registrar and the renderer client derive their types from it.
-- Zod schemas (`domain.ts`, `settings.ts`) validate everything read from or
-  written to disk.
+- Zod schemas (`domain.ts`, `settings.ts`, `layout.ts`) validate everything read
+  from or written to disk.
 
 Path aliases `@main/*`, `@renderer/*`, and `@shared/*` map to the corresponding
 `src` directories.

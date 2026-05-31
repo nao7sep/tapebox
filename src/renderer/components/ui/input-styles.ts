@@ -1,5 +1,5 @@
 /**
- * Shared <input> base classes used by TextField / NumberField / IntervalsField.
+ * Shared <input> base classes used by TextField / NumberField.
  * Tweak here and every form input picks it up.
  */
 export const INPUT_CLASS =

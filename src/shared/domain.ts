@@ -97,7 +97,6 @@ export const SidecarMediaSchema = z.object({
 export type SidecarMedia = z.infer<typeof SidecarMediaSchema>
 
 export const SidecarTapeboxSchema = z.object({
-  schemaVersion: z.literal(1),
   sourceUrl: z.string().url(),
   originalTitle: z.string().nullable(),
   slug: z.string().nullable(),
@@ -127,7 +126,6 @@ export type ArchiveGroup = z.infer<typeof ArchiveGroupSchema>
  * it's rebuilt by the queue at runtime.
  */
 export const SessionSchema = z.object({
-  schemaVersion: z.literal(1),
   items: z.array(ItemSchema),
   groups: z.array(ArchiveGroupSchema).default([]),
 })

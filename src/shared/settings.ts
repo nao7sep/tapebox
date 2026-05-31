@@ -43,50 +43,6 @@ export const PromptsSettingsSchema = z.object({
 export type PromptsSettings = z.infer<typeof PromptsSettingsSchema>
 
 /**
- * One policy shape for every class of network work. Fields that don't apply to
- * a given group take their inert form rather than being omitted:
- *   - timeoutMs:   per-attempt deadline — a request deadline, or an idle/stall
- *                  watchdog for streaming transfers. null = no app-imposed
- *                  timeout (rely on the underlying client and manual cancel).
- *   - retries:     retry attempts after the first failure (total = retries + 1).
- *                  0 = never retried, which makes intervals and jitterRatio inert.
- *   - intervals:   wait-before-retry schedule in ms. If retries > intervals.length,
- *                  the last interval is reused. Empty = retry immediately.
- *   - jitterRatio: each interval is randomized by ±ratio to avoid thundering herd.
- */
-export const NetworkPolicySchema = z.object({
-  timeoutMs: z.number().int().min(1000).nullable(),
-  retries: z.number().int().min(0).max(20),
-  intervals: z.array(z.number().int().min(0)).max(20),
-  jitterRatio: z.number().min(0).max(1),
-})
-export type NetworkPolicy = z.infer<typeof NetworkPolicySchema>
-
-/**
- * Network work, grouped by who it talks to (which decides what's safe):
- *   - ytdlpProbe: single-video probe + playlist/channel scan against the media
- *     site. Keeps an idle watchdog; defaults to no retry — re-hitting a site
- *     risks an IP block, so opting into retries is the user's deliberate call.
- *   - ytdlpDownload: the media download. Defaults to NO timeout: yt-dlp goes
- *     silent during the post-download ffmpeg merge of a large file, so an idle
- *     watchdog would kill a healthy job mid-merge. yt-dlp owns its own socket
- *     timeouts, and a wedged job is cancellable. No retry, same block reasoning.
- *   - versionCheck: GitHub releases + evermeet.cx ffmpeg info — small GETs, safe
- *     to retry.
- *   - binaryDownload: yt-dlp/ffmpeg/Deno binary downloads from GitHub — safe to
- *     retry (no block risk; a large transfer benefits from auto-resume).
- *   - ai: the AI provider — transient 429/5xx, retried with backoff.
- */
-export const NetworkSettingsSchema = z.object({
-  ytdlpProbe:     NetworkPolicySchema.default({ timeoutMs: 30_000,  retries: 0, intervals: [],                          jitterRatio: 0   }),
-  ytdlpDownload:  NetworkPolicySchema.default({ timeoutMs: null,    retries: 0, intervals: [],                          jitterRatio: 0   }),
-  versionCheck:   NetworkPolicySchema.default({ timeoutMs: 30_000,  retries: 3, intervals: [1_000, 3_000, 8_000],       jitterRatio: 0.2 }),
-  binaryDownload: NetworkPolicySchema.default({ timeoutMs: 60_000,  retries: 3, intervals: [3_000, 15_000, 60_000],     jitterRatio: 0.2 }),
-  ai:             NetworkPolicySchema.default({ timeoutMs: 120_000, retries: 3, intervals: [3_000, 10_000, 30_000],     jitterRatio: 0.2 }),
-})
-export type NetworkSettings = z.infer<typeof NetworkSettingsSchema>
-
-/**
  * A per-site yt-dlp override. When a URL matches urlPattern (substring match, or
  * a regex when isRegex is on — for host variants like ja.example.com), the args
  * (a raw CLI line) are appended to that yt-dlp call. comment is a user note.
@@ -102,8 +58,6 @@ export const SiteProfileSchema = z.object({
 export type SiteProfile = z.infer<typeof SiteProfileSchema>
 
 export const SettingsSchema = z.object({
-  schemaVersion: z.literal(1),
-
   libraryDir: z.string(),
   autoStartDownloads: z.boolean(),
   maxConcurrentDownloads: z.number().int().min(1).max(8),
@@ -122,14 +76,6 @@ export const SettingsSchema = z.object({
   trashOnRemove: z.boolean().default(true),
   confirmRemove: z.boolean().default(true),
 
-  // Persisted widths (px) of the resizable side panes — the library list on the
-  // left and the chapters list on the right. Clamped to a sane range; defaulted
-  // so older configs still load.
-  leftPaneWidth: z.number().int().min(200).max(720).default(320),
-  chaptersPaneWidth: z.number().int().min(200).max(720).default(288),
-  // Height (px) of the boxes list above the tape list in the archive organizer.
-  archiveBoxesHeight: z.number().int().min(120).max(800).default(240),
-
   // Check GitHub/upstream for newer yt-dlp/ffmpeg/deno releases once at startup.
   autoCheckBinaryUpdates: z.boolean(),
 
@@ -146,8 +92,6 @@ export const SettingsSchema = z.object({
   }),
 
   retainLogCount: z.number().int().min(0),
-
-  network: NetworkSettingsSchema,
 
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
   // scan); a matching siteProfile's args are appended on top. The app's own
@@ -167,7 +111,6 @@ export type Settings = z.infer<typeof SettingsSchema>
  */
 export function defaultSettings(libraryDir: string): Settings {
   return {
-    schemaVersion: 1,
     libraryDir,
     autoStartDownloads: true,
     maxConcurrentDownloads: 2,
@@ -175,9 +118,6 @@ export function defaultSettings(libraryDir: string): Settings {
     playSound: true,
     trashOnRemove: true,
     confirmRemove: true,
-    leftPaneWidth: 320,
-    chaptersPaneWidth: 288,
-    archiveBoxesHeight: 240,
     autoCheckBinaryUpdates: true,
     ai: {
       baseUrl: 'https://api.openai.com/v1',
@@ -192,13 +132,6 @@ export function defaultSettings(libraryDir: string): Settings {
       deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
     },
     retainLogCount: 50,
-    network: {
-      ytdlpProbe:     { timeoutMs: 30_000,  retries: 0, intervals: [],                      jitterRatio: 0   },
-      ytdlpDownload:  { timeoutMs: null,    retries: 0, intervals: [],                      jitterRatio: 0   },
-      versionCheck:   { timeoutMs: 30_000,  retries: 3, intervals: [1_000, 3_000, 8_000],   jitterRatio: 0.2 },
-      binaryDownload: { timeoutMs: 60_000,  retries: 3, intervals: [3_000, 15_000, 60_000], jitterRatio: 0.2 },
-      ai:             { timeoutMs: 120_000, retries: 3, intervals: [3_000, 10_000, 30_000], jitterRatio: 0.2 },
-    },
     ytdlpArgs: '',
     siteProfiles: [],
     externalPlayer: '',
