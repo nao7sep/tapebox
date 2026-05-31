@@ -50,11 +50,13 @@ export function useItemRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
     <ConfirmModal
       title="Remove tape"
       message={
-        trashEnabled
-          ? 'Move this tape to the Trash? You can restore it from there.'
-          : "Permanently delete this tape's files? This can't be undone."
+        !pending.filename
+          ? "Remove this tape from the library? It hasn't finished downloading, so there's no file to remove."
+          : trashEnabled
+            ? 'Move this tape to the Trash? You can restore it from there.'
+            : "Permanently delete this tape's files? This can't be undone."
       }
-      confirmLabel={trashEnabled ? 'Move to Trash' : 'Delete'}
+      confirmLabel={!pending.filename ? 'Remove' : trashEnabled ? 'Move to Trash' : 'Delete'}
       danger
       onCancel={() => setPending(null)}
       onConfirm={() => {

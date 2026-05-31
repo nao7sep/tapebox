@@ -9,7 +9,7 @@ type Props = {
 
 export function ChapterList({ chapters, onSeek }: Props) {
   if (chapters.length === 0) {
-    return <p className="text-xs text-zinc-400">No chapters in this video.</p>
+    return <p className="text-xs text-zinc-300">No chapters in this video.</p>
   }
   return (
     <ol className="space-y-1">
@@ -19,7 +19,7 @@ export function ChapterList({ chapters, onSeek }: Props) {
             onClick={() => onSeek(c.start_time)}
             className="flex w-full items-baseline gap-3 rounded px-2 py-1 text-left text-sm hover:bg-zinc-800/60"
           >
-            <span className="w-16 shrink-0 text-xs tabular-nums text-zinc-400">
+            <span className="w-16 shrink-0 text-xs tabular-nums text-zinc-300">
               {formatTime(c.start_time)}
             </span>
             <span className="min-w-0 flex-1 truncate">{c.title}</span>

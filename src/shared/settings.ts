@@ -52,6 +52,21 @@ export const NetworkSettingsSchema = z.object({
 export type NetworkSettings = z.infer<typeof NetworkSettingsSchema>
 export type NetworkGroup = keyof NetworkSettings
 
+/**
+ * A per-site yt-dlp override. When a URL matches urlPattern (substring match, or
+ * a regex when isRegex is on — for host variants like ja.example.com), the args
+ * (a raw CLI line) are appended to that yt-dlp call. comment is a user note.
+ */
+export const SiteProfileSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  urlPattern: z.string(),
+  isRegex: z.boolean(),
+  args: z.string(),
+  comment: z.string(),
+})
+export type SiteProfile = z.infer<typeof SiteProfileSchema>
+
 export const SettingsSchema = z.object({
   schemaVersion: z.literal(1),
 
@@ -95,6 +110,16 @@ export const SettingsSchema = z.object({
   retainLogCount: z.number().int().min(0),
 
   network: NetworkSettingsSchema,
+
+  // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
+  // scan); a matching siteProfile's args are appended on top. The app's own
+  // flags win on conflict (they're placed last). Defaulted for older configs.
+  ytdlpArgs: z.string().default(''),
+  siteProfiles: z.array(SiteProfileSchema).default([]),
+
+  // External player for "Open in player": empty = OS default; otherwise an app
+  // name or path (macOS opens it via `open -a`).
+  externalPlayer: z.string().default(''),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
@@ -131,5 +156,8 @@ export function defaultSettings(libraryDir: string): Settings {
       download: { timeoutMs: 60_000,  retries: 3, intervals: [3_000, 15_000, 60_000], jitterRatio: 0.2 },
       ai:       { timeoutMs: 120_000, retries: 3, intervals: [3_000, 10_000, 30_000], jitterRatio: 0.2 },
     },
+    ytdlpArgs: '',
+    siteProfiles: [],
+    externalPlayer: '',
   }
 }

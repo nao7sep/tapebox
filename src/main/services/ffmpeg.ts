@@ -3,6 +3,7 @@ import { extname, join } from 'node:path'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 import { execCapture } from '@main/io/spawn'
+import type { SidecarMedia } from '@shared/domain'
 
 /**
  * ffmpeg subprocess service.
@@ -70,6 +71,52 @@ export function audioExtension(codec: Codec, sourcePath: string): string {
   if (ext === 'opus') return 'opus'
   if (ext === 'mkv') return 'mka'
   return ext || 'm4a'
+}
+
+/**
+ * Read technical metadata from a media file by parsing `ffmpeg -i` output (it
+ * prints stream/format info to stderr and exits non-zero because no output file
+ * is given — reject:false lets us read it). Reuses the bundled ffmpeg, so no
+ * separate ffprobe binary is needed. Missing fields come back null.
+ */
+export async function probeMedia(mediaPath: string): Promise<SidecarMedia> {
+  const { stderr } = await execCapture(binaryPath('ffmpeg'), ['-hide_banner', '-i', mediaPath], {
+    reject: false,
+  })
+  return parseFfmpegInfo(stderr)
+}
+
+function parseFfmpegInfo(text: string): SidecarMedia {
+  const info: SidecarMedia = {
+    width: null,
+    height: null,
+    fps: null,
+    vcodec: null,
+    acodec: null,
+    durationSeconds: null,
+    bitrateKbps: null,
+  }
+
+  const dur = text.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
+  if (dur) info.durationSeconds = Number(dur[1]) * 3600 + Number(dur[2]) * 60 + parseFloat(dur[3]!)
+
+  const bitrate = text.match(/bitrate:\s*(\d+)\s*kb\/s/)
+  if (bitrate) info.bitrateKbps = Number(bitrate[1])
+
+  // e.g. "Stream #0:0(und): Video: h264 (High) (avc1 / ...), yuv420p, 640x360 [SAR ...], 30 fps"
+  const video = text.match(/Video:\s*(\w+)[^\n]*?\b(\d{2,5})x(\d{2,5})\b/)
+  if (video) {
+    info.vcodec = video[1]!
+    info.width = Number(video[2])
+    info.height = Number(video[3])
+  }
+  const fps = text.match(/\b(\d+(?:\.\d+)?)\s+fps\b/)
+  if (fps) info.fps = parseFloat(fps[1]!)
+
+  const audio = text.match(/Audio:\s*(\w+)/)
+  if (audio) info.acodec = audio[1]!
+
+  return info
 }
 
 async function exists(p: string): Promise<boolean> {

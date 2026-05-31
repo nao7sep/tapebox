@@ -30,7 +30,7 @@ export function IntervalsField({ label, intervals, disabled, onChange }: Props) 
 
   return (
     <label className="block">
-      <span className="text-xs text-zinc-400">{label}</span>
+      <span className="text-xs text-zinc-300">{label}</span>
       <input
         type="text"
         value={text}

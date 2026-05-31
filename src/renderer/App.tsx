@@ -112,7 +112,7 @@ export default function App() {
   return (
     <DropZone>
       <main className="flex h-screen flex-col">
-        <header className="flex shrink-0 items-center gap-4 border-b border-zinc-800 px-4 py-2.5">
+        <header className="flex shrink-0 items-center gap-4 border-b border-zinc-700 px-4 py-2.5">
           <h1 className="shrink-0 text-xl font-medium tracking-tight">TapeBox</h1>
           <div className="flex min-w-0 flex-1 justify-center">
             <div className="w-full max-w-5xl">
@@ -132,9 +132,9 @@ export default function App() {
         <div className="flex flex-1 overflow-hidden">
           <aside
             style={{ width: leftPaneWidth }}
-            className="relative flex shrink-0 flex-col border-r border-zinc-800"
+            className="relative flex shrink-0 flex-col border-r border-zinc-700"
           >
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2.5">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-700 px-3 py-2.5">
               <FilterChips />
               <PlaybackToggles />
             </div>
@@ -163,7 +163,7 @@ export default function App() {
                 onOpenPlaylist={openPlaylist}
               />
             ) : (
-              <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-400">
+              <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-300">
                 Select a tape from the list.
               </div>
             )}

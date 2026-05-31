@@ -8,7 +8,8 @@ import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore, patchSettings } from '@renderer/store/settings'
 import { releaseVideo } from '@renderer/lib/video'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
-import { formatTime } from '@renderer/lib/format'
+import { formatBytes, formatTime } from '@renderer/lib/format'
+import { IndeterminateBar, ProgressBar } from './Progress'
 import { Player } from './Player'
 import { ChapterList } from './ChapterList'
 import { RenameModal } from './RenameModal'
@@ -69,6 +70,8 @@ export function DetailPane({
     return parsed.success ? parsed.data : []
   })()
 
+  const mediaMeta = mediaMetaLine(sidecar)
+
   const mediaUrl = item.filename && mediaBase
     ? `${mediaBase}/${encodeURIComponent(item.filename)}`
     : null
@@ -109,7 +112,7 @@ export function DetailPane({
           Horizontal padding lives on each row (not the column) so the title and
           button borders span full width and meet the side dividers. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col py-4">
-        <div className="shrink-0 border-b border-zinc-800 px-4 pb-3">
+        <div className="shrink-0 border-b border-zinc-700 px-4 pb-3">
           {/* Title is always shown; clicking it discloses the optional metadata.
               The chevron sits in a fixed-width slot so the title's wrapped lines
               and the disclosed metadata both align under the title text. */}
@@ -124,7 +127,7 @@ export function DetailPane({
                 height="11"
                 viewBox="0 0 24 24"
                 className={
-                  'text-zinc-500 transition-transform group-hover:text-zinc-300 ' +
+                  'text-zinc-400 transition-transform group-hover:text-zinc-300 ' +
                   (infoOpen ? 'rotate-90' : '')
                 }
                 fill="none"
@@ -143,20 +146,21 @@ export function DetailPane({
           </button>
           {infoOpen && (
             <div className="mt-1 space-y-1 pl-5">
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-zinc-300">
                 {item.uploader ?? 'unknown uploader'}
                 {item.durationSeconds != null && ` · ${formatTime(item.durationSeconds)}`}
                 {' · '}
                 {item.state === 'playlist' ? 'playlist or channel' : item.state}
                 {item.archivedAtUtc && ' · archived'}
               </p>
-              <p className="truncate text-xs text-zinc-400">
+              {mediaMeta && <p className="text-xs text-zinc-300">{mediaMeta}</p>}
+              <p className="truncate text-xs text-zinc-300">
                 <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="hover:text-zinc-300">
                   {item.sourceUrl}
                 </a>
               </p>
               {item.slug && (
-                <p className="text-xs text-zinc-400">
+                <p className="text-xs text-zinc-300">
                   Slug: <span className="text-zinc-300">{item.slug}</span>
                 </p>
               )}
@@ -187,29 +191,53 @@ export function DetailPane({
               <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
             </div>
           </div>
+        ) : item.state === 'failed' ? (
+          <div className="mx-4 mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-red-900/50 bg-red-950/20">
+            <div className="shrink-0 border-b border-red-900/40 px-3 py-2 text-sm font-medium text-red-200">
+              Download failed
+            </div>
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 text-xs text-zinc-300">
+              {item.lastError ?? 'No details available.'}
+            </pre>
+          </div>
+        ) : item.state === 'paused' ? (
+          <div className="mx-4 mt-3 rounded border border-zinc-700 bg-zinc-900/40 p-4 text-sm text-zinc-300">
+            Paused. Click Resume below to continue.
+          </div>
         ) : (
-          <div className="mx-4 mt-3 rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm">
-            {progress
-              ? `${progress.phase}… ${progress.percent.toFixed(0)}%`
-              : item.state === 'failed'
-                ? `Failed: ${item.lastError ?? 'unknown error'}`
-                : item.state === 'paused'
-                  ? 'Paused. Click Resume below to continue.'
-                  : 'Waiting in queue…'}
+          <div className="mx-4 mt-3 space-y-2 rounded border border-zinc-700 bg-zinc-900/40 p-4 text-sm">
+            <div className="text-zinc-300">
+              {progress
+                ? progress.phase === 'downloading'
+                  ? `Downloading… ${progress.percent.toFixed(0)}%`
+                  : 'Probing…'
+                : 'Waiting in queue…'}
+            </div>
+            {progress &&
+              (progress.phase === 'downloading' && progress.percent > 0 ? (
+                <ProgressBar percent={progress.percent} />
+              ) : (
+                <IndeterminateBar />
+              ))}
           </div>
         )}
 
-        <div className="mt-3 flex shrink-0 flex-wrap gap-2 border-t border-zinc-800 px-4 pt-3">
+        <div className="mt-3 flex shrink-0 flex-wrap gap-2 border-t border-zinc-700 px-4 pt-3">
           {(item.state === 'queued' || item.state === 'probing' || item.state === 'downloading') && (
             <ActionButton onClick={cancel}>Cancel</ActionButton>
           )}
-          {(item.state === 'failed' || item.state === 'paused') && (
+          {item.state === 'failed' && (
+            <ActionButton onClick={retry}>Retry</ActionButton>
+          )}
+          {item.state === 'paused' && (
             <ActionButton onClick={retry}>Resume</ActionButton>
           )}
           {item.state === 'downloaded' && (
             <>
-              <ActionButton onClick={() => setShowExport(true)}>Export audio…</ActionButton>
-              <ActionButton onClick={openRename}>Rename…</ActionButton>
+              <ActionButton onClick={() => void ipcInvoke('library:playExternal', { itemId: item.id })}>Open in player</ActionButton>
+              <ActionButton onClick={() => void ipcInvoke('library:reveal', { itemId: item.id })}>Show in folder</ActionButton>
+              <ActionButton onClick={() => setShowExport(true)}>Export audio</ActionButton>
+              <ActionButton onClick={openRename}>Rename</ActionButton>
               {item.archivedAtUtc ? (
                 <>
                   <MoveToBoxButton item={item} />
@@ -229,7 +257,7 @@ export function DetailPane({
       {item.state === 'downloaded' && (chapters.length > 0 || sidecarError) && (
         <aside
           style={{ width: chaptersPaneWidth }}
-          className="relative flex shrink-0 flex-col border-l border-zinc-800 p-4"
+          className="relative flex shrink-0 flex-col border-l border-zinc-700 p-4"
         >
           <ResizeHandle
             edge="left"
@@ -256,6 +284,31 @@ export function DetailPane({
       )}
     </div>
   )
+}
+
+/** A one-line technical summary: resolution · fps · codecs · ext · size. Prefers
+ *  the ffmpeg-probed `tapebox.media` block, falling back to yt-dlp's own fields. */
+function mediaMetaLine(sidecar: SidecarRaw | null): string | null {
+  if (!sidecar) return null
+  const media = (sidecar.tapebox?.['media'] ?? null) as Record<string, unknown> | null
+  const pick = (key: string): unknown => media?.[key] ?? sidecar[key]
+  const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
+
+  const parts: string[] = []
+  const w = num(pick('width'))
+  const h = num(pick('height'))
+  if (w !== null && h !== null) parts.push(`${w}×${h}`)
+  const fps = num(pick('fps'))
+  if (fps !== null) parts.push(`${Math.round(fps)} fps`)
+  const codecs = [pick('vcodec'), pick('acodec')]
+    .filter((c): c is string => typeof c === 'string' && c.length > 0 && c !== 'none')
+    .map((c) => c.split('.')[0])
+  if (codecs.length > 0) parts.push(codecs.join(' / '))
+  const ext = sidecar['ext']
+  if (typeof ext === 'string' && ext) parts.push(ext)
+  const size = num(sidecar['filesize']) ?? num(sidecar['filesize_approx'])
+  if (size !== null) parts.push(formatBytes(size))
+  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 function ActionButton({

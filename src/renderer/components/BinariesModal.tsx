@@ -68,11 +68,11 @@ export function BinariesModal() {
 
   return (
     <Modal title="Required tools" onClose={closeModal} size="2xl" fitContent>
-      <p className="text-sm text-zinc-400">
+      <p className="text-sm text-zinc-300">
         yt-dlp, ffmpeg, and Deno handle downloading and media processing.
       </p>
 
-      <div className="mt-4 flex items-center justify-between text-xs text-zinc-400">
+      <div className="mt-4 flex items-center justify-between text-xs text-zinc-300">
         <span>{lastCheckedHint(statuses, checking)}</span>
         <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={checking}>
           {checking ? 'Checking…' : 'Check for updates'}
@@ -81,7 +81,7 @@ export function BinariesModal() {
 
       <table className="mt-4 w-full text-sm">
         <thead>
-          <tr className="text-left text-xs font-medium text-zinc-400">
+          <tr className="text-left text-xs font-medium text-zinc-300">
             <th className="pb-2">Tool</th>
             <th className="pb-2">Installed</th>
             <th className="pb-2">Latest</th>
@@ -126,19 +126,19 @@ function BinaryRow({
   const warm = kind === 'missing' || kind === 'update'
 
   return (
-    <tr className="border-t border-zinc-800">
+    <tr className="border-t border-zinc-700">
       <td className="py-2 font-medium">{status.name}</td>
       <td className={`py-2 ${warm ? 'text-amber-300' : 'text-zinc-300'}`}>
         {status.installedVersion ?? 'not installed'}
       </td>
-      <td className="py-2 text-zinc-400">{latestText(status, checking)}</td>
+      <td className="py-2 text-zinc-300">{latestText(status, checking)}</td>
       <td className="py-2 text-right">
         {progress ? (
-          <span className="text-xs text-zinc-400">
+          <span className="text-xs text-zinc-300">
             {progress.phase} {progress.percent}%
           </span>
         ) : pending ? (
-          <span className="text-xs text-zinc-400">starting…</span>
+          <span className="text-xs text-zinc-300">starting…</span>
         ) : (
           <Button variant={warm ? 'warm' : 'secondary'} size="sm" onClick={onAction}>
             {actionLabel(kind)}

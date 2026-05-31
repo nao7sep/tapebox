@@ -18,7 +18,7 @@ export function SearchResults() {
   const select = useSelectionStore((s) => s.select)
 
   if (tapes.length === 0) {
-    return <div className="p-6 text-sm text-zinc-400">No archived tapes match.</div>
+    return <div className="p-6 text-sm text-zinc-300">No archived tapes match.</div>
   }
 
   const boxName = (groupId: string | null) =>
@@ -34,7 +34,7 @@ export function SearchResults() {
             selected={item.id === selectedId}
             onSelect={() => select(item.id)}
           />
-          <div className="mt-0.5 pl-3 text-xs text-zinc-500">in {boxName(item.groupId)}</div>
+          <div className="mt-0.5 pl-3 text-xs text-zinc-400">in {boxName(item.groupId)}</div>
         </li>
       ))}
     </ul>

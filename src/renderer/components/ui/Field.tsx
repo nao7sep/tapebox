@@ -9,7 +9,7 @@ type Props = {
 export function Field({ label, children }: Props) {
   return (
     <div>
-      <div className="mb-1 text-xs font-medium text-zinc-400">{label}</div>
+      <div className="mb-1 text-xs font-medium text-zinc-300">{label}</div>
       {children}
     </div>
   )

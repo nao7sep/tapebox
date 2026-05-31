@@ -10,9 +10,9 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
       <div className="space-y-4 text-sm">
         <div>
           <p className="text-base font-medium text-zinc-100">TapeBox</p>
-          <p className="mt-1 text-zinc-400">
+          <p className="mt-1 text-zinc-300">
             A local media library with web import.
-            {version && <span className="ml-2 text-zinc-400">v{version}</span>}
+            {version && <span className="ml-2 text-zinc-300">v{version}</span>}
           </p>
         </div>
         <div className="flex gap-4">
@@ -23,7 +23,7 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
             Report an issue ↗
           </a>
         </div>
-        <p className="text-zinc-400">© 2026 Yoshinao Inoguchi — MIT License</p>
+        <p className="text-zinc-300">© 2026 Yoshinao Inoguchi — MIT License</p>
       </div>
     </Modal>
   )

@@ -65,7 +65,7 @@ export function ExportModal({ item, onClose }: Props) {
 
   return (
     <Modal title="Export audio" onClose={onClose} size="md" footer={footer} closeDisabled={busy}>
-      <p className="-mt-2 mb-4 truncate text-xs text-zinc-400">{item.title ?? item.sourceUrl}</p>
+      <p className="-mt-2 mb-4 truncate text-xs text-zinc-300">{item.title ?? item.sourceUrl}</p>
 
       <div className="space-y-4">
         <Field label="Mode">
@@ -91,18 +91,18 @@ export function ExportModal({ item, onClose }: Props) {
               FLAC
             </Radio>
           </div>
-          <p className="mt-1 text-xs text-zinc-400">
+          <p className="mt-1 text-xs text-zinc-300">
             Lossless copy re-uses the original audio stream — fast, bit-perfect when source codec is compatible.
           </p>
         </Field>
 
         <Field label="Destination">
           <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs">
+            <code className="min-w-0 flex-1 truncate rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs">
               {destinationDir ?? '(not chosen)'}
             </code>
             <Button variant="secondary" size="sm" onClick={() => void pickDir()} disabled={busy}>
-              Choose…
+              Choose
             </Button>
           </div>
         </Field>
@@ -112,7 +112,7 @@ export function ExportModal({ item, onClose }: Props) {
         <p className="mt-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
       )}
       {result && (
-        <div className="mt-4 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300">
+        <div className="mt-4 rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-300">
           Wrote {result.writtenPaths.length} {result.writtenPaths.length === 1 ? 'file' : 'files'}.
         </div>
       )}

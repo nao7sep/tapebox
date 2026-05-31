@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { AiSettings, NetworkGroup, RetryPolicy, Settings } from '@shared/settings'
+import { nanoid } from 'nanoid'
+import type { AiSettings, NetworkGroup, RetryPolicy, Settings, SiteProfile } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
 import { useSettingsStore } from '@renderer/store/settings'
@@ -15,7 +16,7 @@ import {
 } from '@renderer/components/ui'
 
 type Props = { onClose: () => void }
-type Tab = 'general' | 'ai' | 'network'
+type Tab = 'general' | 'ai' | 'network' | 'ytdlp'
 
 /**
  * Settings is a draft form: every edit lives in local state, the footer Save
@@ -103,7 +104,7 @@ export function SettingsModal({ onClose }: Props) {
   if (!draft) {
     return (
       <Modal title="Settings" onClose={onClose} size="2xl">
-        <p className="text-sm text-zinc-400">Loading…</p>
+        <p className="text-sm text-zinc-300">Loading…</p>
       </Modal>
     )
   }
@@ -156,6 +157,9 @@ export function SettingsModal({ onClose }: Props) {
             {tab === 'network' && (
               <NetworkTab draft={draft} busy={busy} onPatch={patchPolicy} />
             )}
+            {tab === 'ytdlp' && (
+              <YtdlpTab draft={draft} busy={busy} onPatch={patchDraft} />
+            )}
           </div>
         </div>
 
@@ -191,8 +195,11 @@ function pickEditable(s: Settings) {
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
     autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
+    externalPlayer: s.externalPlayer,
     ai: s.ai,
     network: s.network,
+    ytdlpArgs: s.ytdlpArgs,
+    siteProfiles: s.siteProfiles,
   }
 }
 
@@ -200,6 +207,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI' },
   { id: 'network', label: 'Network' },
+  { id: 'ytdlp', label: 'yt-dlp' },
 ]
 
 function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
@@ -214,7 +222,7 @@ function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
                 'w-full rounded px-3 py-1.5 text-left text-sm transition ' +
                 (tab === t.id
                   ? 'bg-zinc-800 text-zinc-100'
-                  : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100')
+                  : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100')
               }
             >
               {t.label}
@@ -289,6 +297,13 @@ function GeneralTab({
         disabled={busy}
         onChange={(v) => onPatch({ autoCheckBinaryUpdates: v })}
       />
+      <TextField
+        label="External player"
+        value={draft.externalPlayer}
+        placeholder="Blank = system default (e.g. VLC)"
+        disabled={busy}
+        onChange={(v) => onPatch({ externalPlayer: v })}
+      />
     </div>
   )
 }
@@ -321,7 +336,7 @@ function AiTab({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-zinc-400">
+      <p className="text-sm text-zinc-300">
         Used to suggest a file slug from each tape&apos;s title. TapeBox currently supports OpenAI-compatible providers only.
       </p>
 
@@ -340,8 +355,8 @@ function AiTab({
       />
 
       <div>
-        <div className="text-xs font-medium text-zinc-400">API key</div>
-        {keyIsSet && <div className="mt-0.5 text-xs text-zinc-400">Key is set</div>}
+        <div className="text-xs font-medium text-zinc-300">API key</div>
+        {keyIsSet && <div className="mt-0.5 text-xs text-zinc-300">Key is set</div>}
         <div className="mt-1 flex items-center gap-2">
           <input
             type="password"
@@ -427,10 +442,10 @@ function PolicyEditor({
   onChange: (patch: Partial<RetryPolicy>) => void
 }) {
   return (
-    <div className="space-y-3 rounded border border-zinc-800 p-3">
+    <div className="space-y-3 rounded border border-zinc-700 p-3">
       <div>
         <div className="text-sm font-medium">{label}</div>
-        <div className="text-xs text-zinc-400">{hint}</div>
+        <div className="text-xs text-zinc-300">{hint}</div>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <NumberField
@@ -464,6 +479,117 @@ function PolicyEditor({
         disabled={busy}
         onChange={(arr) => onChange({ intervals: arr })}
       />
+    </div>
+  )
+}
+
+// ── yt-dlp tab ──────────────────────────────────────────────────────────────
+
+function YtdlpTab({
+  draft,
+  busy,
+  onPatch,
+}: {
+  draft: Settings
+  busy: boolean
+  onPatch: (p: Partial<Settings>) => void
+}) {
+  function patchProfile(id: string, patch: Partial<SiteProfile>) {
+    onPatch({ siteProfiles: draft.siteProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)) })
+  }
+  function addProfile() {
+    const profile: SiteProfile = { id: nanoid(8), name: '', urlPattern: '', isRegex: false, args: '', comment: '' }
+    onPatch({ siteProfiles: [...draft.siteProfiles, profile] })
+  }
+  function removeProfile(id: string) {
+    onPatch({ siteProfiles: draft.siteProfiles.filter((p) => p.id !== id) })
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-zinc-300">
+        Extra yt-dlp arguments. Global args apply to every download, probe, and scan; a site profile&apos;s
+        args are added when its pattern matches the URL. TapeBox&apos;s own flags (output, info json) always win.
+      </p>
+
+      <div>
+        <div className="text-xs font-medium text-zinc-300">Global arguments</div>
+        <textarea
+          value={draft.ytdlpArgs}
+          onChange={(e) => onPatch({ ytdlpArgs: e.target.value })}
+          placeholder={'--add-header "Accept-Language: ja"'}
+          spellCheck={false}
+          disabled={busy}
+          rows={2}
+          className={`mt-1 w-full font-mono ${INPUT_CLASS}`}
+        />
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-medium text-zinc-300">Site profiles</div>
+          <Button variant="secondary" size="sm" onClick={addProfile} disabled={busy}>
+            Add profile
+          </Button>
+        </div>
+
+        {draft.siteProfiles.length === 0 && (
+          <p className="text-xs text-zinc-400">No profiles. Add one to apply args to a specific site.</p>
+        )}
+
+        {draft.siteProfiles.map((p) => (
+          <div key={p.id} className="space-y-2 rounded border border-zinc-700 p-3">
+            <div className="flex items-center gap-2">
+              <input
+                value={p.name}
+                onChange={(e) => patchProfile(p.id, { name: e.target.value })}
+                placeholder="Name"
+                spellCheck={false}
+                disabled={busy}
+                className={`flex-1 ${INPUT_CLASS}`}
+              />
+              <Button variant="danger" size="sm" onClick={() => removeProfile(p.id)} disabled={busy}>
+                Remove
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                value={p.urlPattern}
+                onChange={(e) => patchProfile(p.id, { urlPattern: e.target.value })}
+                placeholder="example.com (or a regex)"
+                spellCheck={false}
+                disabled={busy}
+                className={`flex-1 ${INPUT_CLASS}`}
+              />
+              <label className="flex shrink-0 items-center gap-1.5 text-xs text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={p.isRegex}
+                  onChange={(e) => patchProfile(p.id, { isRegex: e.target.checked })}
+                  disabled={busy}
+                />
+                Regex
+              </label>
+            </div>
+            <input
+              value={p.args}
+              onChange={(e) => patchProfile(p.id, { args: e.target.value })}
+              placeholder={'--add-header "Accept-Language: ja" -f bestvideo+bestaudio'}
+              spellCheck={false}
+              disabled={busy}
+              className={`w-full font-mono ${INPUT_CLASS}`}
+            />
+            <input
+              value={p.comment}
+              onChange={(e) => patchProfile(p.id, { comment: e.target.value })}
+              placeholder="Comment (optional)"
+              spellCheck={false}
+              disabled={busy}
+              className={`w-full ${INPUT_CLASS}`}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

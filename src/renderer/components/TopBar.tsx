@@ -43,7 +43,7 @@ export function TopBar({ clipboardEnabled }: Props) {
           onKeyDown={(e) => { if (e.key === 'Enter') void add(url) }}
           placeholder="Paste a URL"
           spellCheck={false}
-          className="flex-1 rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm placeholder-zinc-600 focus:border-zinc-600 focus:outline-hidden"
+          className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm placeholder-zinc-500 focus:border-zinc-600 focus:outline-hidden"
         />
         <Button
           variant="primary"

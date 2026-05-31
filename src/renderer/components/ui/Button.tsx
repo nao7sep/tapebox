@@ -30,11 +30,11 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary:
-    'bg-zinc-50 text-zinc-950 font-medium hover:bg-zinc-200 disabled:bg-zinc-700 disabled:text-zinc-400',
+    'bg-zinc-50 text-zinc-950 font-medium hover:bg-zinc-200 disabled:bg-zinc-700 disabled:text-zinc-300',
   secondary:
     'border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50',
   ghost:
-    'text-zinc-400 hover:text-zinc-100 disabled:opacity-50',
+    'text-zinc-300 hover:text-zinc-100 disabled:opacity-50',
   ghostDanger:
     'text-red-400 hover:text-red-300 disabled:opacity-50',
   danger:

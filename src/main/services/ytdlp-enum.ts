@@ -7,6 +7,7 @@ import {
   waitForExit,
 } from '@main/io/spawn'
 import { ytdlpEnv } from './ytdlp'
+import { resolveYtdlpArgs } from './ytdlp-args'
 
 /**
  * Playlist / channel enumeration via yt-dlp. startEnumeration streams entries
@@ -34,7 +35,7 @@ export function startEnumeration(
   const ctl = new AbortController()
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
-    ['--flat-playlist', '-j', '--no-warnings', url],
+    [...resolveYtdlpArgs(url), '--flat-playlist', '-j', '--no-warnings', url],
     { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.lookups.timeoutMs },
   )
 

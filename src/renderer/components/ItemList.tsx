@@ -18,7 +18,7 @@ export function ItemList() {
 
   if (visible.length === 0) {
     return (
-      <div className="p-6 text-sm text-zinc-400">
+      <div className="p-6 text-sm text-zinc-300">
         {emptyMessageFor(filter)}
       </div>
     )

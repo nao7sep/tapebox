@@ -35,7 +35,7 @@ export function HeaderMenu({ onPlaylist, onImport, onSettings, onTools, onShortc
 
   const items: { label: string; action: () => void }[] = [
     { label: 'Add playlist / channel', action: onPlaylist },
-    { label: 'Import files…', action: onImport },
+    { label: 'Import files', action: onImport },
     { label: 'Settings', action: onSettings },
     { label: 'Required tools', action: onTools },
     { label: 'Keyboard shortcuts', action: onShortcuts },
@@ -71,7 +71,7 @@ export function HeaderMenu({ onPlaylist, onImport, onSettings, onTools, onShortc
         </svg>
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-md border border-zinc-800 bg-zinc-900 py-1 shadow-xl">
+        <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
           {items.map(({ label, action }) => (
             <button
               key={label}

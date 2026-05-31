@@ -1,6 +1,7 @@
 import { basename, join } from 'node:path'
 import { rename } from 'node:fs/promises'
 import * as ytdlp from '@main/services/ytdlp'
+import * as ffmpeg from '@main/services/ffmpeg'
 import * as sidecar from '@main/core/sidecar'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
@@ -98,9 +99,16 @@ export class Job {
     const cur = this.current()
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
+    const settings = getSettings()
+    // Start every attempt from a clean slate: a leftover .part from a prior
+    // failed/cancelled run can be stale or oversized and makes yt-dlp's resume
+    // fail with HTTP 416. yt-dlp re-fetches the incomplete stream (completed
+    // sub-streams are kept and reused); within an attempt, its own retries and
+    // our stall-retry still resume the in-progress file.
+    await ytdlp.clearPartials(settings.libraryDir, cur.sourceId)
+
     this.update({ state: 'downloading', downloadStartedAtUtc: nowUtcIso() })
 
-    const settings = getSettings()
     const result = await ytdlp.download({
       url: cur.sourceUrl,
       libraryDir: settings.libraryDir,
@@ -110,6 +118,11 @@ export class Job {
         emit('items:progress', { itemId: this.itemId, phase: 'downloading', percent })
       },
     })
+
+    // Parse the actual file for reliable technical metadata — yt-dlp's info.json
+    // is sparse for generic/direct downloads (sites without a dedicated
+    // extractor). Best-effort: a probe failure just leaves it null.
+    const media = await ffmpeg.probeMedia(result.mediaPath).catch(() => null)
 
     const sidecarFilename = `${cur.sourceId}.json`
     const sidecarPath = join(settings.libraryDir, sidecarFilename)
@@ -125,6 +138,7 @@ export class Job {
         addedAtUtc: cur.addedAtUtc,
         downloadedAtUtc: nowUtcIso(),
         renamedAtUtc: null,
+        media,
       },
     })
 

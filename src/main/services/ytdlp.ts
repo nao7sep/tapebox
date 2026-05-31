@@ -1,7 +1,9 @@
 import { dirname, extname, join } from 'node:path'
+import { readdir, unlink } from 'node:fs/promises'
 import { binaryPath, paths } from '@main/paths'
 import { getSettings } from '@main/store/config'
 import { withRetry } from '@main/io/retry'
+import { resolveYtdlpArgs } from './ytdlp-args'
 import {
   execCapture,
   IdleTimeoutError,
@@ -62,7 +64,7 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
     () =>
       execCapture(
         binaryPath('yt-dlp'),
-        ['--dump-single-json', '--flat-playlist', '--no-playlist', '--playlist-items', '1', '--no-warnings', url],
+        [...resolveYtdlpArgs(url), '--dump-single-json', '--flat-playlist', '--no-playlist', '--playlist-items', '1', '--no-warnings', url],
         { env: ytdlpEnv(), signal, idleTimeoutMs: policy.timeoutMs },
       ),
     { signal, isRetryable: (e) => e instanceof IdleTimeoutError },
@@ -103,18 +105,35 @@ export type DownloadResult = {
 
 const FINAL_PATH_MARKER = 'tapebox-final-filepath:'
 
+/** How many recent yt-dlp output lines to keep so a failure can show what it said. */
+const MAX_LOG_LINES = 60
+
 /**
  * Download video+audio, merged, with sidecar info.json.
  * Filename stem is opts.outputId (yt-dlp's video id) so the on-disk name is
  * stable until the user renames to a slug.
  */
 export async function download(opts: DownloadOptions): Promise<DownloadResult> {
+  const policy = getSettings().network.download
+  // yt-dlp owns its own --retries for transient network errors, so a clean
+  // non-zero exit is genuinely unusable and not re-run (same reasoning as probe).
+  // The app retries only on a stall (idle timeout): yt-dlp can wedge silently,
+  // and its default --continue resumes the partial file on the next attempt. This
+  // is what makes download.{timeoutMs, retries, intervals} all meaningful.
+  return withRetry(policy, () => runDownloadOnce(opts, policy.timeoutMs), {
+    signal: opts.signal,
+    isRetryable: (e) => e instanceof IdleTimeoutError,
+  })
+}
+
+async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number): Promise<DownloadResult> {
   const captured: { finalPath: string | null } = { finalPath: null }
   let lastPct = -1
 
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
     [
+      ...resolveYtdlpArgs(opts.url),
       '--paths', `home:${opts.libraryDir}`,
       '--write-info-json',
       '--output', `${opts.outputId}.%(ext)s`,
@@ -124,9 +143,10 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
       '--print', `after_move:${FINAL_PATH_MARKER}%(filepath)s`,
       opts.url,
     ],
-    { env: ytdlpEnv(), signal: opts.signal, idleTimeoutMs: getSettings().network.download.timeoutMs },
+    { env: ytdlpEnv(), signal: opts.signal, idleTimeoutMs },
   )
 
+  const recentLines: string[] = []
   const lineBuffer = makeLineBuffer((line) => {
     if (!line) return
     if (line.startsWith(FINAL_PATH_MARKER)) {
@@ -135,12 +155,16 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
     }
     const m = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/)
     if (m && m[1]) {
+      // Progress line: drives the bar, and is left out of the kept tail (noise).
       const pct = parseFloat(m[1])
       if (pct !== lastPct) {
         lastPct = pct
         opts.onProgress?.(pct)
       }
+      return
     }
+    recentLines.push(line)
+    if (recentLines.length > MAX_LOG_LINES) recentLines.shift()
   })
 
   child.stdout.on('data', lineBuffer.feed)
@@ -148,6 +172,15 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
 
   try {
     await waitForExit(child, { command: 'yt-dlp download' })
+  } catch (err) {
+    lineBuffer.flush()
+    // A stall is retryable — let withRetry resume it; keep the type intact.
+    if (err instanceof IdleTimeoutError) throw err
+    // waitForExit's error carries no stderr; attach yt-dlp's own output so the
+    // failure panel shows what actually went wrong, not just an exit code.
+    const detail = recentLines.join('\n').trim()
+    const base = err instanceof Error ? err.message : String(err)
+    throw new Error(detail ? `${base}\n\n${detail}` : base)
   } finally {
     lineBuffer.flush()
   }
@@ -162,5 +195,26 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
   return {
     mediaPath: finalPath,
     infoJsonPath: join(dir, `${stem}.info.json`),
+  }
+}
+
+/**
+ * Remove yt-dlp's in-progress artifacts (.part / .ytdl / .frag) for a video id.
+ * Resuming a stale or oversized .part is what triggers HTTP 416 ("range not
+ * satisfiable") on a retry, so a failed item's partials are cleared before it
+ * runs again. Completed per-format streams are left for yt-dlp to reuse.
+ */
+export async function clearPartials(libraryDir: string, outputId: string): Promise<void> {
+  let entries: string[]
+  try {
+    entries = await readdir(libraryDir)
+  } catch {
+    return
+  }
+  for (const name of entries) {
+    if (!name.startsWith(`${outputId}.`)) continue
+    if (name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag\d*$/.test(name)) {
+      await unlink(join(libraryDir, name)).catch(() => {})
+    }
   }
 }

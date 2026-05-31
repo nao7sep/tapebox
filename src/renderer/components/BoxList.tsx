@@ -54,8 +54,8 @@ export function BoxList() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Boxes</span>
-        <button onClick={() => void newBox()} className="text-xs text-zinc-400 transition hover:text-zinc-100">
+        <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Boxes</span>
+        <button onClick={() => void newBox()} className="text-xs text-zinc-300 transition hover:text-zinc-100">
           + New box
         </button>
       </div>
@@ -122,7 +122,7 @@ function UngroupedRow({ count, selected, onSelect }: { count: number; selected: 
       <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
         Ungrouped
       </button>
-      <span className="shrink-0 text-xs tabular-nums text-zinc-500">{count}</span>
+      <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
     </div>
   )
 }
@@ -158,13 +158,13 @@ function SortableBoxRow({
       <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
         {label}
       </button>
-      <button onClick={onRename} aria-label="Rename box" className="hidden shrink-0 text-zinc-500 hover:text-zinc-200 group-hover:block">
+      <button onClick={onRename} aria-label="Rename box" className="hidden shrink-0 text-zinc-400 hover:text-zinc-200 group-hover:block">
         <PencilGlyph />
       </button>
-      <button onClick={onDelete} aria-label="Delete box" className="hidden shrink-0 text-zinc-500 hover:text-red-300 group-hover:block">
+      <button onClick={onDelete} aria-label="Delete box" className="hidden shrink-0 text-zinc-400 hover:text-red-300 group-hover:block">
         <TrashGlyph />
       </button>
-      <span className="shrink-0 text-xs tabular-nums text-zinc-500">{count}</span>
+      <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
     </div>
   )
 }

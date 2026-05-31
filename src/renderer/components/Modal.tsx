@@ -58,15 +58,15 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
         role="dialog"
         aria-modal="true"
         data-dialog-surface
-        className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-800 bg-zinc-900 shadow-xl`}
+        className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl`}
       >
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 p-4">
+        <header className="flex shrink-0 items-center justify-between border-b border-zinc-700 p-4">
           <h2 className="text-base font-medium">{title}</h2>
           <button
             onClick={onClose}
             disabled={closeDisabled}
             aria-label="Close"
-            className="text-lg leading-none text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
+            className="text-lg leading-none text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
           >
             ✕
           </button>
@@ -75,7 +75,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
         <div className="flex-1 overflow-y-auto p-6">{children}</div>
 
         {footer && (
-          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-800 p-4">
+          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-700 p-4">
             {footer}
           </footer>
         )}

@@ -61,7 +61,7 @@ export function RenameModal({ item, onClose }: Props) {
 
   return (
     <Modal title="Rename to slug" onClose={onClose} size="md" footer={footer} closeDisabled={busy !== null}>
-      <p className="-mt-2 mb-4 truncate text-xs text-zinc-400">
+      <p className="-mt-2 mb-4 truncate text-xs text-zinc-300">
         Current: <span className="text-zinc-300">{item.filename ?? '—'}</span>
       </p>
 

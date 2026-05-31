@@ -19,7 +19,7 @@ export function ArchiveTapeList() {
   const select = useSelectionStore((s) => s.select)
 
   if (tapes.length === 0) {
-    return <div className="p-6 text-sm text-zinc-400">This box is empty.</div>
+    return <div className="p-6 text-sm text-zinc-300">This box is empty.</div>
   }
 
   return (

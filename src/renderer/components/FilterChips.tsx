@@ -30,11 +30,11 @@ export function FilterChips() {
               'rounded px-2.5 py-1 text-xs transition ' +
               (active
                 ? 'bg-zinc-100 text-zinc-950'
-                : 'border border-zinc-800 text-zinc-300 hover:border-zinc-600')
+                : 'border border-zinc-700 text-zinc-300 hover:border-zinc-600')
             }
           >
             {labels[f]}
-            <span className="ml-1.5 text-zinc-400">{counts[f]}</span>
+            <span className="ml-1.5 text-zinc-300">{counts[f]}</span>
           </button>
         )
       })}

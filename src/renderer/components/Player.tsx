@@ -21,10 +21,11 @@ export const Player = forwardRef<HTMLVideoElement, Props>(function Player({ src,
       muted={muted}
       controls
       preload="metadata"
-      // Fit the whole frame inside the available box (object-contain) so the
-      // entire video is always visible — tall/vertical clips render narrow,
-      // wide clips render short, neither is cropped or pushed off-screen.
-      className="max-h-full max-w-full rounded bg-black object-contain"
+      // Fill the available box and object-contain the frame: the video scales to
+      // fit the preview — up for small clips, down for large — always preserving
+      // aspect (letterboxed), never cropped. (max-w/max-h would leave a small
+      // clip at its native, sub-preview size.)
+      className="h-full w-full rounded bg-black object-contain"
     />
   )
 })

@@ -11,3 +11,16 @@ export function formatTime(totalSeconds: number): string {
   if (h > 0) return `${h}:${pad2(m)}:${pad2(ss)}`
   return `${m}:${pad2(ss)}`
 }
+
+/** Human-readable byte size, e.g. 142 MB. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let i = 0
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024
+    i++
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`
+}

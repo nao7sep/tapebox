@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Item, ItemState } from '@shared/domain'
 import { formatTime } from '@renderer/lib/format'
+import { IndeterminateBar, ProgressBar } from './Progress'
 
 type Props = {
   item: Item
@@ -43,12 +44,12 @@ export function ItemRow({ item, progress, selected, onSelect }: Props) {
           {item.title ?? item.sourceUrl}
         </div>
         {item.durationSeconds != null && (
-          <div className="shrink-0 text-xs tabular-nums text-zinc-400">
+          <div className="shrink-0 text-xs tabular-nums text-zinc-300">
             {formatTime(item.durationSeconds)}
           </div>
         )}
       </div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
+      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-300">
         <span>{stateLabel}</span>
         {item.chapterCount != null && item.chapterCount > 0 && (
           <span>· {item.chapterCount} chapters</span>
@@ -56,11 +57,12 @@ export function ItemRow({ item, progress, selected, onSelect }: Props) {
         {item.archivedAtUtc && <span>· archived</span>}
       </div>
       {progress && (
-        <div className="mt-2 h-0.5 w-full overflow-hidden rounded bg-zinc-800">
-          <div
-            className="h-full bg-zinc-200 transition-all"
-            style={{ width: `${progress.percent}%` }}
-          />
+        <div className="mt-2">
+          {progress.phase === 'downloading' && progress.percent > 0 ? (
+            <ProgressBar percent={progress.percent} />
+          ) : (
+            <IndeterminateBar />
+          )}
         </div>
       )}
     </button>
@@ -78,29 +80,35 @@ function paletteFor(item: Item, selected: boolean): string {
     : 'focus:border-zinc-500'
 
   const baseBgBorder = archived
-    ? 'bg-zinc-950/40 border-zinc-800/70 hover:border-zinc-700'
+    ? 'bg-zinc-950/40 border-zinc-700/70 hover:border-zinc-700'
     : bgBorderForState(state)
 
   return `${baseBgBorder} ${selectionRing}`
 }
 
+/**
+ * Background tint by state. Downloaded items stay neutral zinc (settled); every
+ * other state gets its own balanced hue so items needing attention stand out:
+ * warm = needs you (failed/paused), violet = a dead-end to resolve (playlist),
+ * cool = working automatically (downloading/queued).
+ */
 function bgBorderForState(state: ItemState): string {
   switch (state) {
-    case 'playlist':
-      return 'bg-indigo-950/20 border-indigo-900/40 hover:border-indigo-700/60'
     case 'failed':
-      return 'bg-red-950/30 border-red-900/50 hover:border-red-700/70'
-    case 'downloading':
-      return 'bg-sky-950/30 border-sky-900/50 hover:border-sky-700/70'
+      return 'bg-red-900/30 border-red-600/70 hover:border-red-500'
     case 'paused':
-      return 'bg-zinc-900/30 border-zinc-800 hover:border-zinc-700'
-    case 'downloaded':
-      return 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700'
+      return 'bg-amber-900/30 border-amber-600/70 hover:border-amber-500'
+    case 'playlist':
+      return 'bg-violet-900/30 border-violet-600/70 hover:border-violet-500'
+    case 'downloading':
+      return 'bg-sky-900/30 border-sky-600/70 hover:border-sky-500'
     case 'queued':
     case 'probing':
     case 'ready':
+      return 'bg-teal-900/30 border-teal-600/70 hover:border-teal-500'
+    case 'downloaded':
     default:
-      return 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700'
+      return 'bg-zinc-900/60 border-zinc-700 hover:border-zinc-600'
   }
 }
 

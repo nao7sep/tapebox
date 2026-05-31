@@ -4,6 +4,7 @@ import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { formatTime } from '@renderer/lib/format'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { Modal } from '@renderer/components/Modal'
+import { IndeterminateBar } from '@renderer/components/Progress'
 import { Button, INPUT_CLASS } from '@renderer/components/ui'
 
 type Props = { onClose: () => void; initialUrl?: string }
@@ -154,15 +155,20 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
       </div>
 
       {!scanning && !scanned ? (
-        <p className="mt-3 text-center text-sm text-zinc-400">
+        <p className="mt-3 text-center text-sm text-zinc-300">
           Paste a playlist or channel URL, then Scan.
         </p>
       ) : (
         <div className="mt-3 text-center">
           <div className="text-2xl font-semibold tabular-nums text-sky-300">{entries.length}</div>
-          <div className="mt-0.5 text-xs text-zinc-400">
+          <div className="mt-0.5 text-xs text-zinc-300">
             {scanning ? 'scanning…' : entries.length === 1 ? 'video found' : 'videos found'}
           </div>
+          {scanning && (
+            <div className="mx-auto mt-2 max-w-[12rem]">
+              <IndeterminateBar />
+            </div>
+          )}
           {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
         </div>
       )}
@@ -202,9 +208,9 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
                     {e.alreadyInLibrary && <span className="shrink-0 text-xs text-amber-400">in box</span>}
                     <span className="min-w-0 flex-1 truncate">
                       {e.title ?? e.sourceUrl}
-                      {e.unavailable && <span className="ml-2 text-xs text-zinc-400">({e.unavailable.reason})</span>}
+                      {e.unavailable && <span className="ml-2 text-xs text-zinc-300">({e.unavailable.reason})</span>}
                     </span>
-                    <span className="text-xs tabular-nums text-zinc-400">
+                    <span className="text-xs tabular-nums text-zinc-300">
                       {e.durationSeconds != null ? formatTime(e.durationSeconds) : ''}
                     </span>
                   </label>

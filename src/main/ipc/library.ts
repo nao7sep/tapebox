@@ -1,5 +1,6 @@
-import { access, constants, copyFile, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { access, constants, copyFile, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
+import { spawn } from 'node:child_process'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
 import { handle } from './handle'
@@ -10,6 +11,7 @@ import { log } from '@main/io/logger'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { isValidSlug, slugifyAscii } from '@main/core/slug'
 import * as queue from '@main/queue/manager'
+import { clearPartials } from '@main/services/ytdlp'
 import { nowUtcIso } from '@shared/utc'
 import type { Item } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
@@ -32,7 +34,9 @@ export function registerLibraryHandlers(): void {
     for (const id of itemIds) {
       const item = session.getItem(id)
       if (!item || !item.archivedAtUtc) continue
-      const updated = { ...item, archivedAtUtc: null }
+      // Leaving the archive drops all archive organization — re-archiving later
+      // starts fresh in Ungrouped.
+      const updated = { ...item, archivedAtUtc: null, groupId: null, archiveOrder: 0 }
       session.upsertItem(updated)
       emit('items:updated', updated)
     }
@@ -58,10 +62,10 @@ export function registerLibraryHandlers(): void {
         if (item.sidecarFilename) {
           await discardFile(join(settings.libraryDir, item.sidecarFilename), settings.trashOnRemove)
         }
-        // Sweep any .part / .ytdl files yt-dlp left when cancelled mid-download.
-        // These are incomplete junk, always deleted outright (never trashed).
+        // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
+        // junk, always deleted outright (never trashed).
         if (item.sourceId) {
-          await sweepPartials(settings.libraryDir, item.sourceId)
+          await clearPartials(settings.libraryDir, item.sourceId)
         }
       }
     }
@@ -77,6 +81,33 @@ export function registerLibraryHandlers(): void {
     const path = join(getSettings().libraryDir, item.sidecarFilename)
     const text = await readFile(path, 'utf8')
     return JSON.parse(text) as SidecarRaw
+  })
+
+  handle('library:reveal', async ({ itemId }) => {
+    const item = session.getItem(itemId)
+    if (!item?.filename) throw new Error('No file to reveal for this item')
+    shell.showItemInFolder(join(getSettings().libraryDir, item.filename))
+  })
+
+  handle('library:playExternal', async ({ itemId }) => {
+    const item = session.getItem(itemId)
+    if (!item?.filename) throw new Error('No file to play for this item')
+    const full = join(getSettings().libraryDir, item.filename)
+    const player = getSettings().externalPlayer.trim()
+
+    if (!player) {
+      const error = await shell.openPath(full) // '' on success, message on failure
+      if (error) throw new Error(error)
+      return
+    }
+    // A specific player: macOS resolves app names/bundles via `open -a`; other
+    // platforms spawn the executable directly. Detached so it outlives nothing.
+    const child =
+      process.platform === 'darwin'
+        ? spawn('open', ['-a', player, full], { detached: true, stdio: 'ignore' })
+        : spawn(player, [full], { detached: true, stdio: 'ignore' })
+    child.on('error', (err) => log.error('library:playExternal failed', { player, error: String(err) }))
+    child.unref()
   })
 
   handle('library:renameToSlug', async ({ itemId, slug }) => {
@@ -298,26 +329,5 @@ async function fileExists(p: string): Promise<boolean> {
     return true
   } catch {
     return false
-  }
-}
-
-/**
- * Delete any .part / .ytdl / .frag* files left in the library dir whose
- * basename starts with the given sourceId. yt-dlp produces these while
- * downloading; if cancelled mid-flight they need cleanup.
- */
-async function sweepPartials(libraryDir: string, sourceId: string): Promise<void> {
-  let entries: string[]
-  try {
-    entries = await readdir(libraryDir)
-  } catch {
-    return
-  }
-  const targets = entries.filter((name) => {
-    if (!name.startsWith(sourceId)) return false
-    return name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag(\d+)?$/.test(name)
-  })
-  for (const name of targets) {
-    await unlink(join(libraryDir, name)).catch(() => {})
   }
 }

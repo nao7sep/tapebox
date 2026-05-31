@@ -77,7 +77,7 @@ export function DropZone({ children }: Props) {
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-zinc-950/70">
           <div className="rounded-lg border-2 border-dashed border-zinc-400 px-8 py-6 text-center">
             <p className="text-sm font-medium text-zinc-100">Drop to restore tapes</p>
-            <p className="mt-1 text-xs text-zinc-400">media + sidecar JSON pairs only</p>
+            <p className="mt-1 text-xs text-zinc-300">media + sidecar JSON pairs only</p>
           </div>
         </div>
       )}

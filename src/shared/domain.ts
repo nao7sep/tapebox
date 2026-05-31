@@ -80,6 +80,22 @@ export type Item = z.infer<typeof ItemSchema>
  * We do NOT validate the yt-dlp portion; it's a large, evolving surface.
  * We only validate the 'tapebox' namespace below.
  */
+/**
+ * Technical media facts parsed from the actual file (via ffmpeg) at download
+ * time — reliable regardless of how rich the source site's yt-dlp extractor is.
+ * The UI prefers these over yt-dlp's own (often-missing) fields.
+ */
+export const SidecarMediaSchema = z.object({
+  width: z.number().nullable(),
+  height: z.number().nullable(),
+  fps: z.number().nullable(),
+  vcodec: z.string().nullable(),
+  acodec: z.string().nullable(),
+  durationSeconds: z.number().nullable(),
+  bitrateKbps: z.number().nullable(),
+})
+export type SidecarMedia = z.infer<typeof SidecarMediaSchema>
+
 export const SidecarTapeboxSchema = z.object({
   schemaVersion: z.literal(1),
   sourceUrl: z.string().url(),
@@ -88,6 +104,8 @@ export const SidecarTapeboxSchema = z.object({
   addedAtUtc: z.string(),
   downloadedAtUtc: z.string().nullable(),
   renamedAtUtc: z.string().nullable(),
+  // Null when probing failed or for sidecars written before this existed.
+  media: SidecarMediaSchema.nullable().default(null),
 })
 export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
 

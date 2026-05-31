@@ -24,6 +24,8 @@ export type IpcCalls = {
   'library:archive':         { req: { itemIds: string[] };                           res: void }
   'library:unarchive':       { req: { itemIds: string[] };                           res: void }
   'library:getSidecar':      { req: { itemId: string };                              res: SidecarRaw }
+  'library:reveal':          { req: { itemId: string };                              res: void }
+  'library:playExternal':    { req: { itemId: string };                              res: void }
 
   // ── Archive organization (boxes for archived tapes) ──────────────────────
   // A box holds archived tapes in manual order; a tape is in one box or none.

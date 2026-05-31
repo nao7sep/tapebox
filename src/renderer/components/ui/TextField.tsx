@@ -12,7 +12,7 @@ type Props = {
 export function TextField({ label, value, placeholder, disabled, type = 'text', onChange }: Props) {
   return (
     <label className="block">
-      <span className="text-xs font-medium text-zinc-400">{label}</span>
+      <span className="text-xs font-medium text-zinc-300">{label}</span>
       <input
         type={type}
         value={value}

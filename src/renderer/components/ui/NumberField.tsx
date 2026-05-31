@@ -12,7 +12,7 @@ type Props = {
 export function NumberField({ label, value, min, max, disabled, onChange }: Props) {
   return (
     <label className="block">
-      <span className="text-xs text-zinc-400">{label}</span>
+      <span className="text-xs text-zinc-300">{label}</span>
       <input
         type="number"
         min={min}

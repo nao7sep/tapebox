@@ -48,10 +48,10 @@ export function MoveToBoxButton({ item }: { item: Item }) {
         onClick={() => setOpen((v) => !v)}
         className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800/60"
       >
-        Move to box…
+        Move to box
       </button>
       {open && (
-        <div className="absolute bottom-full z-40 mb-1 max-h-64 w-52 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-900 py-1 shadow-xl">
+        <div className="absolute bottom-full z-40 mb-1 max-h-64 w-52 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
           <MenuItem onClick={() => void moveTo(null)} active={item.groupId === null}>
             Ungrouped
           </MenuItem>
@@ -60,8 +60,8 @@ export function MoveToBoxButton({ item }: { item: Item }) {
               {g.name}
             </MenuItem>
           ))}
-          <div className="my-1 border-t border-zinc-800" />
-          <MenuItem onClick={() => void newBoxAndMove()}>+ New box…</MenuItem>
+          <div className="my-1 border-t border-zinc-700" />
+          <MenuItem onClick={() => void newBoxAndMove()}>+ New box</MenuItem>
         </div>
       )}
     </div>

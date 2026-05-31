@@ -15,12 +15,14 @@ export function PlaybackToggles() {
     <div className="flex items-center gap-0.5">
       <ToggleButton
         on={autoplay}
+        accent="text-emerald-400"
         title={autoplay ? 'Autoplay: on' : 'Autoplay: off'}
         onClick={() => patchSettings({ autoplay: !autoplay }, true)}
         icon={autoplay ? <AutoplayOn /> : <AutoplayOff />}
       />
       <ToggleButton
         on={playSound}
+        accent="text-sky-400"
         title={playSound ? 'Sound: on' : 'Sound: off'}
         onClick={() => patchSettings({ playSound: !playSound }, true)}
         icon={playSound ? <SoundOn /> : <SoundOff />}
@@ -31,11 +33,14 @@ export function PlaybackToggles() {
 
 function ToggleButton({
   on,
+  accent,
   title,
   onClick,
   icon,
 }: {
   on: boolean
+  /** Vivid text color class shown when on (drives the icon via currentColor). */
+  accent: string
   title: string
   onClick: () => void
   icon: ReactNode
@@ -45,7 +50,7 @@ function ToggleButton({
       onClick={onClick}
       aria-pressed={on}
       title={title}
-      className={'rounded p-1 transition ' + (on ? 'text-zinc-100' : 'text-zinc-600 hover:text-zinc-400')}
+      className={'rounded p-1 transition ' + (on ? accent : 'text-zinc-400 hover:text-zinc-300')}
     >
       {icon}
     </button>
@@ -53,8 +58,9 @@ function ToggleButton({
 }
 
 function AutoplayOn() {
+  // On: a solid play triangle (Off is the same triangle outlined, with a strike).
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M7 5.5 L18.5 12 L7 18.5 Z" />
     </svg>
   )
@@ -62,29 +68,31 @@ function AutoplayOn() {
 
 function AutoplayOff() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
       <path d="M7 5.5 L18.5 12 L7 18.5 Z" />
-      <line x1="4" y1="4" x2="20" y2="20" strokeLinecap="round" />
+      {/* A strike through the play triangle, extended past it on both ends so it
+          reads as a strike-through rather than a paper-plane. Coordinates hand-tuned. */}
+      <line x1="2" y1="7.5" x2="20" y2="18" />
     </svg>
   )
 }
 
 function SoundOn() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M11 5 L6 9 H3 V15 H6 L11 19 Z" fill="currentColor" stroke="none" />
-      <path d="M15.5 8.8 a4 4 0 0 1 0 6.4" />
-      <path d="M18.2 6.3 a8 8 0 0 1 0 11.4" />
+      <path d="M13 9 a3.5 3.5 0 0 1 0 6" />
+      <path d="M15.5 6.8 a7 7 0 0 1 0 10.4" />
     </svg>
   )
 }
 
 function SoundOff() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M11 5 L6 9 H3 V15 H6 L11 19 Z" fill="currentColor" stroke="none" />
-      <line x1="15.5" y1="9.5" x2="20.5" y2="14.5" />
-      <line x1="20.5" y1="9.5" x2="15.5" y2="14.5" />
+      <line x1="13.5" y1="9.5" x2="18.5" y2="14.5" />
+      <line x1="18.5" y1="9.5" x2="13.5" y2="14.5" />
     </svg>
   )
 }

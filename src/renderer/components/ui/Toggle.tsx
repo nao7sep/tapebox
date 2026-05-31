@@ -18,7 +18,7 @@ export function Toggle({ label, description, checked, disabled, onChange }: Prop
       />
       <div>
         <div className="text-sm">{label}</div>
-        {description && <div className="text-xs text-zinc-400">{description}</div>}
+        {description && <div className="text-xs text-zinc-300">{description}</div>}
       </div>
     </label>
   )
