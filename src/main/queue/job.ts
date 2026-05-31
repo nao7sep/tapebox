@@ -122,7 +122,7 @@ export class Job {
     // Parse the actual file for reliable technical metadata — yt-dlp's info.json
     // is sparse for generic/direct downloads (sites without a dedicated
     // extractor). Best-effort: a probe failure just leaves it null.
-    const media = await ffmpeg.probeMedia(result.mediaPath).catch(() => null)
+    const media = await ffmpeg.probeMedia(result.mediaPath, this.controller.signal).catch(() => null)
 
     const sidecarFilename = `${cur.sourceId}.json`
     const sidecarPath = join(settings.libraryDir, sidecarFilename)

@@ -41,9 +41,16 @@ async function isInstalled(name: BinaryName): Promise<boolean> {
   }
 }
 
+// A `--version` call is local and quick, but a wedged binary shouldn't hang the
+// check forever — an idle watchdog turns that into a prompt failure instead.
+const VERSION_CHECK_IDLE_TIMEOUT_MS = 15_000
+
 async function verifyVersion(name: BinaryName): Promise<string> {
   const spec = binarySpecs[name]
-  const { stdout } = await execCapture(binaryPath(name), [spec.versionFlag], { reject: false })
+  const { stdout } = await execCapture(binaryPath(name), [spec.versionFlag], {
+    reject: false,
+    idleTimeoutMs: VERSION_CHECK_IDLE_TIMEOUT_MS,
+  })
   return spec.parseVersion(stdout)
 }
 
@@ -123,7 +130,7 @@ async function performInstall(name: BinaryName): Promise<void> {
   await ensureDirs()
   const tempPath = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
 
-  const downloadPolicy = getSettings().network.download
+  const downloadPolicy = getSettings().network.binaryDownload
   let lastEmittedPct = -1
   await withRetry(downloadPolicy, () =>
     downloadWithProgress({

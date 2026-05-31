@@ -3,6 +3,7 @@ import { handle } from './handle'
 import { emit } from './events'
 import * as session from '@main/store/session'
 import { log } from '@main/io/logger'
+import { boxNameError, uniqueBoxName } from '@shared/archive-names'
 import type { ArchiveGroup, Item } from '@shared/domain'
 
 /**
@@ -16,7 +17,10 @@ export function registerArchiveHandlers(): void {
   handle('archive:createGroup', async ({ name }) => {
     const groups = session.getGroups()
     const order = groups.reduce((max, g) => Math.max(max, g.order), -1) + 1
-    const group: ArchiveGroup = { id: nanoid(10), name: name.trim() || 'New box', order }
+    // Seed with a unique, non-reserved name so the inline edit that follows
+    // always starts from a valid name the user can overtype.
+    const finalName = uniqueBoxName(name.trim() || 'New box', groups.map((g) => g.name))
+    const group: ArchiveGroup = { id: nanoid(10), name: finalName, order }
     session.upsertGroup(group)
     emit('groups:changed', session.getGroups())
     log.info('archive: box created', { id: group.id, name: group.name })
@@ -24,9 +28,16 @@ export function registerArchiveHandlers(): void {
   })
 
   handle('archive:renameGroup', async ({ groupId, name }) => {
-    const group = session.getGroups().find((g) => g.id === groupId)
+    const groups = session.getGroups()
+    const group = groups.find((g) => g.id === groupId)
     if (!group) throw new Error(`Box not found: ${groupId}`)
-    const updated = { ...group, name: name.trim() || group.name }
+    const trimmed = name.trim()
+    if (!trimmed) return group // empty = no-op, keep the current name
+    // Authoritative guard; the renderer validates inline, but main is the
+    // source of truth (reserved words + case-insensitive uniqueness).
+    const err = boxNameError(trimmed, groups.filter((g) => g.id !== groupId).map((g) => g.name))
+    if (err) throw new Error(err)
+    const updated = { ...group, name: trimmed }
     session.upsertGroup(updated)
     emit('groups:changed', session.getGroups())
     return updated

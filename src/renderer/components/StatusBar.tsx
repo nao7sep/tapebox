@@ -24,7 +24,7 @@ export function StatusBar() {
   return (
     <footer className="flex shrink-0 items-center border-t border-zinc-700 px-4 py-1.5 text-xs">
       {notice ? (
-        <span className={notice.kind === 'error' ? 'text-red-400' : 'text-zinc-300'}>
+        <span className={notice.kind === 'error' ? 'text-red-300' : 'text-zinc-300'}>
           {notice.text}
         </span>
       ) : !loaded ? (

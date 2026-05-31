@@ -6,6 +6,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useItemsStore } from '@renderer/store/items'
 import { useGroupsStore } from '@renderer/store/groups'
 import { useArchiveStore } from '@renderer/store/archive'
+import { boxNameError, UNGROUPED_LABEL } from '@shared/archive-names'
 import { ConfirmModal } from './ConfirmModal'
 
 /** Droppable id for the Ungrouped row (it is not a real box, so it has no group id). */
@@ -32,6 +33,14 @@ export function BoxList() {
   const archived = items.filter((i) => !!i.archivedAtUtc)
   const countOf = (groupId: string | null) => archived.filter((i) => i.groupId === groupId).length
 
+  // Names of every box except the one being edited — what a rename collides with.
+  const otherNames = (id: string) => sorted.filter((g) => g.id !== id).map((g) => g.name)
+
+  // Live validation of the in-progress rename (empty = "about to cancel", not an error).
+  const trimmedDraft = draftName.trim()
+  const draftError =
+    editingId !== null && trimmedDraft ? boxNameError(trimmedDraft, otherNames(editingId)) : null
+
   async function newBox() {
     const group = await ipcInvoke('archive:createGroup', { name: 'New box' })
     selectGroup(group.id)
@@ -39,10 +48,20 @@ export function BoxList() {
     setEditingId(group.id)
   }
 
+  // Enter: commit when valid, stay editing when invalid, cancel when empty.
   async function commitRename(id: string) {
     const name = draftName.trim()
+    if (!name) { setEditingId(null); return }
+    if (boxNameError(name, otherNames(id))) return
     setEditingId(null)
-    if (name) await ipcInvoke('archive:renameGroup', { groupId: id, name })
+    await ipcInvoke('archive:renameGroup', { groupId: id, name })
+  }
+
+  // Blur: a focus loss can't keep editing, so commit only when valid, else discard.
+  function commitOrDiscard(id: string) {
+    const name = draftName.trim()
+    if (!name || boxNameError(name, otherNames(id))) { setEditingId(null); return }
+    void commitRename(id)
   }
 
   async function deleteBox(id: string) {
@@ -65,18 +84,26 @@ export function BoxList() {
         <SortableContext items={sorted.map((g) => g.id)} strategy={verticalListSortingStrategy}>
           {sorted.map((g) =>
             editingId === g.id ? (
-              <input
-                key={g.id}
-                autoFocus
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                onBlur={() => void commitRename(g.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void commitRename(g.id)
-                  else if (e.key === 'Escape') setEditingId(null)
-                }}
-                className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm focus:border-zinc-500 focus:outline-hidden"
-              />
+              <div key={g.id}>
+                <input
+                  autoFocus
+                  value={draftName}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onBlur={() => commitOrDiscard(g.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void commitRename(g.id)
+                    else if (e.key === 'Escape') setEditingId(null)
+                  }}
+                  className={
+                    'w-full rounded border bg-zinc-900 px-2 py-1 text-sm focus:outline-hidden ' +
+                    (draftError
+                      ? 'border-red-700 focus:border-red-600'
+                      : 'border-zinc-700 focus:border-zinc-500')
+                  }
+                />
+                {draftError && <p className="mt-0.5 px-1 text-xs text-red-300">{draftError}</p>}
+              </div>
             ) : (
               <SortableBoxRow
                 key={g.id}
@@ -120,7 +147,7 @@ function UngroupedRow({ count, selected, onSelect }: { count: number; selected: 
   return (
     <div ref={setNodeRef} className={rowClass(selected, isOver)}>
       <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
-        Ungrouped
+        {UNGROUPED_LABEL}
       </button>
       <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
     </div>

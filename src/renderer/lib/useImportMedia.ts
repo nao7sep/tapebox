@@ -1,28 +1,30 @@
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useNoticeStore } from '@renderer/store/notice'
+import { useImportResultStore } from '@renderer/store/importResult'
 
 /**
- * Import media files into the library by path and surface the outcome as an app
- * notice. Shared by the drag-and-drop zone and the file-picker menu item — both
- * resolve to a list of media paths, which the main handler pairs with sidecars
- * by stem. A no-op on an empty list (e.g. a cancelled picker).
+ * Import media files into the library by path and surface the outcome as a
+ * blocking results modal. Shared by the drag-and-drop zone and the file-picker
+ * menu item — both resolve to a list of media paths, which the main handler
+ * pairs with sidecars by stem (a media file with no matching .json is
+ * rejected). A no-op on an empty list (e.g. a cancelled picker).
+ *
+ * The result is pushed to the import-result store; <ImportResultModal> at the
+ * app root renders it. An IPC-level failure (rare — the handler rejects
+ * per-file internally) is shown through the same modal, with every attempted
+ * file listed as failed under that error.
  */
 export function useImportMedia(): (mediaPaths: string[]) => Promise<void> {
-  const notify = useNoticeStore((s) => s.notify)
+  const show = useImportResultStore((s) => s.show)
   return async (mediaPaths) => {
     if (mediaPaths.length === 0) return
     try {
-      const { imported, rejected } = await ipcInvoke('library:import', { mediaPaths })
-      if (rejected.length > 0) {
-        // The status bar shows only the headline; keep the reasons reachable.
-        console.warn('import rejected:', rejected)
-      }
-      notify(
-        `Imported ${imported.length}${rejected.length ? `, ${rejected.length} rejected` : ''}`,
-        rejected.length > 0 ? 'error' : 'info',
-      )
+      const result = await ipcInvoke('library:import', { mediaPaths })
+      show(result)
     } catch (err) {
-      notify(`Import failed: ${String(err)}`, 'error')
+      show({
+        imported: [],
+        rejected: mediaPaths.map((path) => ({ path, reason: String(err) })),
+      })
     }
   }
 }

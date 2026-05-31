@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { nanoid } from 'nanoid'
-import type { AiSettings, NetworkGroup, RetryPolicy, Settings, SiteProfile } from '@shared/settings'
+import type { AiSettings, RetryPolicy, Settings, SiteProfile } from '@shared/settings'
 import { DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useRuntimeStore } from '@renderer/store/runtime'
@@ -8,6 +8,7 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { Modal } from '@renderer/components/Modal'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
 import {
+  AutoTextarea,
   Button,
   Field,
   INPUT_CLASS,
@@ -67,7 +68,7 @@ export function SettingsModal({ onClose }: Props) {
     patchDraft({ prompts: { ...draft.prompts, ...patch } })
   }
 
-  function patchPolicy(group: NetworkGroup, patch: Partial<RetryPolicy>) {
+  function patchNetwork<K extends keyof Settings['network']>(group: K, patch: Partial<Settings['network'][K]>) {
     if (!draft) return
     patchDraft({
       network: {
@@ -164,7 +165,7 @@ export function SettingsModal({ onClose }: Props) {
               />
             )}
             {tab === 'network' && (
-              <NetworkTab draft={draft} busy={busy} onPatch={patchPolicy} />
+              <NetworkTab draft={draft} busy={busy} onPatch={patchNetwork} />
             )}
             {tab === 'ytdlp' && (
               <YtdlpTab draft={draft} busy={busy} onPatch={patchDraft} />
@@ -431,18 +432,6 @@ function AiTab({
 
 // ── Network tab ─────────────────────────────────────────────────────────────
 
-const NETWORK_GROUPS: NetworkGroup[] = ['lookups', 'download', 'ai']
-const GROUP_LABEL: Record<NetworkGroup, string> = {
-  lookups: 'Lookups',
-  download: 'Downloads',
-  ai: 'AI',
-}
-const GROUP_HINT: Record<NetworkGroup, string> = {
-  lookups: 'yt-dlp probe / playlist enumeration, GitHub & evermeet version checks.',
-  download: 'Binary downloads (yt-dlp, ffmpeg, Deno) and yt-dlp media downloads.',
-  ai: 'AI provider calls (slug generation).',
-}
-
 function NetworkTab({
   draft,
   busy,
@@ -450,20 +439,59 @@ function NetworkTab({
 }: {
   draft: Settings
   busy: boolean
-  onPatch: (group: NetworkGroup, patch: Partial<RetryPolicy>) => void
+  onPatch: <K extends keyof Settings['network']>(group: K, patch: Partial<Settings['network'][K]>) => void
 }) {
   return (
     <div className="space-y-4">
-      {NETWORK_GROUPS.map((group) => (
-        <PolicyEditor
-          key={group}
-          label={GROUP_LABEL[group]}
-          hint={GROUP_HINT[group]}
-          policy={draft.network[group]}
-          busy={busy}
-          onChange={(patch) => onPatch(group, patch)}
-        />
-      ))}
+      <div className="space-y-3 rounded border border-zinc-700 p-3">
+        <div>
+          <div className="text-sm font-medium">yt-dlp (media site)</div>
+          <div className="text-xs text-zinc-300">
+            Probe, playlist scan, and media downloads. Not auto-retried — a failure surfaces with the log
+            so you can decide and retry manually; re-hammering a site risks an IP block.
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField
+            label="Probe / scan timeout (s)"
+            value={Math.round(draft.network.ytdlpProbe.timeoutMs / 1000)}
+            min={1}
+            max={600}
+            disabled={busy}
+            onChange={(s) => onPatch('ytdlpProbe', { timeoutMs: s * 1000 })}
+          />
+          <NumberField
+            label="Download timeout (s)"
+            value={Math.round(draft.network.ytdlpDownload.timeoutMs / 1000)}
+            min={1}
+            max={600}
+            disabled={busy}
+            onChange={(s) => onPatch('ytdlpDownload', { timeoutMs: s * 1000 })}
+          />
+        </div>
+      </div>
+
+      <PolicyEditor
+        label="Version checks"
+        hint="GitHub releases & evermeet ffmpeg info."
+        policy={draft.network.versionCheck}
+        busy={busy}
+        onChange={(patch) => onPatch('versionCheck', patch)}
+      />
+      <PolicyEditor
+        label="Binary downloads"
+        hint="yt-dlp, ffmpeg, and Deno binary downloads from GitHub."
+        policy={draft.network.binaryDownload}
+        busy={busy}
+        onChange={(patch) => onPatch('binaryDownload', patch)}
+      />
+      <PolicyEditor
+        label="AI"
+        hint="AI provider calls (slug generation)."
+        policy={draft.network.ai}
+        busy={busy}
+        onChange={(patch) => onPatch('ai', patch)}
+      />
     </div>
   )
 }
@@ -547,22 +575,21 @@ function YtdlpTab({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-zinc-300">
-        Extra yt-dlp arguments. Global args apply to every download, probe, and scan; a site profile&apos;s
-        args are added when its pattern matches the URL. TapeBox&apos;s own flags (output, info json) always win.
+      <p className="text-xs text-zinc-400">
+        TapeBox&apos;s own flags (output, info json) always win on conflict.
       </p>
 
       <div>
         <div className="text-xs font-medium text-zinc-300">Global arguments</div>
-        <textarea
-          value={draft.ytdlpArgs}
-          onChange={(e) => onPatch({ ytdlpArgs: e.target.value })}
-          placeholder={'--add-header "Accept-Language: ja"'}
-          spellCheck={false}
-          disabled={busy}
-          rows={2}
-          className={`mt-1 w-full font-mono ${INPUT_CLASS}`}
-        />
+        <div className="mt-1">
+          <AutoTextarea
+            value={draft.ytdlpArgs}
+            onChange={(v) => onPatch({ ytdlpArgs: v })}
+            placeholder={'--add-header "Accept-Language: ja"'}
+            disabled={busy}
+            mono
+          />
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -572,10 +599,6 @@ function YtdlpTab({
             Add profile
           </Button>
         </div>
-
-        {draft.siteProfiles.length === 0 && (
-          <p className="text-xs text-zinc-400">No profiles. Add one to apply args to a specific site.</p>
-        )}
 
         {draft.siteProfiles.map((p) => (
           <div key={p.id} className="space-y-2 rounded border border-zinc-700 p-3">
@@ -611,21 +634,18 @@ function YtdlpTab({
                 Regex
               </label>
             </div>
-            <input
+            <AutoTextarea
               value={p.args}
-              onChange={(e) => patchProfile(p.id, { args: e.target.value })}
+              onChange={(v) => patchProfile(p.id, { args: v })}
               placeholder={'--add-header "Accept-Language: ja" -f bestvideo+bestaudio'}
-              spellCheck={false}
               disabled={busy}
-              className={`w-full font-mono ${INPUT_CLASS}`}
+              mono
             />
-            <input
+            <AutoTextarea
               value={p.comment}
-              onChange={(e) => patchProfile(p.id, { comment: e.target.value })}
+              onChange={(v) => patchProfile(p.id, { comment: v })}
               placeholder="Comment (optional)"
-              spellCheck={false}
               disabled={busy}
-              className={`w-full ${INPUT_CLASS}`}
             />
           </div>
         ))}

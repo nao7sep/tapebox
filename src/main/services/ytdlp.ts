@@ -2,11 +2,9 @@ import { dirname, extname, join } from 'node:path'
 import { readdir, unlink } from 'node:fs/promises'
 import { binaryPath, paths } from '@main/paths'
 import { getSettings } from '@main/store/config'
-import { withRetry } from '@main/io/retry'
 import { resolveYtdlpArgs } from './ytdlp-args'
 import {
   execCapture,
-  IdleTimeoutError,
   makeLineBuffer,
   spawnStreaming,
   waitForExit,
@@ -54,20 +52,16 @@ export type ProbeResult = ProbeVideo | { kind: 'playlist' }
  * --no-playlist still isolates the video for watch?v=…&list=… URLs, and single
  * videos keep full metadata, chapters included (verified against a full probe).
  *
- * Retries only on a stall (IdleTimeoutError): a clean non-zero exit means
- * yt-dlp already ran its own --retries and the URL is genuinely unusable.
+ * Never auto-retried: re-hammering a media site risks an IP block, and a probe
+ * failure is the user's call (read the log, retry manually). The idle watchdog
+ * still kills a silent stall so the queue never hangs.
  */
 export async function probe(url: string, signal: AbortSignal): Promise<ProbeResult> {
-  const policy = getSettings().network.lookups
-  const { stdout } = await withRetry(
-    policy,
-    () =>
-      execCapture(
-        binaryPath('yt-dlp'),
-        [...resolveYtdlpArgs(url), '--dump-single-json', '--flat-playlist', '--no-playlist', '--playlist-items', '1', '--no-warnings', url],
-        { env: ytdlpEnv(), signal, idleTimeoutMs: policy.timeoutMs },
-      ),
-    { signal, isRetryable: (e) => e instanceof IdleTimeoutError },
+  const { timeoutMs } = getSettings().network.ytdlpProbe
+  const { stdout } = await execCapture(
+    binaryPath('yt-dlp'),
+    [...resolveYtdlpArgs(url), '--dump-single-json', '--flat-playlist', '--no-playlist', '--playlist-items', '1', '--no-warnings', url],
+    { env: ytdlpEnv(), signal, idleTimeoutMs: timeoutMs },
   )
   const info = JSON.parse(stdout) as Record<string, unknown>
   if (info['_type'] === 'playlist') return { kind: 'playlist' }
@@ -114,16 +108,13 @@ const MAX_LOG_LINES = 60
  * stable until the user renames to a slug.
  */
 export async function download(opts: DownloadOptions): Promise<DownloadResult> {
-  const policy = getSettings().network.download
-  // yt-dlp owns its own --retries for transient network errors, so a clean
-  // non-zero exit is genuinely unusable and not re-run (same reasoning as probe).
-  // The app retries only on a stall (idle timeout): yt-dlp can wedge silently,
-  // and its default --continue resumes the partial file on the next attempt. This
-  // is what makes download.{timeoutMs, retries, intervals} all meaningful.
-  return withRetry(policy, () => runDownloadOnce(opts, policy.timeoutMs), {
-    signal: opts.signal,
-    isRetryable: (e) => e instanceof IdleTimeoutError,
-  })
+  const { timeoutMs } = getSettings().network.ytdlpDownload
+  // Never auto-retried (same reasoning as probe): re-running a download hammers
+  // the site and risks a block. yt-dlp still runs its own internal --retries for
+  // transient blips within the single attempt; the idle watchdog kills a silent
+  // stall. On failure the item surfaces with the log and the user hits Retry,
+  // which re-runs the job after clearing partials (see queue/job).
+  return runDownloadOnce(opts, timeoutMs)
 }
 
 async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number): Promise<DownloadResult> {
@@ -174,10 +165,9 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number): Pr
     await waitForExit(child, { command: 'yt-dlp download' })
   } catch (err) {
     lineBuffer.flush()
-    // A stall is retryable — let withRetry resume it; keep the type intact.
-    if (err instanceof IdleTimeoutError) throw err
-    // waitForExit's error carries no stderr; attach yt-dlp's own output so the
-    // failure panel shows what actually went wrong, not just an exit code.
+    // No auto-retry: a stall or a clean failure both terminate here. Attach
+    // yt-dlp's recent output so the failure panel shows what went wrong (where
+    // it stalled, or the actual error), not just an exit code.
     const detail = recentLines.join('\n').trim()
     const base = err instanceof Error ? err.message : String(err)
     throw new Error(detail ? `${base}\n\n${detail}` : base)

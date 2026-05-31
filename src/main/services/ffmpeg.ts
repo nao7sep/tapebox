@@ -42,6 +42,10 @@ export type TranscodeRequest = {
 // long-but-healthy encode.
 const TRANSCODE_IDLE_TIMEOUT_MS = 30_000
 
+// `ffmpeg -i` is a quick metadata read, but a pathological file could wedge it;
+// the idle watchdog turns that into a (caught) failure instead of a hang.
+const PROBE_IDLE_TIMEOUT_MS = 30_000
+
 export async function transcode(req: TranscodeRequest): Promise<string> {
   const ext = resolveExt(req.preset, req.mediaPath)
   const outPath = join(req.destinationDir, `${req.filenameStem}.${ext}`)
@@ -142,9 +146,11 @@ export function resolveExt(preset: ExportPreset, sourcePath: string): string {
  * is given — reject:false lets us read it). Reuses the bundled ffmpeg, so no
  * separate ffprobe binary is needed. Missing fields come back null.
  */
-export async function probeMedia(mediaPath: string): Promise<SidecarMedia> {
+export async function probeMedia(mediaPath: string, signal?: AbortSignal): Promise<SidecarMedia> {
   const { stderr } = await execCapture(binaryPath('ffmpeg'), ['-hide_banner', '-i', mediaPath], {
     reject: false,
+    signal,
+    idleTimeoutMs: PROBE_IDLE_TIMEOUT_MS,
   })
   return parseFfmpegInfo(stderr)
 }

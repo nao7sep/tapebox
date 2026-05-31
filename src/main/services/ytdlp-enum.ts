@@ -36,7 +36,7 @@ export function startEnumeration(
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
     [...resolveYtdlpArgs(url), '--flat-playlist', '-j', '--no-warnings', url],
-    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.lookups.timeoutMs },
+    { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: getSettings().network.ytdlpProbe.timeoutMs },
   )
 
   let total = 0

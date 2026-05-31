@@ -1,5 +1,7 @@
+export { AutoTextarea } from './AutoTextarea'
 export { Button } from './Button'
 export type { ButtonVariant, ButtonSize } from './Button'
+export { CaptionedPanel } from './CaptionedPanel'
 export { Field } from './Field'
 export { IntervalsField } from './IntervalsField'
 export { NumberField } from './NumberField'

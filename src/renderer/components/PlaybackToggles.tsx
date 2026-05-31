@@ -15,14 +15,14 @@ export function PlaybackToggles() {
     <div className="flex items-center gap-0.5">
       <ToggleButton
         on={autoplay}
-        accent="text-emerald-400"
+        accent="text-sky-400"
         title={autoplay ? 'Autoplay: on' : 'Autoplay: off'}
         onClick={() => patchSettings({ autoplay: !autoplay }, true)}
         icon={autoplay ? <AutoplayOn /> : <AutoplayOff />}
       />
       <ToggleButton
         on={playSound}
-        accent="text-sky-400"
+        accent="text-pink-400"
         title={playSound ? 'Sound: on' : 'Sound: off'}
         onClick={() => patchSettings({ playSound: !playSound }, true)}
         icon={playSound ? <SoundOn /> : <SoundOff />}

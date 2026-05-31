@@ -61,19 +61,41 @@ export const RetryPolicySchema = z.object({
 export type RetryPolicy = z.infer<typeof RetryPolicySchema>
 
 /**
- * Network work split into the groups that share a retry/timeout shape:
- *   - lookups:  small request→response — yt-dlp probe/detect/enumerate,
- *               GitHub releases, evermeet.cx ffmpeg info.
- *   - download: large transfers — binary downloads, yt-dlp media download.
- *   - ai:       slug generation via the AI provider.
+ * Timeout-only policy for media-site (yt-dlp) work. These are deliberately NOT
+ * auto-retried: re-hammering a video site risks an IP block, and a failure is
+ * exactly when the user should read the log and decide. The idle watchdog still
+ * applies so nothing hangs; on timeout the item fails and surfaces for a manual
+ * Retry.
+ */
+export const TimeoutPolicySchema = z.object({
+  timeoutMs: z.number().int().min(1000),
+})
+export type TimeoutPolicy = z.infer<typeof TimeoutPolicySchema>
+
+/**
+ * Network work, grouped by who it talks to (which decides whether auto-retry is
+ * safe):
+ *   - ytdlpProbe/ytdlpDownload: the media site — timeout only, never retried.
+ *   - versionCheck: GitHub releases + evermeet.cx ffmpeg info — small GETs, safe
+ *     to retry.
+ *   - binaryDownload: yt-dlp/ffmpeg/Deno binary downloads from GitHub — safe to
+ *     retry (no block risk; a large transfer benefits from auto-resume).
+ *   - ai: the AI provider — transient 429/5xx, retried with backoff.
+ *
+ * Every field is defaulted, so a config written under the old shape loads
+ * cleanly: the new fields fill from defaults and the old keys are dropped.
  */
 export const NetworkSettingsSchema = z.object({
-  lookups: RetryPolicySchema,
-  download: RetryPolicySchema,
-  ai: RetryPolicySchema,
+  ytdlpProbe:     TimeoutPolicySchema.default({ timeoutMs: 30_000 }),
+  ytdlpDownload:  TimeoutPolicySchema.default({ timeoutMs: 60_000 }),
+  versionCheck:   RetryPolicySchema.default({ timeoutMs: 30_000,  retries: 3, intervals: [1_000, 3_000, 8_000],   jitterRatio: 0.2 }),
+  binaryDownload: RetryPolicySchema.default({ timeoutMs: 60_000,  retries: 3, intervals: [3_000, 15_000, 60_000], jitterRatio: 0.2 }),
+  ai:             RetryPolicySchema.default({ timeoutMs: 120_000, retries: 3, intervals: [3_000, 10_000, 30_000], jitterRatio: 0.2 }),
 })
 export type NetworkSettings = z.infer<typeof NetworkSettingsSchema>
-export type NetworkGroup = keyof NetworkSettings
+
+/** The retry-bearing network groups (the timeout-only yt-dlp ones are edited separately). */
+export type RetryGroup = 'versionCheck' | 'binaryDownload' | 'ai'
 
 /**
  * A per-site yt-dlp override. When a URL matches urlPattern (substring match, or
@@ -182,9 +204,11 @@ export function defaultSettings(libraryDir: string): Settings {
     },
     retainLogCount: 50,
     network: {
-      lookups:  { timeoutMs: 30_000,  retries: 3, intervals: [1_000, 3_000, 8_000],   jitterRatio: 0.2 },
-      download: { timeoutMs: 60_000,  retries: 3, intervals: [3_000, 15_000, 60_000], jitterRatio: 0.2 },
-      ai:       { timeoutMs: 120_000, retries: 3, intervals: [3_000, 10_000, 30_000], jitterRatio: 0.2 },
+      ytdlpProbe:     { timeoutMs: 30_000 },
+      ytdlpDownload:  { timeoutMs: 60_000 },
+      versionCheck:   { timeoutMs: 30_000,  retries: 3, intervals: [1_000, 3_000, 8_000],   jitterRatio: 0.2 },
+      binaryDownload: { timeoutMs: 60_000,  retries: 3, intervals: [3_000, 15_000, 60_000], jitterRatio: 0.2 },
+      ai:             { timeoutMs: 120_000, retries: 3, intervals: [3_000, 10_000, 30_000], jitterRatio: 0.2 },
     },
     ytdlpArgs: '',
     siteProfiles: [],

@@ -9,7 +9,14 @@ import type { Item } from '@shared/domain'
 
 export function registerDownloadHandlers(): void {
   handle('downloads:add', async ({ url }) => {
-    const item = makeQueuedItem(url)
+    const trimmed = url.trim()
+    // URL-based dedup for the single-add path (no id yet — it's unprobed). Any
+    // existing item with this URL blocks the add, in any state; a failed one is
+    // resumed via Retry, not re-added.
+    if (session.getItems().some((i) => i.sourceUrl === trimmed)) {
+      throw new Error('This URL has already been added.')
+    }
+    const item = makeQueuedItem(trimmed)
     session.upsertItem(item)
     emit('items:added', [item])
     queue.tick()

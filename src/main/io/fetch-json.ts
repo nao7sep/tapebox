@@ -2,12 +2,12 @@ import { getSettings } from '@main/store/config'
 import { withRetry, withRequestTimeout } from './retry'
 
 /**
- * GET + parse JSON under the 'metadata' network policy: per-attempt request
- * timeout plus retries with jittered backoff. Used for the small upstream
- * lookups (GitHub releases, evermeet ffmpeg info).
+ * GET + parse JSON under the 'versionCheck' policy: per-attempt request timeout
+ * plus retries with jittered backoff. Used for the small upstream lookups
+ * (GitHub releases, evermeet ffmpeg info) — safe to retry, no block risk.
  */
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const policy = getSettings().network.lookups
+  const policy = getSettings().network.versionCheck
   return withRetry(policy, () =>
     withRequestTimeout(policy.timeoutMs, undefined, async (signal) => {
       const res = await fetch(url, { ...init, signal })

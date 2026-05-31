@@ -169,7 +169,7 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
               <IndeterminateBar />
             </div>
           )}
-          {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
+          {error && <p className="mt-1.5 text-xs text-red-300">{error}</p>}
         </div>
       )}
 

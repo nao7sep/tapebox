@@ -26,6 +26,8 @@ import { ShortcutsModal } from '@renderer/components/ShortcutsModal'
 import { HeaderMenu } from '@renderer/components/HeaderMenu'
 import { StatusBar } from '@renderer/components/StatusBar'
 import { DropZone } from '@renderer/components/DropZone'
+import { ImportResultModal } from '@renderer/components/ImportResultModal'
+import { useImportResultStore } from '@renderer/store/importResult'
 
 /** Skip the startup auto-check if any binary was checked within this window. */
 const AUTO_CHECK_STALE_MS = 24 * 60 * 60 * 1000
@@ -58,6 +60,8 @@ export default function App() {
   const leftPaneWidth = useSettingsStore((s) => s.settings?.leftPaneWidth ?? 320)
   const filter = useFilterStore((s) => s.filter)
   const importMedia = useImportMedia()
+  const importResult = useImportResultStore((s) => s.result)
+  const clearImportResult = useImportResultStore((s) => s.clear)
 
   function openPlaylist(initialUrl = '') {
     setPlaylistInitialUrl(initialUrl)
@@ -185,6 +189,10 @@ export default function App() {
         {binariesModalOpen && <BinariesModal />}
 
         {confirmModal}
+
+        {importResult && (
+          <ImportResultModal result={importResult} onClose={clearImportResult} />
+        )}
 
         <StatusBar />
       </main>

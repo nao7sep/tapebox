@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Item } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useGroupsStore } from '@renderer/store/groups'
+import { UNGROUPED_LABEL } from '@shared/archive-names'
 
 /**
  * Files an archived tape into a box (or Ungrouped, or a brand-new box) via a
@@ -53,7 +54,7 @@ export function MoveToBoxButton({ item }: { item: Item }) {
       {open && (
         <div className="absolute bottom-full z-40 mb-1 max-h-64 w-52 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
           <MenuItem onClick={() => void moveTo(null)} active={item.groupId === null}>
-            Ungrouped
+            {UNGROUPED_LABEL}
           </MenuItem>
           {sorted.map((g) => (
             <MenuItem key={g.id} onClick={() => void moveTo(g.id)} active={item.groupId === g.id}>

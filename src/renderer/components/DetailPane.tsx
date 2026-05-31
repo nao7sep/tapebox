@@ -16,6 +16,7 @@ import { RenameModal } from './RenameModal'
 import { ExportModal } from './ExportModal'
 import { ResizeHandle } from './ResizeHandle'
 import { MoveToBoxButton } from './MoveToBoxButton'
+import { CaptionedPanel } from './ui'
 
 /**
  * Chapter shape as yt-dlp writes it into the sidecar. We validate at the
@@ -177,29 +178,24 @@ export function DetailPane({
             )}
           </div>
         ) : item.state === 'playlist' ? (
-          <div className="mx-4 mt-3 rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-5">
-            <h3 className="flex items-center gap-2 text-sm font-medium text-indigo-200">
-              <PlaylistGlyph />
-              This is a playlist or channel
-            </h3>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-300">
-              TapeBox adds one video at a time here. To choose which videos to take
-              from this, open the scanner — it lists every video so you can pick.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <ActionButton onClick={() => onOpenPlaylist(item.sourceUrl)}>Open scanner</ActionButton>
-              <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
+          <CaptionedPanel kind="warning" caption="This is a playlist or channel">
+            <div className="p-5">
+              <p className="text-sm leading-relaxed text-zinc-300">
+                TapeBox adds one video at a time here. To choose which videos to take
+                from this, open the scanner — it lists every video so you can pick.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <ActionButton onClick={() => onOpenPlaylist(item.sourceUrl)}>Open scanner</ActionButton>
+                <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
+              </div>
             </div>
-          </div>
+          </CaptionedPanel>
         ) : item.state === 'failed' ? (
-          <div className="mx-4 mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-red-900/50 bg-red-950/20">
-            <div className="shrink-0 border-b border-red-900/40 px-3 py-2 text-sm font-medium text-red-200">
-              Download failed
-            </div>
+          <CaptionedPanel kind="error" caption="Download failed" fill>
             <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 text-xs text-zinc-300">
               {item.lastError ?? 'No details available.'}
             </pre>
-          </div>
+          </CaptionedPanel>
         ) : item.state === 'paused' ? (
           <div className="mx-4 mt-3 rounded border border-zinc-700 bg-zinc-900/40 p-4 text-sm text-zinc-300">
             Paused. Click Resume below to continue.
@@ -270,7 +266,7 @@ export function DetailPane({
           <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {sidecarError
-              ? <p className="text-xs text-red-400">{sidecarError}</p>
+              ? <p className="text-xs text-red-300">{sidecarError}</p>
               : <ChapterList chapters={chapters} onSeek={seek} />}
           </div>
         </aside>
@@ -332,18 +328,5 @@ function ActionButton({
     >
       {children}
     </button>
-  )
-}
-
-/** Stacked-lines glyph (a "list" mark) for the playlist/channel pane. */
-function PlaylistGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-      <line x1="4" y1="7" x2="20" y2="7" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="17" x2="13" y2="17" />
-      <polygon points="17,15 22,18 17,21" fill="currentColor" stroke="none" />
-    </svg>
   )
 }

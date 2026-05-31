@@ -2,6 +2,7 @@ import { useItemsStore } from '@renderer/store/items'
 import { useGroupsStore } from '@renderer/store/groups'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useVisibleItems } from '@renderer/lib/itemOrder'
+import { UNGROUPED_LABEL } from '@shared/archive-names'
 import { ItemRow } from './ItemRow'
 
 /**
@@ -22,7 +23,7 @@ export function SearchResults() {
   }
 
   const boxName = (groupId: string | null) =>
-    groupId === null ? 'Ungrouped' : groups.find((g) => g.id === groupId)?.name ?? 'Ungrouped'
+    groupId === null ? UNGROUPED_LABEL : groups.find((g) => g.id === groupId)?.name ?? UNGROUPED_LABEL
 
   return (
     <ul className="space-y-1.5 p-3">
