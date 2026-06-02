@@ -1,23 +1,18 @@
-import { safeStorage } from 'electron'
 import { z } from 'zod'
 import { paths } from '@main/paths'
 import { readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
 
 /**
- * Encrypted API key storage.
+ * Obfuscated API key storage.
  *
- * One file at ~/.tapebox/api-keys.json with a fixed 'ai' slot. Values are
- * base64-encoded safeStorage ciphertexts (Keychain on macOS, DPAPI on Windows,
- * libsecret on Linux). The plain key text never lands on disk.
- *
- * Failure modes worth knowing:
- *   - safeStorage.isEncryptionAvailable() returns false on some Linux systems
- *     without libsecret. We surface that as a clear error to the renderer.
- *   - If the OS keychain entry changes (machine swap, profile reset), stored
- *     blobs decrypt to garbage. Clear and re-enter the key.
+ * One file at ~/.tapebox/api-keys.json with a fixed 'ai' slot. Values use the
+ * same lightweight local format as the other personal AI tools: "obf:" +
+ * base64(reverse(key)). This is not encryption; it only avoids plain-text keys
+ * during casual file browsing.
  */
 
 const AI_SLOT = 'ai'
+const API_KEY_MARKER = 'obf:'
 
 const SCHEMA = z.object({
   keys: z.record(z.string(), z.string()),
@@ -28,25 +23,31 @@ async function readAll(): Promise<ApiKeysFile> {
   return (await readJsonOptional(paths.apiKeys, SCHEMA)) ?? { keys: {} }
 }
 
-function requireEncryption(): void {
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('OS keychain encryption is unavailable on this system')
+function encodeApiKey(apiKey: string): string {
+  if (!apiKey) return ''
+  const reversed = Array.from(apiKey).reverse().join('')
+  return `${API_KEY_MARKER}${Buffer.from(reversed, 'utf8').toString('base64')}`
+}
+
+function decodeApiKey(stored: string): string {
+  if (!stored.startsWith(API_KEY_MARKER)) return ''
+  try {
+    const reversed = Buffer.from(stored.slice(API_KEY_MARKER.length), 'base64').toString('utf8')
+    return Array.from(reversed).reverse().join('')
+  } catch {
+    return ''
   }
 }
 
 export async function readAiKey(): Promise<string | null> {
-  requireEncryption()
   const all = await readAll()
-  const blob = all.keys[AI_SLOT]
-  if (!blob) return null
-  return safeStorage.decryptString(Buffer.from(blob, 'base64'))
+  const apiKey = decodeApiKey(all.keys[AI_SLOT] ?? '')
+  return apiKey.length > 0 ? apiKey : null
 }
 
 export async function writeAiKey(apiKey: string): Promise<void> {
-  requireEncryption()
   const all = await readAll()
-  const encrypted = safeStorage.encryptString(apiKey).toString('base64')
-  all.keys[AI_SLOT] = encrypted
+  all.keys[AI_SLOT] = encodeApiKey(apiKey)
   await writeJsonAtomic(paths.apiKeys, all, SCHEMA)
 }
 
@@ -58,5 +59,5 @@ export async function clearAiKey(): Promise<void> {
 
 export async function hasAiKey(): Promise<boolean> {
   const all = await readAll()
-  return all.keys[AI_SLOT] != null
+  return decodeApiKey(all.keys[AI_SLOT] ?? '').length > 0
 }

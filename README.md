@@ -24,15 +24,14 @@ machine. No account, no cloud; your media and metadata stay under `~/.tapebox`.
   optional autoplay.
 - **Managed binaries** — `yt-dlp`, `ffmpeg`, and `deno` are downloaded and
   updated by the app itself into `~/.tapebox/bin`; nothing to install by hand.
-- **Encrypted API key** — the AI provider API key is stored with the OS
-  keychain via Electron `safeStorage` (Keychain / DPAPI / libsecret); the
-  plaintext key never touches disk.
+- **Local API key** — the AI provider API key is stored under `~/.tapebox`
+  with lightweight obfuscation so it is not plainly visible during casual file
+  browsing.
 
 ## Requirements
 
 - Node.js and npm
-- macOS, Windows, or Linux (on Linux, OS keychain encryption requires
-  `libsecret`; without it, API-key storage is disabled and surfaced in the UI)
+- macOS, Windows, or Linux
 
 ## Getting started
 
@@ -71,7 +70,7 @@ All state lives under `~/.tapebox`:
   config.json     settings (self-heals to defaults if missing or invalid)
   session.json    queue/library state (load fails loud — never silently reset)
   layout.json     window/pane geometry (disposable; self-heals to defaults)
-  api-keys.json   encrypted AI API key
+  api-keys.json   obfuscated AI API key
 ```
 
 ## Architecture
@@ -81,7 +80,7 @@ electron-vite:
 
 - **Main** (`src/main`, ESM) — owns all I/O: the download queue, `yt-dlp` /
   `ffmpeg` subprocesses, binary management, atomic JSON persistence, logging,
-  the OS keychain, and a loopback HTTP server that streams library files to the
+  API-key storage, and a loopback HTTP server that streams library files to the
   player.
 - **Preload** (`src/preload`, CommonJS) — exposes a typed IPC client to the
   renderer over the context bridge.
@@ -99,8 +98,8 @@ Path aliases `@main/*`, `@renderer/*`, and `@shared/*` map to the corresponding
 `src` directories.
 
 AI slug generation targets a single OpenAI-compatible endpoint (base URL +
-model) configured in Settings. The API key is stored encrypted via the OS
-keychain.
+model) configured in Settings. The API key is lightly obfuscated in local JSON
+as `obf:` + base64 of the reversed key. This is not encryption.
 
 Note: only TapeBox's own state lives under `~/.tapebox`. Electron/Chromium
 internal state (cache, cookies, GPU cache) stays in the OS-default

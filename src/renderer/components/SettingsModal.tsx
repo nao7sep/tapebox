@@ -3,7 +3,6 @@ import { nanoid } from 'nanoid'
 import type { AiSettings, Settings, SiteProfile } from '@shared/settings'
 import { DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useRuntimeStore } from '@renderer/store/runtime'
 import { useSettingsStore } from '@renderer/store/settings'
 import { Modal } from '@renderer/components/Modal'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
@@ -31,7 +30,6 @@ type Tab = 'general' | 'ai' | 'ytdlp'
  * directly.
  */
 export function SettingsModal({ onClose }: Props) {
-  const runtime = useRuntimeStore((s) => s.info)
   const [tab, setTab] = useState<Tab>('general')
   const [original, setOriginal] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Settings | null>(null)
@@ -141,7 +139,6 @@ export function SettingsModal({ onClose }: Props) {
                 hadKey={hadApiKey}
                 apiKeyDraft={apiKeyDraft}
                 wantsClearKey={wantsClearKey}
-                encryptionAvailable={runtime?.encryptionAvailable ?? false}
                 onAiPatch={patchAi}
                 onApiKeyChange={(v) => {
                   setApiKeyDraft(v)
@@ -313,7 +310,6 @@ function AiTab({
   hadKey,
   apiKeyDraft,
   wantsClearKey,
-  encryptionAvailable,
   onAiPatch,
   onApiKeyChange,
   onClearKey,
@@ -325,7 +321,6 @@ function AiTab({
   hadKey: boolean
   apiKeyDraft: string
   wantsClearKey: boolean
-  encryptionAvailable: boolean
   onAiPatch: (p: Partial<AiSettings>) => void
   onApiKeyChange: (v: string) => void
   onClearKey: () => void
@@ -338,12 +333,6 @@ function AiTab({
       <p className="text-sm text-zinc-300">
         Used to suggest a file slug from each tape&apos;s title. TapeBox currently supports OpenAI-compatible providers only.
       </p>
-
-      {!encryptionAvailable && (
-        <div className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
-          The OS keychain is unavailable on this system, so the API key can't be saved securely.
-        </div>
-      )}
 
       <TextField
         label="Base URL"
@@ -363,7 +352,7 @@ function AiTab({
             onChange={(e) => onApiKeyChange(e.target.value)}
             placeholder={keyIsSet ? '••••••••' : 'sk-…'}
             spellCheck={false}
-            disabled={busy || !encryptionAvailable}
+            disabled={busy}
             className={`flex-1 ${INPUT_CLASS}`}
           />
           {keyIsSet && (

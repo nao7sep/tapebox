@@ -96,9 +96,7 @@ export type IpcCalls = {
   'media:endpoint':        { req: undefined;                         res: { baseUrl: string } }
 
   // ── Runtime info ─────────────────────────────────────────────────────────
-  // Read-only facts about the current process: platform, arch, whether the
-  // OS keychain is available for safeStorage. Renderer uses this to gate UI
-  // affordances (e.g., hide "Save API key" when keychain unavailable).
+  // Read-only facts about the current process.
   'app:runtimeInfo':       { req: undefined;                         res: RuntimeInfo }
 }
 
@@ -131,7 +129,6 @@ export type ImportResult = {
 export type RuntimeInfo = {
   platform: NodeJS.Platform
   arch: string
-  encryptionAvailable: boolean
   version: string
 }
 

@@ -8,10 +8,8 @@ export const BinaryEntrySchema = z.object({
 export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
 
 /**
- * Single OpenAI-compatible provider configuration. The API key is NOT stored
- * here — it's encrypted with Electron's safeStorage and persisted alongside in
- * a separate file under a fixed slot. Config is safe to read/share without
- * leaking credentials.
+ * Single OpenAI-compatible provider configuration. The API key is stored
+ * separately in lightly obfuscated local JSON under a fixed slot.
  */
 export const AiSettingsSchema = z.object({
   baseUrl: z.string().url(),
