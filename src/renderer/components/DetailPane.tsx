@@ -5,6 +5,7 @@ import type { SidecarRaw } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useItemsStore } from '@renderer/store/items'
 import { useMediaStore } from '@renderer/store/media'
+import { useNoticeStore } from '@renderer/store/notice'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { releaseVideo } from '@renderer/lib/video'
@@ -44,6 +45,8 @@ export function DetailPane({
 }) {
   const [sidecar, setSidecar] = useState<SidecarRaw | null>(null)
   const [sidecarError, setSidecarError] = useState<string | null>(null)
+  const [playbackError, setPlaybackError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
@@ -78,6 +81,9 @@ export function DetailPane({
     ? `${mediaBase}/${encodeURIComponent(item.filename)}`
     : null
 
+  // A new source clears any prior playback error (and a fresh load may succeed).
+  useEffect(() => { setPlaybackError(null) }, [mediaUrl])
+
   useEnforcedMute(videoRef, !playSound, mediaUrl)
 
   function seek(seconds: number) {
@@ -99,6 +105,18 @@ export function DetailPane({
   async function unarchive() { await ipcInvoke('library:unarchive', { itemIds: [item.id] }) }
   async function cancel()    { await ipcInvoke('downloads:cancel',  { itemId: item.id }) }
   async function retry()     { await ipcInvoke('downloads:retry',   { itemId: item.id }) }
+
+  async function refreshMetadata() {
+    setRefreshing(true)
+    try {
+      await ipcInvoke('library:refreshMetadata', { itemId: item.id })
+      useNoticeStore.getState().notify('Metadata refreshed.', 'info')
+    } catch (err) {
+      useNoticeStore.getState().notify(`Refresh failed: ${String(err)}`, 'error')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   function openRename() {
     releaseVideo(videoRef.current)
@@ -174,9 +192,26 @@ export function DetailPane({
             the buttons. Other states show a single status panel here. */}
         {item.state === 'downloaded' ? (
           <div className="mt-3 flex min-h-[200px] min-w-0 flex-1 items-center justify-center px-4">
-            {mediaUrl && !showRename && (
-              <Player ref={videoRef} src={mediaUrl} poster={item.thumbnailUrl ?? undefined} autoPlay={autoplay} muted={!playSound} />
-            )}
+            {playbackError ? (
+              <div className="w-full rounded border border-red-900 bg-red-950/30 p-4">
+                <p className="text-sm font-medium text-red-300">This tape couldn&apos;t be played</p>
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs text-zinc-300">
+                  {playbackError}
+                </pre>
+                <p className="mt-2 text-xs text-zinc-400">
+                  Try “Open in player” below for the system player, or reveal the session log from the menu for the full record.
+                </p>
+              </div>
+            ) : mediaUrl && !showRename ? (
+              <Player
+                ref={videoRef}
+                src={mediaUrl}
+                poster={item.thumbnailUrl ?? undefined}
+                autoPlay={autoplay}
+                muted={!playSound}
+                onError={(v) => setPlaybackError(describeMediaError(v))}
+              />
+            ) : null}
           </div>
         ) : item.state === 'playlist' ? (
           <CaptionedPanel kind="warning" caption="This is a playlist or channel">
@@ -235,6 +270,9 @@ export function DetailPane({
               <ActionButton onClick={() => void ipcInvoke('library:reveal', { itemId: item.id })}>Show in folder</ActionButton>
               <ActionButton onClick={() => setShowExport(true)}>Export</ActionButton>
               <ActionButton onClick={openRename}>Rename</ActionButton>
+              <ActionButton onClick={refreshMetadata} disabled={refreshing}>
+                {refreshing ? 'Refreshing…' : 'Refresh metadata'}
+              </ActionButton>
               {item.archivedAtUtc ? (
                 <>
                   <MoveToBoxButton item={item} />
@@ -312,16 +350,19 @@ function ActionButton({
   children,
   onClick,
   danger,
+  disabled,
 }: {
   children: React.ReactNode
   onClick: () => void | Promise<void>
   danger?: boolean
+  disabled?: boolean
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={
-        'rounded border px-3 py-1.5 text-xs transition ' +
+        'rounded border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ' +
         (danger
           ? 'border-red-900 text-red-300 hover:border-red-700 hover:bg-red-950/40'
           : 'border-zinc-700 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800/60')
@@ -330,4 +371,26 @@ function ActionButton({
       {children}
     </button>
   )
+}
+
+/** Everything the <video> element can report about a failed playback, as plain
+ *  text. There's no richer source, so the app surfaces this verbatim. */
+function describeMediaError(v: HTMLVideoElement): string {
+  const labels: Record<number, string> = {
+    1: 'Playback aborted',
+    2: 'Network error while loading the file',
+    3: 'Decode error — the file may be corrupt or use an unsupported encoding',
+    4: 'Source not supported — the container or codec can’t be played here',
+  }
+  const lines: string[] = []
+  const err = v.error
+  if (err) {
+    lines.push(`${labels[err.code] ?? 'Unknown media error'} (code ${err.code})`)
+    if (err.message) lines.push(err.message)
+  } else {
+    lines.push('The player reported an error with no further detail.')
+  }
+  lines.push(`source: ${v.currentSrc || v.src}`)
+  lines.push(`networkState: ${v.networkState} · readyState: ${v.readyState}`)
+  return lines.join('\n')
 }

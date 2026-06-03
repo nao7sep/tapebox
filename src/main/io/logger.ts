@@ -15,12 +15,19 @@ import { nowUtcIso, utcTimestampForFilename } from '@shared/utc'
 type Level = 'debug' | 'info' | 'warn' | 'error'
 
 let stream: WriteStream | null = null
+let currentLogPath: string | null = null
 
 export function initLogger(): string {
   const filename = `${utcTimestampForFilename()}.log`
   const path = join(paths.logs, filename)
   stream = createWriteStream(path, { flags: 'a', encoding: 'utf8' })
+  currentLogPath = path
   return path
+}
+
+/** Absolute path of this launch's log file, or null before initLogger ran. */
+export function getCurrentLogPath(): string | null {
+  return currentLogPath
 }
 
 export function closeLogger(): Promise<void> {

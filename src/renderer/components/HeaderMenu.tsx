@@ -7,13 +7,14 @@ type Props = {
   onTools: () => void
   onShortcuts: () => void
   onAbout: () => void
+  onRevealLog: () => void
 }
 
 /**
  * Hamburger menu in the header. Opens the app's modeless entry points; closes
  * on outside click, Esc, or selecting an item.
  */
-export function HeaderMenu({ onPlaylist, onImport, onSettings, onTools, onShortcuts, onAbout }: Props) {
+export function HeaderMenu({ onPlaylist, onImport, onSettings, onTools, onShortcuts, onAbout, onRevealLog }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
 
@@ -39,6 +40,7 @@ export function HeaderMenu({ onPlaylist, onImport, onSettings, onTools, onShortc
     { label: 'Settings', action: onSettings },
     { label: 'Required tools', action: onTools },
     { label: 'Keyboard shortcuts', action: onShortcuts },
+    { label: 'Reveal session log', action: onRevealLog },
     { label: 'About', action: onAbout },
   ]
 

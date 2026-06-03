@@ -8,7 +8,7 @@ export function registerAiHandlers(): void {
     const item = session.getItem(itemId)
     if (!item) throw new Error(`Item not found: ${itemId}`)
     const raw = await ai.generateSlug({
-      title: item.originalTitle ?? item.title,
+      title: item.title,
       uploader: item.uploader,
     })
     return { slug: slugifyAscii(raw) }

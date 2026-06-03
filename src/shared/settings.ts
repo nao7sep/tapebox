@@ -91,6 +91,11 @@ export const SettingsSchema = z.object({
 
   retainLogCount: z.number().int().min(0),
 
+  // Preferred language for fetched metadata (titles). A BCP-47-ish code such as
+  // 'ja' or 'pt-BR'; empty means the source's default. Mapped to yt-dlp flags in
+  // resolveYtdlpArgs (youtube:lang + Accept-Language). Defaulted for older configs.
+  metadataLanguage: z.string().default(''),
+
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
   // scan); a matching siteProfile's args are appended on top. The app's own
   // flags win on conflict (they're placed last). Defaulted for older configs.
@@ -130,6 +135,7 @@ export function defaultSettings(libraryDir: string): Settings {
       deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
     },
     retainLogCount: 50,
+    metadataLanguage: '',
     ytdlpArgs: '',
     siteProfiles: [],
     externalPlayer: '',

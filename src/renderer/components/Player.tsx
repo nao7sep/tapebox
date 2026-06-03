@@ -5,13 +5,15 @@ type Props = {
   poster?: string
   autoPlay?: boolean
   muted?: boolean
+  /** Fired when the <video> raises an error; receives the element to inspect. */
+  onError?: (video: HTMLVideoElement) => void
 }
 
 /**
  * Thin wrapper around the native <video> element. Forwards a ref so the
  * parent (DetailPane) can call .currentTime = x when a chapter is clicked.
  */
-export const Player = forwardRef<HTMLVideoElement, Props>(function Player({ src, poster, autoPlay, muted }, ref) {
+export const Player = forwardRef<HTMLVideoElement, Props>(function Player({ src, poster, autoPlay, muted, onError }, ref) {
   return (
     <video
       ref={ref}
@@ -19,6 +21,7 @@ export const Player = forwardRef<HTMLVideoElement, Props>(function Player({ src,
       poster={poster}
       autoPlay={autoPlay}
       muted={muted}
+      onError={(e) => onError?.(e.currentTarget)}
       controls
       preload="metadata"
       // Fill the available box and object-contain the frame: the video scales to

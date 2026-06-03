@@ -24,7 +24,19 @@ export function registerDownloadHandlers(): void {
   })
 
   handle('downloads:addBulk', async ({ urls }) => {
-    const items = urls.map(makeQueuedItem)
+    // Dedup by URL against the library and within the batch itself, so adding the
+    // same scan twice (or a list with repeats) can't create duplicate rows. The
+    // set grows as we go, which collapses intra-batch repeats too. Same-video-
+    // different-URL collisions are caught later, post-probe, in the queue.
+    const seen = new Set(session.getItems().map((i) => i.sourceUrl))
+    const items: Item[] = []
+    for (const url of urls) {
+      const trimmed = url.trim()
+      if (!trimmed || seen.has(trimmed)) continue
+      seen.add(trimmed)
+      items.push(makeQueuedItem(trimmed))
+    }
+    if (items.length === 0) return []
     for (const item of items) session.upsertItem(item)
     emit('items:added', items)
     queue.tick()
@@ -61,7 +73,6 @@ function makeQueuedItem(url: string): Item {
     addedAtUtc: now,
     sourceId: null,
     title: null,
-    originalTitle: null,
     uploader: null,
     durationSeconds: null,
     chapterCount: null,

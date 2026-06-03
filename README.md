@@ -9,6 +9,11 @@ machine. No account, no cloud; your media and metadata stay under `~/.tapebox`.
 
 - **Web import** — paste a URL to download video+audio (merged) via `yt-dlp`,
   with a sidecar `info.json` saved alongside each file.
+- **Title language** — set a preferred metadata language (e.g. `ja`, `pt-BR`) to
+  fetch titles in that language where the site offers them; blank keeps the
+  source default. Power users can still set `--extractor-args`/`Accept-Language`
+  by hand in the yt-dlp settings. Use **Refresh metadata** on a tape to re-probe
+  the source and pick up a title in the newly chosen language.
 - **Playlists & channels** — detect multi-item URLs and enumerate their entries
   before adding, so you can review what you're about to pull in.
 - **Bulk add** — queue many URLs at once with configurable concurrency.

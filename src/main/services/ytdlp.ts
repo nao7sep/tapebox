@@ -30,7 +30,6 @@ export type ProbeVideo = {
   kind: 'video'
   id: string
   title: string
-  originalTitle: string | null
   uploader: string | null
   duration: number | null
   thumbnail: string | null
@@ -67,10 +66,9 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
   return {
     kind: 'video',
     id: String(info['id'] ?? ''),
+    // The title yt-dlp returns is localized when the metadataLanguage setting is
+    // set (see resolveYtdlpArgs); whatever language we fetch is the one we keep.
     title: String(info['title'] ?? ''),
-    // TODO: yt-dlp can return locale-translated titles. Use --extractor-args
-    // for the original title when we figure out the reliable flag.
-    originalTitle: typeof info['title'] === 'string' ? info['title'] : null,
     uploader: stringOrNull(info['uploader'] ?? info['channel']),
     duration: typeof info['duration'] === 'number' ? info['duration'] : null,
     thumbnail: stringOrNull(info['thumbnail']),

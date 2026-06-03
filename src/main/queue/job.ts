@@ -81,11 +81,24 @@ export class Job {
       this.update({ state: 'playlist', lastError: null, probedAtUtc: nowUtcIso() })
       return false
     }
+    // Two URLs can resolve to the same video (e.g. youtu.be/X vs watch?v=X). The
+    // on-disk name is the video id, so downloading both would collide on
+    // <id>.<ext>/<id>.json. The id is only known now (post-probe), so this is
+    // where we catch it — halt with a clear message rather than clobber files.
+    const duplicate = session.getItems().find((i) => i.id !== this.itemId && i.sourceId === result.id)
+    if (duplicate) {
+      this.update({
+        state: 'failed',
+        lastError: `Duplicate of an existing item (same video id ${result.id}). Not downloaded to avoid a file collision.`,
+        failedAtUtc: nowUtcIso(),
+        probedAtUtc: nowUtcIso(),
+      })
+      return false
+    }
     this.update({
       state: 'ready',
       sourceId: result.id,
       title: result.title,
-      originalTitle: result.originalTitle,
       uploader: result.uploader,
       durationSeconds: result.duration,
       chapterCount: result.chapters?.length ?? 0,
@@ -126,7 +139,6 @@ export class Job {
       sidecarPath,
       tapeboxAdditions: {
         sourceUrl: cur.sourceUrl,
-        originalTitle: cur.originalTitle,
         slug: null,
         addedAtUtc: cur.addedAtUtc,
         downloadedAtUtc: nowUtcIso(),

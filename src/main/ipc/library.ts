@@ -11,7 +11,7 @@ import { log } from '@main/io/logger'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { isValidSlug, slugifyAscii } from '@main/core/slug'
 import * as queue from '@main/queue/manager'
-import { clearPartials } from '@main/services/ytdlp'
+import { clearPartials, probe } from '@main/services/ytdlp'
 import { nowUtcIso } from '@shared/utc'
 import type { Item } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
@@ -202,6 +202,35 @@ export function registerLibraryHandlers(): void {
     return updated
   })
 
+  handle('library:refreshMetadata', async ({ itemId }) => {
+    const item = session.getItem(itemId)
+    if (!item) throw new Error(`Item not found: ${itemId}`)
+
+    // One deliberate re-probe. The probe's own idle watchdog guards a stall, and
+    // it is never auto-retried — re-hammering the source is the user's call.
+    const result = await probe(item.sourceUrl, new AbortController().signal)
+    if (result.kind === 'playlist') {
+      throw new Error('This URL now resolves to a playlist or channel, not a single video.')
+    }
+
+    // Refresh the displayed catalog metadata only. sourceId and the on-disk
+    // filenames are the item's identity — leave them untouched so a downloaded
+    // tape keeps pointing at its existing files.
+    const updated: Item = {
+      ...item,
+      title: result.title,
+      uploader: result.uploader,
+      durationSeconds: result.duration,
+      chapterCount: result.chapters?.length ?? item.chapterCount,
+      thumbnailUrl: result.thumbnail,
+      probedAtUtc: nowUtcIso(),
+    }
+    session.upsertItem(updated)
+    emit('items:updated', updated)
+    log.info(`refreshed metadata: ${item.id}`)
+    return updated
+  })
+
   handle('library:import', async ({ mediaPaths }) => {
     const settings = getSettings()
     const imported: Item[] = []
@@ -265,7 +294,6 @@ export function registerLibraryHandlers(): void {
         addedAtUtc: (typeof tb['addedAtUtc'] === 'string' ? tb['addedAtUtc'] : null) ?? nowUtcIso(),
         sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
         title: typeof sidecar['title'] === 'string' ? sidecar['title'] : null,
-        originalTitle: typeof tb['originalTitle'] === 'string' ? tb['originalTitle'] : null,
         uploader: typeof sidecar['uploader'] === 'string' ? sidecar['uploader'] : null,
         durationSeconds: typeof sidecar['duration'] === 'number' ? sidecar['duration'] : null,
         chapterCount: Array.isArray(sidecar['chapters']) ? (sidecar['chapters'] as unknown[]).length : 0,

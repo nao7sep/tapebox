@@ -37,7 +37,6 @@ export const ItemSchema = z.object({
   // Filled by probe.
   sourceId: z.string().nullable(),       // yt-dlp's id; used as on-disk filename stem
   title: z.string().nullable(),
-  originalTitle: z.string().nullable(),
   uploader: z.string().nullable(),
   durationSeconds: z.number().nullable(),
   chapterCount: z.number().int().nullable(),
@@ -98,7 +97,6 @@ export type SidecarMedia = z.infer<typeof SidecarMediaSchema>
 
 export const SidecarTapeboxSchema = z.object({
   sourceUrl: z.string().url(),
-  originalTitle: z.string().nullable(),
   slug: z.string().nullable(),
   addedAtUtc: z.string(),
   downloadedAtUtc: z.string().nullable(),

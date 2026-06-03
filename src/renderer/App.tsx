@@ -132,6 +132,7 @@ export default function App() {
             onTools={() => openBinariesModal()}
             onShortcuts={() => setShowShortcuts(true)}
             onAbout={() => setShowAbout(true)}
+            onRevealLog={() => void ipcInvoke('app:revealLog')}
           />
         </header>
 

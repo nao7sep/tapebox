@@ -2,12 +2,23 @@ import { getSettings } from '@main/store/config'
 import type { SiteProfile } from '@shared/settings'
 
 /**
- * Split a CLI argument line into argv tokens, honoring single/double quotes so a
- * value with spaces (e.g. --add-header "Accept-Language: ja") stays one token.
- * Quotes group; whitespace separates; everything else is literal. Newlines count
- * as whitespace, so a multi-line global-args field works too.
+ * Split a CLI argument line into argv tokens. Single and double quotes group and
+ * are stripped, so a spaced value stays one token in both the separated form
+ * (--add-header "Accept-Language: ja") and the glued form
+ * (--extractor-args="youtube:lang=ja"); whitespace separates, newlines included
+ * so the multi-line global-args field works; every other character — backslash
+ * included — is literal.
+ *
+ * Deliberately hand-rolled, not a package: the requirement diverges from POSIX
+ * shell word-splitting. These args run on Windows, where a path such as
+ * --ffmpeg-location C:\tools\bin carries backslashes; POSIX splitters (shlex)
+ * read '\' as an escape and corrupt the path, while string-argv leaves the
+ * quotes in the glued --flag="x" form — both measured worse than this here. The
+ * sole thing it can't do is embed a literal quote inside a value, a non-need for
+ * yt-dlp. Tokens go to the child via spawn (no shell), so globs, $vars and
+ * operators are never expanded.
  */
-export function tokenizeArgs(line: string): string[] {
+function tokenizeArgs(line: string): string[] {
   const tokens: string[] = []
   let cur = ''
   let inToken = false
@@ -47,14 +58,31 @@ function matches(profile: SiteProfile, url: string): boolean {
 }
 
 /**
- * Extra yt-dlp args for a URL: the global args plus the first matching site
- * profile's args (profile last, so a site can extend the globals). The caller
- * places these BEFORE its own fixed flags, so the app's mechanics (output path,
- * info json, progress markers) always win on conflict.
+ * yt-dlp flags derived from the preferred metadata language. Empty when unset,
+ * so the default is byte-for-byte the old behavior. youtube:lang selects
+ * YouTube's creator-translated metadata; Accept-Language localizes everything
+ * else (and the YouTube web client). The youtube extractor-arg is inert for
+ * non-YouTube URLs, so no per-site gating is needed.
+ */
+function languageArgs(language: string): string[] {
+  const code = language.trim()
+  if (!code) return []
+  return ['--extractor-args', `youtube:lang=${code}`, '--add-headers', `Accept-Language: ${code}`]
+}
+
+/**
+ * Extra yt-dlp args for a URL, lowest precedence first: the language flags, then
+ * the global args, then the first matching site profile's args. Later args win
+ * on conflict, so an explicit profile overrides the globals, which override the
+ * convenience language setting. The caller places this whole list BEFORE its own
+ * fixed flags, so the app's mechanics (output path, info json, progress markers)
+ * always win.
  */
 export function resolveYtdlpArgs(url: string): string[] {
   const settings = getSettings()
+  const language = languageArgs(settings.metadataLanguage)
   const global = tokenizeArgs(settings.ytdlpArgs)
   const profile = settings.siteProfiles.find((p) => matches(p, url))
-  return profile ? [...global, ...tokenizeArgs(profile.args)] : global
+  const extra = profile ? [...global, ...tokenizeArgs(profile.args)] : global
+  return [...language, ...extra]
 }

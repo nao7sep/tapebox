@@ -27,6 +27,10 @@ export type IpcCalls = {
   'library:getSidecar':      { req: { itemId: string };                              res: SidecarRaw }
   'library:reveal':          { req: { itemId: string };                              res: void }
   'library:playExternal':    { req: { itemId: string };                              res: void }
+  // Deliberate, user-triggered re-probe of one item to refresh its metadata
+  // (e.g. after changing the preferred language). Hits the source again, so it
+  // lives only behind an explicit button — never an automatic path.
+  'library:refreshMetadata': { req: { itemId: string };                              res: Item }
 
   // ── Archive organization (boxes for archived tapes) ──────────────────────
   // A box holds archived tapes in manual order; a tape is in one box or none.
@@ -98,6 +102,8 @@ export type IpcCalls = {
   // ── Runtime info ─────────────────────────────────────────────────────────
   // Read-only facts about the current process.
   'app:runtimeInfo':       { req: undefined;                         res: RuntimeInfo }
+  // Reveal the current launch's log file in the OS file manager.
+  'app:revealLog':         { req: undefined;                         res: void }
 }
 
 export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
