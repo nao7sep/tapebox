@@ -73,7 +73,7 @@ export function ExportModal({ tape, onClose }: Props) {
         {result ? 'Done' : 'Cancel'}
       </Button>
       {!result && (
-        <Button variant="primary" onClick={() => void run()} disabled={busy || !destinationDir}>
+        <Button variant="primary" onClick={() => void run()} disabled={!destinationDir} loading={busy}>
           {busy ? 'Exporting…' : 'Export'}
         </Button>
       )}

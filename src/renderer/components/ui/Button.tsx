@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { Spinner } from './Spinner'
 
 /**
  * Semantic button variants. Variants describe intent, not just colour, so the
@@ -25,6 +26,8 @@ export type ButtonSize = 'sm' | 'md'
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant
   size?: ButtonSize
+  /** Show a leading spinner and disable the button while an action is running. */
+  loading?: boolean
   children: ReactNode
 }
 
@@ -51,14 +54,18 @@ const SIZE_CLASS: Record<ButtonSize, string> = {
 export function Button({
   variant = 'primary',
   size = 'md',
+  loading = false,
+  disabled,
   className = '',
   type = 'button',
   children,
   ...rest
 }: Props) {
-  const cls = `rounded transition ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]} ${className}`.trim()
+  const cls =
+    `inline-flex items-center justify-center gap-1.5 rounded transition ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]} ${className}`.trim()
   return (
-    <button type={type} className={cls} {...rest}>
+    <button type={type} disabled={disabled || loading} className={cls} {...rest}>
+      {loading && <Spinner />}
       {children}
     </button>
   )

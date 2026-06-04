@@ -1,10 +1,13 @@
+import { useState } from 'react'
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -17,6 +20,7 @@ import { BoxList, LOOSE_DROP_ID } from './BoxList'
 import { ArchiveTapeList } from './ArchiveTapeList'
 import { SearchResults } from './SearchResults'
 import { ResizeHandle } from './ResizeHandle'
+import { TapeRow } from './TapeRow'
 
 /**
  * The archived view's left-pane layout and drag handling: boxes on top, the
@@ -31,12 +35,25 @@ export function ArchiveOrganizer() {
   const query = useArchiveStore((s) => s.query)
   const setQuery = useArchiveStore((s) => s.setQuery)
   const boxesHeight = useLayoutStore((s) => s.layout.archiveBoxesHeight)
+  const progress = useTapesStore((s) => s.progress)
   const tapes = useVisibleTapes()
   const searching = query.trim().length > 0
+
+  // What's being dragged, so a DragOverlay can render a copy that follows the
+  // cursor unclipped — without it, dragging a tape up over the boxes list pulls
+  // it out of its scroll container and it visually vanishes.
+  const [activeDrag, setActiveDrag] = useState<{ type: 'tape' | 'box'; id: string } | null>(null)
+  const draggedTape = activeDrag?.type === 'tape' ? tapes.find((t) => t.id === activeDrag.id) : undefined
+  const draggedBox = activeDrag?.type === 'box' ? boxes.find((b) => b.id === activeDrag.id) : undefined
 
   // A small movement threshold so plain clicks (select box/tape, rename, delete)
   // don't start a drag.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  function onDragStart({ active }: DragStartEvent) {
+    const type = active.data.current?.type
+    if (type === 'tape' || type === 'box') setActiveDrag({ type, id: String(active.id) })
+  }
 
   function onDragEnd({ active, over }: DragEndEvent) {
     if (!over) return
@@ -83,7 +100,13 @@ export function ArchiveOrganizer() {
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={onDragStart}
+      onDragEnd={(e) => { onDragEnd(e); setActiveDrag(null) }}
+      onDragCancel={() => setActiveDrag(null)}
+    >
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 px-3 py-2">
           <input
@@ -109,6 +132,15 @@ export function ArchiveOrganizer() {
           {searching ? <SearchResults /> : <ArchiveTapeList />}
         </div>
       </div>
+      <DragOverlay>
+        {draggedTape ? (
+          <TapeRow tape={draggedTape} progress={progress[draggedTape.id]} selected={false} onSelect={() => {}} />
+        ) : draggedBox ? (
+          <div className="rounded bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 shadow-lg">
+            {draggedBox.name}
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   )
 }

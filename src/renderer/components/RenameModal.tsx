@@ -53,6 +53,7 @@ export function RenameModal({ tape, onClose }: Props) {
         variant="primary"
         onClick={() => void apply()}
         disabled={busy !== null || !slug.trim()}
+        loading={busy === 'apply'}
       >
         {busy === 'apply' ? 'Renaming…' : 'Rename'}
       </Button>
@@ -74,7 +75,7 @@ export function RenameModal({ tape, onClose }: Props) {
           spellCheck={false}
           className={`w-full ${INPUT_CLASS}`}
         />
-        <Button variant="ghost" size="sm" onClick={() => void generate()} disabled={busy !== null}>
+        <Button variant="ghost" size="sm" onClick={() => void generate()} disabled={busy !== null} loading={busy === 'generate'}>
           {busy === 'generate' ? 'Generating…' : '✨ Generate with AI'}
         </Button>
       </div>

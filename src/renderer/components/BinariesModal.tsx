@@ -3,7 +3,7 @@ import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useBinariesStore } from '@renderer/store/binaries'
 import { Modal } from '@renderer/components/Modal'
-import { Button } from '@renderer/components/ui'
+import { Button, Spinner } from '@renderer/components/ui'
 
 /**
  * Tools modal for installing and updating yt-dlp / ffmpeg / Deno. Each row's
@@ -74,7 +74,7 @@ export function BinariesModal() {
 
       <div className="mt-4 flex items-center justify-between text-xs text-zinc-300">
         <span>{lastCheckedHint(statuses, checking)}</span>
-        <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={checking}>
+        <Button variant="secondary" size="sm" onClick={() => void refresh()} loading={checking}>
           {checking ? 'Checking…' : 'Check for updates'}
         </Button>
       </div>
@@ -134,11 +134,15 @@ function BinaryRow({
       <td className="py-2 text-zinc-300">{latestText(status, checking)}</td>
       <td className="py-2 text-right">
         {progress ? (
-          <span className="text-xs text-zinc-300">
+          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+            <Spinner />
             {progress.phase} {progress.percent}%
           </span>
         ) : pending ? (
-          <span className="text-xs text-zinc-300">starting…</span>
+          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+            <Spinner />
+            starting…
+          </span>
         ) : (
           <Button variant={warm ? 'warm' : 'secondary'} size="sm" onClick={onAction}>
             {actionLabel(kind)}

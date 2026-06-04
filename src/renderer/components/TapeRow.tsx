@@ -11,6 +11,10 @@ type Props = {
   onSelect: () => void
 }
 
+/** States where work is underway, so a row shows a moving bar even before the
+ *  first download-progress event (e.g. while probing or waiting in the queue). */
+const WORKING_STATES = new Set<TapeState>(['queued', 'probing', 'ready', 'downloading'])
+
 /**
  * Each row's background and default border carry the tape's state at a glance
  * (failed = red, downloading = sky, downloaded = subtle, etc.). Selection /
@@ -57,9 +61,9 @@ export function TapeRow({ tape, progress, selected, onSelect }: Props) {
         )}
         {tape.archivedAtUtc && <span>· archived</span>}
       </div>
-      {progress && (
+      {(progress || WORKING_STATES.has(tape.state)) && (
         <div className="mt-2">
-          {progress.phase === 'downloading' && progress.percent > 0 ? (
+          {progress?.phase === 'downloading' && progress.percent > 0 ? (
             <ProgressBar percent={progress.percent} />
           ) : (
             <IndeterminateBar />

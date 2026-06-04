@@ -9,6 +9,7 @@ import {
 } from '@renderer/store/binaries'
 import { summarizeActivity } from '@renderer/lib/activity'
 import { formatSpeed, formatTime } from '@renderer/lib/format'
+import { Spinner } from '@renderer/components/ui'
 
 /**
  * Footer split into three fixed zones, each owning one kind of information so
@@ -63,10 +64,15 @@ function ActivityZone() {
     tone = 'text-zinc-300'
   }
 
+  // Spin while work is actually moving (downloading, or queued with auto-start on
+  // so it will move); a paused/idle bar stays still.
+  const active = downloading > 0 || (queued > 0 && autoStart)
+
   return (
-    <span className="block truncate">
+    <span className="flex items-center gap-1.5 truncate">
+      {active && <Spinner className={tone} />}
       <span className={tone}>{text}</span>
-      {failed > 0 && <span className="text-amber-300"> · {failed} failed</span>}
+      {failed > 0 && <span className="text-red-300"> · {failed} failed</span>}
     </span>
   )
 }
@@ -96,7 +102,7 @@ function ToolsZone() {
   const missing = statuses.filter((s) => s.installedVersion === null).length
   const updates = binariesWithUpdate(statuses).length
 
-  if (!loaded) return <Plain>Loading…</Plain>
+  if (!loaded) return <Busy>Loading…</Busy>
   if (missing > 0) {
     return (
       <Action onClick={openModal} className="text-amber-300">
@@ -104,7 +110,7 @@ function ToolsZone() {
       </Action>
     )
   }
-  if (checking) return <Plain>Checking for updates…</Plain>
+  if (checking) return <Busy>Checking for updates…</Busy>
   if (updates > 0) {
     return (
       <Action onClick={openModal} className="text-sky-300">
@@ -118,6 +124,15 @@ function ToolsZone() {
 
 function Plain({ children }: { children: ReactNode }) {
   return <span className="block truncate text-zinc-300">{children}</span>
+}
+
+/** A still status with a spinner, for genuinely in-progress tool states. */
+function Busy({ children }: { children: ReactNode }) {
+  return (
+    <span className="flex items-center justify-end gap-1.5 truncate text-zinc-300">
+      <Spinner /> {children}
+    </span>
+  )
 }
 
 function Action({

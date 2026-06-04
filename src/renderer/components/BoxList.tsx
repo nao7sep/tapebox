@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useDroppable } from '@dnd-kit/core'
+import { useDndContext, useDroppable } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -13,11 +13,11 @@ import { ConfirmModal } from './ConfirmModal'
 export const LOOSE_DROP_ID = '__loose__'
 
 /**
- * Top list of the archive organizer: the boxes plus an always-present Loose
+ * Top list of the archive organizer: the boxes plus an always-present Unboxed
  * row, with counts, selection, create, inline rename, and delete. Boxes are
  * sortable (drag a header to reorder) and droppable (drag a tape onto a box to
  * file it); the parent DndContext owns the drag handling. Deleting a box only
- * re-files its tapes to Loose — it never removes the tapes.
+ * re-files its tapes to Unboxed — it never removes the tapes.
  */
 export function BoxList() {
   const boxes = useBoxesStore((s) => s.boxes)
@@ -123,7 +123,7 @@ export function BoxList() {
       {confirmDeleteId && (
         <ConfirmModal
           title="Delete box"
-          message="Delete this box? Its tapes move to Loose — the tapes themselves are not removed."
+          message="Delete this box? Its tapes move to Unboxed — the tapes themselves are not removed."
           confirmLabel="Delete box"
           danger
           onCancel={() => setConfirmDeleteId(null)}
@@ -134,18 +134,30 @@ export function BoxList() {
   )
 }
 
-function rowClass(selected: boolean, isOver: boolean): string {
+/**
+ * `dropTarget` is the strong "drop a tape here" state — a bright filled ring so
+ * the destination box is unmistakable while dragging a tape. `isOver` alone (box
+ * being dragged over another for reordering) keeps the subtle ring.
+ */
+function rowClass(selected: boolean, isOver: boolean, dropTarget: boolean): string {
   return (
     'group flex items-center gap-1.5 rounded px-2 py-1.5 text-sm transition ' +
     (selected ? 'bg-zinc-800 text-zinc-100 ' : 'text-zinc-300 hover:bg-zinc-800/50 ') +
-    (isOver ? 'ring-1 ring-zinc-400' : '')
+    (dropTarget ? 'bg-sky-900/40 ring-2 ring-sky-400 ' : isOver ? 'ring-1 ring-zinc-400 ' : '')
   )
+}
+
+/** True while a tape (not a box) is the active drag — i.e. boxes are drop targets. */
+function useDraggingTape(): boolean {
+  const { active } = useDndContext()
+  return active?.data.current?.type === 'tape'
 }
 
 function LooseRow({ count, selected, onSelect }: { count: number; selected: boolean; onSelect: () => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: LOOSE_DROP_ID })
+  const draggingTape = useDraggingTape()
   return (
-    <div ref={setNodeRef} className={rowClass(selected, isOver)}>
+    <div ref={setNodeRef} className={rowClass(selected, isOver, isOver && draggingTape)}>
       <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
         {LOOSE_LABEL}
       </button>
@@ -175,13 +187,15 @@ function SortableBoxRow({
     id,
     data: { type: 'box' },
   })
+  const draggingTape = useDraggingTape()
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    // Hidden while dragging; the DragOverlay shows the moving copy.
+    opacity: isDragging ? 0 : 1,
   }
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={rowClass(selected, isOver)}>
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={rowClass(selected, isOver, isOver && draggingTape)}>
       <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
         {label}
       </button>

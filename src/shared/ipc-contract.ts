@@ -27,10 +27,13 @@ export type IpcCalls = {
   'library:getSidecar':      { req: { tapeId: string };                              res: SidecarRaw }
   'library:reveal':          { req: { tapeId: string };                              res: void }
   'library:playExternal':    { req: { tapeId: string };                              res: void }
-  // Deliberate, user-triggered re-probe of one tape to refresh its metadata
-  // (e.g. after changing the preferred language). Hits the source again, so it
-  // lives only behind an explicit button — never an automatic path.
-  'library:refreshMetadata': { req: { tapeId: string };                              res: Tape }
+  // Deliberate, user-triggered metadata refresh, split so a re-probe can never
+  // silently overwrite good data with worse: probeMetadata hits the source and
+  // returns the candidate WITHOUT writing; the user reviews current-vs-new and,
+  // only if they accept, applyMetadata persists exactly what they saw. Both live
+  // behind an explicit button — never an automatic path.
+  'library:probeMetadata':   { req: { tapeId: string };                              res: RefreshedMetadata }
+  'library:applyMetadata':   { req: { tapeId: string; metadata: RefreshedMetadata }; res: Tape }
 
   // ── Archive organization (boxes for archived tapes) ──────────────────────
   // A box holds archived tapes in manual order; a tape is in one box or none.
@@ -136,6 +139,20 @@ export type RuntimeInfo = {
   platform: NodeJS.Platform
   arch: string
   version: string
+}
+
+/**
+ * The subset of a tape's metadata a re-probe can refresh. Identity fields
+ * (sourceId, on-disk filenames) are deliberately absent — a refresh never
+ * touches them. Returned by probeMetadata for review, then passed back to
+ * applyMetadata verbatim if the user accepts it.
+ */
+export type RefreshedMetadata = {
+  title: string | null
+  uploader: string | null
+  durationSeconds: number | null
+  chapterCount: number | null
+  thumbnailUrl: string | null
 }
 
 export type ScanResult = {

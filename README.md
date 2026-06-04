@@ -14,7 +14,8 @@ machine. No account, no cloud; your media and metadata stay under `~/.tapebox`.
   source default. This sets only a general `Accept-Language` header — nothing
   site-specific. Power users can still add their own extractor args by hand in
   the yt-dlp settings. Use **Refresh metadata** on a tape to re-probe the source
-  and pick up a title in the newly chosen language.
+  and review the result — current vs. new, side by side — before choosing to
+  apply it, so a re-probe never silently overwrites good data with worse.
 - **Scan a page** — paste the URL of a page that lists videos (a creator's
   videos, search results, a category) and review the entries before adding, so
   you can pick what you pull in.

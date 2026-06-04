@@ -1,20 +1,24 @@
 import type { ReactNode } from 'react'
 
-type Kind = 'error' | 'warning' | 'neutral'
+type Kind = 'error' | 'warning' | 'info' | 'neutral'
 
 /**
- * A bordered panel with a caption strip divided from the body by a rule — the
- * shared shape behind the failed-download pane (error), the page-of-videos
- * notice (warning), and the in-progress download log (neutral), so their
- * structure and colors stay in lockstep with the app's other surfaces.
+ * A bordered panel with a caption strip divided from the body by a rule. Its
+ * colour carries the same meaning as everywhere else in the app, so a state's
+ * row tint and its detail panel always agree:
+ *   error   (red)    — a failure (failed download)
+ *   warning (amber)  — stopped but recoverable (paused)
+ *   info    (violet) — a list page to resolve, not a problem (page of videos)
+ *   neutral (zinc)   — work in progress / settled (download log)
  *
  * `fill` makes the panel grow to fill the available height; the body controls
  * its own padding and scroll (a short notice vs. a scrollable failure log).
  */
 const KIND: Record<Kind, { box: string; divider: string; caption: string }> = {
-  error:   { box: 'border-red-900 bg-red-950/40',     divider: 'border-red-900',   caption: 'text-red-300' },
-  warning: { box: 'border-amber-900 bg-amber-950/40', divider: 'border-amber-900', caption: 'text-amber-300' },
-  neutral: { box: 'border-zinc-700 bg-zinc-900/40',   divider: 'border-zinc-700',  caption: 'text-zinc-300' },
+  error:   { box: 'border-red-900 bg-red-950/40',       divider: 'border-red-900',    caption: 'text-red-300' },
+  warning: { box: 'border-amber-900 bg-amber-950/40',   divider: 'border-amber-900',  caption: 'text-amber-300' },
+  info:    { box: 'border-violet-900 bg-violet-950/40', divider: 'border-violet-900', caption: 'text-violet-300' },
+  neutral: { box: 'border-zinc-700 bg-zinc-900/40',     divider: 'border-zinc-700',   caption: 'text-zinc-300' },
 }
 
 export function CaptionedPanel({

@@ -202,32 +202,45 @@ export function registerLibraryHandlers(): void {
     return updated
   })
 
-  handle('library:refreshMetadata', async ({ tapeId }) => {
+  handle('library:probeMetadata', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
 
-    // One deliberate re-probe. The probe's own idle watchdog guards a stall, and
-    // it is never auto-retried — re-hammering the source is the user's call.
+    // One deliberate re-probe, read-only. The probe's own idle watchdog guards a
+    // stall, and it is never auto-retried — re-hammering the source is the user's
+    // call. Nothing is written here: the caller reviews this and decides.
     const result = await probe(tape.sourceUrl, new AbortController().signal)
     if (result.kind === 'page') {
-      throw new Error('This URL is now a page of videos, not a single one.')
+      throw new Error('This link now points to a list of videos, not a single video.')
     }
-
-    // Refresh the displayed catalog metadata only. sourceId and the on-disk
-    // filenames are the tape's identity — leave them untouched so a downloaded
-    // tape keeps pointing at its existing files.
-    const updated: Tape = {
-      ...tape,
+    return {
       title: result.title,
       uploader: result.uploader,
       durationSeconds: result.duration,
-      chapterCount: result.chapters?.length ?? tape.chapterCount,
+      chapterCount: result.chapters?.length ?? null,
       thumbnailUrl: result.thumbnail,
+    }
+  })
+
+  handle('library:applyMetadata', async ({ tapeId, metadata }) => {
+    const tape = session.getTape(tapeId)
+    if (!tape) throw new Error(`Tape not found: ${tapeId}`)
+
+    // Persist exactly the catalog metadata the user accepted from the preview.
+    // sourceId and the on-disk filenames are the tape's identity — leave them
+    // untouched so a downloaded tape keeps pointing at its existing files.
+    const updated: Tape = {
+      ...tape,
+      title: metadata.title,
+      uploader: metadata.uploader,
+      durationSeconds: metadata.durationSeconds,
+      chapterCount: metadata.chapterCount ?? tape.chapterCount,
+      thumbnailUrl: metadata.thumbnailUrl,
       probedAtUtc: nowUtcIso(),
     }
     session.upsertTape(updated)
     emit('tapes:updated', updated)
-    log.info(`refreshed metadata: ${tape.id}`)
+    log.info(`applied refreshed metadata: ${tape.id}`)
     return updated
   })
 

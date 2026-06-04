@@ -48,7 +48,9 @@ function SortableTape({ id, children }: { id: string; children: ReactNode }) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    // Hidden (not just dimmed) while dragging: the DragOverlay renders the moving
+    // copy, so the original only holds its place in the list.
+    opacity: isDragging ? 0 : 1,
   }
   return (
     <li ref={setNodeRef} style={style} {...attributes} {...listeners}>

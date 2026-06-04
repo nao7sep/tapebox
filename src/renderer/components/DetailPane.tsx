@@ -6,7 +6,6 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
 import { useDownloadLogStore, type LogEntry } from '@renderer/store/downloadLog'
 import { useMediaStore } from '@renderer/store/media'
-import { useToastStore } from '@renderer/store/toast'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { releaseVideo } from '@renderer/lib/video'
@@ -16,6 +15,7 @@ import { IndeterminateBar, ProgressBar } from './Progress'
 import { Player } from './Player'
 import { ChapterList } from './ChapterList'
 import { RenameModal } from './RenameModal'
+import { RefreshMetadataModal } from './RefreshMetadataModal'
 import { ExportModal } from './ExportModal'
 import { ResizeHandle } from './ResizeHandle'
 import { MoveToBoxButton } from './MoveToBoxButton'
@@ -47,7 +47,7 @@ export function DetailPane({
   const [sidecar, setSidecar] = useState<SidecarRaw | null>(null)
   const [sidecarError, setSidecarError] = useState<string | null>(null)
   const [playbackError, setPlaybackError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+  const [showRefresh, setShowRefresh] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
@@ -108,17 +108,6 @@ export function DetailPane({
   async function cancel()    { await ipcInvoke('downloads:cancel',  { tapeId: tape.id }) }
   async function retry()     { await ipcInvoke('downloads:retry',   { tapeId: tape.id }) }
 
-  async function refreshMetadata() {
-    setRefreshing(true)
-    try {
-      await ipcInvoke('library:refreshMetadata', { tapeId: tape.id })
-      useToastStore.getState().notify('Metadata refreshed.', 'info')
-    } catch (err) {
-      useToastStore.getState().notify(`Refresh failed: ${String(err)}`, 'error')
-    } finally {
-      setRefreshing(false)
-    }
-  }
 
   function openRename() {
     releaseVideo(videoRef.current)
@@ -244,11 +233,11 @@ export function DetailPane({
             ) : null}
           </div>
         ) : tape.state === 'listing' ? (
-          <CaptionedPanel kind="warning" caption="This URL is a page of videos">
+          <CaptionedPanel kind="info" caption="This page lists several videos">
             <div className="p-5">
               <p className="text-sm leading-relaxed text-zinc-300">
-                TapeBox adds one video at a time. Scan this page to list its videos
-                and pick the ones to add.
+                TapeBox adds one video at a time. Scan this page to see its videos
+                and pick which to add.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <ActionButton onClick={() => onScanPage(tape.sourceUrl)}>Scan page</ActionButton>
@@ -257,14 +246,21 @@ export function DetailPane({
             </div>
           </CaptionedPanel>
         ) : tape.state === 'paused' ? (
-          <div className="mx-4 mt-3 rounded border border-zinc-700 bg-zinc-900/40 p-4 text-sm text-zinc-300">
-            Paused. Click Resume below to continue.
-          </div>
+          <CaptionedPanel kind="warning" caption="Paused">
+            <p className="p-5 text-sm leading-relaxed text-zinc-300">
+              This download is paused. Click Resume below to continue.
+            </p>
+          </CaptionedPanel>
         ) : (
           <DownloadLogPanel tape={tape} progress={progress} entries={logEntries} />
         )}
 
-        <div className="mt-3 flex shrink-0 flex-wrap gap-2 border-t border-zinc-700 px-4 pt-3">
+        {/* Actions in a consistent semantic order, left to right: first the one
+            that resumes/continues this state (the primary action), then — for a
+            finished tape — use the file, edit the tape, organize it; the
+            destructive Remove is always pushed to the far right, set apart. */}
+        <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-700 px-4 pt-3">
+          {/* Primary: re-engage the current state. */}
           {(tape.state === 'queued' || tape.state === 'probing' || tape.state === 'downloading') && (
             <ActionButton onClick={cancel}>Cancel</ActionButton>
           )}
@@ -276,13 +272,14 @@ export function DetailPane({
           )}
           {tape.state === 'downloaded' && (
             <>
+              {/* Use the file. */}
               <ActionButton onClick={() => void ipcInvoke('library:playExternal', { tapeId: tape.id })}>Open in player</ActionButton>
               <ActionButton onClick={() => void ipcInvoke('library:reveal', { tapeId: tape.id })}>Show in folder</ActionButton>
               <ActionButton onClick={() => setShowExport(true)}>Export</ActionButton>
+              {/* Edit the tape. */}
               <ActionButton onClick={openRename}>Rename</ActionButton>
-              <ActionButton onClick={refreshMetadata} disabled={refreshing}>
-                {refreshing ? 'Refreshing…' : 'Refresh metadata'}
-              </ActionButton>
+              <ActionButton onClick={() => setShowRefresh(true)}>Refresh metadata</ActionButton>
+              {/* Organize. */}
               {tape.archivedAtUtc ? (
                 <>
                   <MoveToBoxButton tape={tape} />
@@ -293,7 +290,8 @@ export function DetailPane({
               )}
             </>
           )}
-          <ActionButton onClick={() => onRequestRemove(tape)} danger>Remove</ActionButton>
+          {/* Destructive: always last, pushed to the far right. */}
+          <ActionButton onClick={() => onRequestRemove(tape)} danger className="ml-auto">Remove</ActionButton>
         </div>
       </div>
 
@@ -321,6 +319,9 @@ export function DetailPane({
         </aside>
       )}
 
+      {showRefresh && (
+        <RefreshMetadataModal tape={tape} onClose={() => setShowRefresh(false)} />
+      )}
       {showRename && (
         <RenameModal tape={tape} onClose={() => setShowRename(false)} />
       )}
@@ -342,7 +343,7 @@ const STATE_LABEL: Record<TapeState, string> = {
   downloaded: 'In library',
   failed: 'Failed',
   paused: 'Paused',
-  listing: 'Video list page',
+  listing: 'Video list',
 }
 
 const WORKING_PLACEHOLDER: Partial<Record<TapeState, string>> = {
@@ -404,9 +405,13 @@ function DownloadLogPanel({
       caption={failed ? 'Download failed' : 'Working…'}
       fill
     >
-      {downloading && (
+      {!failed && (
         <div className="shrink-0 px-3 pt-3">
-          {progress.percent > 0 ? <ProgressBar percent={progress.percent} /> : <IndeterminateBar />}
+          {downloading && progress.percent > 0 ? (
+            <ProgressBar percent={progress.percent} />
+          ) : (
+            <IndeterminateBar />
+          )}
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs">
@@ -464,11 +469,13 @@ function ActionButton({
   onClick,
   danger,
   disabled,
+  className = '',
 }: {
   children: React.ReactNode
   onClick: () => void | Promise<void>
   danger?: boolean
   disabled?: boolean
+  className?: string
 }) {
   return (
     <button
@@ -478,7 +485,8 @@ function ActionButton({
         'rounded border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ' +
         (danger
           ? 'border-red-900 text-red-300 hover:border-red-700 hover:bg-red-950/40'
-          : 'border-zinc-700 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800/60')
+          : 'border-zinc-700 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800/60') +
+        (className ? ` ${className}` : '')
       }
     >
       {children}

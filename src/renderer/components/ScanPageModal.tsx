@@ -127,7 +127,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
         <span className="mr-auto text-xs text-amber-400">{inLibraryCount} already in your library</span>
       )}
       <Button variant="ghost" onClick={onClose} disabled={adding}>Cancel</Button>
-      <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0 || adding}>
+      <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0} loading={adding}>
         {adding ? 'Adding…' : `Add ${selected.size} ${selected.size === 1 ? 'tape' : 'tapes'}`}
       </Button>
     </>

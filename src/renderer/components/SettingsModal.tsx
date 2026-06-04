@@ -12,6 +12,7 @@ import {
   Field,
   INPUT_CLASS,
   NumberField,
+  Spinner,
   TextField,
   Toggle,
 } from '@renderer/components/ui'
@@ -99,7 +100,9 @@ export function SettingsModal({ onClose }: Props) {
   if (!draft) {
     return (
       <Modal title="Settings" onClose={onClose} size="2xl">
-        <p className="text-sm text-zinc-300">Loading…</p>
+        <p className="flex items-center gap-2 text-sm text-zinc-300">
+          <Spinner /> Loading…
+        </p>
       </Modal>
     )
   }
@@ -109,7 +112,7 @@ export function SettingsModal({ onClose }: Props) {
       <Button variant="ghost" onClick={requestClose} disabled={busy}>
         Cancel
       </Button>
-      <Button variant="primary" onClick={() => void save()} disabled={busy || !dirty}>
+      <Button variant="primary" onClick={() => void save()} disabled={!dirty} loading={busy}>
         {busy ? 'Saving…' : 'Save'}
       </Button>
     </>
