@@ -12,7 +12,7 @@ export function PlaybackToggles() {
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-1.5">
       <ToggleButton
         on={autoplay}
         accent="text-sky-400"

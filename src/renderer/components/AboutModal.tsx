@@ -9,7 +9,7 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
     <Modal title="About TapeBox" onClose={onClose} size="md">
       <div className="space-y-4 text-sm">
         <div>
-          <p className="text-base font-medium text-zinc-100">TapeBox</p>
+          <p className="text-lg font-medium text-zinc-100">TapeBox</p>
           <p className="mt-1 text-zinc-300">
             A local media library with web import.
             {version && <span className="ml-2 text-zinc-300">v{version}</span>}

@@ -1,7 +1,16 @@
 @import "tailwindcss";
 
-/* Nudge the two smallest type tiers up a notch — the defaults read too small
-   on this dark UI. Applied centrally so the utility classes don't change. */
+/* Type scale — one role per tier, used consistently across the app:
+     text-xs   secondary / meta: status lines, captions, hints, table cells,
+               detail rows, log output
+     text-sm   body & controls: inputs, buttons, list titles, panel text
+     text-lg   headings: dialog titles, the detail-pane title
+     text-xl   the app title (header)
+     text-2xl  reserved for the one big display number (scan count)
+   text-base is intentionally unused — it sits a hair above text-sm with no
+   distinct role. The two smallest tiers are nudged up a notch below, since the
+   defaults read too small on this dark UI; applied centrally so the utility
+   classes don't change. */
 @theme {
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.125rem;

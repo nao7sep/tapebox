@@ -386,7 +386,7 @@ function AiTab({
             spellCheck={false}
             disabled={busy}
             onChange={(e) => onPromptsPatch({ slug: e.target.value })}
-            className={`w-full resize-y font-mono ${INPUT_CLASS}`}
+            className={`w-full resize-y ${INPUT_CLASS}`}
           />
           <div className="mt-1 flex items-center justify-between gap-2">
             <p className="text-xs text-zinc-300">

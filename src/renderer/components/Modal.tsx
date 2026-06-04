@@ -61,7 +61,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
         className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl`}
       >
         <header className="flex shrink-0 items-center justify-between border-b border-zinc-700 p-4">
-          <h2 className="text-base font-medium">{title}</h2>
+          <h2 className="text-lg font-medium">{title}</h2>
           <button
             onClick={onClose}
             disabled={closeDisabled}

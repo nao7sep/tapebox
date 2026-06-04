@@ -19,7 +19,7 @@ export function FilterChips() {
   }
 
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-2">
       {order.map((f) => {
         const active = f === filter
         return (
