@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import type { Item } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { Modal } from '@renderer/components/Modal'
 import { Button } from '@renderer/components/ui'
 import { INPUT_CLASS } from '@renderer/components/ui/input-styles'
 
 type Props = {
-  item: Item
+  tape: Tape
   onClose: () => void
 }
 
@@ -15,8 +15,8 @@ type Props = {
  * ai:generateSlug to seed the input; user can edit before applying.
  * Collisions / invalid slugs / missing AI config show as inline errors.
  */
-export function RenameModal({ item, onClose }: Props) {
-  const [slug, setSlug] = useState(item.slug ?? '')
+export function RenameModal({ tape, onClose }: Props) {
+  const [slug, setSlug] = useState(tape.slug ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'generate' | 'apply' | null>(null)
 
@@ -24,7 +24,7 @@ export function RenameModal({ item, onClose }: Props) {
     setError(null)
     setBusy('generate')
     try {
-      const result = await ipcInvoke('ai:generateSlug', { itemId: item.id })
+      const result = await ipcInvoke('ai:generateSlug', { tapeId: tape.id })
       setSlug(result.slug)
     } catch (err) {
       setError(String(err))
@@ -37,7 +37,7 @@ export function RenameModal({ item, onClose }: Props) {
     setError(null)
     setBusy('apply')
     try {
-      await ipcInvoke('library:renameToSlug', { itemId: item.id, slug })
+      await ipcInvoke('library:renameToSlug', { tapeId: tape.id, slug })
       onClose()
     } catch (err) {
       setError(String(err))
@@ -62,7 +62,7 @@ export function RenameModal({ item, onClose }: Props) {
   return (
     <Modal title="Rename to slug" onClose={onClose} size="md" footer={footer} closeDisabled={busy !== null}>
       <p className="-mt-2 mb-4 truncate text-xs text-zinc-300">
-        Current: <span className="text-zinc-300">{item.filename ?? '—'}</span>
+        Current: <span className="text-zinc-300">{tape.filename ?? '—'}</span>
       </p>
 
       <div className="space-y-2">

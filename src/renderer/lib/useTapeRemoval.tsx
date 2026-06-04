@@ -1,9 +1,9 @@
 import { useState, type ReactNode, type RefObject } from 'react'
-import type { Item } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useSettingsStore } from '@renderer/store/settings'
-import { useVisibleItems } from '@renderer/lib/itemOrder'
+import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { releaseVideo } from '@renderer/lib/video'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
 
@@ -17,33 +17,33 @@ import { ConfirmModal } from '@renderer/components/ConfirmModal'
  * unless a confirmation is pending). The video element is released before the
  * file is touched, so callers pass the player ref.
  */
-export function useItemRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
-  requestRemove: (item: Item) => void
+export function useTapeRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
+  requestRemove: (tape: Tape) => void
   confirmModal: ReactNode
 } {
-  const visible = useVisibleItems()
+  const visible = useVisibleTapes()
   const select = useSelectionStore((s) => s.select)
   const confirmEnabled = useSettingsStore((s) => s.settings?.confirmRemove ?? true)
   const trashEnabled = useSettingsStore((s) => s.settings?.trashOnRemove ?? true)
-  const [pending, setPending] = useState<Item | null>(null)
+  const [pending, setPending] = useState<Tape | null>(null)
 
-  /** The item to select after `item` is gone: next, else previous, else null. */
-  function neighborId(item: Item): string | null {
-    const idx = visible.findIndex((i) => i.id === item.id)
+  /** The tape to select after `tape` is gone: next, else previous, else null. */
+  function neighborId(tape: Tape): string | null {
+    const idx = visible.findIndex((i) => i.id === tape.id)
     if (idx === -1) return null
     return (visible[idx + 1] ?? visible[idx - 1])?.id ?? null
   }
 
-  async function perform(item: Item): Promise<void> {
-    const next = neighborId(item)
+  async function perform(tape: Tape): Promise<void> {
+    const next = neighborId(tape)
     releaseVideo(videoRef.current)
-    await ipcInvoke('library:remove', { itemIds: [item.id], deleteFiles: true })
+    await ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })
     select(next)
   }
 
-  function requestRemove(item: Item): void {
-    if (confirmEnabled) setPending(item)
-    else void perform(item)
+  function requestRemove(tape: Tape): void {
+    if (confirmEnabled) setPending(tape)
+    else void perform(tape)
   }
 
   const confirmModal: ReactNode = pending ? (
@@ -60,9 +60,9 @@ export function useItemRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
       danger
       onCancel={() => setPending(null)}
       onConfirm={() => {
-        const item = pending
+        const tape = pending
         setPending(null)
-        if (item) void perform(item)
+        if (tape) void perform(tape)
       }}
     />
   ) : null

@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Item } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useGroupsStore } from '@renderer/store/groups'
-import { UNGROUPED_LABEL } from '@shared/archive-names'
+import { useBoxesStore } from '@renderer/store/boxes'
+import { LOOSE_LABEL } from '@shared/box-names'
 
 /**
- * Files an archived tape into a box (or Ungrouped, or a brand-new box) via a
+ * Files an archived tape into a box (or Loose, or a brand-new box) via a
  * small dropdown. This is the click/keyboard path; drag-and-drop hits the same
- * archive:placeItems. The menu opens upward since it lives in the bottom button
+ * archive:placeTapes. The menu opens upward since it lives in the bottom button
  * row.
  */
-export function MoveToBoxButton({ item }: { item: Item }) {
-  const groups = useGroupsStore((s) => s.groups)
+export function MoveToBoxButton({ tape }: { tape: Tape }) {
+  const boxes = useBoxesStore((s) => s.boxes)
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
-  const sorted = [...groups].sort((a, b) => a.order - b.order)
+  const sorted = [...boxes].sort((a, b) => a.order - b.order)
 
   useEffect(() => {
     if (!open) return
@@ -32,15 +32,15 @@ export function MoveToBoxButton({ item }: { item: Item }) {
     }
   }, [open])
 
-  async function moveTo(groupId: string | null) {
+  async function moveTo(boxId: string | null) {
     setOpen(false)
-    await ipcInvoke('archive:placeItems', { itemIds: [item.id], groupId, beforeItemId: null })
+    await ipcInvoke('boxes:place', { tapeIds: [tape.id], boxId, beforeTapeId: null })
   }
 
   async function newBoxAndMove() {
-    const group = await ipcInvoke('archive:createGroup', { name: 'New box' })
+    const box = await ipcInvoke('boxes:create', { name: 'New box' })
     setOpen(false)
-    await ipcInvoke('archive:placeItems', { itemIds: [item.id], groupId: group.id, beforeItemId: null })
+    await ipcInvoke('boxes:place', { tapeIds: [tape.id], boxId: box.id, beforeTapeId: null })
   }
 
   return (
@@ -53,11 +53,11 @@ export function MoveToBoxButton({ item }: { item: Item }) {
       </button>
       {open && (
         <div className="absolute bottom-full z-40 mb-1 max-h-64 w-52 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
-          <MenuItem onClick={() => void moveTo(null)} active={item.groupId === null}>
-            {UNGROUPED_LABEL}
+          <MenuItem onClick={() => void moveTo(null)} active={tape.boxId === null}>
+            {LOOSE_LABEL}
           </MenuItem>
           {sorted.map((g) => (
-            <MenuItem key={g.id} onClick={() => void moveTo(g.id)} active={item.groupId === g.id}>
+            <MenuItem key={g.id} onClick={() => void moveTo(g.id)} active={tape.boxId === g.id}>
               {g.name}
             </MenuItem>
           ))}

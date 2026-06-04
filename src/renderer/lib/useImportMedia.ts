@@ -4,7 +4,7 @@ import { useImportResultStore } from '@renderer/store/importResult'
 /**
  * Import media files into the library by path and surface the outcome as a
  * blocking results modal. Shared by the drag-and-drop zone and the file-picker
- * menu item — both resolve to a list of media paths, which the main handler
+ * menu tape — both resolve to a list of media paths, which the main handler
  * pairs with sidecars by stem (a media file with no matching .json is
  * rejected). A no-op on an empty list (e.g. a cancelled picker).
  *

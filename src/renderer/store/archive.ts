@@ -2,21 +2,21 @@ import { create } from 'zustand'
 
 /**
  * Archive organizer view state.
- *   - selectedGroupId: which box's tapes fill the lower list (null = Ungrouped).
+ *   - selectedBoxId: which box's tapes fill the lower list (null = Loose).
  *     Keyboard nav / removal operate over them. Selecting a box clears the search.
  *   - query: free-text search across ALL archived tapes; when non-empty the lower
  *     list shows matches (read-only) instead of the selected box.
  */
 type ArchiveState = {
-  selectedGroupId: string | null
-  selectGroup: (id: string | null) => void
+  selectedBoxId: string | null
+  selectBox: (id: string | null) => void
   query: string
   setQuery: (q: string) => void
 }
 
 export const useArchiveStore = create<ArchiveState>((set) => ({
-  selectedGroupId: null,
-  selectGroup: (selectedGroupId) => set({ selectedGroupId, query: '' }),
+  selectedBoxId: null,
+  selectBox: (selectedBoxId) => set({ selectedBoxId, query: '' }),
   query: '',
   setQuery: (query) => set({ query }),
 }))

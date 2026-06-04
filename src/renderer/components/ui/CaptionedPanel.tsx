@@ -4,8 +4,8 @@ type Kind = 'error' | 'warning'
 
 /**
  * A bordered panel with a caption strip divided from the body by a rule — the
- * shared shape behind the failed-download pane (error) and the playlist-or-
- * channel notice (warning), so their structure and colors stay in lockstep
+ * shared shape behind the failed-download pane (error) and the page-of-videos
+ * notice (warning), so their structure and colors stay in lockstep
  * with the app's other red/amber surfaces.
  *
  * `fill` makes the panel grow to fill the available height; the body controls

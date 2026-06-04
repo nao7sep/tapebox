@@ -1,32 +1,32 @@
 import { ipcInvoke, ipcOn } from './client'
-import { useItemsStore } from '@renderer/store/items'
-import { useGroupsStore } from '@renderer/store/groups'
+import { useTapesStore } from '@renderer/store/tapes'
+import { useBoxesStore } from '@renderer/store/boxes'
 import { useBinariesStore } from '@renderer/store/binaries'
 import { useRuntimeStore } from '@renderer/store/runtime'
 
 /**
  * Wire renderer stores to main's IPC.
  *   - Initial pull: library:list, binaries:status, app:runtimeInfo.
- *   - Live: items:* + binaries:* events.
+ *   - Live: tapes:* + binaries:* events.
  * Returns a cleanup function for the caller's useEffect.
  */
 export function startIpcSync(): () => void {
-  void ipcInvoke('library:list').then((items) => useItemsStore.getState().setAll(items))
-  void ipcInvoke('archive:listGroups').then((g) => useGroupsStore.getState().setGroups(g))
+  void ipcInvoke('library:list').then((tapes) => useTapesStore.getState().setAll(tapes))
+  void ipcInvoke('boxes:list').then((g) => useBoxesStore.getState().setBoxes(g))
   void ipcInvoke('binaries:status').then((s) => useBinariesStore.getState().setStatuses(s))
   void ipcInvoke('app:runtimeInfo').then((info) => useRuntimeStore.getState().setInfo(info))
 
   const offs = [
-    ipcOn('items:added',       (items) => useItemsStore.getState().upsertMany(items)),
-    ipcOn('items:updated',     (item)  => useItemsStore.getState().upsert(item)),
-    ipcOn('items:updatedMany', (items) => useItemsStore.getState().upsertMany(items)),
-    ipcOn('items:removed',     ({ itemIds }) => useItemsStore.getState().removeMany(itemIds)),
-    ipcOn('groups:changed',    (groups) => useGroupsStore.getState().setGroups(groups)),
-    ipcOn('items:progress',  ({ itemId, phase, percent }) =>
-      useItemsStore.getState().setProgress(itemId, { phase, percent }),
+    ipcOn('tapes:added',       (tapes) => useTapesStore.getState().upsertMany(tapes)),
+    ipcOn('tapes:updated',     (tape)  => useTapesStore.getState().upsert(tape)),
+    ipcOn('tapes:updatedMany', (tapes) => useTapesStore.getState().upsertMany(tapes)),
+    ipcOn('tapes:removed',     ({ tapeIds }) => useTapesStore.getState().removeMany(tapeIds)),
+    ipcOn('boxes:changed',    (boxes) => useBoxesStore.getState().setBoxes(boxes)),
+    ipcOn('tapes:progress',  ({ tapeId, phase, percent }) =>
+      useTapesStore.getState().setProgress(tapeId, { phase, percent }),
     ),
-    ipcOn('items:completed', ({ itemId }) => useItemsStore.getState().clearProgress(itemId)),
-    ipcOn('items:failed',    ({ itemId }) => useItemsStore.getState().clearProgress(itemId)),
+    ipcOn('tapes:completed', ({ tapeId }) => useTapesStore.getState().clearProgress(tapeId)),
+    ipcOn('tapes:failed',    ({ tapeId }) => useTapesStore.getState().clearProgress(tapeId)),
 
     ipcOn('binaries:progress', ({ name, percent, phase }) =>
       useBinariesStore.getState().setProgress(name, percent, phase),

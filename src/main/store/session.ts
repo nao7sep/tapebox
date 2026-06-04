@@ -1,7 +1,7 @@
 import { paths } from '@main/paths'
 import { readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { SessionSchema, type ArchiveGroup, type Item, type Session } from '@shared/domain'
+import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
 
 /**
  * In-memory session cache, debounced atomic persistence to session.json.
@@ -11,7 +11,7 @@ import { SessionSchema, type ArchiveGroup, type Item, type Session } from '@shar
 
 const SAVE_DEBOUNCE_MS = 500
 
-let cache: Session = { items: [], groups: [] }
+let cache: Session = { tapes: [], boxes: [] }
 let saveTimer: NodeJS.Timeout | null = null
 let loaded = false
 
@@ -19,7 +19,7 @@ export async function loadSession(): Promise<void> {
   const found = await readJsonOptional(paths.session, SessionSchema)
   if (found) {
     cache = found
-    log.info('session loaded', { itemCount: cache.items.length })
+    log.info('session loaded', { tapeCount: cache.tapes.length })
   } else {
     log.info('session not found; starting empty')
   }
@@ -30,47 +30,47 @@ function assertLoaded(): void {
   if (!loaded) throw new Error('session.ts: loadSession() must be awaited first')
 }
 
-export function getItems(): Item[] {
+export function getTapes(): Tape[] {
   assertLoaded()
-  return cache.items
+  return cache.tapes
 }
 
-export function getItem(id: string): Item | undefined {
+export function getTape(id: string): Tape | undefined {
   assertLoaded()
-  return cache.items.find((i) => i.id === id)
+  return cache.tapes.find((i) => i.id === id)
 }
 
-export function upsertItem(item: Item): void {
+export function upsertTape(tape: Tape): void {
   assertLoaded()
-  const idx = cache.items.findIndex((i) => i.id === item.id)
-  if (idx >= 0) cache.items[idx] = item
-  else cache.items.push(item)
+  const idx = cache.tapes.findIndex((i) => i.id === tape.id)
+  if (idx >= 0) cache.tapes[idx] = tape
+  else cache.tapes.push(tape)
   scheduleSave()
 }
 
-export function removeItems(ids: string[]): void {
+export function removeTapes(ids: string[]): void {
   assertLoaded()
   const set = new Set(ids)
-  cache.items = cache.items.filter((i) => !set.has(i.id))
+  cache.tapes = cache.tapes.filter((i) => !set.has(i.id))
   scheduleSave()
 }
 
-export function getGroups(): ArchiveGroup[] {
+export function getBoxes(): Box[] {
   assertLoaded()
-  return cache.groups
+  return cache.boxes
 }
 
-export function upsertGroup(group: ArchiveGroup): void {
+export function upsertBox(box: Box): void {
   assertLoaded()
-  const idx = cache.groups.findIndex((g) => g.id === group.id)
-  if (idx >= 0) cache.groups[idx] = group
-  else cache.groups.push(group)
+  const idx = cache.boxes.findIndex((g) => g.id === box.id)
+  if (idx >= 0) cache.boxes[idx] = box
+  else cache.boxes.push(box)
   scheduleSave()
 }
 
-export function removeGroup(id: string): void {
+export function removeBox(id: string): void {
   assertLoaded()
-  cache.groups = cache.groups.filter((g) => g.id !== id)
+  cache.boxes = cache.boxes.filter((g) => g.id !== id)
   scheduleSave()
 }
 

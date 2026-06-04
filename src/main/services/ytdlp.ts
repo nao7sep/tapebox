@@ -35,18 +35,18 @@ export type ProbeVideo = {
   thumbnail: string | null
   chapters: ProbeChapter[] | null
 }
-/** A single video to download, or a playlist/channel the caller should reject. */
-export type ProbeResult = ProbeVideo | { kind: 'playlist' }
+/** A single video to download, or a page of videos the caller should reject. */
+export type ProbeResult = ProbeVideo | { kind: 'page' }
 
 /**
- * Single-video probe. Returns the parsed video info, or { kind: 'playlist' }
- * when the URL is a playlist/channel rather than one video.
+ * Single-video probe. Returns the parsed video info, or { kind: 'page' }
+ * when the URL is a page that lists videos rather than one video.
  *
  * The flags do double duty: --dump-single-json yields one JSON object whose
- * _type is 'playlist' for a playlist/channel and 'video' for a video, so the
- * kind is a field read, not a parse heuristic. --flat-playlist + --playlist-items 1
+ * _type is 'playlist' for a page of videos and 'video' for a single video, so
+ * the kind is a field read, not a parse heuristic. --flat-playlist + --playlist-items 1
  * keep detection O(1): yt-dlp reports the kind without extracting the whole
- * channel (extracting every entry is what used to wedge the queue forever).
+ * page (extracting every entry is what used to wedge the queue forever).
  * --no-playlist still isolates the video for watch?v=…&list=… URLs, and single
  * videos keep full metadata, chapters included (verified against a full probe).
  *
@@ -61,7 +61,7 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
     { env: ytdlpEnv(), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS },
   )
   const info = JSON.parse(stdout) as Record<string, unknown>
-  if (info['_type'] === 'playlist') return { kind: 'playlist' }
+  if (info['_type'] === 'playlist') return { kind: 'page' }
 
   return {
     kind: 'video',
@@ -189,7 +189,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
 /**
  * Remove yt-dlp's in-progress artifacts (.part / .ytdl / .frag) for a video id.
  * Resuming a stale or oversized .part is what triggers HTTP 416 ("range not
- * satisfiable") on a retry, so a failed item's partials are cleared before it
+ * satisfiable") on a retry, so a failed tape's partials are cleared before it
  * runs again. Completed per-format streams are left for yt-dlp to reuse.
  */
 export async function clearPartials(libraryDir: string, outputId: string): Promise<void> {

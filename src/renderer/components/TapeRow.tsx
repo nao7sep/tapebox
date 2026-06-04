@@ -1,24 +1,24 @@
 import { useEffect, useRef } from 'react'
-import type { Item, ItemState } from '@shared/domain'
+import type { Tape, TapeState } from '@shared/domain'
 import { formatTime } from '@renderer/lib/format'
 import { IndeterminateBar, ProgressBar } from './Progress'
 
 type Props = {
-  item: Item
+  tape: Tape
   progress: { phase: 'probing' | 'downloading'; percent: number } | undefined
   selected: boolean
   onSelect: () => void
 }
 
 /**
- * Each row's background and default border carry the item's state at a glance
+ * Each row's background and default border carry the tape's state at a glance
  * (failed = red, downloading = sky, downloaded = subtle, etc.). Selection /
- * focus brightens the border on top, so the selected item stands out from any
+ * focus brightens the border on top, so the selected tape stands out from any
  * of these state colors without losing its state cue.
  */
-export function ItemRow({ item, progress, selected, onSelect }: Props) {
-  const stateLabel = labelFor(item, progress)
-  const palette = paletteFor(item, selected)
+export function TapeRow({ tape, progress, selected, onSelect }: Props) {
+  const stateLabel = labelFor(tape, progress)
+  const palette = paletteFor(tape, selected)
   const ref = useRef<HTMLButtonElement>(null)
 
   // When a row becomes selected — by click, arrow keys, or after a removal —
@@ -41,20 +41,20 @@ export function ItemRow({ item, progress, selected, onSelect }: Props) {
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm">
-          {item.title ?? item.sourceUrl}
+          {tape.title ?? tape.sourceUrl}
         </div>
-        {item.durationSeconds != null && (
+        {tape.durationSeconds != null && (
           <div className="shrink-0 text-xs tabular-nums text-zinc-300">
-            {formatTime(item.durationSeconds)}
+            {formatTime(tape.durationSeconds)}
           </div>
         )}
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-zinc-300">
         <span>{stateLabel}</span>
-        {item.chapterCount != null && item.chapterCount > 0 && (
-          <span>· {item.chapterCount} chapters</span>
+        {tape.chapterCount != null && tape.chapterCount > 0 && (
+          <span>· {tape.chapterCount} chapters</span>
         )}
-        {item.archivedAtUtc && <span>· archived</span>}
+        {tape.archivedAtUtc && <span>· archived</span>}
       </div>
       {progress && (
         <div className="mt-2">
@@ -69,9 +69,9 @@ export function ItemRow({ item, progress, selected, onSelect }: Props) {
   )
 }
 
-function paletteFor(item: Item, selected: boolean): string {
-  const state = item.state
-  const archived = !!item.archivedAtUtc
+function paletteFor(tape: Tape, selected: boolean): string {
+  const state = tape.state
+  const archived = !!tape.archivedAtUtc
 
   // Selection overlays a bright border on top of the state palette so the
   // selected row is always obvious without erasing its state colour.
@@ -87,18 +87,18 @@ function paletteFor(item: Item, selected: boolean): string {
 }
 
 /**
- * Background tint by state. Downloaded items stay neutral zinc (settled); every
- * other state gets its own balanced hue so items needing attention stand out:
- * warm = needs you (failed/paused), violet = a dead-end to resolve (playlist),
+ * Background tint by state. Downloaded tapes stay neutral zinc (settled); every
+ * other state gets its own balanced hue so tapes needing attention stand out:
+ * warm = needs you (failed/paused), violet = a dead-end to resolve (a page of videos),
  * cool = working automatically (downloading/queued).
  */
-function bgBorderForState(state: ItemState): string {
+function bgBorderForState(state: TapeState): string {
   switch (state) {
     case 'failed':
       return 'bg-red-900/30 border-red-600/70 hover:border-red-500'
     case 'paused':
       return 'bg-amber-900/30 border-amber-600/70 hover:border-amber-500'
-    case 'playlist':
+    case 'listing':
       return 'bg-violet-900/30 border-violet-600/70 hover:border-violet-500'
     case 'downloading':
       return 'bg-sky-900/30 border-sky-600/70 hover:border-sky-500'
@@ -112,11 +112,11 @@ function bgBorderForState(state: ItemState): string {
   }
 }
 
-function labelFor(item: Item, progress: Props['progress']): string {
+function labelFor(tape: Tape, progress: Props['progress']): string {
   if (progress) return `${progress.phase} · ${progress.percent.toFixed(0)}%`
-  if (item.state === 'playlist') return 'playlist or channel'
-  if (item.state === 'downloaded') return 'in box'
-  if (item.state === 'failed') return 'failed'
-  if (item.state === 'paused') return 'paused'
-  return item.state
+  if (tape.state === 'listing') return 'video list'
+  if (tape.state === 'downloaded') return 'in library'
+  if (tape.state === 'failed') return 'failed'
+  if (tape.state === 'paused') return 'paused'
+  return tape.state
 }

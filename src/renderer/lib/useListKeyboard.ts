@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react'
-import type { Item } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import { useSelectionStore } from '@renderer/store/selection'
-import { useVisibleItems } from '@renderer/lib/itemOrder'
+import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 
 /**
- * Global keyboard navigation for the item list:
+ * Global keyboard navigation for the tape list:
  *   - ↑ / ↓ move the selection through the on-screen order;
  *   - Backspace / Delete (with or without ⌘/Ctrl) remove the selected tape.
  *
@@ -13,8 +13,8 @@ import { useVisibleItems } from '@renderer/lib/itemOrder'
  * and seek keys. The listener is attached once; live state is read through a
  * ref so navigation never re-binds on every render.
  */
-export function useListKeyboard(requestRemove: (item: Item) => void): void {
-  const visible = useVisibleItems()
+export function useListKeyboard(requestRemove: (tape: Tape) => void): void {
+  const visible = useVisibleTapes()
   const selectedId = useSelectionStore((s) => s.selectedId)
   const select = useSelectionStore((s) => s.select)
 
@@ -46,10 +46,10 @@ export function useListKeyboard(requestRemove: (item: Item) => void): void {
 
       if (e.key === 'Backspace' || e.key === 'Delete') {
         if (!selectedId) return
-        const item = visible.find((i) => i.id === selectedId)
-        if (!item) return
+        const tape = visible.find((i) => i.id === selectedId)
+        if (!tape) return
         e.preventDefault()
-        requestRemove(item)
+        requestRemove(tape)
       }
     }
 

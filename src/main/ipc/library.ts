@@ -13,40 +13,40 @@ import { isValidSlug, slugifyAscii } from '@main/core/slug'
 import * as queue from '@main/queue/manager'
 import { clearPartials, probe } from '@main/services/ytdlp'
 import { nowUtcIso } from '@shared/utc'
-import type { Item } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
 
 export function registerLibraryHandlers(): void {
-  handle('library:list', async () => session.getItems())
+  handle('library:list', async () => session.getTapes())
 
-  handle('library:archive', async ({ itemIds }) => {
+  handle('library:archive', async ({ tapeIds }) => {
     const at = nowUtcIso()
-    for (const id of itemIds) {
-      const item = session.getItem(id)
-      if (!item || item.archivedAtUtc) continue
-      const updated = { ...item, archivedAtUtc: at }
-      session.upsertItem(updated)
-      emit('items:updated', updated)
+    for (const id of tapeIds) {
+      const tape = session.getTape(id)
+      if (!tape || tape.archivedAtUtc) continue
+      const updated = { ...tape, archivedAtUtc: at }
+      session.upsertTape(updated)
+      emit('tapes:updated', updated)
     }
   })
 
-  handle('library:unarchive', async ({ itemIds }) => {
-    for (const id of itemIds) {
-      const item = session.getItem(id)
-      if (!item || !item.archivedAtUtc) continue
+  handle('library:unarchive', async ({ tapeIds }) => {
+    for (const id of tapeIds) {
+      const tape = session.getTape(id)
+      if (!tape || !tape.archivedAtUtc) continue
       // Leaving the archive drops all archive organization — re-archiving later
-      // starts fresh in Ungrouped.
-      const updated = { ...item, archivedAtUtc: null, groupId: null, archiveOrder: 0 }
-      session.upsertItem(updated)
-      emit('items:updated', updated)
+      // starts fresh in Loose.
+      const updated = { ...tape, archivedAtUtc: null, boxId: null, boxOrder: 0 }
+      session.upsertTape(updated)
+      emit('tapes:updated', updated)
     }
   })
 
-  handle('library:remove', async ({ itemIds, deleteFiles }) => {
+  handle('library:remove', async ({ tapeIds, deleteFiles }) => {
     const settings = getSettings()
-    for (const id of itemIds) {
-      const item = session.getItem(id)
-      if (!item) continue
+    for (const id of tapeIds) {
+      const tape = session.getTape(id)
+      if (!tape) continue
 
       // Stop any in-flight yt-dlp process before touching disk. cancel()
       // resolves only after the process has exited and the Job's finally
@@ -56,43 +56,43 @@ export function registerLibraryHandlers(): void {
       }
 
       if (deleteFiles) {
-        if (item.filename) {
-          await discardFile(join(settings.libraryDir, item.filename), settings.trashOnRemove)
+        if (tape.filename) {
+          await discardFile(join(settings.libraryDir, tape.filename), settings.trashOnRemove)
         }
-        if (item.sidecarFilename) {
-          await discardFile(join(settings.libraryDir, item.sidecarFilename), settings.trashOnRemove)
+        if (tape.sidecarFilename) {
+          await discardFile(join(settings.libraryDir, tape.sidecarFilename), settings.trashOnRemove)
         }
         // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
         // junk, always deleted outright (never trashed).
-        if (item.sourceId) {
-          await clearPartials(settings.libraryDir, item.sourceId)
+        if (tape.sourceId) {
+          await clearPartials(settings.libraryDir, tape.sourceId)
         }
       }
     }
-    session.removeItems(itemIds)
-    emit('items:removed', { itemIds })
+    session.removeTapes(tapeIds)
+    emit('tapes:removed', { tapeIds })
   })
 
-  handle('library:getSidecar', async ({ itemId }) => {
-    const item = session.getItem(itemId)
-    if (!item || !item.sidecarFilename) {
-      throw new Error(`Sidecar not available for item ${itemId}`)
+  handle('library:getSidecar', async ({ tapeId }) => {
+    const tape = session.getTape(tapeId)
+    if (!tape || !tape.sidecarFilename) {
+      throw new Error(`Sidecar not available for tape ${tapeId}`)
     }
-    const path = join(getSettings().libraryDir, item.sidecarFilename)
+    const path = join(getSettings().libraryDir, tape.sidecarFilename)
     const text = await readFile(path, 'utf8')
     return JSON.parse(text) as SidecarRaw
   })
 
-  handle('library:reveal', async ({ itemId }) => {
-    const item = session.getItem(itemId)
-    if (!item?.filename) throw new Error('No file to reveal for this item')
-    shell.showItemInFolder(join(getSettings().libraryDir, item.filename))
+  handle('library:reveal', async ({ tapeId }) => {
+    const tape = session.getTape(tapeId)
+    if (!tape?.filename) throw new Error('No file to reveal for this tape')
+    shell.showItemInFolder(join(getSettings().libraryDir, tape.filename))
   })
 
-  handle('library:playExternal', async ({ itemId }) => {
-    const item = session.getItem(itemId)
-    if (!item?.filename) throw new Error('No file to play for this item')
-    const full = join(getSettings().libraryDir, item.filename)
+  handle('library:playExternal', async ({ tapeId }) => {
+    const tape = session.getTape(tapeId)
+    if (!tape?.filename) throw new Error('No file to play for this tape')
+    const full = join(getSettings().libraryDir, tape.filename)
     const player = getSettings().externalPlayer.trim()
 
     if (!player) {
@@ -110,11 +110,11 @@ export function registerLibraryHandlers(): void {
     child.unref()
   })
 
-  handle('library:renameToSlug', async ({ itemId, slug }) => {
-    const item = session.getItem(itemId)
-    if (!item) throw new Error(`Item not found: ${itemId}`)
-    if (!item.filename || !item.sidecarFilename) {
-      throw new Error('Item has no files on disk yet')
+  handle('library:renameToSlug', async ({ tapeId, slug }) => {
+    const tape = session.getTape(tapeId)
+    if (!tape) throw new Error(`Tape not found: ${tapeId}`)
+    if (!tape.filename || !tape.sidecarFilename) {
+      throw new Error('Tape has no files on disk yet')
     }
     const cleanSlug = slugifyAscii(slug)
     if (!isValidSlug(cleanSlug)) {
@@ -122,16 +122,16 @@ export function registerLibraryHandlers(): void {
     }
 
     const settings = getSettings()
-    const mediaExt = extname(item.filename)
+    const mediaExt = extname(tape.filename)
     const newMediaName = `${cleanSlug}${mediaExt}`
     const newSidecarName = `${cleanSlug}.json`
 
-    if (newMediaName === item.filename && newSidecarName === item.sidecarFilename) {
-      return item
+    if (newMediaName === tape.filename && newSidecarName === tape.sidecarFilename) {
+      return tape
     }
 
-    const oldMediaPath = join(settings.libraryDir, item.filename)
-    const oldSidecarPath = join(settings.libraryDir, item.sidecarFilename)
+    const oldMediaPath = join(settings.libraryDir, tape.filename)
+    const oldSidecarPath = join(settings.libraryDir, tape.sidecarFilename)
     const newMediaPath = join(settings.libraryDir, newMediaName)
     const newSidecarPath = join(settings.libraryDir, newSidecarName)
 
@@ -190,50 +190,50 @@ export function registerLibraryHandlers(): void {
     }
 
     const updated = {
-      ...item,
+      ...tape,
       filename: newMediaName,
       sidecarFilename: newSidecarName,
       slug: cleanSlug,
       renamedAtUtc: nowUtc,
     }
-    session.upsertItem(updated)
-    emit('items:updated', updated)
-    log.info(`renamed: ${item.id} -> ${cleanSlug}`)
+    session.upsertTape(updated)
+    emit('tapes:updated', updated)
+    log.info(`renamed: ${tape.id} -> ${cleanSlug}`)
     return updated
   })
 
-  handle('library:refreshMetadata', async ({ itemId }) => {
-    const item = session.getItem(itemId)
-    if (!item) throw new Error(`Item not found: ${itemId}`)
+  handle('library:refreshMetadata', async ({ tapeId }) => {
+    const tape = session.getTape(tapeId)
+    if (!tape) throw new Error(`Tape not found: ${tapeId}`)
 
     // One deliberate re-probe. The probe's own idle watchdog guards a stall, and
     // it is never auto-retried — re-hammering the source is the user's call.
-    const result = await probe(item.sourceUrl, new AbortController().signal)
-    if (result.kind === 'playlist') {
-      throw new Error('This URL now resolves to a playlist or channel, not a single video.')
+    const result = await probe(tape.sourceUrl, new AbortController().signal)
+    if (result.kind === 'page') {
+      throw new Error('This URL is now a page of videos, not a single one.')
     }
 
     // Refresh the displayed catalog metadata only. sourceId and the on-disk
-    // filenames are the item's identity — leave them untouched so a downloaded
+    // filenames are the tape's identity — leave them untouched so a downloaded
     // tape keeps pointing at its existing files.
-    const updated: Item = {
-      ...item,
+    const updated: Tape = {
+      ...tape,
       title: result.title,
       uploader: result.uploader,
       durationSeconds: result.duration,
-      chapterCount: result.chapters?.length ?? item.chapterCount,
+      chapterCount: result.chapters?.length ?? tape.chapterCount,
       thumbnailUrl: result.thumbnail,
       probedAtUtc: nowUtcIso(),
     }
-    session.upsertItem(updated)
-    emit('items:updated', updated)
-    log.info(`refreshed metadata: ${item.id}`)
+    session.upsertTape(updated)
+    emit('tapes:updated', updated)
+    log.info(`refreshed metadata: ${tape.id}`)
     return updated
   })
 
   handle('library:import', async ({ mediaPaths }) => {
     const settings = getSettings()
-    const imported: Item[] = []
+    const imported: Tape[] = []
     const rejected: { path: string; reason: string }[] = []
 
     for (const mediaPath of mediaPaths) {
@@ -265,7 +265,7 @@ export function registerLibraryHandlers(): void {
       }
 
       const sourceUrl = tb['sourceUrl']
-      const existing = session.getItems().find((i) => i.sourceUrl === sourceUrl)
+      const existing = session.getTapes().find((i) => i.sourceUrl === sourceUrl)
       if (existing) {
         rejected.push({ path: mediaPath, reason: `already in library (${existing.id})` })
         continue
@@ -287,7 +287,7 @@ export function registerLibraryHandlers(): void {
         continue
       }
 
-      const item: Item = {
+      const tape: Tape = {
         id: nanoid(10),
         sourceUrl,
         state: 'downloaded',
@@ -306,17 +306,17 @@ export function registerLibraryHandlers(): void {
         slug: typeof tb['slug'] === 'string' ? tb['slug'] : null,
         renamedAtUtc: typeof tb['renamedAtUtc'] === 'string' ? tb['renamedAtUtc'] : null,
         archivedAtUtc: null,
-        groupId: null,
-        archiveOrder: 0,
+        boxId: null,
+        boxOrder: 0,
         pausedAtUtc: null,
         failedAtUtc: null,
         lastError: null,
       }
-      session.upsertItem(item)
-      imported.push(item)
+      session.upsertTape(tape)
+      imported.push(tape)
     }
 
-    if (imported.length > 0) emit('items:added', imported)
+    if (imported.length > 0) emit('tapes:added', imported)
     log.info('library:import', { imported: imported.length, rejected: rejected.length })
     return { imported, rejected }
   })

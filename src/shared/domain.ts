@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * Item lifecycle:
+ * Tape lifecycle:
  *   queued     -> just inserted, only URL known
  *   probing    -> running yt-dlp --dump-json --skip-download
  *   ready      -> metadata captured, awaiting download slot
@@ -9,12 +9,12 @@ import { z } from 'zod'
  *   downloaded -> media + sidecar present in library/
  *   failed
  *   paused
- *   playlist   -> probe found a playlist/channel, not a single video; a resting
- *                 dead-end the user resolves via the scanner (Copy URL / Open scanner)
+ *   listing    -> probe found a page that lists videos, not a single video; a
+ *                 resting dead-end the user resolves by scanning it (Copy URL / Scan page)
  *
  * 'archivedAtUtc' is orthogonal to state — any state can be archived.
  */
-export const itemStates = [
+export const tapeStates = [
   'queued',
   'probing',
   'ready',
@@ -22,16 +22,16 @@ export const itemStates = [
   'downloaded',
   'failed',
   'paused',
-  'playlist',
+  'listing',
 ] as const
 
-export type ItemState = (typeof itemStates)[number]
+export type TapeState = (typeof tapeStates)[number]
 
-export const ItemSchema = z.object({
+export const TapeSchema = z.object({
   // Required at insertion.
-  id: z.string(),                  // internal nanoid; stable for the Item's lifetime
+  id: z.string(),                  // internal nanoid; stable for the Tape's lifetime
   sourceUrl: z.string().url(),
-  state: z.enum(itemStates),
+  state: z.enum(tapeStates),
   addedAtUtc: z.string(),
 
   // Filled by probe.
@@ -57,17 +57,17 @@ export const ItemSchema = z.object({
   archivedAtUtc: z.string().nullable(),
 
   // Archive organization (only meaningful while archived): which box the tape is
-  // filed in (null = Ungrouped) and its manual position within that box. Defaulted
+  // filed in (null = Loose) and its manual position within that box. Defaulted
   // so sessions written before boxes existed load unchanged.
-  groupId: z.string().nullable().default(null),
-  archiveOrder: z.number().int().default(0),
+  boxId: z.string().nullable().default(null),
+  boxOrder: z.number().int().default(0),
 
   // State-transition markers.
   pausedAtUtc: z.string().nullable().default(null),          // when state → 'paused'
   failedAtUtc: z.string().nullable().default(null),          // when state → 'failed'
   lastError: z.string().nullable(),
 })
-export type Item = z.infer<typeof ItemSchema>
+export type Tape = z.infer<typeof TapeSchema>
 
 /**
  * Sidecar JSON layout:
@@ -108,15 +108,15 @@ export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
 
 /**
  * A box: a named, ordered collection of archived tapes. Membership is single — a
- * tape belongs to one box (via Item.groupId) or to Ungrouped. `order` is the
+ * tape belongs to one box (via Tape.boxId) or to Loose. `order` is the
  * box's position in the box list.
  */
-export const ArchiveGroupSchema = z.object({
+export const BoxSchema = z.object({
   id: z.string(),
   name: z.string(),
   order: z.number().int(),
 })
-export type ArchiveGroup = z.infer<typeof ArchiveGroupSchema>
+export type Box = z.infer<typeof BoxSchema>
 
 /**
  * Session file shape — persisted in ~/.tapebox/session.json.
@@ -124,7 +124,7 @@ export type ArchiveGroup = z.infer<typeof ArchiveGroupSchema>
  * it's rebuilt by the queue at runtime.
  */
 export const SessionSchema = z.object({
-  items: z.array(ItemSchema),
-  groups: z.array(ArchiveGroupSchema).default([]),
+  tapes: z.array(TapeSchema),
+  boxes: z.array(BoxSchema).default([]),
 })
 export type Session = z.infer<typeof SessionSchema>

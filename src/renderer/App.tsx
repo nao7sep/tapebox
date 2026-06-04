@@ -2,25 +2,25 @@ import { useEffect, useRef, useState } from 'react'
 import type { Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { startIpcSync } from '@renderer/ipc/sync'
-import { useItemsStore } from '@renderer/store/items'
+import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
-import { useItemRemoval } from '@renderer/lib/useItemRemoval'
+import { useTapeRemoval } from '@renderer/lib/useTapeRemoval'
 import { useListKeyboard } from '@renderer/lib/useListKeyboard'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
-import { ItemList } from '@renderer/components/ItemList'
+import { TapeList } from '@renderer/components/TapeList'
 import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
 import { DetailPane } from '@renderer/components/DetailPane'
 import { FilterChips } from '@renderer/components/FilterChips'
 import { PlaybackToggles } from '@renderer/components/PlaybackToggles'
-import { AddPlaylistModal } from '@renderer/components/AddPlaylistModal'
+import { ScanPageModal } from '@renderer/components/ScanPageModal'
 import { SettingsModal } from '@renderer/components/SettingsModal'
 import { AboutModal } from '@renderer/components/AboutModal'
 import { ShortcutsModal } from '@renderer/components/ShortcutsModal'
@@ -43,7 +43,7 @@ function lastCheckedStale(binaries: Settings['binaries']): boolean {
 }
 
 export default function App() {
-  const items = useItemsStore((s) => s.items)
+  const tapes = useTapesStore((s) => s.tapes)
   const selectedId = useSelectionStore((s) => s.selectedId)
   const select = useSelectionStore((s) => s.select)
   const binaryStatuses = useBinariesStore((s) => s.statuses)
@@ -52,11 +52,11 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
-  const [showPlaylist, setShowPlaylist] = useState(false)
-  const [playlistInitialUrl, setPlaylistInitialUrl] = useState('')
+  const [showScanPage, setShowScanPage] = useState(false)
+  const [pageInitialUrl, setPageInitialUrl] = useState('')
   const decidedFirstRun = useRef(false)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const { requestRemove, confirmModal } = useItemRemoval(videoRef)
+  const { requestRemove, confirmModal } = useTapeRemoval(videoRef)
   useListKeyboard(requestRemove)
   const leftPaneWidth = useLayoutStore((s) => s.layout.leftPaneWidth)
   const filter = useFilterStore((s) => s.filter)
@@ -64,9 +64,9 @@ export default function App() {
   const importResult = useImportResultStore((s) => s.result)
   const clearImportResult = useImportResultStore((s) => s.clear)
 
-  function openPlaylist(initialUrl = '') {
-    setPlaylistInitialUrl(initialUrl)
-    setShowPlaylist(true)
+  function openScanPage(initialUrl = '') {
+    setPageInitialUrl(initialUrl)
+    setShowScanPage(true)
   }
 
   async function importFiles() {
@@ -110,10 +110,10 @@ export default function App() {
   }, [binaryStatuses, openBinariesModal])
 
   useEffect(() => {
-    if (selectedId && !items.some((i) => i.id === selectedId)) select(null)
-  }, [items, selectedId, select])
+    if (selectedId && !tapes.some((i) => i.id === selectedId)) select(null)
+  }, [tapes, selectedId, select])
 
-  const selectedItem = items.find((i) => i.id === selectedId) ?? null
+  const selectedTape = tapes.find((i) => i.id === selectedId) ?? null
 
   return (
     <DropZone>
@@ -122,11 +122,11 @@ export default function App() {
           <h1 className="shrink-0 text-xl font-medium tracking-tight">TapeBox</h1>
           <div className="flex min-w-0 flex-1 justify-center">
             <div className="w-full max-w-5xl">
-              <TopBar clipboardEnabled={!showPlaylist} />
+              <TopBar clipboardEnabled={!showScanPage} />
             </div>
           </div>
           <HeaderMenu
-            onPlaylist={() => openPlaylist()}
+            onScanPage={() => openScanPage()}
             onImport={() => void importFiles()}
             onSettings={() => setShowSettings(true)}
             onTools={() => openBinariesModal()}
@@ -149,7 +149,7 @@ export default function App() {
               <ArchiveOrganizer />
             ) : (
               <div className="min-h-0 flex-1 overflow-y-auto">
-                <ItemList />
+                <TapeList />
               </div>
             )}
             <ResizeHandle
@@ -162,12 +162,12 @@ export default function App() {
             />
           </aside>
           <section className="flex-1 overflow-y-auto">
-            {selectedItem ? (
+            {selectedTape ? (
               <DetailPane
-                item={selectedItem}
+                tape={selectedTape}
                 videoRef={videoRef}
                 onRequestRemove={requestRemove}
-                onOpenPlaylist={openPlaylist}
+                onScanPage={openScanPage}
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-300">
@@ -177,8 +177,8 @@ export default function App() {
           </section>
         </div>
 
-        {showPlaylist && (
-          <AddPlaylistModal initialUrl={playlistInitialUrl} onClose={() => setShowPlaylist(false)} />
+        {showScanPage && (
+          <ScanPageModal initialUrl={pageInitialUrl} onClose={() => setShowScanPage(false)} />
         )}
 
         {showSettings && (

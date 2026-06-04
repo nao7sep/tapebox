@@ -1,4 +1,4 @@
-import type { ArchiveGroup, Item } from './domain'
+import type { Box, Tape } from './domain'
 import type { Settings } from './settings'
 import type { Layout } from './layout'
 
@@ -11,39 +11,39 @@ import type { Layout } from './layout'
  * registrar both derive from this single source of truth.
  */
 export type IpcCalls = {
-  // ── Downloads (URL → Item lifecycle) ─────────────────────────────────────
-  'downloads:add':         { req: { url: string };                  res: Item[] }   // 1+ Items: playlist may expand
-  'downloads:addBulk':     { req: { urls: string[] };               res: Item[] }
-  'downloads:cancel':      { req: { itemId: string };               res: void }
-  'downloads:retry':       { req: { itemId: string };               res: void }
+  // ── Downloads (URL → Tape lifecycle) ─────────────────────────────────────
+  'downloads:add':         { req: { url: string };                  res: Tape[] }   // 1+ Tapes: a page may expand into many
+  'downloads:addBulk':     { req: { urls: string[] };               res: Tape[] }
+  'downloads:cancel':      { req: { tapeId: string };               res: void }
+  'downloads:retry':       { req: { tapeId: string };               res: void }
 
   // ── Library ──────────────────────────────────────────────────────────────
-  'library:list':            { req: undefined;                                       res: Item[] }
-  'library:remove':          { req: { itemIds: string[]; deleteFiles: boolean };     res: void }
-  'library:renameToSlug':    { req: { itemId: string; slug: string };                res: Item }
+  'library:list':            { req: undefined;                                       res: Tape[] }
+  'library:remove':          { req: { tapeIds: string[]; deleteFiles: boolean };     res: void }
+  'library:renameToSlug':    { req: { tapeId: string; slug: string };                res: Tape }
   'library:import':          { req: { mediaPaths: string[] };                        res: ImportResult }
-  'library:archive':         { req: { itemIds: string[] };                           res: void }
-  'library:unarchive':       { req: { itemIds: string[] };                           res: void }
-  'library:getSidecar':      { req: { itemId: string };                              res: SidecarRaw }
-  'library:reveal':          { req: { itemId: string };                              res: void }
-  'library:playExternal':    { req: { itemId: string };                              res: void }
-  // Deliberate, user-triggered re-probe of one item to refresh its metadata
+  'library:archive':         { req: { tapeIds: string[] };                           res: void }
+  'library:unarchive':       { req: { tapeIds: string[] };                           res: void }
+  'library:getSidecar':      { req: { tapeId: string };                              res: SidecarRaw }
+  'library:reveal':          { req: { tapeId: string };                              res: void }
+  'library:playExternal':    { req: { tapeId: string };                              res: void }
+  // Deliberate, user-triggered re-probe of one tape to refresh its metadata
   // (e.g. after changing the preferred language). Hits the source again, so it
   // lives only behind an explicit button — never an automatic path.
-  'library:refreshMetadata': { req: { itemId: string };                              res: Item }
+  'library:refreshMetadata': { req: { tapeId: string };                              res: Tape }
 
   // ── Archive organization (boxes for archived tapes) ──────────────────────
   // A box holds archived tapes in manual order; a tape is in one box or none.
-  // placeItems is the workhorse behind assign / reorder / move-between: drop
-  // these tapes into `groupId` (null = Ungrouped) before `beforeItemId` (or at
+  // placeTapes is the workhorse behind assign / reorder / move-between: drop
+  // these tapes into `boxId` (null = Loose) before `beforeTapeId` (or at
   // the end), reindexing that box's order.
-  'archive:listGroups':    { req: undefined;                         res: ArchiveGroup[] }
-  'archive:createGroup':   { req: { name: string };                  res: ArchiveGroup }
-  'archive:renameGroup':   { req: { groupId: string; name: string }; res: ArchiveGroup }
-  'archive:deleteGroup':   { req: { groupId: string };               res: void }
-  'archive:reorderGroups': { req: { orderedIds: string[] };          res: void }
-  'archive:placeItems': {
-    req: { itemIds: string[]; groupId: string | null; beforeItemId: string | null }
+  'boxes:list':    { req: undefined;                         res: Box[] }
+  'boxes:create':   { req: { name: string };                  res: Box }
+  'boxes:rename':   { req: { boxId: string; name: string }; res: Box }
+  'boxes:delete':   { req: { boxId: string };               res: void }
+  'boxes:reorder': { req: { orderedIds: string[] };          res: void }
+  'boxes:place': {
+    req: { tapeIds: string[]; boxId: string | null; beforeTapeId: string | null }
     res: void
   }
 
@@ -54,7 +54,7 @@ export type IpcCalls = {
   // ignore. `mode` splits per-chapter or exports the whole tape.
   'export:media': {
     req: {
-      itemId: string
+      tapeId: string
       destinationDir: string
       mode: 'whole' | 'perChapter'
       presetId: string
@@ -66,7 +66,7 @@ export type IpcCalls = {
   }
 
   // ── AI ───────────────────────────────────────────────────────────────────
-  'ai:generateSlug':       { req: { itemId: string };               res: { slug: string } }
+  'ai:generateSlug':       { req: { tapeId: string };               res: { slug: string } }
 
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }
@@ -84,11 +84,11 @@ export type IpcCalls = {
   'binaries:update':       { req: { name: BinaryName };              res: void }
   'binaries:checkUpdates': { req: undefined;                         res: BinaryStatus[] }
 
-  // ── Enumeration (playlist/channel scan) ──────────────────────────────────
-  // The playlist modal subscribes to enum:* events, then calls enum:start.
+  // ── Scan (page scan) ──────────────────────────────────────────────
+  // The Add-from-a-page modal subscribes to scan:* events, then calls scan:start.
   // Returns a sessionId used to filter events and cancel the stream.
-  'enum:start':            { req: { url: string };                   res: { sessionId: string } }
-  'enum:cancel':           { req: { sessionId: string };             res: void }
+  'scan:start':            { req: { url: string };                   res: { sessionId: string } }
+  'scan:cancel':           { req: { sessionId: string };             res: void }
 
   // ── Native dialogs ───────────────────────────────────────────────────────
   'dialog:pickDirectory':  { req: { title?: string };                res: string | null }
@@ -128,7 +128,7 @@ export type BinaryStatus = {
 }
 
 export type ImportResult = {
-  imported: Item[]
+  imported: Tape[]
   rejected: { path: string; reason: string }[]
 }
 
@@ -138,7 +138,7 @@ export type RuntimeInfo = {
   version: string
 }
 
-export type EnumEntry = {
+export type ScanResult = {
   sourceId: string
   sourceUrl: string
   title: string | null
@@ -154,27 +154,27 @@ export type EnumEntry = {
  * Renderer subscribes through preload's contextBridge wrapper.
  */
 export type IpcEvents = {
-  'items:added':       Item[]
-  'items:updated':     Item
-  'items:progress':    {
-    itemId: string
+  'tapes:added':       Tape[]
+  'tapes:updated':     Tape
+  'tapes:progress':    {
+    tapeId: string
     phase: 'probing' | 'downloading'
     percent: number
     speedBps?: number
     etaSec?: number
   }
-  'items:completed':   { itemId: string }
-  'items:failed':      { itemId: string; error: string }
-  'items:removed':     { itemIds: string[] }
-  // Bulk item update (e.g. a box reorder touches many tapes at once).
-  'items:updatedMany': Item[]
+  'tapes:completed':   { tapeId: string }
+  'tapes:failed':      { tapeId: string; error: string }
+  'tapes:removed':     { tapeIds: string[] }
+  // Bulk tape update (e.g. a box reorder touches many tapes at once).
+  'tapes:updatedMany': Tape[]
 
   // The box list changed (created / renamed / deleted / reordered).
-  'groups:changed':    ArchiveGroup[]
+  'boxes:changed':    Box[]
 
-  'enum:entry':        { sessionId: string; entry: EnumEntry }
-  'enum:done':         { sessionId: string; totalCount: number }
-  'enum:error':        { sessionId: string; error: string }
+  'scan:entry':        { sessionId: string; entry: ScanResult }
+  'scan:done':         { sessionId: string; totalCount: number }
+  'scan:error':        { sessionId: string; error: string }
 
   'binaries:progress':        { name: BinaryName; percent: number; phase: 'download' | 'verify' | 'install' }
   'binaries:ready':           { name: BinaryName; version: string }

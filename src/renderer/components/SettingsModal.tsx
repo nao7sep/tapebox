@@ -242,7 +242,7 @@ function GeneralTab({
     <div className="space-y-4">
       <Toggle
         label="Autostart downloads"
-        description="Newly added items start downloading immediately. Off = added as paused."
+        description="Newly added tapes start downloading immediately. Off = added as paused."
         checked={draft.autoStartDownloads}
         disabled={busy}
         onChange={(v) => onPatch({ autoStartDownloads: v })}

@@ -11,9 +11,9 @@
  * reserved: a user-created box must not shadow it. Kept here so the reserved
  * word and the label rendered in the UI can never drift apart.
  */
-export const UNGROUPED_LABEL = 'Ungrouped'
+export const LOOSE_LABEL = 'Loose'
 
-const RESERVED_BOX_NAMES = [UNGROUPED_LABEL]
+const RESERVED_BOX_NAMES = [LOOSE_LABEL]
 
 const norm = (s: string) => s.trim().toLowerCase()
 

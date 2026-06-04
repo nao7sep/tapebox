@@ -10,15 +10,15 @@ import { ytdlpEnv } from './ytdlp'
 import { resolveYtdlpArgs } from './ytdlp-args'
 
 /**
- * Playlist / channel enumeration via yt-dlp. startEnumeration streams entries
+ * Page scan via yt-dlp. startScan streams entries
  * from --flat-playlist -j, one JSON per line, calling onEntry as each arrives.
  *
  * Uses the same idle watchdog as the probe; never retried — a streaming
- * enumeration can't be retried without re-emitting entries already delivered
+ * scan can't be retried without re-emitting entries already delivered
  * to onEntry.
  */
 
-export type EnumeratedEntry = {
+export type ScannedEntry = {
   id: string
   url: string
   title: string | null
@@ -27,15 +27,15 @@ export type EnumeratedEntry = {
   thumbnailUrl: string | null
 }
 
-export type EnumerationHandle = {
+export type ScanHandle = {
   cancel: () => void
   complete: Promise<{ totalCount: number }>
 }
 
-export function startEnumeration(
+export function startScan(
   url: string,
-  onEntry: (entry: EnumeratedEntry) => void,
-): EnumerationHandle {
+  onEntry: (entry: ScannedEntry) => void,
+): ScanHandle {
   const ctl = new AbortController()
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
@@ -55,7 +55,7 @@ export function startEnumeration(
         total++
       }
     } catch (err) {
-      log.warn('enum: bad json line', { error: String(err) })
+      log.warn('scan: bad json line', { error: String(err) })
     }
   })
 
@@ -76,7 +76,7 @@ export function startEnumeration(
   }
 }
 
-function parseEntry(info: Record<string, unknown>): EnumeratedEntry | null {
+function parseEntry(info: Record<string, unknown>): ScannedEntry | null {
   const id = typeof info['id'] === 'string' ? info['id'] : null
   if (!id) return null
   const url =

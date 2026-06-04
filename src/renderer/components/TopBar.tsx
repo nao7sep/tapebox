@@ -5,12 +5,12 @@ import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { Button } from '@renderer/components/ui'
 
 type Props = {
-  /** Pause clipboard auto-fill (e.g. while the playlist modal owns the clipboard). */
+  /** Pause clipboard auto-fill (e.g. while the Add-from-a-page modal owns the clipboard). */
   clipboardEnabled: boolean
 }
 
 /**
- * URL input bar for single items. Add queues immediately — no upfront probe;
+ * URL input bar for single tapes. Add queues immediately — no upfront probe;
  * the job probes as part of processing ("do"). The field auto-fills from the
  * clipboard via useClipboardUrl while the user hasn't typed over it.
  */

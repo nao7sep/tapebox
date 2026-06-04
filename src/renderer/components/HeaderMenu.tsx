@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 type Props = {
-  onPlaylist: () => void
+  onScanPage: () => void
   onImport: () => void
   onSettings: () => void
   onTools: () => void
@@ -12,9 +12,9 @@ type Props = {
 
 /**
  * Hamburger menu in the header. Opens the app's modeless entry points; closes
- * on outside click, Esc, or selecting an item.
+ * on outside click, Esc, or selecting an tape.
  */
-export function HeaderMenu({ onPlaylist, onImport, onSettings, onTools, onShortcuts, onAbout, onRevealLog }: Props) {
+export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortcuts, onAbout, onRevealLog }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
 
@@ -34,8 +34,8 @@ export function HeaderMenu({ onPlaylist, onImport, onSettings, onTools, onShortc
     }
   }, [open])
 
-  const items: { label: string; action: () => void }[] = [
-    { label: 'Add playlist / channel', action: onPlaylist },
+  const entries: { label: string; action: () => void }[] = [
+    { label: 'Scan a page', action: onScanPage },
     { label: 'Import files', action: onImport },
     { label: 'Settings', action: onSettings },
     { label: 'Required tools', action: onTools },
@@ -74,7 +74,7 @@ export function HeaderMenu({ onPlaylist, onImport, onSettings, onTools, onShortc
       </button>
       {open && (
         <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
-          {items.map(({ label, action }) => (
+          {entries.map(({ label, action }) => (
             <button
               key={label}
               onClick={() => {

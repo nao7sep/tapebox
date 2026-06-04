@@ -5,22 +5,22 @@ import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
-import type { Item } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 
 export function registerDownloadHandlers(): void {
   handle('downloads:add', async ({ url }) => {
     const trimmed = url.trim()
     // URL-based dedup for the single-add path (no id yet — it's unprobed). Any
-    // existing item with this URL blocks the add, in any state; a failed one is
+    // existing tape with this URL blocks the add, in any state; a failed one is
     // resumed via Retry, not re-added.
-    if (session.getItems().some((i) => i.sourceUrl === trimmed)) {
+    if (session.getTapes().some((i) => i.sourceUrl === trimmed)) {
       throw new Error('This URL has already been added.')
     }
-    const item = makeQueuedItem(trimmed)
-    session.upsertItem(item)
-    emit('items:added', [item])
+    const tape = makeQueuedTape(trimmed)
+    session.upsertTape(tape)
+    emit('tapes:added', [tape])
     queue.tick()
-    return [item]
+    return [tape]
   })
 
   handle('downloads:addBulk', async ({ urls }) => {
@@ -28,42 +28,42 @@ export function registerDownloadHandlers(): void {
     // same scan twice (or a list with repeats) can't create duplicate rows. The
     // set grows as we go, which collapses intra-batch repeats too. Same-video-
     // different-URL collisions are caught later, post-probe, in the queue.
-    const seen = new Set(session.getItems().map((i) => i.sourceUrl))
-    const items: Item[] = []
+    const seen = new Set(session.getTapes().map((i) => i.sourceUrl))
+    const tapes: Tape[] = []
     for (const url of urls) {
       const trimmed = url.trim()
       if (!trimmed || seen.has(trimmed)) continue
       seen.add(trimmed)
-      items.push(makeQueuedItem(trimmed))
+      tapes.push(makeQueuedTape(trimmed))
     }
-    if (items.length === 0) return []
-    for (const item of items) session.upsertItem(item)
-    emit('items:added', items)
+    if (tapes.length === 0) return []
+    for (const tape of tapes) session.upsertTape(tape)
+    emit('tapes:added', tapes)
     queue.tick()
-    return items
+    return tapes
   })
 
-  handle('downloads:cancel', async ({ itemId }) => {
-    await queue.cancel(itemId)
+  handle('downloads:cancel', async ({ tapeId }) => {
+    await queue.cancel(tapeId)
   })
 
-  handle('downloads:retry', async ({ itemId }) => {
+  handle('downloads:retry', async ({ tapeId }) => {
     // The download clears any stale .part at the start of every attempt, so
     // retry and resume both just re-queue.
-    transition(itemId, { state: 'queued', lastError: null })
+    transition(tapeId, { state: 'queued', lastError: null })
     queue.tick()
   })
 }
 
-function transition(itemId: string, patch: Partial<Item>): void {
-  const item = session.getItem(itemId)
-  if (!item) return
-  const next = { ...item, ...patch }
-  session.upsertItem(next)
-  emit('items:updated', next)
+function transition(tapeId: string, patch: Partial<Tape>): void {
+  const tape = session.getTape(tapeId)
+  if (!tape) return
+  const next = { ...tape, ...patch }
+  session.upsertTape(next)
+  emit('tapes:updated', next)
 }
 
-function makeQueuedItem(url: string): Item {
+function makeQueuedTape(url: string): Tape {
   const autostart = getSettings().autoStartDownloads
   const now = nowUtcIso()
   return {
@@ -85,8 +85,8 @@ function makeQueuedItem(url: string): Item {
     slug: null,
     renamedAtUtc: null,
     archivedAtUtc: null,
-    groupId: null,
-    archiveOrder: 0,
+    boxId: null,
+    boxOrder: 0,
     pausedAtUtc: autostart ? null : now,
     failedAtUtc: null,
     lastError: null,

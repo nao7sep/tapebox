@@ -1,20 +1,20 @@
-import { useItemsStore } from '@renderer/store/items'
+import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
-import { useVisibleItems } from '@renderer/lib/itemOrder'
-import { ItemRow } from './ItemRow'
+import { useVisibleTapes } from '@renderer/lib/tapeOrder'
+import { TapeRow } from './TapeRow'
 
 /**
  * One continuous list per tab. The filter and sort that define the on-screen
- * order live in lib/itemOrder, so the list view, keyboard navigation, and
- * removal all agree on which item is next.
+ * order live in lib/tapeOrder, so the list view, keyboard navigation, and
+ * removal all agree on which tape is next.
  */
-export function ItemList() {
-  const progress = useItemsStore((s) => s.progress)
+export function TapeList() {
+  const progress = useTapesStore((s) => s.progress)
   const selectedId = useSelectionStore((s) => s.selectedId)
   const select = useSelectionStore((s) => s.select)
   const filter = useFilterStore((s) => s.filter)
-  const visible = useVisibleItems()
+  const visible = useVisibleTapes()
 
   if (visible.length === 0) {
     return (
@@ -26,13 +26,13 @@ export function ItemList() {
 
   return (
     <ul className="space-y-1.5 p-3">
-      {visible.map((item) => (
-        <li key={item.id}>
-          <ItemRow
-            item={item}
-            progress={progress[item.id]}
-            selected={item.id === selectedId}
-            onSelect={() => select(item.id)}
+      {visible.map((tape) => (
+        <li key={tape.id}>
+          <TapeRow
+            tape={tape}
+            progress={progress[tape.id]}
+            selected={tape.id === selectedId}
+            onSelect={() => select(tape.id)}
           />
         </li>
       ))}

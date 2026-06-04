@@ -3,35 +3,35 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useItemsStore } from '@renderer/store/items'
-import { useGroupsStore } from '@renderer/store/groups'
+import { useTapesStore } from '@renderer/store/tapes'
+import { useBoxesStore } from '@renderer/store/boxes'
 import { useArchiveStore } from '@renderer/store/archive'
-import { boxNameError, UNGROUPED_LABEL } from '@shared/archive-names'
+import { boxNameError, LOOSE_LABEL } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
 
-/** Droppable id for the Ungrouped row (it is not a real box, so it has no group id). */
-export const UNGROUPED_DROP_ID = '__ungrouped__'
+/** Droppable id for the Loose row (it is not a real box, so it has no box id). */
+export const LOOSE_DROP_ID = '__loose__'
 
 /**
- * Top list of the archive organizer: the boxes plus an always-present Ungrouped
+ * Top list of the archive organizer: the boxes plus an always-present Loose
  * row, with counts, selection, create, inline rename, and delete. Boxes are
  * sortable (drag a header to reorder) and droppable (drag a tape onto a box to
  * file it); the parent DndContext owns the drag handling. Deleting a box only
- * re-files its tapes to Ungrouped — it never removes the tapes.
+ * re-files its tapes to Loose — it never removes the tapes.
  */
 export function BoxList() {
-  const groups = useGroupsStore((s) => s.groups)
-  const items = useItemsStore((s) => s.items)
-  const selectedGroupId = useArchiveStore((s) => s.selectedGroupId)
-  const selectGroup = useArchiveStore((s) => s.selectGroup)
+  const boxes = useBoxesStore((s) => s.boxes)
+  const tapes = useTapesStore((s) => s.tapes)
+  const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
+  const selectBox = useArchiveStore((s) => s.selectBox)
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  const sorted = [...groups].sort((a, b) => a.order - b.order)
-  const archived = items.filter((i) => !!i.archivedAtUtc)
-  const countOf = (groupId: string | null) => archived.filter((i) => i.groupId === groupId).length
+  const sorted = [...boxes].sort((a, b) => a.order - b.order)
+  const archived = tapes.filter((i) => !!i.archivedAtUtc)
+  const countOf = (boxId: string | null) => archived.filter((i) => i.boxId === boxId).length
 
   // Names of every box except the one being edited — what a rename collides with.
   const otherNames = (id: string) => sorted.filter((g) => g.id !== id).map((g) => g.name)
@@ -42,10 +42,10 @@ export function BoxList() {
     editingId !== null && trimmedDraft ? boxNameError(trimmedDraft, otherNames(editingId)) : null
 
   async function newBox() {
-    const group = await ipcInvoke('archive:createGroup', { name: 'New box' })
-    selectGroup(group.id)
-    setDraftName(group.name)
-    setEditingId(group.id)
+    const box = await ipcInvoke('boxes:create', { name: 'New box' })
+    selectBox(box.id)
+    setDraftName(box.name)
+    setEditingId(box.id)
   }
 
   // Enter: commit when valid, stay editing when invalid, cancel when empty.
@@ -54,7 +54,7 @@ export function BoxList() {
     if (!name) { setEditingId(null); return }
     if (boxNameError(name, otherNames(id))) return
     setEditingId(null)
-    await ipcInvoke('archive:renameGroup', { groupId: id, name })
+    await ipcInvoke('boxes:rename', { boxId: id, name })
   }
 
   // Blur: a focus loss can't keep editing, so commit only when valid, else discard.
@@ -66,8 +66,8 @@ export function BoxList() {
 
   async function deleteBox(id: string) {
     setConfirmDeleteId(null)
-    if (selectedGroupId === id) selectGroup(null)
-    await ipcInvoke('archive:deleteGroup', { groupId: id })
+    if (selectedBoxId === id) selectBox(null)
+    await ipcInvoke('boxes:delete', { boxId: id })
   }
 
   return (
@@ -80,7 +80,7 @@ export function BoxList() {
       </div>
 
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-        <UngroupedRow count={countOf(null)} selected={selectedGroupId === null} onSelect={() => selectGroup(null)} />
+        <LooseRow count={countOf(null)} selected={selectedBoxId === null} onSelect={() => selectBox(null)} />
         <SortableContext items={sorted.map((g) => g.id)} strategy={verticalListSortingStrategy}>
           {sorted.map((g) =>
             editingId === g.id ? (
@@ -110,8 +110,8 @@ export function BoxList() {
                 id={g.id}
                 label={g.name}
                 count={countOf(g.id)}
-                selected={selectedGroupId === g.id}
-                onSelect={() => selectGroup(g.id)}
+                selected={selectedBoxId === g.id}
+                onSelect={() => selectBox(g.id)}
                 onRename={() => { setDraftName(g.name); setEditingId(g.id) }}
                 onDelete={() => setConfirmDeleteId(g.id)}
               />
@@ -123,7 +123,7 @@ export function BoxList() {
       {confirmDeleteId && (
         <ConfirmModal
           title="Delete box"
-          message="Delete this box? Its tapes move to Ungrouped — the tapes themselves are not removed."
+          message="Delete this box? Its tapes move to Loose — the tapes themselves are not removed."
           confirmLabel="Delete box"
           danger
           onCancel={() => setConfirmDeleteId(null)}
@@ -136,18 +136,18 @@ export function BoxList() {
 
 function rowClass(selected: boolean, isOver: boolean): string {
   return (
-    'group flex items-center gap-1.5 rounded px-2 py-1.5 text-sm transition ' +
+    'box flex items-center gap-1.5 rounded px-2 py-1.5 text-sm transition ' +
     (selected ? 'bg-zinc-800 text-zinc-100 ' : 'text-zinc-300 hover:bg-zinc-800/50 ') +
     (isOver ? 'ring-1 ring-zinc-400' : '')
   )
 }
 
-function UngroupedRow({ count, selected, onSelect }: { count: number; selected: boolean; onSelect: () => void }) {
-  const { setNodeRef, isOver } = useDroppable({ id: UNGROUPED_DROP_ID })
+function LooseRow({ count, selected, onSelect }: { count: number; selected: boolean; onSelect: () => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id: LOOSE_DROP_ID })
   return (
     <div ref={setNodeRef} className={rowClass(selected, isOver)}>
       <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
-        {UNGROUPED_LABEL}
+        {LOOSE_LABEL}
       </button>
       <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
     </div>
@@ -185,10 +185,10 @@ function SortableBoxRow({
       <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
         {label}
       </button>
-      <button onClick={onRename} aria-label="Rename box" className="hidden shrink-0 text-zinc-400 hover:text-zinc-200 group-hover:block">
+      <button onClick={onRename} aria-label="Rename box" className="hidden shrink-0 text-zinc-400 hover:text-zinc-200 box-hover:block">
         <PencilGlyph />
       </button>
-      <button onClick={onDelete} aria-label="Delete box" className="hidden shrink-0 text-zinc-400 hover:text-red-300 group-hover:block">
+      <button onClick={onDelete} aria-label="Delete box" className="hidden shrink-0 text-zinc-400 hover:text-red-300 box-hover:block">
         <TrashGlyph />
       </button>
       <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>

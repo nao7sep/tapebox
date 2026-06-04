@@ -6,7 +6,7 @@ import { useImportMedia } from '@renderer/lib/useImportMedia'
 type Props = { children: ReactNode }
 
 /**
- * Window-wide drop target. Accepts media + sidecar pairs to restore items
+ * Window-wide drop target. Accepts media + sidecar pairs to restore tapes
  * into the library. Bare media files without a matching .json are rejected
  * by the main import handler.
  *

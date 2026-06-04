@@ -8,7 +8,7 @@ import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
-import type { Item } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 
 /**
  * Single job lifecycle: probe -> download -> finalize sidecar.
@@ -18,13 +18,13 @@ import type { Item } from '@shared/domain'
  * downloads:cancel) need the yt-dlp process to be gone before they touch disk.
  */
 export class Job {
-  readonly itemId: string
+  readonly tapeId: string
   private controller = new AbortController()
   private cancelled = false
   private runPromise: Promise<void> | null = null
 
-  constructor(item: Item) {
-    this.itemId = item.id
+  constructor(tape: Tape) {
+    this.tapeId = tape.id
   }
 
   /**
@@ -55,41 +55,41 @@ export class Job {
         return
       }
       const message = String(err)
-      log.error(`job failed: ${this.itemId}`, { error: message })
+      log.error(`job failed: ${this.tapeId}`, { error: message })
       this.update({ state: 'failed', lastError: message, failedAtUtc: nowUtcIso() })
-      emit('items:failed', { itemId: this.itemId, error: message })
+      emit('tapes:failed', { tapeId: this.tapeId, error: message })
     }
   }
 
-  private current(): Item | undefined {
-    return session.getItem(this.itemId)
+  private current(): Tape | undefined {
+    return session.getTape(this.tapeId)
   }
 
-  private update(patch: Partial<Item>): void {
+  private update(patch: Partial<Tape>): void {
     const cur = this.current()
     if (!cur) return
     const next = { ...cur, ...patch }
-    session.upsertItem(next)
-    emit('items:updated', next)
+    session.upsertTape(next)
+    emit('tapes:updated', next)
   }
 
-  /** Returns true if a downloadable video; false if the URL is a playlist. */
+  /** Returns true if a downloadable video; false if the URL is a page of videos. */
   private async probe(): Promise<boolean> {
     this.update({ state: 'probing' })
     const result = await ytdlp.probe(this.current()!.sourceUrl, this.controller.signal)
-    if (result.kind === 'playlist') {
-      this.update({ state: 'playlist', lastError: null, probedAtUtc: nowUtcIso() })
+    if (result.kind === 'page') {
+      this.update({ state: 'listing', lastError: null, probedAtUtc: nowUtcIso() })
       return false
     }
     // Two URLs can resolve to the same video (e.g. youtu.be/X vs watch?v=X). The
     // on-disk name is the video id, so downloading both would collide on
     // <id>.<ext>/<id>.json. The id is only known now (post-probe), so this is
     // where we catch it — halt with a clear message rather than clobber files.
-    const duplicate = session.getItems().find((i) => i.id !== this.itemId && i.sourceId === result.id)
+    const duplicate = session.getTapes().find((i) => i.id !== this.tapeId && i.sourceId === result.id)
     if (duplicate) {
       this.update({
         state: 'failed',
-        lastError: `Duplicate of an existing item (same video id ${result.id}). Not downloaded to avoid a file collision.`,
+        lastError: `Duplicate of an existing tape (same video id ${result.id}). Not downloaded to avoid a file collision.`,
         failedAtUtc: nowUtcIso(),
         probedAtUtc: nowUtcIso(),
       })
@@ -122,7 +122,7 @@ export class Job {
       outputId: cur.sourceId,
       signal: this.controller.signal,
       onProgress: (percent) => {
-        emit('items:progress', { itemId: this.itemId, phase: 'downloading', percent })
+        emit('tapes:progress', { tapeId: this.tapeId, phase: 'downloading', percent })
       },
     })
 
@@ -160,6 +160,6 @@ export class Job {
       sidecarFilename,
       downloadedAtUtc: nowUtcIso(),
     })
-    emit('items:completed', { itemId: this.itemId })
+    emit('tapes:completed', { tapeId: this.tapeId })
   }
 }

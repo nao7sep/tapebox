@@ -38,9 +38,9 @@ export async function finalize(opts: {
   for (const arrKey of PATH_FIELDS_NESTED_ARRAYS) {
     const arr = data[arrKey]
     if (Array.isArray(arr)) {
-      for (const item of arr) {
-        if (item && typeof item === 'object') {
-          for (const k of NESTED_PATH_KEYS) delete (item as Record<string, unknown>)[k]
+      for (const tape of arr) {
+        if (tape && typeof tape === 'object') {
+          for (const k of NESTED_PATH_KEYS) delete (tape as Record<string, unknown>)[k]
         }
       }
     }

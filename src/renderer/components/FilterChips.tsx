@@ -1,21 +1,21 @@
-import { useItemsStore } from '@renderer/store/items'
+import { useTapesStore } from '@renderer/store/tapes'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
 
 const labels: Record<Filter, string> = {
-  shelf: 'Shelf',
+  inbox: 'Inbox',
   archived: 'Archived',
 }
 
-const order: Filter[] = ['shelf', 'archived']
+const order: Filter[] = ['inbox', 'archived']
 
 export function FilterChips() {
   const filter = useFilterStore((s) => s.filter)
   const setFilter = useFilterStore((s) => s.setFilter)
-  const items = useItemsStore((s) => s.items)
+  const tapes = useTapesStore((s) => s.tapes)
 
   const counts: Record<Filter, number> = {
-    shelf: items.filter((i) => !i.archivedAtUtc).length,
-    archived: items.filter((i) => !!i.archivedAtUtc).length,
+    inbox: tapes.filter((i) => !i.archivedAtUtc).length,
+    archived: tapes.filter((i) => !!i.archivedAtUtc).length,
   }
 
   return (

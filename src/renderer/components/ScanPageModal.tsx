@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { EnumEntry } from '@shared/ipc-contract'
+import type { ScanResult } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { formatTime } from '@renderer/lib/format'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
@@ -10,18 +10,19 @@ import { Button, INPUT_CLASS } from '@renderer/components/ui'
 type Props = { onClose: () => void; initialUrl?: string }
 
 /**
- * Add a playlist or channel. The user pastes/scans a URL, reviews the videos in
- * a checkable table, and adds the selected ones in bulk.
+ * Scan a page for videos — a URL that lists multiple videos (a creator's uploads,
+ * search results, a category). The user pastes a page URL, scans it, reviews the
+ * videos in a checkable table, and adds the selected ones in bulk.
  *
- * The modal owns the enum session: it subscribes to enum:* once on mount and
- * filters events by the current sessionId (set when enum:start resolves), so a
+ * The modal owns the scan session: it subscribes to scan:* once on mount and
+ * filters events by the current sessionId (set when scan:start resolves), so a
  * re-scan cleanly supersedes the previous stream.
  */
-export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
+export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const { url, setUrl, onPaste } = useClipboardUrl(true, initialUrl)
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
-  const [entries, setEntries] = useState<EnumEntry[]>([])
+  const [entries, setEntries] = useState<ScanResult[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
@@ -31,7 +32,7 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
 
   useEffect(() => {
     const offs = [
-      ipcOn('enum:entry', (e) => {
+      ipcOn('scan:entry', (e) => {
         if (e.sessionId !== sessionIdRef.current) return
         setEntries((prev) => [...prev, e.entry])
         if (!e.entry.alreadyInLibrary && !e.entry.unavailable) {
@@ -42,17 +43,17 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
           })
         }
       }),
-      ipcOn('enum:done', (e) => {
+      ipcOn('scan:done', (e) => {
         if (e.sessionId === sessionIdRef.current) { setScanning(false); setScanned(true) }
       }),
-      ipcOn('enum:error', (e) => {
+      ipcOn('scan:error', (e) => {
         if (e.sessionId === sessionIdRef.current) { setScanning(false); setScanned(true); setError(e.error) }
       }),
     ]
     return () => {
       offs.forEach((off) => off())
       const sid = sessionIdRef.current
-      if (sid) void ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
+      if (sid) void ipcInvoke('scan:cancel', { sessionId: sid }).catch(() => {})
     }
   }, [])
 
@@ -60,7 +61,7 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
     const v = url.trim()
     if (!v || scanning) return
     const prev = sessionIdRef.current
-    if (prev) void ipcInvoke('enum:cancel', { sessionId: prev }).catch(() => {})
+    if (prev) void ipcInvoke('scan:cancel', { sessionId: prev }).catch(() => {})
     sessionIdRef.current = null
     setEntries([])
     setSelected(new Set())
@@ -68,14 +69,14 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
     setError(null)
     setScanned(false)
     setScanning(true)
-    void ipcInvoke('enum:start', { url: v })
+    void ipcInvoke('scan:start', { url: v })
       .then((r) => { sessionIdRef.current = r.sessionId })
       .catch((err) => { setError(String(err)); setScanning(false); setScanned(true) })
   }
 
   async function stopScan() {
     const sid = sessionIdRef.current
-    if (sid) await ipcInvoke('enum:cancel', { sessionId: sid }).catch(() => {})
+    if (sid) await ipcInvoke('scan:cancel', { sessionId: sid }).catch(() => {})
     setScanning(false)
     setScanned(true)
   }
@@ -119,21 +120,21 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
     }
   }
 
-  const inBoxCount = entries.filter((e) => e.alreadyInLibrary).length
+  const inLibraryCount = entries.filter((e) => e.alreadyInLibrary).length
   const footer = (
     <>
-      {inBoxCount > 0 && (
-        <span className="mr-auto text-xs text-amber-400">{inBoxCount} already in box</span>
+      {inLibraryCount > 0 && (
+        <span className="mr-auto text-xs text-amber-400">{inLibraryCount} already in your library</span>
       )}
       <Button variant="ghost" onClick={onClose} disabled={adding}>Cancel</Button>
       <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0 || adding}>
-        {adding ? 'Adding…' : `Add ${selected.size} ${selected.size === 1 ? 'item' : 'items'}`}
+        {adding ? 'Adding…' : `Add ${selected.size} ${selected.size === 1 ? 'tape' : 'tapes'}`}
       </Button>
     </>
   )
 
   return (
-    <Modal title="Add playlist or channel" onClose={onClose} size="2xl" footer={footer}>
+    <Modal title="Scan a page" onClose={onClose} size="2xl" footer={footer}>
       <div className="flex gap-2">
         <input
           type="text"
@@ -141,7 +142,7 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
           onChange={(e) => setUrl(e.target.value)}
           onPaste={onPaste}
           onKeyDown={(e) => { if (e.key === 'Enter') scan() }}
-          placeholder="Paste a playlist or channel URL"
+          placeholder="Paste a page URL"
           spellCheck={false}
           className={`flex-1 ${INPUT_CLASS}`}
         />
@@ -156,7 +157,7 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
 
       {!scanning && !scanned ? (
         <p className="mt-3 text-center text-sm text-zinc-300">
-          Paste a playlist or channel URL, then Scan.
+          Paste the URL of a page that lists videos, then scan it.
         </p>
       ) : (
         <div className="mt-3 text-center">
@@ -205,7 +206,7 @@ export function AddPlaylistModal({ onClose, initialUrl = '' }: Props) {
                       onChange={() => toggle(e.sourceUrl)}
                       disabled={disabled}
                     />
-                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-amber-400">in box</span>}
+                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-amber-400">in library</span>}
                     <span className="min-w-0 flex-1 truncate">
                       {e.title ?? e.sourceUrl}
                       {e.unavailable && <span className="ml-2 text-xs text-zinc-300">({e.unavailable.reason})</span>}

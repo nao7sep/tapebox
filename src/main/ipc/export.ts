@@ -21,7 +21,7 @@ import { log } from '@main/io/logger'
  * partially-done exports leaving the destination in a weird state.
  *
  * Template tokens for perChapter:
- *   {slug}          item.slug (falls back to sourceId/itemId)
+ *   {slug}          tape.slug (falls back to sourceId/tapeId)
  *   {index}         1-based chapter index
  *   {index:02}      2-digit zero-padded chapter index
  *   {chapterTitle}  chapter title, filesystem-safe (preserves Unicode,
@@ -31,7 +31,7 @@ import { log } from '@main/io/logger'
  */
 
 type ExportArgs = {
-  itemId: string
+  tapeId: string
   destinationDir: string
   mode: 'whole' | 'perChapter'
   presetId: string
@@ -44,18 +44,18 @@ const DEFAULT_TEMPLATE = '{slug}-{index:02}-{chapterTitle}'
 
 export function registerExportHandlers(): void {
   handle('export:media', async (args: ExportArgs) => {
-    const item = session.getItem(args.itemId)
-    if (!item) throw new Error(`Item not found: ${args.itemId}`)
-    if (!item.filename || !item.sidecarFilename) {
-      throw new Error('Item has no media on disk yet')
+    const tape = session.getTape(args.tapeId)
+    if (!tape) throw new Error(`Tape not found: ${args.tapeId}`)
+    if (!tape.filename || !tape.sidecarFilename) {
+      throw new Error('Tape has no media on disk yet')
     }
 
     const preset = getPreset(args.presetId)
     if (!preset) throw new Error(`Unknown export preset: ${args.presetId}`)
 
     const settings = getSettings()
-    const mediaPath = join(settings.libraryDir, item.filename)
-    const baseStem = item.slug ?? item.sourceId ?? item.id
+    const mediaPath = join(settings.libraryDir, tape.filename)
+    const baseStem = tape.slug ?? tape.sourceId ?? tape.id
 
     if (args.mode === 'whole') {
       const out = await ffmpeg.transcode({
@@ -67,18 +67,18 @@ export function registerExportHandlers(): void {
         audioBitrateKbps: args.audioBitrateKbps,
         chapter: null,
       })
-      log.info('export:whole done', { itemId: args.itemId, out })
+      log.info('export:whole done', { tapeId: args.tapeId, out })
       return { writtenPaths: [out] }
     }
 
     // perChapter
-    const sidecarText = await readFile(join(settings.libraryDir, item.sidecarFilename), 'utf8')
+    const sidecarText = await readFile(join(settings.libraryDir, tape.sidecarFilename), 'utf8')
     const sidecar = JSON.parse(sidecarText) as {
       chapters?: Array<{ start_time: number; end_time: number; title: string }>
     }
     const chapters = Array.isArray(sidecar.chapters) ? sidecar.chapters : []
     if (chapters.length === 0) {
-      throw new Error('This item has no chapter markers to split.')
+      throw new Error('This tape has no chapter markers to split.')
     }
 
     const template = args.filenameTemplate || DEFAULT_TEMPLATE
@@ -128,7 +128,7 @@ export function registerExportHandlers(): void {
       })
       writtenPaths.push(out)
     }
-    log.info('export:perChapter done', { itemId: args.itemId, count: writtenPaths.length })
+    log.info('export:perChapter done', { tapeId: args.tapeId, count: writtenPaths.length })
     return { writtenPaths }
   })
 }

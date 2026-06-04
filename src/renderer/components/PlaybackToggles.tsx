@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useSettingsStore, patchSettings } from '@renderer/store/settings'
 
 /**
- * App-wide playback toggles, shown at the right of the Shelf/Archived row. Both
+ * App-wide playback toggles, shown at the right of the Inbox/Archived row. Both
  * read and write the settings mirror, so they stay in sync with the Settings
  * dialog. Phrased positively so the two share a mental model: lit = enabled
  * (Autoplay on, Sound on).

@@ -3,7 +3,7 @@ import type { RetryPolicy } from './retry'
 /**
  * Network behavior constants.
  *
- * These were briefly user-configurable (a per-group timeout/retry/interval/
+ * These were briefly user-configurable (a per-box timeout/retry/interval/
  * jitter matrix in Settings), but that was over-built for a single-user desktop
  * app: the right timeout and retry counts are engineering decisions, not user
  * preferences, and a backoff schedule has no place in product UI. The one knob
@@ -12,7 +12,7 @@ import type { RetryPolicy } from './retry'
  */
 
 /**
- * Idle watchdog for yt-dlp probe + playlist/channel scan: kill a silently
+ * Idle watchdog for yt-dlp probe + page scan: kill a silently
  * stalled process so the queue never hangs. It's a stall guard, not a request
  * deadline — a healthy probe only has to keep emitting output. yt-dlp work is
  * never auto-retried (re-hitting a media site risks an IP block), so a failure

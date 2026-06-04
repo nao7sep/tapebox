@@ -3,13 +3,13 @@ import { registerSettingsHandlers } from './settings'
 import { registerLayoutHandlers } from './layout'
 import { registerBinaryHandlers } from './binaries'
 import { registerDownloadHandlers } from './downloads'
-import { registerEnumHandlers } from './enum'
+import { registerScanHandlers } from './scan'
 import { registerAiHandlers } from './ai'
 import { registerExportHandlers } from './export'
 import { registerDialogHandlers } from './dialog'
 import { registerAppHandlers } from './app'
 import { registerMediaHandlers } from './media'
-import { registerArchiveHandlers } from './archive'
+import { registerBoxHandlers } from './boxes'
 
 /**
  * Mount all IPC handlers. Called once after stores are loaded and before
@@ -21,11 +21,11 @@ export function registerIpcHandlers(): void {
   registerLayoutHandlers()
   registerBinaryHandlers()
   registerDownloadHandlers()
-  registerEnumHandlers()
+  registerScanHandlers()
   registerAiHandlers()
   registerExportHandlers()
   registerDialogHandlers()
   registerAppHandlers()
   registerMediaHandlers()
-  registerArchiveHandlers()
+  registerBoxHandlers()
 }

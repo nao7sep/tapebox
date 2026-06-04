@@ -27,7 +27,7 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>
  *
  * Template tokens are substituted before the call: {title}, {uploader}.
  */
-export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
+export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media tape.
 Output ONLY the slug — lowercase ASCII letters, digits, and hyphens.
 No quotes, no explanation, no trailing period. Aim for under 60 characters;
 prefer descriptive English keywords drawn from the title.

@@ -3,7 +3,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 /**
  * Two tiers, by content:
  *   md  — prompts & short forms (Confirm, About, Shortcuts, Export, Rename)
- *   2xl — data-dense panels (Settings, Add-playlist, Required-tools)
+ *   2xl — data-dense panels (Settings, Add-from-a-page, Required-tools)
  */
 type ModalSize = 'md' | '2xl'
 

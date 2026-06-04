@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Item } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import {
   EXPORT_PRESETS,
   AUDIO_BITRATES_KBPS,
@@ -15,7 +15,7 @@ import { Button, Field, INPUT_CLASS } from '@renderer/components/ui'
 
 type Mode = 'whole' | 'perChapter'
 
-type Props = { item: Item; onClose: () => void }
+type Props = { tape: Tape; onClose: () => void }
 
 const DEFAULT_PRESET_ID = 'audio-copy'
 
@@ -25,8 +25,8 @@ const DEFAULT_PRESET_ID = 'audio-copy'
  * and whole-or-per-chapter. Copy/remux presets re-use the source streams — no
  * re-encode. The preset catalog and its predicates live in @shared/export-presets.
  */
-export function ExportModal({ item, onClose }: Props) {
-  const canPerChapter = (item.chapterCount ?? 0) > 0
+export function ExportModal({ tape, onClose }: Props) {
+  const canPerChapter = (tape.chapterCount ?? 0) > 0
 
   const [mode, setMode] = useState<Mode>(canPerChapter ? 'perChapter' : 'whole')
   const [presetId, setPresetId] = useState(DEFAULT_PRESET_ID)
@@ -52,7 +52,7 @@ export function ExportModal({ item, onClose }: Props) {
     setError(null)
     try {
       const r = await ipcInvoke('export:media', {
-        itemId: item.id,
+        tapeId: tape.id,
         destinationDir,
         mode,
         presetId: preset.id,
@@ -82,7 +82,7 @@ export function ExportModal({ item, onClose }: Props) {
 
   return (
     <Modal title="Export" onClose={onClose} size="md" footer={footer} closeDisabled={busy}>
-      <p className="-mt-2 mb-4 truncate text-xs text-zinc-300">{item.title ?? item.sourceUrl}</p>
+      <p className="-mt-2 mb-4 truncate text-xs text-zinc-300">{tape.title ?? tape.sourceUrl}</p>
 
       <div className="space-y-4">
         <Field label="Mode">
@@ -91,7 +91,7 @@ export function ExportModal({ item, onClose }: Props) {
               Whole tape
             </Radio>
             <Radio name="mode" value="perChapter" checked={mode === 'perChapter'} disabled={!canPerChapter} onChange={() => setMode('perChapter')}>
-              Per chapter ({item.chapterCount ?? 0})
+              Per chapter ({tape.chapterCount ?? 0})
             </Radio>
           </div>
         </Field>

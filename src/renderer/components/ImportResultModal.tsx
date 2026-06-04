@@ -29,9 +29,9 @@ export function ImportResultModal({ result, onClose }: Props) {
             <p className="text-xs text-zinc-400">Nothing was imported.</p>
           ) : (
             <ul className="space-y-1">
-              {imported.map((item) => (
-                <li key={item.id} className="truncate text-sm text-zinc-100">
-                  {item.title ?? item.filename ?? item.sourceUrl}
+              {imported.map((tape) => (
+                <li key={tape.id} className="truncate text-sm text-zinc-100">
+                  {tape.title ?? tape.filename ?? tape.sourceUrl}
                 </li>
               ))}
             </ul>

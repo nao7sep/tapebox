@@ -16,7 +16,7 @@ import type { Readable } from 'node:stream'
  *     checks, and quick ffmpeg jobs.
  *   - spawnStreaming(): hands back the raw ChildProcess so the caller can
  *     attach 'data' listeners for live progress / per-line parsing. Used
- *     for downloads and playlist enumeration.
+ *     for downloads and page scan.
  *
  * Both honour:
  *   - signal: AbortSignal (sends SIGTERM on abort, native to spawn)
