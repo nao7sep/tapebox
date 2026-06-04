@@ -1,6 +1,7 @@
 import type { Box, Tape } from './domain'
 import type { Settings } from './settings'
 import type { Layout } from './layout'
+import type { AudioChannels, EncodeSpeed, VideoQuality } from './export-presets'
 
 /**
  * Request/response contract for ipcMain.handle / ipcRenderer.invoke channels.
@@ -52,24 +53,38 @@ export type IpcCalls = {
 
   // ── Export (outside the box) ─────────────────────────────────────────────
   // Transcode/extract a tape to the user's chosen format. `presetId` selects a
-  // container+codec from @shared/export-presets; maxHeight (video downscale) and
-  // audioBitrateKbps (lossy audio) are optional quality knobs the preset may
-  // ignore. `mode` splits per-chapter or exports the whole tape.
+  // container+codec from @shared/export-presets; the remaining fields are
+  // optional quality/output knobs the chosen preset applies only where they're
+  // meaningful (e.g. video knobs are ignored by an audio preset). `mode` splits
+  // per-chapter or exports the whole tape. `filenameStem` names the whole-tape
+  // output; `filenameTemplate` names per-chapter files (see @shared/export-filename).
   'export:media': {
     req: {
       tapeId: string
       destinationDir: string
       mode: 'whole' | 'perChapter'
       presetId: string
-      maxHeight?: number | null
       audioBitrateKbps?: number | null
+      audioChannels?: AudioChannels | null
+      normalizeAudio?: boolean
+      maxHeight?: number | null
+      videoQuality?: VideoQuality | null
+      encodeSpeed?: EncodeSpeed | null
+      fpsCap?: number | null
+      filenameStem?: string
       filenameTemplate?: string
     }
     res: { writtenPaths: string[] }
   }
 
   // ── AI ───────────────────────────────────────────────────────────────────
-  'ai:generateSlug':       { req: { tapeId: string };               res: { slug: string } }
+  // `include` selects which probed fields are filled into the slug prompt's
+  // tokens; an unselected field substitutes to empty (so the user controls what
+  // the model sees).
+  'ai:generateSlug': {
+    req: { tapeId: string; include: { title: boolean; uploader: boolean; description: boolean } }
+    res: { slug: string }
+  }
 
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }
@@ -197,6 +212,10 @@ export type IpcEvents = {
   'scan:entry':        { sessionId: string; entry: ScanResult }
   'scan:done':         { sessionId: string; totalCount: number }
   'scan:error':        { sessionId: string; error: string }
+
+  // Live ffmpeg output during an export, one line at a time — just enough for the
+  // export modal to show that work is happening (not parsed).
+  'export:log':        { line: string }
 
   'binaries:progress':        { name: BinaryName; percent: number; phase: 'download' | 'verify' | 'install' }
   'binaries:ready':           { name: BinaryName; version: string }

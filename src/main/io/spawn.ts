@@ -215,21 +215,28 @@ export function waitForExit(
  *   child.stderr.on('data', lb.feed)
  *   await waitForExit(child)
  *   lb.flush()  // emit any trailing line without a newline
+ *
+ * `splitOnCR` also breaks on carriage returns, so a tool that redraws a status
+ * line in place (ffmpeg's `frame=… time=… speed=…`) surfaces each redraw as its
+ * own line instead of one ever-growing buffer. Off by default — yt-dlp's
+ * `--newline` output is plain `\n`.
  */
-export function makeLineBuffer(onLine: (line: string) => void): {
+export function makeLineBuffer(
+  onLine: (line: string) => void,
+  opts: { splitOnCR?: boolean } = {},
+): {
   feed: (chunk: Buffer | string) => void
   flush: () => void
 } {
+  const breaks = opts.splitOnCR ? /\r\n|\r|\n/ : /\n/
   let buf = ''
   return {
     feed(chunk) {
       buf += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-      let nl = buf.indexOf('\n')
-      while (nl >= 0) {
-        onLine(buf.slice(0, nl).replace(/\r$/, ''))
-        buf = buf.slice(nl + 1)
-        nl = buf.indexOf('\n')
-      }
+      const parts = buf.split(breaks)
+      // The last part is the (possibly partial) remainder — keep it buffered.
+      buf = parts.pop() ?? ''
+      for (const p of parts) onLine(p.replace(/\r$/, ''))
     },
     flush() {
       if (buf.length > 0) {

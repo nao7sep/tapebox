@@ -46,6 +46,35 @@ export const DEFAULT_AUDIO_BITRATE_KBPS = 192
 /** Selectable downscale caps; null = keep the source resolution. */
 export const VIDEO_MAX_HEIGHTS: Array<number | null> = [null, 1080, 720, 480, 360]
 
+/** Frame-rate caps; null = keep the source rate. */
+export const VIDEO_FPS_CAPS: Array<number | null> = [null, 60, 30, 24]
+
+/** Output channel layout when re-encoding audio. 'source' keeps the original. */
+export const AUDIO_CHANNEL_OPTIONS = [
+  { id: 'source', label: 'Source' },
+  { id: 'stereo', label: 'Stereo' },
+  { id: 'mono', label: 'Mono' },
+] as const
+export type AudioChannels = (typeof AUDIO_CHANNEL_OPTIONS)[number]['id']
+
+/** Quality tier for a re-encoded video stream; maps to a CRF per codec. */
+export const VIDEO_QUALITY_OPTIONS = [
+  { id: 'higher', label: 'Higher quality (larger)' },
+  { id: 'balanced', label: 'Balanced' },
+  { id: 'smaller', label: 'Smaller file (lower)' },
+] as const
+export type VideoQuality = (typeof VIDEO_QUALITY_OPTIONS)[number]['id']
+export const DEFAULT_VIDEO_QUALITY: VideoQuality = 'balanced'
+
+/** Encoder speed/effort tier; trades encode time for file size. */
+export const ENCODE_SPEED_OPTIONS = [
+  { id: 'fast', label: 'Faster' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'slow', label: 'Slower (smaller)' },
+] as const
+export type EncodeSpeed = (typeof ENCODE_SPEED_OPTIONS)[number]['id']
+export const DEFAULT_ENCODE_SPEED: EncodeSpeed = 'medium'
+
 export function getPreset(id: string): ExportPreset | undefined {
   return EXPORT_PRESETS.find((p) => p.id === id)
 }
@@ -54,12 +83,23 @@ export function isLossyAudio(codec: AudioCodec): boolean {
   return codec === 'aac' || codec === 'libmp3lame' || codec === 'libopus'
 }
 
-/** A bitrate selector is meaningful only when re-encoding to a lossy audio codec. */
+/** A bitrate selector is meaningful whenever the audio is re-encoded to a lossy
+ *  codec — including a video preset's audio track. */
 export function supportsBitrate(preset: ExportPreset): boolean {
-  return preset.kind === 'audio' && isLossyAudio(preset.acodec)
+  return isLossyAudio(preset.acodec)
+}
+
+/** True when the preset re-encodes the audio stream (so channel/normalize knobs apply). */
+export function reencodesAudio(preset: ExportPreset): boolean {
+  return preset.acodec !== 'copy'
+}
+
+/** True when the preset re-encodes the video stream (so quality/scale/fps knobs apply). */
+export function reencodesVideo(preset: ExportPreset): boolean {
+  return preset.kind === 'video' && preset.vcodec !== 'copy'
 }
 
 /** A downscale selector is meaningful only when the video stream is re-encoded. */
 export function supportsDownscale(preset: ExportPreset): boolean {
-  return preset.kind === 'video' && preset.vcodec !== 'copy'
+  return reencodesVideo(preset)
 }

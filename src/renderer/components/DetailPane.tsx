@@ -11,6 +11,7 @@ import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { releaseVideo } from '@renderer/lib/video'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
+import { tapeStatusLabel } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 import { Player } from './Player'
 import { ChapterList } from './ChapterList'
@@ -79,6 +80,16 @@ export function DetailPane({
 
   const mediaMeta = mediaMetaLine(sidecar)
 
+  // The header expands only when at least one detail row would render. The source
+  // URL row shows only when a title holds the heading (otherwise the heading is
+  // the URL), so it counts toward expandability exactly then.
+  const expandable =
+    !!tape.uploader ||
+    tape.durationSeconds != null ||
+    !!mediaMeta ||
+    !!tape.title ||
+    !!tape.slug
+
   const mediaUrl = tape.filename && mediaBase
     ? `${mediaBase}/${encodeURIComponent(tape.filename)}`
     : null
@@ -124,60 +135,47 @@ export function DetailPane({
           button borders span full width and meet the side dividers. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col py-4">
         <div className="shrink-0 border-b border-zinc-700 px-4 pb-3">
-          {/* One consistent header for every tape state: a chevron toggles the
-              optional details, the heading is the title (or the URL when no title
-              exists yet), a one-line status reflects live state, and Open/Copy
-              act on the source URL identically for all tapes. Detail rows below
-              the fold appear only when their field is present — no filler. */}
+          {/* The header is purely informative — heading, live status, and the
+              optional details below the fold. Every operation lives in the
+              button row, so the header carries no actions. The chevron appears
+              only when there is something to expand. */}
           <div className="flex items-start gap-1">
-            <button
-              onClick={() => setInfoOpen((v) => !v)}
-              aria-expanded={infoOpen}
-              aria-label={infoOpen ? 'Hide details' : 'Show details'}
-              className="group flex h-7 w-5 shrink-0 items-center justify-center"
-            >
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                className={
-                  'text-zinc-400 transition-transform group-hover:text-zinc-200 ' +
-                  (infoOpen ? 'rotate-90' : '')
-                }
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
+            {expandable ? (
+              <button
+                onClick={() => setInfoOpen((v) => !v)}
+                aria-expanded={infoOpen}
+                aria-label={infoOpen ? 'Hide details' : 'Show details'}
+                className="group flex h-7 w-5 shrink-0 items-center justify-center"
               >
-                <polyline points="9 6 15 12 9 18" />
-              </svg>
-            </button>
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  className={
+                    'text-zinc-400 transition-transform group-hover:text-zinc-200 ' +
+                    (infoOpen ? 'rotate-90' : '')
+                  }
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
+              </button>
+            ) : (
+              <span className="h-7 w-5 shrink-0" aria-hidden="true" />
+            )}
             <div className="min-w-0 flex-1">
               <h2 className="select-text break-words text-lg font-medium leading-7">
                 {tape.title ?? tape.sourceUrl}
               </h2>
               <p className="mt-0.5 text-xs text-zinc-400">{headerStatus(tape, progress)}</p>
             </div>
-            <div className="flex shrink-0 items-center gap-1 pt-0.5">
-              <a
-                href={tape.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded px-1.5 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
-              >
-                Open
-              </a>
-              <button
-                onClick={copyUrl}
-                className="rounded px-1.5 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
-              >
-                {copied ? 'Copied' : 'Copy URL'}
-              </button>
-            </div>
           </div>
-          {infoOpen && (
+          {expandable && infoOpen && (
             <dl className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
               {tape.uploader && <DetailRow label="Uploader">{tape.uploader}</DetailRow>}
               {tape.durationSeconds != null && (
@@ -234,16 +232,10 @@ export function DetailPane({
           </div>
         ) : tape.state === 'listing' ? (
           <CaptionedPanel kind="info" caption="This page lists several videos">
-            <div className="p-5">
-              <p className="text-sm leading-relaxed text-zinc-300">
-                TapeBox adds one video at a time. Scan this page to see its videos
-                and pick which to add.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <ActionButton onClick={() => onScanPage(tape.sourceUrl)}>Scan page</ActionButton>
-                <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
-              </div>
-            </div>
+            <p className="p-5 text-sm leading-relaxed text-zinc-300">
+              TapeBox adds one video at a time. Use <strong>Scan page</strong> below
+              to see its videos and pick which to add.
+            </p>
           </CaptionedPanel>
         ) : tape.state === 'paused' ? (
           <CaptionedPanel kind="warning" caption="Paused">
@@ -255,12 +247,13 @@ export function DetailPane({
           <DownloadLogPanel tape={tape} progress={progress} entries={logEntries} />
         )}
 
-        {/* Actions in a consistent semantic order, left to right: first the one
-            that resumes/continues this state (the primary action), then — for a
-            finished tape — use the file, edit the tape, organize it; the
-            destructive Remove is always pushed to the far right, set apart. */}
+        {/* All operations live here, in a consistent order for every state:
+            the state's primary action first, then the downloaded-tape actions
+            (use the file → edit → organize), then the source-link actions that
+            apply to any tape, and finally the destructive Remove, set apart on
+            the right. */}
         <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-700 px-4 pt-3">
-          {/* Primary: re-engage the current state. */}
+          {/* Primary: re-engage / resolve the current state. */}
           {(tape.state === 'queued' || tape.state === 'probing' || tape.state === 'downloading') && (
             <ActionButton onClick={cancel}>Cancel</ActionButton>
           )}
@@ -269,6 +262,9 @@ export function DetailPane({
           )}
           {tape.state === 'paused' && (
             <ActionButton onClick={retry}>Resume</ActionButton>
+          )}
+          {tape.state === 'listing' && (
+            <ActionButton onClick={() => onScanPage(tape.sourceUrl)}>Scan page</ActionButton>
           )}
           {tape.state === 'downloaded' && (
             <>
@@ -290,6 +286,9 @@ export function DetailPane({
               )}
             </>
           )}
+          {/* Source link — available for any tape, in every state. */}
+          <ActionButton onClick={() => { window.open(tape.sourceUrl, '_blank', 'noopener') }}>Open URL</ActionButton>
+          <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
           {/* Destructive: always last, pushed to the far right. */}
           <ActionButton onClick={() => onRequestRemove(tape)} danger className="ml-auto">Remove</ActionButton>
         </div>
@@ -335,17 +334,6 @@ export function DetailPane({
 /** Stable empty array so a tape with no buffered log doesn't churn the selector. */
 const NO_ENTRIES: LogEntry[] = []
 
-const STATE_LABEL: Record<TapeState, string> = {
-  queued: 'Queued',
-  probing: 'Fetching info…',
-  ready: 'Ready to download',
-  downloading: 'Downloading…',
-  downloaded: 'In library',
-  failed: 'Failed',
-  paused: 'Paused',
-  listing: 'Video list',
-}
-
 const WORKING_PLACEHOLDER: Partial<Record<TapeState, string>> = {
   queued: 'Waiting for a free download slot…',
   probing: 'Fetching video info…',
@@ -353,17 +341,12 @@ const WORKING_PLACEHOLDER: Partial<Record<TapeState, string>> = {
   downloading: 'Starting download…',
 }
 
-/** The one-line status under the heading: live progress when downloading,
- *  otherwise a clean state label, with an Archived suffix when archived. */
+/** The one-line status under the heading: the shared status label, plus the live
+ *  download speed when downloading and an Archived suffix when archived. */
 function headerStatus(tape: Tape, progress: ProgressEntry | undefined): string {
-  let base: string
-  if (progress?.phase === 'downloading') {
-    base = `Downloading ${progress.percent.toFixed(0)}%`
-    if (progress.speedBps) base += ` · ${formatSpeed(progress.speedBps)}`
-  } else if (progress?.phase === 'probing') {
-    base = 'Fetching info…'
-  } else {
-    base = STATE_LABEL[tape.state]
+  let base = tapeStatusLabel(tape, progress)
+  if (progress?.phase === 'downloading' && progress.speedBps) {
+    base += ` · ${formatSpeed(progress.speedBps)}`
   }
   return tape.archivedAtUtc ? `${base} · Archived` : base
 }

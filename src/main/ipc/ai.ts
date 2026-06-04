@@ -8,13 +8,15 @@ import { getSettings } from '@main/store/config'
 import type { Tape } from '@shared/domain'
 
 export function registerAiHandlers(): void {
-  handle('ai:generateSlug', async ({ tapeId }) => {
+  handle('ai:generateSlug', async ({ tapeId, include }) => {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
+    // Only the fields the user chose are sent; the description (the only one not
+    // already on the tape) is read from the sidecar solely when included.
     const raw = await ai.generateSlug({
-      title: tape.title,
-      uploader: tape.uploader,
-      description: await readDescription(tape),
+      title: include.title ? tape.title : null,
+      uploader: include.uploader ? tape.uploader : null,
+      description: include.description ? await readDescription(tape) : null,
     })
     return { slug: slugifyAscii(raw) }
   })

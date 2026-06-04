@@ -27,8 +27,12 @@ machine. No account, no cloud; your media and metadata stay under `~/.tapebox`.
   an AI model from the video's title (and, if you include the tokens in the
   prompt, its uploader and description).
 - **Local import** — bring existing media files on disk into the library.
-- **Audio export** — export the whole track or one file per chapter, with
-  stream copy or re-encode to MP3/FLAC.
+- **Export** — export the whole tape or one file per chapter. Stream-copy
+  (lossless, no re-encode) or re-encode to common audio (MP3, AAC, Opus, FLAC)
+  or video (H.264, H.265, VP9) formats, with the knobs you'd reach for: audio
+  bitrate, channels, and loudness normalization; video resolution, quality,
+  encode speed, and frame-rate cap. Output names are templated for per-chapter
+  splits.
 - **Built-in player** — play tapes with seeking, chapter navigation, and
   optional autoplay.
 - **Managed binaries** — `yt-dlp`, `ffmpeg`, and `deno` are downloaded and

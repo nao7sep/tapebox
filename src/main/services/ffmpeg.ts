@@ -2,11 +2,15 @@ import { access, constants } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
-import { execCapture } from '@main/io/spawn'
+import { execCapture, makeLineBuffer, spawnStreaming, SubprocessError, waitForExit } from '@main/io/spawn'
 import type { SidecarMedia } from '@shared/domain'
 import {
+  type AudioChannels,
   type AudioCodec,
+  type EncodeSpeed,
   type ExportPreset,
+  type VideoCodec,
+  type VideoQuality,
   DEFAULT_AUDIO_BITRATE_KBPS,
 } from '@shared/export-presets'
 
@@ -31,9 +35,21 @@ export type TranscodeRequest = {
   preset: ExportPreset
   /** Lossy-audio bitrate in kbps; ignored unless the preset re-encodes audio. */
   audioBitrateKbps?: number | null
+  /** Output channel layout; ignored unless the preset re-encodes audio. */
+  audioChannels?: AudioChannels | null
+  /** Loudness-normalise the audio (loudnorm); ignored unless audio is re-encoded. */
+  normalizeAudio?: boolean
   /** Downscale cap (px height); ignored unless the preset re-encodes video. */
   maxHeight?: number | null
+  /** Quality tier (→ CRF); ignored unless the preset re-encodes video. */
+  videoQuality?: VideoQuality | null
+  /** Encoder speed tier (→ -preset); ignored unless the preset re-encodes video. */
+  encodeSpeed?: EncodeSpeed | null
+  /** Frame-rate cap; ignored unless the preset re-encodes video. */
+  fpsCap?: number | null
   chapter?: { startSeconds: number; endSeconds: number } | null
+  /** Each ffmpeg output line, streamed live (its progress redraws included). */
+  onLog?: (line: string) => void
   signal?: AbortSignal
 }
 
@@ -62,27 +78,17 @@ export async function transcode(req: TranscodeRequest): Promise<string> {
 
   if (req.preset.kind === 'audio') {
     args.push('-vn')
-    appendAudioArgs(args, req.preset.acodec, req.audioBitrateKbps)
+    appendAudioArgs(args, req.preset.acodec, req)
   } else {
     const { vcodec, acodec } = req.preset
     if (vcodec === 'copy') {
       args.push('-c:v', 'copy')
     } else {
       args.push('-c:v', vcodec)
-      if (req.maxHeight) {
-        // Cap height without ever upscaling; -2 keeps width even & proportional.
-        // The comma inside min() is escaped for ffmpeg's filtergraph parser.
-        args.push('-vf', `scale=-2:min(ih\\,${req.maxHeight})`)
-      }
-      if (vcodec === 'libx264') {
-        args.push('-crf', '23', '-preset', 'medium')
-      } else if (vcodec === 'libx265') {
-        args.push('-crf', '28', '-preset', 'medium', '-tag:v', 'hvc1')
-      } else if (vcodec === 'libvpx-vp9') {
-        args.push('-crf', '32', '-b:v', '0')
-      }
+      appendVideoFilters(args, req)
+      appendVideoQualityArgs(args, vcodec, req.videoQuality, req.encodeSpeed)
     }
-    appendAudioArgs(args, acodec, null)
+    appendAudioArgs(args, acodec, req)
   }
   args.push(outPath)
 
@@ -92,18 +98,90 @@ export async function transcode(req: TranscodeRequest): Promise<string> {
     maxHeight: req.maxHeight ?? null,
     hasChapter: !!req.chapter,
   })
-  await execCapture(binaryPath('ffmpeg'), args, {
+
+  // Stream rather than buffer so the caller can show live activity. ffmpeg's
+  // progress redraws use carriage returns, so split on those too.
+  const child = spawnStreaming(binaryPath('ffmpeg'), args, {
     signal: req.signal,
     idleTimeoutMs: TRANSCODE_IDLE_TIMEOUT_MS,
   })
+  const recentLines: string[] = []
+  const lineBuffer = makeLineBuffer((line) => {
+    if (!line.trim()) return
+    recentLines.push(line)
+    if (recentLines.length > 60) recentLines.shift()
+    req.onLog?.(line)
+  }, { splitOnCR: true })
+  child.stdout.on('data', lineBuffer.feed)
+  child.stderr.on('data', lineBuffer.feed)
+
+  try {
+    await waitForExit(child, { command: 'ffmpeg transcode' })
+  } catch (err) {
+    lineBuffer.flush()
+    // ffmpeg's own output is the real error text; attach it so the failure isn't
+    // just an exit code (mirrors the yt-dlp download path).
+    if (err instanceof SubprocessError) {
+      throw new SubprocessError(err.command, err.exitCode, recentLines.join('\n').trim() || err.stderr)
+    }
+    throw err
+  } finally {
+    lineBuffer.flush()
+  }
   return outPath
 }
 
-function appendAudioArgs(args: string[], acodec: AudioCodec, bitrateKbps?: number | null): void {
+/** Video filter chain: downscale and/or frame-rate cap, joined into one -vf. */
+function appendVideoFilters(args: string[], req: TranscodeRequest): void {
+  const filters: string[] = []
+  if (req.maxHeight) {
+    // Cap height without ever upscaling; -2 keeps width even & proportional.
+    // The comma inside min() is escaped for ffmpeg's filtergraph parser.
+    filters.push(`scale=-2:min(ih\\,${req.maxHeight})`)
+  }
+  if (req.fpsCap) filters.push(`fps=${req.fpsCap}`)
+  if (filters.length > 0) args.push('-vf', filters.join(','))
+}
+
+// Base CRF per codec at the "balanced" tier; the quality tier shifts it (a lower
+// CRF is higher quality / larger). x264/x265 take -preset for speed; VP9 maps
+// the same tiers to -cpu-used and always runs constant-quality (-b:v 0).
+const CRF_BASE: Record<Exclude<VideoCodec, 'copy'>, number> = {
+  libx264: 23,
+  libx265: 28,
+  'libvpx-vp9': 32,
+}
+const QUALITY_DELTA: Record<VideoQuality, number> = { higher: -4, balanced: 0, smaller: 4 }
+const X264_PRESET: Record<EncodeSpeed, string> = { fast: 'fast', medium: 'medium', slow: 'slow' }
+const VP9_CPU_USED: Record<EncodeSpeed, string> = { fast: '4', medium: '2', slow: '1' }
+
+function appendVideoQualityArgs(
+  args: string[],
+  vcodec: Exclude<VideoCodec, 'copy'>,
+  quality: VideoQuality | null | undefined,
+  speed: EncodeSpeed | null | undefined,
+): void {
+  const crf = CRF_BASE[vcodec] + QUALITY_DELTA[quality ?? 'balanced']
+  const sp = speed ?? 'medium'
+  if (vcodec === 'libvpx-vp9') {
+    args.push('-crf', String(crf), '-b:v', '0', '-cpu-used', VP9_CPU_USED[sp])
+    return
+  }
+  args.push('-crf', String(crf), '-preset', X264_PRESET[sp])
+  if (vcodec === 'libx265') args.push('-tag:v', 'hvc1')
+}
+
+function appendAudioArgs(args: string[], acodec: AudioCodec, req: TranscodeRequest): void {
   if (acodec === 'copy') {
     args.push('-c:a', 'copy')
     return
   }
+
+  // Channel layout and loudness apply to any re-encoded audio stream.
+  if (req.audioChannels === 'mono') args.push('-ac', '1')
+  else if (req.audioChannels === 'stereo') args.push('-ac', '2')
+  if (req.normalizeAudio) args.push('-af', 'loudnorm')
+
   if (acodec === 'flac') {
     args.push('-c:a', 'flac')
     return
@@ -111,12 +189,12 @@ function appendAudioArgs(args: string[], acodec: AudioCodec, bitrateKbps?: numbe
   if (acodec === 'libmp3lame') {
     args.push('-c:a', 'libmp3lame')
     // VBR -q:a 2 (~190k) is the sensible MP3 default; honour an explicit bitrate.
-    if (bitrateKbps) args.push('-b:a', `${bitrateKbps}k`)
+    if (req.audioBitrateKbps) args.push('-b:a', `${req.audioBitrateKbps}k`)
     else args.push('-q:a', '2')
     return
   }
   // aac / libopus — CBR-ish target.
-  args.push('-c:a', acodec, '-b:a', `${bitrateKbps ?? DEFAULT_AUDIO_BITRATE_KBPS}k`)
+  args.push('-c:a', acodec, '-b:a', `${req.audioBitrateKbps ?? DEFAULT_AUDIO_BITRATE_KBPS}k`)
 }
 
 /**

@@ -1,10 +1,13 @@
 import { access, constants, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { handle } from './handle'
+import { emit } from './events'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import * as ffmpeg from '@main/services/ffmpeg'
+import type { AudioChannels, EncodeSpeed, VideoQuality } from '@shared/export-presets'
 import { getPreset } from '@shared/export-presets'
+import { applyChapterTemplate, DEFAULT_CHAPTER_TEMPLATE } from '@shared/export-filename'
 import { sanitizeFilename } from '@main/core/filename'
 import { log } from '@main/io/logger'
 
@@ -35,12 +38,16 @@ type ExportArgs = {
   destinationDir: string
   mode: 'whole' | 'perChapter'
   presetId: string
-  maxHeight?: number | null
   audioBitrateKbps?: number | null
+  audioChannels?: AudioChannels | null
+  normalizeAudio?: boolean
+  maxHeight?: number | null
+  videoQuality?: VideoQuality | null
+  encodeSpeed?: EncodeSpeed | null
+  fpsCap?: number | null
+  filenameStem?: string
   filenameTemplate?: string
 }
-
-const DEFAULT_TEMPLATE = '{slug}-{index:02}-{chapterTitle}'
 
 export function registerExportHandlers(): void {
   handle('export:media', async (args: ExportArgs) => {
@@ -57,15 +64,29 @@ export function registerExportHandlers(): void {
     const mediaPath = join(settings.libraryDir, tape.filename)
     const baseStem = tape.slug ?? tape.sourceId ?? tape.id
 
+    // The encode knobs are identical for whole and per-chapter; the preset/ffmpeg
+    // layer ignores any that don't apply to the chosen codecs. onLog streams
+    // ffmpeg's output to the export modal so it can show live activity.
+    const knobs = {
+      audioBitrateKbps: args.audioBitrateKbps,
+      audioChannels: args.audioChannels,
+      normalizeAudio: args.normalizeAudio,
+      maxHeight: args.maxHeight,
+      videoQuality: args.videoQuality,
+      encodeSpeed: args.encodeSpeed,
+      fpsCap: args.fpsCap,
+      onLog: (line: string) => emit('export:log', { line }),
+    }
+
     if (args.mode === 'whole') {
+      const stem = (args.filenameStem && sanitizeFilename(args.filenameStem)) || baseStem
       const out = await ffmpeg.transcode({
         mediaPath,
         destinationDir: args.destinationDir,
-        filenameStem: baseStem,
+        filenameStem: stem,
         preset,
-        maxHeight: args.maxHeight,
-        audioBitrateKbps: args.audioBitrateKbps,
         chapter: null,
+        ...knobs,
       })
       log.info('export:whole done', { tapeId: args.tapeId, out })
       return { writtenPaths: [out] }
@@ -81,13 +102,13 @@ export function registerExportHandlers(): void {
       throw new Error('This tape has no chapter markers to split.')
     }
 
-    const template = args.filenameTemplate || DEFAULT_TEMPLATE
+    const template = args.filenameTemplate || DEFAULT_CHAPTER_TEMPLATE
     const planned: Array<{ stem: string; chapter: typeof chapters[number] }> = []
     const seenStems = new Set<string>()
 
     for (let i = 0; i < chapters.length; i++) {
       const c = chapters[i]!
-      let stem = applyTemplate(template, {
+      let stem = applyChapterTemplate(template, {
         slug: baseStem,
         index: i + 1,
         chapterTitle: sanitizeFilename(c.title),
@@ -122,27 +143,14 @@ export function registerExportHandlers(): void {
         destinationDir: args.destinationDir,
         filenameStem: p.stem,
         preset,
-        maxHeight: args.maxHeight,
-        audioBitrateKbps: args.audioBitrateKbps,
         chapter: { startSeconds: p.chapter.start_time, endSeconds: p.chapter.end_time },
+        ...knobs,
       })
       writtenPaths.push(out)
     }
     log.info('export:perChapter done', { tapeId: args.tapeId, count: writtenPaths.length })
     return { writtenPaths }
   })
-}
-
-function applyTemplate(template: string, ctx: {
-  slug: string
-  index: number
-  chapterTitle: string
-}): string {
-  return template
-    .replace(/\{slug\}/g, ctx.slug)
-    .replace(/\{index:02\}/g, String(ctx.index).padStart(2, '0'))
-    .replace(/\{index\}/g, String(ctx.index))
-    .replace(/\{chapterTitle\}/g, ctx.chapterTitle)
 }
 
 async function fileExists(p: string): Promise<boolean> {

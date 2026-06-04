@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Tape, TapeState } from '@shared/domain'
 import type { ProgressEntry } from '@renderer/store/tapes'
 import { formatTime } from '@renderer/lib/format'
+import { tapeStatusLabel } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 
 type Props = {
@@ -16,13 +17,15 @@ type Props = {
 const WORKING_STATES = new Set<TapeState>(['queued', 'probing', 'ready', 'downloading'])
 
 /**
- * Each row's background and default border carry the tape's state at a glance
- * (failed = red, downloading = sky, downloaded = subtle, etc.). Selection /
- * focus brightens the border on top, so the selected tape stands out from any
- * of these state colors without losing its state cue.
+ * A library row. Two lines: the title (with the running time right-aligned,
+ * since length is what you scan for) and a muted meta line — the status label
+ * plus chapter count. The background/border tint carries the tape's state at a
+ * glance; selection brightens the border on top without erasing that state cue.
+ *
+ * No "archived" marker: a row only ever appears in a list already filtered to
+ * one side (Inbox or Archived), so the flag would be the same on every row.
  */
 export function TapeRow({ tape, progress, selected, onSelect }: Props) {
-  const stateLabel = labelFor(tape, progress)
   const palette = paletteFor(tape, selected)
   const ref = useRef<HTMLButtonElement>(null)
 
@@ -44,7 +47,7 @@ export function TapeRow({ tape, progress, selected, onSelect }: Props) {
         palette
       }
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-baseline justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm">
           {tape.title ?? tape.sourceUrl}
         </div>
@@ -54,12 +57,11 @@ export function TapeRow({ tape, progress, selected, onSelect }: Props) {
           </div>
         )}
       </div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-300">
-        <span>{stateLabel}</span>
+      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
+        <span>{tapeStatusLabel(tape, progress)}</span>
         {tape.chapterCount != null && tape.chapterCount > 0 && (
           <span>· {tape.chapterCount} chapters</span>
         )}
-        {tape.archivedAtUtc && <span>· archived</span>}
       </div>
       {(progress || WORKING_STATES.has(tape.state)) && (
         <div className="mt-2">
@@ -115,13 +117,4 @@ function bgBorderForState(state: TapeState): string {
     default:
       return 'bg-zinc-900/60 border-zinc-700 hover:border-zinc-600'
   }
-}
-
-function labelFor(tape: Tape, progress: Props['progress']): string {
-  if (progress) return `${progress.phase} · ${progress.percent.toFixed(0)}%`
-  if (tape.state === 'listing') return 'video list'
-  if (tape.state === 'downloaded') return 'in library'
-  if (tape.state === 'failed') return 'failed'
-  if (tape.state === 'paused') return 'paused'
-  return tape.state
 }
