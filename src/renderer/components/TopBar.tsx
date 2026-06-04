@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
+import { useToastStore } from '@renderer/store/toast'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { Button } from '@renderer/components/ui'
 
@@ -16,19 +16,18 @@ type Props = {
  */
 export function TopBar({ clipboardEnabled }: Props) {
   const { url, setUrl, onPaste, consume } = useClipboardUrl(clipboardEnabled)
-  const [error, setError] = useState<string | null>(null)
   const toolsReady = useBinariesStore((s) => allBinariesInstalled(s.statuses))
   const openBinariesModal = useBinariesStore((s) => s.openModal)
+  const notify = useToastStore((s) => s.notify)
 
   async function add(value: string) {
     const v = value.trim()
     if (!v || !toolsReady) return
-    setError(null)
     try {
       await ipcInvoke('downloads:add', { url: v })
       consume()
     } catch (err) {
-      setError(String(err))
+      notify(String(err), 'error')
     }
   }
 
@@ -63,12 +62,6 @@ export function TopBar({ clipboardEnabled }: Props) {
           >
             Install tools
           </button>
-        </p>
-      )}
-
-      {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-1.5 text-xs text-red-300">
-          {error}
         </p>
       )}
     </div>

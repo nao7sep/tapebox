@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react'
 import type { Tape, TapeState } from '@shared/domain'
+import type { ProgressEntry } from '@renderer/store/tapes'
 import { formatTime } from '@renderer/lib/format'
 import { IndeterminateBar, ProgressBar } from './Progress'
 
 type Props = {
   tape: Tape
-  progress: { phase: 'probing' | 'downloading'; percent: number } | undefined
+  progress: ProgressEntry | undefined
   selected: boolean
   onSelect: () => void
 }

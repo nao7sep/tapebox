@@ -1,16 +1,17 @@
-import { useEffect, useState, type RefObject } from 'react'
+import { useEffect, useState, type ReactNode, type RefObject } from 'react'
 import { z } from 'zod'
-import type { Tape } from '@shared/domain'
+import type { Tape, TapeState } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useTapesStore } from '@renderer/store/tapes'
+import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
+import { useDownloadLogStore, type LogEntry } from '@renderer/store/downloadLog'
 import { useMediaStore } from '@renderer/store/media'
-import { useNoticeStore } from '@renderer/store/notice'
+import { useToastStore } from '@renderer/store/toast'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { releaseVideo } from '@renderer/lib/video'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
-import { formatBytes, formatTime } from '@renderer/lib/format'
+import { formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
 import { IndeterminateBar, ProgressBar } from './Progress'
 import { Player } from './Player'
 import { ChapterList } from './ChapterList'
@@ -52,6 +53,7 @@ export function DetailPane({
   const [infoOpen, setInfoOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const progress = useTapesStore((s) => s.progress[tape.id])
+  const logEntries = useDownloadLogStore((s) => s.entries[tape.id]) ?? NO_ENTRIES
   const mediaBase = useMediaStore((s) => s.baseUrl)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
@@ -110,9 +112,9 @@ export function DetailPane({
     setRefreshing(true)
     try {
       await ipcInvoke('library:refreshMetadata', { tapeId: tape.id })
-      useNoticeStore.getState().notify('Metadata refreshed.', 'info')
+      useToastStore.getState().notify('Metadata refreshed.', 'info')
     } catch (err) {
-      useNoticeStore.getState().notify(`Refresh failed: ${String(err)}`, 'error')
+      useToastStore.getState().notify(`Refresh failed: ${String(err)}`, 'error')
     } finally {
       setRefreshing(false)
     }
@@ -133,21 +135,24 @@ export function DetailPane({
           button borders span full width and meet the side dividers. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col py-4">
         <div className="shrink-0 border-b border-zinc-700 px-4 pb-3">
-          {/* Title is always shown; clicking it discloses the optional metadata.
-              The chevron sits in a fixed-width slot so the title's wrapped lines
-              and the disclosed metadata both align under the title text. */}
-          <button
-            onClick={() => setInfoOpen((v) => !v)}
-            aria-expanded={infoOpen}
-            className="group flex w-full text-left"
-          >
-            <span className="flex h-7 w-5 shrink-0 items-center justify-center">
+          {/* One consistent header for every tape state: a chevron toggles the
+              optional details, the heading is the title (or the URL when no title
+              exists yet), a one-line status reflects live state, and Open/Copy
+              act on the source URL identically for all tapes. Detail rows below
+              the fold appear only when their field is present — no filler. */}
+          <div className="flex items-start gap-1">
+            <button
+              onClick={() => setInfoOpen((v) => !v)}
+              aria-expanded={infoOpen}
+              aria-label={infoOpen ? 'Hide details' : 'Show details'}
+              className="group flex h-7 w-5 shrink-0 items-center justify-center"
+            >
               <svg
                 width="11"
                 height="11"
                 viewBox="0 0 24 24"
                 className={
-                  'text-zinc-400 transition-transform group-hover:text-zinc-300 ' +
+                  'text-zinc-400 transition-transform group-hover:text-zinc-200 ' +
                   (infoOpen ? 'rotate-90' : '')
                 }
                 fill="none"
@@ -159,32 +164,57 @@ export function DetailPane({
               >
                 <polyline points="9 6 15 12 9 18" />
               </svg>
-            </span>
-            <h2 className="min-w-0 flex-1 text-lg font-medium leading-7 group-hover:text-zinc-300">
-              {tape.title ?? tape.sourceUrl}
-            </h2>
-          </button>
-          {infoOpen && (
-            <div className="mt-1 space-y-1 pl-5">
-              <p className="text-xs text-zinc-300">
-                {tape.uploader ?? 'unknown uploader'}
-                {tape.durationSeconds != null && ` · ${formatTime(tape.durationSeconds)}`}
-                {' · '}
-                {tape.state === 'listing' ? 'video list' : tape.state}
-                {tape.archivedAtUtc && ' · archived'}
-              </p>
-              {mediaMeta && <p className="text-xs text-zinc-300">{mediaMeta}</p>}
-              <p className="truncate text-xs text-zinc-300">
-                <a href={tape.sourceUrl} target="_blank" rel="noreferrer" className="hover:text-zinc-300">
-                  {tape.sourceUrl}
-                </a>
-              </p>
-              {tape.slug && (
-                <p className="text-xs text-zinc-300">
-                  Slug: <span className="text-zinc-300">{tape.slug}</span>
-                </p>
-              )}
+            </button>
+            <div className="min-w-0 flex-1">
+              <h2 className="select-text break-words text-lg font-medium leading-7">
+                {tape.title ?? tape.sourceUrl}
+              </h2>
+              <p className="mt-0.5 text-xs text-zinc-400">{headerStatus(tape, progress)}</p>
             </div>
+            <div className="flex shrink-0 items-center gap-1 pt-0.5">
+              <a
+                href={tape.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded px-1.5 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+              >
+                Open
+              </a>
+              <button
+                onClick={copyUrl}
+                className="rounded px-1.5 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+              >
+                {copied ? 'Copied' : 'Copy URL'}
+              </button>
+            </div>
+          </div>
+          {infoOpen && (
+            <dl className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
+              {tape.uploader && <DetailRow label="Uploader">{tape.uploader}</DetailRow>}
+              {tape.durationSeconds != null && (
+                <DetailRow label="Duration">{formatTime(tape.durationSeconds)}</DetailRow>
+              )}
+              {mediaMeta && <DetailRow label="Media">{mediaMeta}</DetailRow>}
+              {/* The source URL is the heading already when there's no title, so
+                  only show it here (as a link) when a title occupies the heading. */}
+              {tape.title && (
+                <DetailRow label="Source">
+                  <a
+                    href={tape.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="select-text break-all hover:text-zinc-100"
+                  >
+                    {tape.sourceUrl}
+                  </a>
+                </DetailRow>
+              )}
+              {tape.slug && (
+                <DetailRow label="Slug">
+                  <span className="select-text">{tape.slug}</span>
+                </DetailRow>
+              )}
+            </dl>
           )}
         </div>
 
@@ -226,32 +256,12 @@ export function DetailPane({
               </div>
             </div>
           </CaptionedPanel>
-        ) : tape.state === 'failed' ? (
-          <CaptionedPanel kind="error" caption="Download failed" fill>
-            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 text-xs text-zinc-300">
-              {tape.lastError ?? 'No details available.'}
-            </pre>
-          </CaptionedPanel>
         ) : tape.state === 'paused' ? (
           <div className="mx-4 mt-3 rounded border border-zinc-700 bg-zinc-900/40 p-4 text-sm text-zinc-300">
             Paused. Click Resume below to continue.
           </div>
         ) : (
-          <div className="mx-4 mt-3 space-y-2 rounded border border-zinc-700 bg-zinc-900/40 p-4 text-sm">
-            <div className="text-zinc-300">
-              {progress
-                ? progress.phase === 'downloading'
-                  ? `Downloading… ${progress.percent.toFixed(0)}%`
-                  : 'Probing…'
-                : 'Waiting in queue…'}
-            </div>
-            {progress &&
-              (progress.phase === 'downloading' && progress.percent > 0 ? (
-                <ProgressBar percent={progress.percent} />
-              ) : (
-                <IndeterminateBar />
-              ))}
-          </div>
+          <DownloadLogPanel tape={tape} progress={progress} entries={logEntries} />
         )}
 
         <div className="mt-3 flex shrink-0 flex-wrap gap-2 border-t border-zinc-700 px-4 pt-3">
@@ -318,6 +328,109 @@ export function DetailPane({
         <ExportModal tape={tape} onClose={() => setShowExport(false)} />
       )}
     </div>
+  )
+}
+
+/** Stable empty array so a tape with no buffered log doesn't churn the selector. */
+const NO_ENTRIES: LogEntry[] = []
+
+const STATE_LABEL: Record<TapeState, string> = {
+  queued: 'Queued',
+  probing: 'Fetching info…',
+  ready: 'Ready to download',
+  downloading: 'Downloading…',
+  downloaded: 'In library',
+  failed: 'Failed',
+  paused: 'Paused',
+  listing: 'Video list page',
+}
+
+const WORKING_PLACEHOLDER: Partial<Record<TapeState, string>> = {
+  queued: 'Waiting for a free download slot…',
+  probing: 'Fetching video info…',
+  ready: 'Starting download…',
+  downloading: 'Starting download…',
+}
+
+/** The one-line status under the heading: live progress when downloading,
+ *  otherwise a clean state label, with an Archived suffix when archived. */
+function headerStatus(tape: Tape, progress: ProgressEntry | undefined): string {
+  let base: string
+  if (progress?.phase === 'downloading') {
+    base = `Downloading ${progress.percent.toFixed(0)}%`
+    if (progress.speedBps) base += ` · ${formatSpeed(progress.speedBps)}`
+  } else if (progress?.phase === 'probing') {
+    base = 'Fetching info…'
+  } else {
+    base = STATE_LABEL[tape.state]
+  }
+  return tape.archivedAtUtc ? `${base} · Archived` : base
+}
+
+/** A label/value row in the disclosed detail list. */
+function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="shrink-0 text-zinc-500">{label}</dt>
+      <dd className="min-w-0 break-words">{children}</dd>
+    </div>
+  )
+}
+
+/**
+ * The body shown while a tape is queued/probing/downloading or after it failed:
+ * yt-dlp's live output, newest line first. On failure the error sits at the top
+ * (the store prepends it); after an app restart the live buffer is empty, so a
+ * failed tape falls back to its persisted lastError. A successful download flips
+ * the tape to 'downloaded' and the player replaces this panel.
+ */
+function DownloadLogPanel({
+  tape,
+  progress,
+  entries,
+}: {
+  tape: Tape
+  progress: ProgressEntry | undefined
+  entries: LogEntry[]
+}) {
+  const failed = tape.state === 'failed'
+  const downloading = progress?.phase === 'downloading'
+  const fallback =
+    entries.length === 0 && failed ? (tape.lastError ?? 'No details available.') : null
+
+  return (
+    <CaptionedPanel
+      kind={failed ? 'error' : 'neutral'}
+      caption={failed ? 'Download failed' : 'Working…'}
+      fill
+    >
+      {downloading && (
+        <div className="shrink-0 px-3 pt-3">
+          {progress.percent > 0 ? <ProgressBar percent={progress.percent} /> : <IndeterminateBar />}
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs">
+        {fallback != null ? (
+          <pre className="whitespace-pre-wrap break-words text-zinc-300">{fallback}</pre>
+        ) : entries.length > 0 ? (
+          <ul className="space-y-0.5">
+            {entries.map((e, i) => (
+              <li
+                key={i}
+                className={
+                  'whitespace-pre-wrap break-words ' +
+                  (e.kind === 'error' ? 'text-red-300' : 'text-zinc-400')
+                }
+              >
+                {e.text}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-zinc-500">{WORKING_PLACEHOLDER[tape.state] ?? 'Working…'}</p>
+        )}
+      </div>
+    </CaptionedPanel>
   )
 }
 

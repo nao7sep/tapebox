@@ -58,16 +58,17 @@ function matches(profile: SiteProfile, url: string): boolean {
 }
 
 /**
- * yt-dlp flags derived from the preferred metadata language. Empty when unset,
- * so the default is byte-for-byte the old behavior. youtube:lang selects
- * YouTube's creator-translated metadata; Accept-Language localizes everything
- * else (and the YouTube web client). The youtube extractor-arg is inert for
- * non-YouTube URLs, so no per-site gating is needed.
+ * yt-dlp flags derived from the preferred metadata language. Empty when unset.
+ * We set only the general HTTP Accept-Language header — sites that honor it
+ * return localized titles/metadata — and deliberately inject nothing
+ * service-specific. A user who wants an extractor-specific knob (e.g. a
+ * particular site's lang arg) adds it themselves via the global args or a site
+ * profile.
  */
 function languageArgs(language: string): string[] {
   const code = language.trim()
   if (!code) return []
-  return ['--extractor-args', `youtube:lang=${code}`, '--add-headers', `Accept-Language: ${code}`]
+  return ['--add-headers', `Accept-Language: ${code}`]
 }
 
 /**

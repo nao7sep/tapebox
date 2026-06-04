@@ -63,6 +63,32 @@ export class IdleTimeoutError extends Error {
   }
 }
 
+/**
+ * Flatten any thrown value into a structured, log-ready object. Our own error
+ * types expose their fields (exit code, command, the subprocess's stderr) as
+ * discrete keys instead of one pre-baked string, so a log line carries the
+ * pieces separately — `JSON.stringify({ exitCode, stderr, … })` rather than
+ * "SubprocessError: …exited with code 1: ERROR …". Falls back to name+message
+ * for plain Errors and to a string for anything else.
+ */
+export function describeError(err: unknown): Record<string, unknown> {
+  if (err instanceof SubprocessError) {
+    return { name: err.name, command: err.command, exitCode: err.exitCode, stderr: err.stderr }
+  }
+  if (err instanceof IdleTimeoutError) {
+    return { name: err.name, command: err.command, idleMs: err.idleMs }
+  }
+  if (err instanceof Error) {
+    return { name: err.name, message: err.message }
+  }
+  return { message: String(err) }
+}
+
+/** The human-readable message for an error, without a leading "ErrorName:" prefix. */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 type StreamingChild = ChildProcessByStdio<null, Readable, Readable>
 
 function startIdleWatch(

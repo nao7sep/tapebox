@@ -26,6 +26,7 @@ import { AboutModal } from '@renderer/components/AboutModal'
 import { ShortcutsModal } from '@renderer/components/ShortcutsModal'
 import { HeaderMenu } from '@renderer/components/HeaderMenu'
 import { StatusBar } from '@renderer/components/StatusBar'
+import { Toaster } from '@renderer/components/Toaster'
 import { DropZone } from '@renderer/components/DropZone'
 import { ImportResultModal } from '@renderer/components/ImportResultModal'
 import { useImportResultStore } from '@renderer/store/importResult'
@@ -198,6 +199,7 @@ export default function App() {
         )}
 
         <StatusBar />
+        <Toaster />
       </main>
     </DropZone>
   )

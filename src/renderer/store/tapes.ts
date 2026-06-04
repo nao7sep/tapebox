@@ -1,7 +1,12 @@
 import { create } from 'zustand'
 import type { Tape } from '@shared/domain'
 
-type ProgressEntry = { phase: 'probing' | 'downloading'; percent: number }
+export type ProgressEntry = {
+  phase: 'probing' | 'downloading'
+  percent: number
+  speedBps?: number
+  etaSec?: number
+}
 
 type TapesState = {
   tapes: Tape[]

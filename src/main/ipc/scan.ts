@@ -3,6 +3,7 @@ import { handle } from './handle'
 import { emit } from './events'
 import * as scanService from '@main/services/ytdlp-scan'
 import * as session from '@main/store/session'
+import { describeError, errorMessage } from '@main/io/spawn'
 import { log } from '@main/io/logger'
 import type { ScanResult } from '@shared/ipc-contract'
 
@@ -47,8 +48,8 @@ export function registerScanHandlers(): void {
     void handle_.complete
       .then(({ totalCount }) => emit('scan:done', { sessionId, totalCount }))
       .catch((err) => {
-        log.warn('scan stream errored', { sessionId, error: String(err) })
-        emit('scan:error', { sessionId, error: String(err) })
+        log.warn('scan stream errored', { sessionId, ...describeError(err) })
+        emit('scan:error', { sessionId, error: errorMessage(err) })
       })
       .finally(() => active.delete(sessionId))
 

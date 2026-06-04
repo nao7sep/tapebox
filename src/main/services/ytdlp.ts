@@ -7,6 +7,7 @@ import {
   execCapture,
   makeLineBuffer,
   spawnStreaming,
+  SubprocessError,
   waitForExit,
 } from '@main/io/spawn'
 
@@ -80,11 +81,19 @@ function stringOrNull(v: unknown): string | null {
   return typeof v === 'string' ? v : null
 }
 
+export type DownloadProgress = {
+  percent: number
+  speedBps?: number // bytes/sec; absent until yt-dlp can estimate it
+  etaSec?: number // seconds remaining; absent until yt-dlp can estimate it
+}
+
 export type DownloadOptions = {
   url: string
   libraryDir: string
   outputId: string
-  onProgress?: (percent: number) => void
+  onProgress?: (progress: DownloadProgress) => void
+  /** Each meaningful yt-dlp output line (progress lines and our markers excluded). */
+  onLog?: (line: string) => void
   signal: AbortSignal
 }
 
@@ -95,8 +104,23 @@ export type DownloadResult = {
 
 const FINAL_PATH_MARKER = 'tapebox-final-filepath:'
 
+/**
+ * Our --progress-template marker. We drive progress from a template we control
+ * rather than scraping yt-dlp's human-formatted "[download] X%" line: the
+ * template gives raw numeric speed/eta (and yt-dlp's own percent, correct for
+ * fragmented HLS/DASH where byte totals are unknown).
+ */
+const PROGRESS_MARKER = 'tapebox-progress:'
+
 /** How many recent yt-dlp output lines to keep so a failure can show what it said. */
 const MAX_LOG_LINES = 60
+
+/** Parse a --progress-template number; its 'NA' placeholder becomes undefined. */
+function finiteOrUndefined(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined
+  const n = parseFloat(raw)
+  return Number.isFinite(n) ? n : undefined
+}
 
 /**
  * Download video+audio, merged, with sidecar info.json.
@@ -129,6 +153,8 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
       '--no-playlist',
       '--no-warnings',
       '--newline',
+      '--progress-template',
+      `download:${PROGRESS_MARKER}%(progress._percent_str)s|%(progress.speed)s|%(progress.eta)s`,
       '--print', `after_move:${FINAL_PATH_MARKER}%(filepath)s`,
       opts.url,
     ],
@@ -142,18 +168,26 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
       captured.finalPath = line.slice(FINAL_PATH_MARKER.length)
       return
     }
-    const m = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/)
-    if (m && m[1]) {
-      // Progress line: drives the bar, and is left out of the kept tail (noise).
-      const pct = parseFloat(m[1])
-      if (pct !== lastPct) {
-        lastPct = pct
-        opts.onProgress?.(pct)
+    if (line.startsWith(PROGRESS_MARKER)) {
+      // Our progress-template line: percent|speed(B/s)|eta(s). Drives the bar and
+      // is left out of the kept tail (noise). Speed/eta are 'NA' until estimable.
+      const [pctRaw, speedRaw, etaRaw] = line.slice(PROGRESS_MARKER.length).split('|')
+      const percent = parseFloat(pctRaw)
+      if (Number.isFinite(percent) && percent !== lastPct) {
+        lastPct = percent
+        opts.onProgress?.({
+          percent,
+          speedBps: finiteOrUndefined(speedRaw),
+          etaSec: finiteOrUndefined(etaRaw),
+        })
       }
       return
     }
     recentLines.push(line)
     if (recentLines.length > MAX_LOG_LINES) recentLines.shift()
+    // Same lines the failure tail keeps, but streamed live so the UI can show
+    // progress as it happens. Markers and progress lines already returned above.
+    opts.onLog?.(line)
   })
 
   child.stdout.on('data', lineBuffer.feed)
@@ -163,12 +197,17 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     await waitForExit(child, { command: 'yt-dlp download' })
   } catch (err) {
     lineBuffer.flush()
-    // No auto-retry: a stall or a clean failure both terminate here. Attach
-    // yt-dlp's recent output so the failure panel shows what went wrong (where
-    // it stalled, or the actual error), not just an exit code.
+    // No auto-retry: a stall or a clean failure both terminate here. yt-dlp's
+    // own recent output (recentLines) is the real error text — waitForExit's
+    // SubprocessError carries an empty stderr since the stream was parsed live.
+    // Re-throw it as a SubprocessError carrying that output, so the failure
+    // stays structured (command/exitCode/stderr) for the queue and the log
+    // rather than collapsing into one opaque string.
     const detail = recentLines.join('\n').trim()
-    const base = err instanceof Error ? err.message : String(err)
-    throw new Error(detail ? `${base}\n\n${detail}` : base)
+    if (err instanceof SubprocessError) {
+      throw new SubprocessError(err.command, err.exitCode, detail || err.stderr)
+    }
+    throw err
   } finally {
     lineBuffer.flush()
   }

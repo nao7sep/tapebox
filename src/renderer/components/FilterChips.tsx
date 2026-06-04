@@ -34,7 +34,7 @@ export function FilterChips() {
             }
           >
             {labels[f]}
-            <span className="ml-1.5 text-zinc-300">{counts[f]}</span>
+            <span className="ml-1.5 opacity-60">{counts[f]}</span>
           </button>
         )
       })}

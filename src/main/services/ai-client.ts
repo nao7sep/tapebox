@@ -14,6 +14,7 @@ import { readAiKey } from './api-keys'
 export async function generateSlug(opts: {
   title: string | null
   uploader?: string | null
+  description?: string | null
 }): Promise<string> {
   const { ai, prompts } = getSettings()
   const apiKey = await readAiKey()
@@ -27,11 +28,14 @@ export async function generateSlug(opts: {
   })
 
   // The instruction text is user-configurable (Settings → AI); we only fill the
-  // {title}/{uploader} tokens. A missing field substitutes to empty — the
-  // surrounding tag stays, which the model handles fine.
+  // {title}/{uploader}/{description} tokens. A missing field substitutes to
+  // empty — the surrounding tag stays, which the model handles fine. The whole
+  // description is sent as-is when the user's prompt references it; trusting the
+  // user's choice to include it (and to instruct the model how to treat it).
   const userPrompt = prompts.slug
     .replace(/\{title\}/g, opts.title ?? '')
     .replace(/\{uploader\}/g, opts.uploader ?? '')
+    .replace(/\{description\}/g, opts.description ?? '')
 
   log.info('ai: generateSlug request', { model: ai.model })
   const res = await withRetry(

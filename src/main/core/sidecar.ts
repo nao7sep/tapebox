@@ -50,3 +50,18 @@ export async function finalize(opts: {
   await writeJsonAtomic(opts.sidecarPath, data)
   await unlink(opts.infoJsonPath).catch(() => {})
 }
+
+/**
+ * Read a sidecar back as its raw object (the full yt-dlp info.json plus the
+ * tapebox namespace). Best-effort: a missing or unparseable file returns null,
+ * so callers that only want an optional field (e.g. description for slug
+ * generation) can treat it as simply absent.
+ */
+export async function readSidecar(sidecarPath: string): Promise<Record<string, unknown> | null> {
+  try {
+    const text = await readFile(sidecarPath, 'utf8')
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}

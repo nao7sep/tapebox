@@ -241,6 +241,13 @@ function GeneralTab({
   return (
     <div className="space-y-4">
       <Toggle
+        label="Check for tool updates on startup"
+        description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
+        checked={draft.autoCheckBinaryUpdates}
+        disabled={busy}
+        onChange={(v) => onPatch({ autoCheckBinaryUpdates: v })}
+      />
+      <Toggle
         label="Autostart downloads"
         description="Newly added tapes start downloading immediately. Off = added as paused."
         checked={draft.autoStartDownloads}
@@ -269,6 +276,13 @@ function GeneralTab({
         disabled={busy}
         onChange={(v) => onPatch({ playSound: v })}
       />
+      <TextField
+        label="External player"
+        value={draft.externalPlayer}
+        placeholder="Blank = system default (e.g. VLC)"
+        disabled={busy}
+        onChange={(v) => onPatch({ externalPlayer: v })}
+      />
       <Toggle
         label="Confirm before removing"
         description="Ask for confirmation before a tape is removed."
@@ -282,20 +296,6 @@ function GeneralTab({
         checked={draft.trashOnRemove}
         disabled={busy}
         onChange={(v) => onPatch({ trashOnRemove: v })}
-      />
-      <Toggle
-        label="Check for tool updates on startup"
-        description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
-        checked={draft.autoCheckBinaryUpdates}
-        disabled={busy}
-        onChange={(v) => onPatch({ autoCheckBinaryUpdates: v })}
-      />
-      <TextField
-        label="External player"
-        value={draft.externalPlayer}
-        placeholder="Blank = system default (e.g. VLC)"
-        disabled={busy}
-        onChange={(v) => onPatch({ externalPlayer: v })}
       />
     </div>
   )
@@ -387,7 +387,8 @@ function AiTab({
           />
           <div className="mt-1 flex items-center justify-between gap-2">
             <p className="text-xs text-zinc-300">
-              Tokens: <code>{'{title}'}</code>, <code>{'{uploader}'}</code>.
+              Tokens: <code>{'{title}'}</code>, <code>{'{uploader}'}</code>,{' '}
+              <code>{'{description}'}</code>.
             </p>
             <Button
               variant="secondary"
@@ -441,10 +442,9 @@ function YtdlpTab({
           onChange={(v) => onPatch({ metadataLanguage: v })}
         />
         <p className="mt-1 text-xs text-zinc-400">
-          Requests titles in this language where the site offers them (sets
-          <code className="mx-1">youtube:lang</code> and an
-          <code className="mx-1">Accept-Language</code> header). An explicit site
-          profile or global argument below overrides it.
+          Requests titles in this language where the site offers them (sets a
+          general <code className="mx-1">Accept-Language</code> header). An
+          explicit site profile or global argument below overrides it.
         </p>
       </div>
 
@@ -454,11 +454,16 @@ function YtdlpTab({
           <AutoTextarea
             value={draft.ytdlpArgs}
             onChange={(v) => onPatch({ ytdlpArgs: v })}
-            placeholder={'--add-header "Accept-Language: ja"'}
+            placeholder={'--add-header "Accept-Language: ja"\n--sleep-requests "1"'}
             disabled={busy}
             mono
           />
         </div>
+        <p className="mt-1 text-xs text-zinc-400">
+          One flag per line (or space-separated). Quote any value that contains
+          spaces. Backslashes are literal — not line-continuations — so Windows
+          paths work as written.
+        </p>
       </div>
 
       <div className="space-y-3">

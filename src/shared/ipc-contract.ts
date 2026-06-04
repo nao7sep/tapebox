@@ -166,6 +166,11 @@ export type IpcEvents = {
   'tapes:completed':   { tapeId: string }
   'tapes:failed':      { tapeId: string; error: string }
   'tapes:removed':     { tapeIds: string[] }
+  // Live yt-dlp output for an in-progress download, one meaningful line at a
+  // time, so the detail pane can show what's happening instead of a bare
+  // percent. logReset clears the buffer when a fresh attempt begins.
+  'tapes:log':         { tapeId: string; line: string }
+  'tapes:logReset':    { tapeId: string }
   // Bulk tape update (e.g. a box reorder touches many tapes at once).
   'tapes:updatedMany': Tape[]
 

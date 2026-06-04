@@ -1,6 +1,6 @@
 import { useState, type DragEvent, type ReactNode } from 'react'
 import { pathForFile } from '@renderer/ipc/client'
-import { useNoticeStore } from '@renderer/store/notice'
+import { useToastStore } from '@renderer/store/toast'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
 
 type Props = { children: ReactNode }
@@ -13,12 +13,12 @@ type Props = { children: ReactNode }
  * Drop UX:
  *   - Files dragged from the OS get their real paths via webUtils.
  *   - .json files alone are ignored at the renderer (no media to pair).
- *   - Outcome surfaces as a transient app notice (see store/notice); the
+ *   - Outcome surfaces as a transient app toast (see store/toast); the
  *     status bar shows the headline, the console keeps the per-file reasons.
  */
 export function DropZone({ children }: Props) {
   const [active, setActive] = useState(false)
-  const notify = useNoticeStore((s) => s.notify)
+  const notify = useToastStore((s) => s.notify)
   const importMedia = useImportMedia()
 
   function isFileDrag(e: DragEvent): boolean {

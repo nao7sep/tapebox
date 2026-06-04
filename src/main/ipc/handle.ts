@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { IpcCalls } from '@shared/ipc-contract'
+import { describeError } from '@main/io/spawn'
 import { log } from '@main/io/logger'
 
 /**
@@ -15,7 +16,7 @@ export function handle<K extends keyof IpcCalls>(
     try {
       return await handler(req)
     } catch (err) {
-      log.error(`ipc handler failed: ${channel}`, { error: String(err) })
+      log.error(`ipc handler failed: ${channel}`, describeError(err))
       throw err
     }
   })

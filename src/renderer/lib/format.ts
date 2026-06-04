@@ -24,3 +24,8 @@ export function formatBytes(bytes: number): string {
   }
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`
 }
+
+/** Human-readable transfer rate, e.g. 4.2 MB/s. */
+export function formatSpeed(bytesPerSec: number): string {
+  return `${formatBytes(bytesPerSec)}/s`
+}

@@ -6,6 +6,7 @@ import * as sidecar from '@main/core/sidecar'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
+import { describeError, errorMessage } from '@main/io/spawn'
 import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
@@ -45,6 +46,8 @@ export class Job {
   }
 
   private async runInner(): Promise<void> {
+    // Fresh attempt: clear any log buffered from a prior (failed) run.
+    emit('tapes:logReset', { tapeId: this.tapeId })
     try {
       const isVideo = await this.probe()
       if (!isVideo || this.cancelled) return
@@ -54,8 +57,8 @@ export class Job {
         this.update({ state: 'paused', lastError: null, pausedAtUtc: nowUtcIso() })
         return
       }
-      const message = String(err)
-      log.error(`job failed: ${this.tapeId}`, { error: message })
+      const message = errorMessage(err)
+      log.error(`job failed: ${this.tapeId}`, describeError(err))
       this.update({ state: 'failed', lastError: message, failedAtUtc: nowUtcIso() })
       emit('tapes:failed', { tapeId: this.tapeId, error: message })
     }
@@ -121,8 +124,11 @@ export class Job {
       libraryDir: settings.libraryDir,
       outputId: cur.sourceId,
       signal: this.controller.signal,
-      onProgress: (percent) => {
-        emit('tapes:progress', { tapeId: this.tapeId, phase: 'downloading', percent })
+      onProgress: (progress) => {
+        emit('tapes:progress', { tapeId: this.tapeId, phase: 'downloading', ...progress })
+      },
+      onLog: (line) => {
+        emit('tapes:log', { tapeId: this.tapeId, line })
       },
     })
 

@@ -25,15 +25,23 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>
  * fills missing keys, a newer app default never overwrites a value the user has
  * saved — they adopt it explicitly by Restoring, then saving.
  *
- * Template tokens are substituted before the call: {title}, {uploader}.
+ * Template tokens are substituted before the call: {title}, {uploader},
+ * {description}. A token the user omits is simply not sent; a token left in
+ * substitutes to empty when that field is unavailable.
  */
 export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
 Output ONLY the slug — lowercase ASCII letters, digits, and hyphens.
 No quotes, no explanation, no trailing period. Aim for under 60 characters;
-prefer descriptive English keywords drawn from the title.
+prefer descriptive English keywords that capture the core subject.
+
+Base the slug on the title. Use the uploader and description only as supporting
+context to clarify or disambiguate the subject. Descriptions often carry
+promotional text, links, hashtags, timestamps, and credits — ignore all of
+that, and never copy URLs, @handles, hashtags, or sponsor names into the slug.
 
 <title>{title}</title>
-<uploader>{uploader}</uploader>`
+<uploader>{uploader}</uploader>
+<description>{description}</description>`
 
 export const PromptsSettingsSchema = z.object({
   slug: z.string().default(DEFAULT_SLUG_PROMPT),
@@ -92,8 +100,9 @@ export const SettingsSchema = z.object({
   retainLogCount: z.number().int().min(0),
 
   // Preferred language for fetched metadata (titles). A BCP-47-ish code such as
-  // 'ja' or 'pt-BR'; empty means the source's default. Mapped to yt-dlp flags in
-  // resolveYtdlpArgs (youtube:lang + Accept-Language). Defaulted for older configs.
+  // 'ja' or 'pt-BR'; empty means the source's default. Mapped in resolveYtdlpArgs
+  // to a general Accept-Language header only — nothing service-specific.
+  // Defaulted for older configs.
   metadataLanguage: z.string().default(''),
 
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
