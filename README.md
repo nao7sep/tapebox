@@ -9,13 +9,12 @@ machine. No account, no cloud; your media and metadata stay under `~/.tapebox`.
 
 - **Web import** — paste a URL to download video+audio (merged) via `yt-dlp`,
   with a sidecar `info.json` saved alongside each file.
-- **Title language** — set a preferred metadata language (e.g. `ja`, `pt-BR`) to
-  fetch titles in that language where the site offers them; blank keeps the
-  source default. This sets only a general `Accept-Language` header — nothing
-  site-specific. Power users can still add their own extractor args by hand in
-  the yt-dlp settings. Use **Refresh metadata** on a tape to re-probe the source
-  and review the result — current vs. new, side by side — before choosing to
-  apply it, so a re-probe never silently overwrites good data with worse.
+- **Refresh metadata** — re-probe a tape's source and review the result —
+  current vs. new, side by side — before choosing to apply it, so a re-probe
+  never silently overwrites good data with worse.
+- **Custom yt-dlp args** — pass your own flags globally or per matching site
+  profile (for example an `Accept-Language` header to fetch titles in `ja` or
+  `pt-BR`); the app's own flags always win on conflict.
 - **Scan a page** — paste the URL of a page that lists videos (a creator's
   videos, search results, a category) and review the entries before adding, so
   you can pick what you pull in.

@@ -67,8 +67,8 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
   return {
     kind: 'video',
     id: String(info['id'] ?? ''),
-    // The title yt-dlp returns is localized when the metadataLanguage setting is
-    // set (see resolveYtdlpArgs); whatever language we fetch is the one we keep.
+    // Whatever language yt-dlp returns the title in is the one we keep; a user can
+    // steer it with an Accept-Language header via global args or a site profile.
     title: String(info['title'] ?? ''),
     uploader: stringOrNull(info['uploader'] ?? info['channel']),
     duration: typeof info['duration'] === 'number' ? info['duration'] : null,

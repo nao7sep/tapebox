@@ -157,7 +157,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
 
       {!scanning && !scanned ? (
         <p className="mt-3 text-center text-sm text-zinc-300">
-          Paste the URL of a page that lists videos, then scan it.
+          Paste the URL of a page that lists videos — a creator's uploads, search results, a category.
         </p>
       ) : (
         <div className="mt-3 text-center">

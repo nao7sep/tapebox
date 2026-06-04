@@ -194,7 +194,6 @@ function pickEditable(s: Settings) {
     externalPlayer: s.externalPlayer,
     ai: s.ai,
     prompts: s.prompts,
-    metadataLanguage: s.metadataLanguage,
     ytdlpArgs: s.ytdlpArgs,
     siteProfiles: s.siteProfiles,
   }
@@ -435,21 +434,6 @@ function YtdlpTab({
       <p className="text-xs text-zinc-400">
         TapeBox&apos;s own flags (output, info json) always win on conflict.
       </p>
-
-      <div>
-        <TextField
-          label="Preferred metadata language"
-          value={draft.metadataLanguage}
-          placeholder="e.g. ja, en, pt-BR — blank = source default"
-          disabled={busy}
-          onChange={(v) => onPatch({ metadataLanguage: v })}
-        />
-        <p className="mt-1 text-xs text-zinc-400">
-          Requests titles in this language where the site offers them (sets a
-          general <code className="mx-1">Accept-Language</code> header). An
-          explicit site profile or global argument below overrides it.
-        </p>
-      </div>
 
       <div>
         <div className="text-xs font-medium text-zinc-300">Global arguments</div>

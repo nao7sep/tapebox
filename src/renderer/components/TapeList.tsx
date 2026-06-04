@@ -41,5 +41,5 @@ export function TapeList() {
 }
 
 function emptyMessageFor(filter: Filter): string {
-  return filter === 'archived' ? 'No archived tapes yet.' : 'No tapes here. Paste a URL to add one.'
+  return filter === 'archived' ? 'No archived tapes yet.' : 'No tapes here yet.'
 }

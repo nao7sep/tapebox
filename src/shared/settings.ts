@@ -39,9 +39,17 @@ context to clarify or disambiguate the subject. Descriptions often carry
 promotional text, links, hashtags, timestamps, and credits — ignore all of
 that, and never copy URLs, @handles, hashtags, or sponsor names into the slug.
 
-<title>{title}</title>
-<uploader>{uploader}</uploader>
-<description>{description}</description>`
+<title>
+{title}
+</title>
+
+<uploader>
+{uploader}
+</uploader>
+
+<description>
+{description}
+</description>`
 
 export const PromptsSettingsSchema = z.object({
   slug: z.string().default(DEFAULT_SLUG_PROMPT),
@@ -99,12 +107,6 @@ export const SettingsSchema = z.object({
 
   retainLogCount: z.number().int().min(0),
 
-  // Preferred language for fetched metadata (titles). A BCP-47-ish code such as
-  // 'ja' or 'pt-BR'; empty means the source's default. Mapped in resolveYtdlpArgs
-  // to a general Accept-Language header only — nothing service-specific.
-  // Defaulted for older configs.
-  metadataLanguage: z.string().default(''),
-
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
   // scan); a matching siteProfile's args are appended on top. The app's own
   // flags win on conflict (they're placed last). Defaulted for older configs.
@@ -144,7 +146,6 @@ export function defaultSettings(libraryDir: string): Settings {
       deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
     },
     retainLogCount: 50,
-    metadataLanguage: '',
     ytdlpArgs: '',
     siteProfiles: [],
     externalPlayer: '',

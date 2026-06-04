@@ -240,7 +240,7 @@ export function DetailPane({
         ) : tape.state === 'paused' ? (
           <CaptionedPanel kind="warning" caption="Paused">
             <p className="p-5 text-sm leading-relaxed text-zinc-300">
-              This download is paused. Click Resume below to continue.
+              Auto-start is off, so it won't download until you resume it.
             </p>
           </CaptionedPanel>
         ) : (
