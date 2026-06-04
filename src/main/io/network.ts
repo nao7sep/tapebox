@@ -3,7 +3,7 @@ import type { RetryPolicy } from './retry'
 /**
  * Network behavior constants.
  *
- * These were briefly user-configurable (a per-box timeout/retry/interval/
+ * These were briefly user-configurable (a per-group timeout/retry/interval/
  * jitter matrix in Settings), but that was over-built for a single-user desktop
  * app: the right timeout and retry counts are engineering decisions, not user
  * preferences, and a backoff schedule has no place in product UI. The one knob

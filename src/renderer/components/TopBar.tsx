@@ -5,7 +5,7 @@ import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { Button } from '@renderer/components/ui'
 
 type Props = {
-  /** Pause clipboard auto-fill (e.g. while the Add-from-a-page modal owns the clipboard). */
+  /** Pause clipboard auto-fill (e.g. while the Scan-a-page modal owns the clipboard). */
   clipboardEnabled: boolean
 }
 

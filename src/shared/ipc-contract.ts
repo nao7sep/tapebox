@@ -85,7 +85,7 @@ export type IpcCalls = {
   'binaries:checkUpdates': { req: undefined;                         res: BinaryStatus[] }
 
   // ── Scan (page scan) ──────────────────────────────────────────────
-  // The Add-from-a-page modal subscribes to scan:* events, then calls scan:start.
+  // The Scan-a-page modal subscribes to scan:* events, then calls scan:start.
   // Returns a sessionId used to filter events and cancel the stream.
   'scan:start':            { req: { url: string };                   res: { sessionId: string } }
   'scan:cancel':           { req: { sessionId: string };             res: void }

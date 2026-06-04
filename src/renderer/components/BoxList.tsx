@@ -136,7 +136,7 @@ export function BoxList() {
 
 function rowClass(selected: boolean, isOver: boolean): string {
   return (
-    'box flex items-center gap-1.5 rounded px-2 py-1.5 text-sm transition ' +
+    'group flex items-center gap-1.5 rounded px-2 py-1.5 text-sm transition ' +
     (selected ? 'bg-zinc-800 text-zinc-100 ' : 'text-zinc-300 hover:bg-zinc-800/50 ') +
     (isOver ? 'ring-1 ring-zinc-400' : '')
   )
@@ -185,10 +185,10 @@ function SortableBoxRow({
       <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
         {label}
       </button>
-      <button onClick={onRename} aria-label="Rename box" className="hidden shrink-0 text-zinc-400 hover:text-zinc-200 box-hover:block">
+      <button onClick={onRename} aria-label="Rename box" className="hidden shrink-0 text-zinc-400 hover:text-zinc-200 group-hover:block">
         <PencilGlyph />
       </button>
-      <button onClick={onDelete} aria-label="Delete box" className="hidden shrink-0 text-zinc-400 hover:text-red-300 box-hover:block">
+      <button onClick={onDelete} aria-label="Delete box" className="hidden shrink-0 text-zinc-400 hover:text-red-300 group-hover:block">
         <TrashGlyph />
       </button>
       <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>

@@ -15,9 +15,9 @@ const CLIPBOARD_POLL_MS = 1500
  * URL is user input.
  *
  * `enabled` gates polling so only one field auto-fills at a time — e.g. the main
- * bar pauses while the Add-from-a-page modal (which has its own field) is open.
+ * bar pauses while the Scan-a-page modal (which has its own field) is open.
  *
- * `initial` seeds the field (e.g. the page scan seeded from a page tape).
+ * `initial` seeds the field (e.g. the Scan-a-page modal opened from a listing tape's URL).
  * A non-empty seed reads as user-owned, so the clipboard won't overwrite it.
  */
 export function useClipboardUrl(enabled: boolean, initial = '') {

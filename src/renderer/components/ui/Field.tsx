@@ -5,7 +5,7 @@ type Props = {
   children: ReactNode
 }
 
-/** Label wrapper for non-`<input>` controls (radio boxes, custom widgets). */
+/** Label wrapper for non-`<input>` controls (radio groups, custom widgets). */
 export function Field({ label, children }: Props) {
   return (
     <div>

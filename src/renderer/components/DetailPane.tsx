@@ -139,7 +139,7 @@ export function DetailPane({
           <button
             onClick={() => setInfoOpen((v) => !v)}
             aria-expanded={infoOpen}
-            className="box flex w-full text-left"
+            className="group flex w-full text-left"
           >
             <span className="flex h-7 w-5 shrink-0 items-center justify-center">
               <svg
@@ -147,7 +147,7 @@ export function DetailPane({
                 height="11"
                 viewBox="0 0 24 24"
                 className={
-                  'text-zinc-400 transition-transform box-hover:text-zinc-300 ' +
+                  'text-zinc-400 transition-transform group-hover:text-zinc-300 ' +
                   (infoOpen ? 'rotate-90' : '')
                 }
                 fill="none"
@@ -160,7 +160,7 @@ export function DetailPane({
                 <polyline points="9 6 15 12 9 18" />
               </svg>
             </span>
-            <h2 className="min-w-0 flex-1 text-lg font-medium leading-7 box-hover:text-zinc-300">
+            <h2 className="min-w-0 flex-1 text-lg font-medium leading-7 group-hover:text-zinc-300">
               {tape.title ?? tape.sourceUrl}
             </h2>
           </button>
