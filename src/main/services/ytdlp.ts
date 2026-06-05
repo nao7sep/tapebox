@@ -155,6 +155,11 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
       '--newline',
       '--progress-template',
       `download:${PROGRESS_MARKER}%(progress._percent_str)s|%(progress.speed)s|%(progress.eta)s`,
+      // --print implies --quiet, and --quiet suppresses the progress template
+      // above — so without --no-quiet the download runs silently and the bar
+      // never moves. --no-quiet keeps progress flowing while still printing the
+      // after_move final path. (Verified: dropping it yields zero progress lines.)
+      '--no-quiet',
       '--print', `after_move:${FINAL_PATH_MARKER}%(filepath)s`,
       opts.url,
     ],

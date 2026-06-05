@@ -8,7 +8,7 @@ import { Spinner } from './Spinner'
  *
  *   primary     — main CTA in a modal/toolbar (Save, Add, Install all)
  *   secondary   — outlined, less-emphasized inline action (Choose, Select all)
- *   ghost       — text-only neutral (Cancel, Close)
+ *   ghost       — outlined neutral, low-emphasis (Cancel, Close)
  *   ghostDanger — text-only destructive (Clear key)
  *   danger      — filled destructive (Discard, Delete)
  *   warm        — filled attention (Install / Update when actionable)
@@ -37,7 +37,7 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   secondary:
     'border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50',
   ghost:
-    'text-zinc-300 hover:text-zinc-100 disabled:opacity-50',
+    'border border-zinc-700 text-zinc-300 hover:border-zinc-600 hover:text-zinc-100 disabled:opacity-50',
   ghostDanger:
     'text-red-400 hover:text-red-300 disabled:opacity-50',
   danger:

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Tape, TapeState } from '@shared/domain'
 import type { ProgressEntry } from '@renderer/store/tapes'
 import { formatTime } from '@renderer/lib/format'
-import { tapeStatusLabel } from '@renderer/lib/tapeStatus'
+import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 
 type Props = {
@@ -12,9 +12,6 @@ type Props = {
   onSelect: () => void
 }
 
-/** States where work is underway, so a row shows a moving bar even before the
- *  first download-progress event (e.g. while probing or waiting in the queue). */
-const WORKING_STATES = new Set<TapeState>(['queued', 'probing', 'ready', 'downloading'])
 
 /**
  * A library row. Two lines: the title (with the running time right-aligned,
@@ -58,12 +55,18 @@ export function TapeRow({ tape, progress, selected, onSelect }: Props) {
         )}
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
-        <span>{tapeStatusLabel(tape, progress)}</span>
+        {/* A downloaded tape's status is just "In library" (says nothing across a
+            whole library), so show the uploader instead when we have one. */}
+        <span className="min-w-0 truncate">
+          {tape.state === 'downloaded' && tape.uploader
+            ? tape.uploader
+            : tapeStatusLabel(tape, progress)}
+        </span>
         {tape.chapterCount != null && tape.chapterCount > 0 && (
-          <span>· {tape.chapterCount} chapters</span>
+          <span className="shrink-0">· {tape.chapterCount} chapters</span>
         )}
       </div>
-      {(progress || WORKING_STATES.has(tape.state)) && (
+      {(progress || isProcessing(tape.state)) && (
         <div className="mt-2">
           {progress?.phase === 'downloading' && progress.percent > 0 ? (
             <ProgressBar percent={progress.percent} />

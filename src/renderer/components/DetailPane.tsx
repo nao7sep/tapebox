@@ -11,7 +11,7 @@ import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { releaseVideo } from '@renderer/lib/video'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
-import { tapeStatusLabel } from '@renderer/lib/tapeStatus'
+import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 import { Player } from './Player'
 import { ChapterList } from './ChapterList'
@@ -79,16 +79,18 @@ export function DetailPane({
   })()
 
   const mediaMeta = mediaMetaLine(sidecar)
+  const description = (() => {
+    const d = sidecar?.['description']
+    return typeof d === 'string' && d.trim() ? d.trim() : null
+  })()
 
-  // The header expands only when at least one detail row would render. The source
-  // URL row shows only when a title holds the heading (otherwise the heading is
-  // the URL), so it counts toward expandability exactly then.
-  const expandable =
-    !!tape.uploader ||
-    tape.durationSeconds != null ||
-    !!mediaMeta ||
-    !!tape.title ||
-    !!tape.slug
+  // Downloaded tapes lead with the media line (always visible) and disclose
+  // source / file / uploader / description; other states keep the status sub-line
+  // and the older row set. The header expands only when a disclosed row exists.
+  const downloaded = tape.state === 'downloaded'
+  const expandable = downloaded
+    ? !!tape.title || !!tape.filename || !!tape.uploader || !!description
+    : !!tape.uploader || tape.durationSeconds != null || !!tape.title || !!tape.slug
 
   const mediaUrl = tape.filename && mediaBase
     ? `${mediaBase}/${encodeURIComponent(tape.filename)}`
@@ -172,18 +174,53 @@ export function DetailPane({
               <h2 className="select-text break-words text-lg font-medium leading-7">
                 {tape.title ?? tape.sourceUrl}
               </h2>
-              <p className="mt-0.5 text-xs text-zinc-400">{headerStatus(tape, progress)}</p>
+              {/* Always visible: the media line for a downloaded tape (its "status"
+                  is just "In library", which says nothing), otherwise the status. */}
+              <p className="mt-0.5 truncate text-xs text-zinc-400">
+                {downloaded && mediaMeta ? mediaMeta : headerStatus(tape, progress)}
+              </p>
             </div>
           </div>
-          {expandable && infoOpen && (
+          {expandable && infoOpen && (downloaded ? (
+            // Unlabeled by design: a URL, a filename (with extension), and the
+            // uploader sitting just above the description are each self-evident from
+            // their shape and position, so labels would only add noise. Order is
+            // outside-in: source → file → uploader → (rule) → description.
+            <div className="mt-2 pl-6 text-xs text-zinc-300">
+              {/* Related lines, tight: 4px apart (space-y-1). */}
+              <div className="space-y-1">
+                {tape.title && (
+                  <a
+                    href={tape.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block select-text break-all hover:text-zinc-100"
+                  >
+                    {tape.sourceUrl}
+                  </a>
+                )}
+                {tape.filename && <div className="select-text break-all">{tape.filename}</div>}
+                {tape.uploader && <div className="select-text break-words">{tape.uploader}</div>}
+              </div>
+              {/* Section break: the rule is the end of the lines above, so it gets
+                  equal room on both sides — 8px (2× the line gap) above the rule
+                  from the uploader, and 8px below it before the description. */}
+              {description && (
+                <div className="mt-2 border-t border-zinc-700 pt-2">
+                  <div className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap break-words">
+                    {description}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
             <dl className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
               {tape.uploader && <DetailRow label="Uploader">{tape.uploader}</DetailRow>}
               {tape.durationSeconds != null && (
                 <DetailRow label="Duration">{formatTime(tape.durationSeconds)}</DetailRow>
               )}
-              {mediaMeta && <DetailRow label="Media">{mediaMeta}</DetailRow>}
-              {/* The source URL is the heading already when there's no title, so
-                  only show it here (as a link) when a title occupies the heading. */}
+              {/* Source is the heading already when there's no title, so only show it
+                  here (as a link) when a title occupies the heading. */}
               {tape.title && (
                 <DetailRow label="Source">
                   <a
@@ -202,7 +239,7 @@ export function DetailPane({
                 </DetailRow>
               )}
             </dl>
-          )}
+          ))}
         </div>
 
         {/* For a downloaded tape the video fills the height between the title and
@@ -249,10 +286,10 @@ export function DetailPane({
 
         {/* All operations live here, in a consistent order for every state:
             the state's primary action first, then the downloaded-tape actions
-            (use the file → edit → organize), then the source-link actions that
-            apply to any tape, and finally the destructive Remove, set apart on
-            the right. */}
-        <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-700 px-4 pt-3">
+            grouped use → housekeep (refresh → rename → export) → archive, then
+            the source-link reference actions that apply to any tape, and finally
+            the destructive Remove, set apart on the right. */}
+        <div className="mt-auto flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-700 px-4 pt-3">
           {/* Primary: re-engage / resolve the current state. */}
           {(tape.state === 'queued' || tape.state === 'probing' || tape.state === 'downloading') && (
             <ActionButton onClick={cancel}>Cancel</ActionButton>
@@ -271,11 +308,12 @@ export function DetailPane({
               {/* Use the file. */}
               <ActionButton onClick={() => void ipcInvoke('library:playExternal', { tapeId: tape.id })}>Open in player</ActionButton>
               <ActionButton onClick={() => void ipcInvoke('library:reveal', { tapeId: tape.id })}>Show in folder</ActionButton>
-              <ActionButton onClick={() => setShowExport(true)}>Export</ActionButton>
-              {/* Edit the tape. */}
-              <ActionButton onClick={openRename}>Rename</ActionButton>
+              {/* Housekeep: refresh first (rename and export both benefit from
+                  up-to-date metadata), then rename, then export. */}
               <ActionButton onClick={() => setShowRefresh(true)}>Refresh metadata</ActionButton>
-              {/* Organize. */}
+              <ActionButton onClick={openRename}>Rename</ActionButton>
+              <ActionButton onClick={() => setShowExport(true)}>Export</ActionButton>
+              {/* Organize, once the work is done. */}
               {tape.archivedAtUtc ? (
                 <>
                   <MoveToBoxButton tape={tape} />
@@ -385,10 +423,10 @@ function DownloadLogPanel({
   return (
     <CaptionedPanel
       kind={failed ? 'error' : 'neutral'}
-      caption={failed ? 'Download failed' : 'Working…'}
+      caption={failed ? 'Download failed' : tape.state === 'queued' ? 'Queued' : 'Working…'}
       fill
     >
-      {!failed && (
+      {isProcessing(tape.state) && (
         <div className="shrink-0 px-3 pt-3">
           {downloading && progress.percent > 0 ? (
             <ProgressBar percent={progress.percent} />
@@ -422,8 +460,9 @@ function DownloadLogPanel({
   )
 }
 
-/** A one-line technical summary: resolution · fps · codecs · ext · size. Prefers
- *  the ffmpeg-probed `tapebox.media` block, falling back to yt-dlp's own fields. */
+/** A one-line technical summary, outside-in: container · codec · frame size · fps
+ *  · duration · size. Prefers the ffmpeg-probed `tapebox.media` block, falling
+ *  back to yt-dlp's own fields. */
 function mediaMetaLine(sidecar: SidecarRaw | null): string | null {
   if (!sidecar) return null
   const media = (sidecar.tapebox?.['media'] ?? null) as Record<string, unknown> | null
@@ -431,17 +470,19 @@ function mediaMetaLine(sidecar: SidecarRaw | null): string | null {
   const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
 
   const parts: string[] = []
+  const ext = sidecar['ext']
+  if (typeof ext === 'string' && ext) parts.push(ext)
+  const codecs = [pick('vcodec'), pick('acodec')]
+    .filter((c): c is string => typeof c === 'string' && c.length > 0 && c !== 'none')
+    .map((c) => c.split('.')[0])
+  if (codecs.length > 0) parts.push(codecs.join(' / '))
   const w = num(pick('width'))
   const h = num(pick('height'))
   if (w !== null && h !== null) parts.push(`${w}×${h}`)
   const fps = num(pick('fps'))
   if (fps !== null) parts.push(`${Math.round(fps)} fps`)
-  const codecs = [pick('vcodec'), pick('acodec')]
-    .filter((c): c is string => typeof c === 'string' && c.length > 0 && c !== 'none')
-    .map((c) => c.split('.')[0])
-  if (codecs.length > 0) parts.push(codecs.join(' / '))
-  const ext = sidecar['ext']
-  if (typeof ext === 'string' && ext) parts.push(ext)
+  const duration = num(pick('duration'))
+  if (duration !== null) parts.push(formatTime(duration))
   const size = num(sidecar['filesize']) ?? num(sidecar['filesize_approx'])
   if (size !== null) parts.push(formatBytes(size))
   return parts.length > 0 ? parts.join(' · ') : null

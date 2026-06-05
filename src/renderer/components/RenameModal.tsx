@@ -13,9 +13,10 @@ type Include = { title: boolean; uploader: boolean; description: boolean }
 
 /**
  * Rename the on-disk media + sidecar to a slug. The AI button generates a
- * suggestion from the fields the user ticks (title / uploader / description) —
- * description is pulled from the sidecar and off by default since it's long and
- * noisy. Collisions / invalid slugs / missing AI config surface inline.
+ * suggestion from the fields the user ticks (title / uploader / description),
+ * all included by default when present — description is pulled from the sidecar
+ * asynchronously, so it ticks on once loaded. Collisions / invalid slugs /
+ * missing AI config surface inline.
  */
 export function RenameModal({ tape, onClose }: Props) {
   const [slug, setSlug] = useState(tape.slug ?? '')
@@ -36,7 +37,11 @@ export function RenameModal({ tape, onClose }: Props) {
       .then((s) => {
         if (cancelled) return
         const d = (s as Record<string, unknown>)['description']
-        setDescription(typeof d === 'string' && d.trim() ? d : null)
+        const desc = typeof d === 'string' && d.trim() ? d : null
+        setDescription(desc)
+        // Default it on once available, matching title/uploader (which the tape
+        // already carries, so they default on synchronously above).
+        if (desc) setInclude((prev) => ({ ...prev, description: true }))
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -78,9 +83,17 @@ export function RenameModal({ tape, onClose }: Props) {
     <>
       <Button variant="ghost" onClick={onClose} disabled={busy !== null}>Cancel</Button>
       <Button
+        variant="secondary"
+        onClick={() => void generate()}
+        disabled={busy !== null || !canGenerate}
+        loading={busy === 'generate'}
+      >
+        {busy === 'generate' ? 'Generating…' : 'Generate with AI'}
+      </Button>
+      <Button
         variant="primary"
         onClick={() => void apply()}
-        disabled={!slug.trim()}
+        disabled={!slug.trim() || busy !== null}
         loading={busy === 'apply'}
       >
         {busy === 'apply' ? 'Renaming…' : 'Rename'}
@@ -89,7 +102,7 @@ export function RenameModal({ tape, onClose }: Props) {
   )
 
   return (
-    <Modal title="Rename to slug" onClose={onClose} size="md" footer={footer} closeDisabled={busy !== null}>
+    <Modal title="Rename to slug" onClose={onClose} size="2xl" footer={footer} closeDisabled={busy !== null}>
       <p className="-mt-2 mb-4 truncate text-xs text-zinc-400">
         Current file: <span className="text-zinc-300">{tape.filename ?? '—'}</span>
       </p>
@@ -131,17 +144,6 @@ export function RenameModal({ tape, onClose }: Props) {
               onChange={(v) => setInclude((s) => ({ ...s, description: v }))}
             />
           </div>
-          <div className="mt-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void generate()}
-              disabled={busy !== null || !canGenerate}
-              loading={busy === 'generate'}
-            >
-              {busy === 'generate' ? 'Generating…' : '✨ Generate with AI'}
-            </Button>
-          </div>
         </Field>
       </div>
 
@@ -167,23 +169,20 @@ function IncludeRow({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <label className={'flex items-start gap-2 text-sm ' + (disabled ? 'opacity-50' : 'cursor-pointer')}>
+    <label className={'flex items-center gap-2 text-sm ' + (disabled ? 'opacity-50' : 'cursor-pointer')}>
       <input
         type="checkbox"
-        className="mt-1 shrink-0"
+        className="shrink-0"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <span className="min-w-0">
+      {/* Single line: long title/uploader/description clip with an ellipsis at the
+          panel edge (newlines collapse to spaces) rather than wrapping. */}
+      <span className="min-w-0 truncate">
         <span className="text-zinc-200">{label}</span>{' '}
-        <span className="text-zinc-500">— {value && value.trim() ? truncate(value) : 'none'}</span>
+        <span className="text-zinc-500">— {value && value.trim() ? value : 'none'}</span>
       </span>
     </label>
   )
-}
-
-function truncate(s: string): string {
-  const flat = s.replace(/\s+/g, ' ').trim()
-  return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat
 }
