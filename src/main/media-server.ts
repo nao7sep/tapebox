@@ -5,6 +5,7 @@ import { extname, join, normalize, sep } from 'node:path'
 import { nanoid } from 'nanoid'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
+import { describeError } from '@shared/error'
 
 /**
  * Loopback HTTP server that streams library files to the renderer's
@@ -60,7 +61,7 @@ export function startMediaServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     const s = createServer((req, res) => void handleRequest(req, res))
     s.once('error', (err) => {
-      log.error('media-server: failed to start', { error: String(err) })
+      log.error('media-server: failed to start', { error: describeError(err) })
       reject(err)
     })
     s.listen(0, '127.0.0.1', () => {
@@ -180,13 +181,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // error handler only fires for real I/O failures.
     const stream = createReadStream(full, { start, end })
     stream.on('error', (err) => {
-      log.error('media-server: read error', { filename, error: String(err) })
+      log.error('media-server: read error', { filename, error: describeError(err) })
       res.destroy()
     })
     req.on('close', () => stream.destroy())
     stream.pipe(res)
   } catch (err) {
-    log.error('media-server: request failed', { error: String(err) })
+    log.error('media-server: request failed', { error: describeError(err) })
     if (!res.headersSent) res.writeHead(500)
     res.end()
   }

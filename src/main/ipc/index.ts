@@ -10,6 +10,7 @@ import { registerDialogHandlers } from './dialog'
 import { registerAppHandlers } from './app'
 import { registerMediaHandlers } from './media'
 import { registerBoxHandlers } from './boxes'
+import { registerLogHandlers } from './log'
 
 /**
  * Mount all IPC handlers. Called once after stores are loaded and before
@@ -28,4 +29,5 @@ export function registerIpcHandlers(): void {
   registerAppHandlers()
   registerMediaHandlers()
   registerBoxHandlers()
+  registerLogHandlers()
 }

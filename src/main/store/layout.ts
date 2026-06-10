@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
+import { describeError } from '@shared/error'
 import { LayoutSchema, defaultLayout, type Layout } from '@shared/layout'
 
 /**
@@ -24,7 +25,7 @@ export async function loadLayout(): Promise<void> {
     raw = JSON.parse(await readFile(paths.layout, 'utf8'))
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      log.warn('layout unreadable; using defaults', { error: String(err) })
+      log.warn('layout unreadable; using defaults', { error: describeError(err) })
     }
     cache = { ...defaultLayout }
     return
@@ -57,6 +58,6 @@ export async function persistNow(): Promise<void> {
   try {
     await writeJsonAtomic(paths.layout, cache, LayoutSchema)
   } catch (err) {
-    log.error('layout persist failed', { error: String(err) })
+    log.error('layout persist failed', { error: describeError(err) })
   }
 }

@@ -6,6 +6,7 @@ import {
   spawnStreaming,
   waitForExit,
 } from '@main/io/spawn'
+import { errorMessage } from '@shared/error'
 import { ytdlpEnv } from './ytdlp'
 import { resolveYtdlpArgs } from './ytdlp-args'
 
@@ -55,7 +56,11 @@ export function startScan(
         total++
       }
     } catch (err) {
-      log.warn('scan: bad json line', { error: String(err) })
+      // A non-JSON line in yt-dlp's streamed output is an expected branch (it
+      // interleaves status lines), not an incident — a systemic failure still
+      // surfaces as an empty scan result. Developer-only detail; keep it cheap on
+      // this per-line path by logging the message only (no stack materialization).
+      log.debug('scan: bad json line', { reason: errorMessage(err) })
     }
   })
 

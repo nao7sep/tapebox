@@ -105,6 +105,8 @@ export function DetailPane({
     const v = videoRef.current
     if (!v) return
     v.currentTime = seconds
+    // play() rejects as normal control flow (autoplay policy, or a play
+    // interrupted by a new load) — an expected branch, not a logged incident.
     void v.play().catch(() => {})
   }
 

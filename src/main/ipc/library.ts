@@ -8,6 +8,7 @@ import { emit } from './events'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
+import { describeError } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { isValidSlug, slugifyAscii } from '@main/core/slug'
 import * as queue from '@main/queue/manager'
@@ -106,7 +107,7 @@ export function registerLibraryHandlers(): void {
       process.platform === 'darwin'
         ? spawn('open', ['-a', player, full], { detached: true, stdio: 'ignore' })
         : spawn(player, [full], { detached: true, stdio: 'ignore' })
-    child.on('error', (err) => log.error('library:playExternal failed', { player, error: String(err) }))
+    child.on('error', (err) => log.error('library:playExternal failed', { player, error: describeError(err) }))
     child.unref()
   })
 
@@ -182,7 +183,7 @@ export function registerLibraryHandlers(): void {
           log.error('renameToSlug: rollback failed', {
             from: newMediaPath,
             to: oldMediaPath,
-            error: String(rollbackErr),
+            error: describeError(rollbackErr),
           })
         })
       }
@@ -198,7 +199,7 @@ export function registerLibraryHandlers(): void {
     }
     session.upsertTape(updated)
     emit('tapes:updated', updated)
-    log.info(`renamed: ${tape.id} -> ${cleanSlug}`)
+    log.info('renamed', { tapeId: tape.id, slug: cleanSlug })
     return updated
   })
 
@@ -240,7 +241,7 @@ export function registerLibraryHandlers(): void {
     }
     session.upsertTape(updated)
     emit('tapes:updated', updated)
-    log.info(`applied refreshed metadata: ${tape.id}`)
+    log.info('applied refreshed metadata', { tapeId: tape.id })
     return updated
   })
 
@@ -350,7 +351,7 @@ async function discardFile(path: string, toTrash: boolean): Promise<void> {
   try {
     await shell.trashItem(path)
   } catch (err) {
-    log.error('library:remove: trashItem failed', { path, error: String(err) })
+    log.error('library:remove: trashItem failed', { path, error: describeError(err) })
   }
 }
 

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
+import { log } from '@renderer/ipc/log'
+import { describeError } from '@shared/error'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -81,24 +83,31 @@ export default function App() {
     // Hydrate the loopback media server's base URL. Without it the player can't
     // build a source; the server is already listening before this window loaded,
     // so this resolves effectively immediately.
+    // Each hydrate handler logs the authoritative error in main (handle()
+    // re-throws); these renderer-side catches keep a rejected invoke from
+    // surfacing as an unhandledrejection and add the developer-only vantage.
     void ipcInvoke('media:endpoint')
       .then((e) => useMediaStore.getState().setBaseUrl(e.baseUrl))
-      .catch((err) => console.error('failed to get media endpoint', err))
-    void ipcInvoke('layout:get').then((l) => useLayoutStore.getState().setLayout(l))
-    void ipcInvoke('settings:get').then((s) => {
-      useSettingsStore.getState().setSettings(s)
-      if (!s.autoCheckBinaryUpdates) return
-      if (!lastCheckedStale(s.binaries)) return
-      // Best-effort background check: main logs any failure (per-binary +
-      // summary). Swallow here so it never surfaces as an unhandled rejection
-      // — the user didn't trigger it, so we don't interrupt them on failure.
-      const store = useBinariesStore.getState()
-      store.setChecking(true)
-      void ipcInvoke('binaries:checkUpdates')
-        .then(store.setStatuses)
-        .catch(() => {})
-        .finally(() => useBinariesStore.getState().setChecking(false))
-    })
+      .catch((err) => log.debug('media endpoint hydrate failed', { error: describeError(err) }))
+    void ipcInvoke('layout:get')
+      .then((l) => useLayoutStore.getState().setLayout(l))
+      .catch((err) => log.debug('layout hydrate failed', { error: describeError(err) }))
+    void ipcInvoke('settings:get')
+      .then((s) => {
+        useSettingsStore.getState().setSettings(s)
+        if (!s.autoCheckBinaryUpdates) return
+        if (!lastCheckedStale(s.binaries)) return
+        // Best-effort background check the user didn't trigger: main logs the
+        // authoritative per-binary + summary outcome, so here we only note at debug
+        // that the call rejected — never an error toast that interrupts them.
+        const store = useBinariesStore.getState()
+        store.setChecking(true)
+        void ipcInvoke('binaries:checkUpdates')
+          .then(store.setStatuses)
+          .catch((err) => log.debug('background binary check rejected', { error: describeError(err) }))
+          .finally(() => useBinariesStore.getState().setChecking(false))
+      })
+      .catch((err) => log.debug('settings hydrate failed', { error: describeError(err) }))
     return stop
   }, [])
 

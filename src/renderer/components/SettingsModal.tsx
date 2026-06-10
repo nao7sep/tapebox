@@ -26,9 +26,8 @@ type Tab = 'general' | 'ai' | 'ytdlp'
  * changes prompts a shared ConfirmModal to discard. The AI tab folds the API
  * key into the same save (no separate "Save key" button).
  *
- * Library directory and log retention are intentionally left out of the UI for
- * v1 — defaults are sensible; advanced users can edit ~/.tapebox/config.json
- * directly.
+ * Library directory is intentionally left out of the UI for v1 — the default is
+ * sensible; advanced users can edit ~/.tapebox/config.json directly.
  */
 export function SettingsModal({ onClose }: Props) {
   const [tab, setTab] = useState<Tab>('general')
@@ -44,6 +43,8 @@ export function SettingsModal({ onClose }: Props) {
   useEffect(() => {
     void Promise.all([
       ipcInvoke('settings:get'),
+      // On failure (main logs it) degrade to "no key set" rather than block the
+      // form — a value fallback, not an ignored error.
       ipcInvoke('settings:hasApiKey').catch(() => false),
     ]).then(([s, has]) => {
       setOriginal(s)

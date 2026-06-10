@@ -2,8 +2,9 @@ import { app, BrowserWindow, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs } from './paths.js'
-import { closeLogger, initLogger, log, pruneOldLogs } from './io/logger.js'
-import { loadSettings, getSettings } from './store/config.js'
+import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
+import { describeError } from '@shared/error'
+import { loadSettings } from './store/config.js'
 import { loadSession, persistNow } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
@@ -69,11 +70,15 @@ function createMainWindow(): BrowserWindow {
 
 async function startup(): Promise<void> {
   await ensureDirs()
-  const logPath = initLogger()
-  log.info('startup', { logPath, platform: process.platform, arch: process.arch })
+  const logPath = initLogger({ debug: isDebugEnabled(app.isPackaged, process.env) })
+  log.info('startup', {
+    version: app.getVersion(),
+    logPath,
+    platform: process.platform,
+    arch: process.arch,
+  })
 
   await loadSettings()
-  await pruneOldLogs(getSettings().retainLogCount)
   await loadSession()
   await layout.loadLayout()
 
@@ -89,9 +94,10 @@ async function startup(): Promise<void> {
  * process — there is no separate server to leave stale.
  */
 let shutdownPromise: Promise<void> | null = null
-function shutdown(): Promise<void> {
+function shutdown(reason: string): Promise<void> {
   if (shutdownPromise) return shutdownPromise
   shutdownPromise = (async () => {
+    log.info('shutdown', { reason })
     try {
       await persistNow()
     } catch {
@@ -99,14 +105,31 @@ function shutdown(): Promise<void> {
     }
     await layout.persistNow()
     await stopMediaServer()
-    await closeLogger()
+    closeLogger()
   })()
   return shutdownPromise
 }
 
+// Global last-resort hooks. An uncaught exception is fatal: log it with full
+// fidelity, flush the file, then exit. An unhandled rejection is logged but not
+// fatal — a stray fire-and-forget should not take a desktop app down, and a
+// logged error at `error` level is a record, not a silent swallow. `exit` is a
+// final synchronous flush for any path that bypasses the clean shutdown.
+process.on('uncaughtException', (err) => {
+  log.error('uncaught exception', { error: describeError(err) })
+  closeLogger()
+  process.exit(1)
+})
+process.on('unhandledRejection', (reason) => {
+  log.error('unhandled rejection', { error: describeError(reason) })
+})
+process.on('exit', () => {
+  closeLogger()
+})
+
 void app.whenReady().then(() => {
   void startup().catch((err) => {
-    log.error('startup failed', { error: String(err) })
+    log.error('startup failed', { error: describeError(err) })
     app.quit()
   })
 
@@ -125,5 +148,5 @@ app.on('before-quit', (event) => {
   if (shutdownPromise) return
   event.preventDefault()
   // finally (not then) so a teardown error still exits — quit must never hang.
-  void shutdown().finally(() => app.exit(0))
+  void shutdown('before-quit').finally(() => app.exit(0))
 })

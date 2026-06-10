@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ScanResult } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
+import { log } from '@renderer/ipc/log'
+import { describeError } from '@shared/error'
 import { formatTime } from '@renderer/lib/format'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { Modal } from '@renderer/components/Modal'
@@ -53,7 +55,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     return () => {
       offs.forEach((off) => off())
       const sid = sessionIdRef.current
-      if (sid) void ipcInvoke('scan:cancel', { sessionId: sid }).catch(() => {})
+      if (sid) void ipcInvoke('scan:cancel', { sessionId: sid }).catch((err) => log.debug('scan cancel failed', { error: describeError(err) }))
     }
   }, [])
 
@@ -61,7 +63,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     const v = url.trim()
     if (!v || scanning) return
     const prev = sessionIdRef.current
-    if (prev) void ipcInvoke('scan:cancel', { sessionId: prev }).catch(() => {})
+    if (prev) void ipcInvoke('scan:cancel', { sessionId: prev }).catch((err) => log.debug('scan cancel failed', { error: describeError(err) }))
     sessionIdRef.current = null
     setEntries([])
     setSelected(new Set())
@@ -76,7 +78,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
 
   async function stopScan() {
     const sid = sessionIdRef.current
-    if (sid) await ipcInvoke('scan:cancel', { sessionId: sid }).catch(() => {})
+    if (sid) await ipcInvoke('scan:cancel', { sessionId: sid }).catch((err) => log.debug('scan cancel failed', { error: describeError(err) }))
     setScanning(false)
     setScanned(true)
   }

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable } from 'node:stream'
+import type { LoggableError } from '@shared/error'
 
 /**
  * Thin wrappers around node:child_process.spawn.
@@ -45,7 +46,7 @@ export type CaptureOptions = SpawnOptions & {
   reject?: boolean
 }
 
-export class SubprocessError extends Error {
+export class SubprocessError extends Error implements LoggableError {
   constructor(
     public readonly command: string,
     public readonly exitCode: number | null,
@@ -54,39 +55,23 @@ export class SubprocessError extends Error {
     super(`${command} exited with code ${exitCode}: ${stderr.slice(0, 500)}`)
     this.name = 'SubprocessError'
   }
+
+  // Discrete, machine-parseable fields for describeError — exitCode as a number
+  // to filter on, and the FULL stderr (the message truncates it to 500 chars).
+  toLogFields(): Record<string, unknown> {
+    return { command: this.command, exitCode: this.exitCode, stderr: this.stderr }
+  }
 }
 
-export class IdleTimeoutError extends Error {
+export class IdleTimeoutError extends Error implements LoggableError {
   constructor(public readonly command: string, public readonly idleMs: number) {
     super(`${command} idle for ${idleMs}ms`)
     this.name = 'IdleTimeoutError'
   }
-}
 
-/**
- * Flatten any thrown value into a structured, log-ready object. Our own error
- * types expose their fields (exit code, command, the subprocess's stderr) as
- * discrete keys instead of one pre-baked string, so a log line carries the
- * pieces separately — `JSON.stringify({ exitCode, stderr, … })` rather than
- * "SubprocessError: …exited with code 1: ERROR …". Falls back to name+message
- * for plain Errors and to a string for anything else.
- */
-export function describeError(err: unknown): Record<string, unknown> {
-  if (err instanceof SubprocessError) {
-    return { name: err.name, command: err.command, exitCode: err.exitCode, stderr: err.stderr }
+  toLogFields(): Record<string, unknown> {
+    return { command: this.command, idleMs: this.idleMs }
   }
-  if (err instanceof IdleTimeoutError) {
-    return { name: err.name, command: err.command, idleMs: err.idleMs }
-  }
-  if (err instanceof Error) {
-    return { name: err.name, message: err.message }
-  }
-  return { message: String(err) }
-}
-
-/** The human-readable message for an error, without a leading "ErrorName:" prefix. */
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 type StreamingChild = ChildProcessByStdio<null, Readable, Readable>

@@ -36,7 +36,7 @@ export function tick(): void {
     if (active.size >= max) break
     const job = new Job(tape)
     active.set(tape.id, job)
-    log.info(`job start: ${tape.id}`, { url: tape.sourceUrl })
+    log.info('job start', { tapeId: tape.id, url: tape.sourceUrl })
     void job
       .run()
       .finally(() => {

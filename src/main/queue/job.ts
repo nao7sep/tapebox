@@ -6,7 +6,7 @@ import * as sidecar from '@main/core/sidecar'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
-import { describeError, errorMessage } from '@main/io/spawn'
+import { describeError, errorMessage } from '@shared/error'
 import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
@@ -58,7 +58,7 @@ export class Job {
         return
       }
       const message = errorMessage(err)
-      log.error(`job failed: ${this.tapeId}`, describeError(err))
+      log.error('job failed', { tapeId: this.tapeId, error: describeError(err) })
       this.update({ state: 'failed', lastError: message, failedAtUtc: nowUtcIso() })
       emit('tapes:failed', { tapeId: this.tapeId, error: message })
     }

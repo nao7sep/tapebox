@@ -1,0 +1,30 @@
+{
+  // Tests run under vitest (Node) but import both main (Node) and renderer (DOM)
+  // code, so this config intentionally carries BOTH environments. Per-environment
+  // isolation is enforced by tsconfig.node.json / tsconfig.web.json against the
+  // shipped source; this config only typechecks the test files.
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "isolatedModules": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@main/*": ["./src/main/*"],
+      "@renderer/*": ["./src/renderer/*"]
+    }
+  },
+  "include": ["tests/**/*.ts", "tests/**/*.tsx"]
+}

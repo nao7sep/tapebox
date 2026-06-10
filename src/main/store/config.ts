@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
+import { describeError } from '@shared/error'
 import { SettingsSchema, defaultSettings, type Settings } from '@shared/settings'
 
 /**
@@ -40,13 +41,13 @@ async function readConfig(): Promise<Settings | null> {
     raw = JSON.parse(await readFile(paths.config, 'utf8'))
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      log.warn('config unreadable; falling back to defaults', { error: String(err) })
+      log.warn('config unreadable; falling back to defaults', { error: describeError(err) })
     }
     return null
   }
   const parsed = SettingsSchema.safeParse(raw)
   if (parsed.success) return parsed.data
-  log.warn('config invalid; falling back to defaults', { error: parsed.error.message })
+  log.warn('config invalid; falling back to defaults', { error: describeError(parsed.error) })
   return null
 }
 

@@ -10,6 +10,11 @@ import type { AudioChannels, EncodeSpeed, VideoQuality } from './export-presets'
  * This file is type-only and pure — safe to import from main, preload, and
  * renderer. The renderer's typed client (preload contextBridge) and the main
  * registrar both derive from this single source of truth.
+ *
+ * Logging is the one deliberate exception: the renderer forwards log objects to
+ * main over a one-way `log:write` channel (and reads main's debug state once via
+ * a synchronous `log:debug-enabled`), typed by @shared/log rather than by the
+ * request/response shapes below. See src/main/ipc/log.ts and src/renderer/ipc/log.ts.
  */
 export type IpcCalls = {
   // ── Downloads (URL → Tape lifecycle) ─────────────────────────────────────
@@ -150,8 +155,24 @@ export type ImportResult = {
   rejected: { path: string; reason: string }[]
 }
 
+// Spelled out as a portable union (the member set of NodeJS.Platform) so this
+// shared contract carries no dependency on @types/node — it is imported by the
+// renderer, which is typechecked without Node types.
+export type Platform =
+  | "aix"
+  | "android"
+  | "darwin"
+  | "freebsd"
+  | "haiku"
+  | "linux"
+  | "openbsd"
+  | "sunos"
+  | "win32"
+  | "cygwin"
+  | "netbsd"
+
 export type RuntimeInfo = {
-  platform: NodeJS.Platform
+  platform: Platform
   arch: string
   version: string
 }

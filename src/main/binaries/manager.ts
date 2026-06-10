@@ -5,6 +5,7 @@ import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
 import { getSettings, updateSettings } from '@main/store/config'
 import { execCapture } from '@main/io/spawn'
+import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
 import { withRetry } from '@main/io/retry'
 import { BINARY_DOWNLOAD_IDLE_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
@@ -98,7 +99,7 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
         resolved++
       } catch (err) {
         failed++
-        log.warn(`binary update check failed: ${name}`, { error: String(err) })
+        log.warn('binary update check failed', { name, error: describeError(err) })
       }
     }),
   )
@@ -121,12 +122,12 @@ export async function installOrUpdate(name: BinaryName): Promise<void> {
 }
 
 async function performInstall(name: BinaryName): Promise<void> {
-  log.info(`binary install start: ${name}`)
+  log.info('binary install start', { name })
   emit('binaries:progress', { name, percent: 0, phase: 'download' })
 
   const spec = binarySpecs[name]
   const resolved = await spec.resolveLatest()
-  log.info(`binary resolved: ${name} ${resolved.version}`, { url: resolved.downloadUrl })
+  log.info('binary resolved', { name, version: resolved.version, url: resolved.downloadUrl })
 
   await ensureDirs()
   const tempPath = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
@@ -175,7 +176,7 @@ async function performInstall(name: BinaryName): Promise<void> {
   // deno a "v" prefix, which would otherwise never equal the upstream version
   // the update check compares against, flagging a phantom update on install.
   const selfReported = await verifyVersion(name)
-  log.info(`binary installed: ${name} ${resolved.version}`, { selfReported })
+  log.info('binary installed', { name, version: resolved.version, selfReported })
 
   const current = getSettings().binaries
   await updateSettings({

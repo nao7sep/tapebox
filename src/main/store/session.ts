@@ -1,6 +1,7 @@
 import { paths } from '@main/paths'
 import { readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
+import { describeError } from '@shared/error'
 import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
 
 /**
@@ -90,7 +91,7 @@ export async function persistNow(): Promise<void> {
   try {
     await writeJsonAtomic(paths.session, cache, SessionSchema)
   } catch (err) {
-    log.error('session persist failed', { error: String(err) })
+    log.error('session persist failed', { error: describeError(err) })
     throw err
   }
 }

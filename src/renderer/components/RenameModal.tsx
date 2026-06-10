@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
+import { log } from '@renderer/ipc/log'
+import { describeError } from '@shared/error'
 import { Modal } from '@renderer/components/Modal'
 import { Button, Field, INPUT_CLASS } from '@renderer/components/ui'
 
@@ -43,7 +45,9 @@ export function RenameModal({ tape, onClose }: Props) {
         // already carries, so they default on synchronously above).
         if (desc) setInclude((prev) => ({ ...prev, description: true }))
       })
-      .catch(() => {})
+      // Non-critical preview enrichment; main logs the authoritative handler
+      // error, so the renderer just notes it at debug.
+      .catch((err) => log.debug('sidecar preview load failed', { tapeId: tape.id, error: describeError(err) }))
     return () => { cancelled = true }
   }, [tape.id])
 

@@ -105,8 +105,6 @@ export const SettingsSchema = z.object({
     deno: BinaryEntrySchema,
   }),
 
-  retainLogCount: z.number().int().min(0),
-
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
   // scan); a matching siteProfile's args are appended on top. The app's own
   // flags win on conflict (they're placed last). Defaulted for older configs.
@@ -145,7 +143,6 @@ export function defaultSettings(libraryDir: string): Settings {
       ffmpeg:   { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
       deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
     },
-    retainLogCount: 50,
     ytdlpArgs: '',
     siteProfiles: [],
     externalPlayer: '',
