@@ -1,4 +1,5 @@
-import type { LogFields, LogLevel, LogMessage } from '@shared/log'
+import type { LogFields, LogLevel } from '@shared/log'
+import type { TapeboxApi } from '@shared/bridge'
 
 /**
  * Renderer-side logger. The renderer is sandboxed and never opens the session
@@ -15,9 +16,7 @@ import type { LogFields, LogLevel, LogMessage } from '@shared/log'
  * or silently drop — logging must never swallow its own failure.
  */
 
-type Bridge = { log(message: LogMessage): void; isDebugEnabled: boolean }
-
-const bridge = (window as unknown as { tapebox: Bridge }).tapebox
+const bridge = (window as unknown as { tapebox: TapeboxApi }).tapebox
 
 function forward(level: LogLevel, message: string, fields?: LogFields): void {
   try {

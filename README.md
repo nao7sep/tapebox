@@ -46,7 +46,7 @@ Convenience launchers are provided that install dependencies and start the app:
 | `npm run pack:win`   | Build and package an unpacked Windows app        |
 | `npm run pack:linux` | Build and package an unpacked Linux app          |
 
-`npm run typecheck` is split by runtime environment so cross-environment mistakes are caught statically: `tsconfig.node.json` (main + preload, Node with no DOM), `tsconfig.web.json` (renderer, DOM with no Node types), and `tsconfig.test.json` (tests, which use both). A main-process file reaching for a browser global, or a renderer file reaching for a Node global, fails the check. Preload is checked on the Node side because it imports `electron`; the IPC contract type lives in `src/shared`, so the renderer never imports preload.
+`npm run typecheck` is split by runtime environment so cross-environment mistakes are caught statically: `tsconfig.node.json` (main + preload, Node with no DOM), `tsconfig.web.json` (renderer, DOM with no Node types), and `tsconfig.test.json` (tests, which use both). A main-process file reaching for a browser global, or a renderer file reaching for a Node global, fails the check. Preload is checked on the Node side because it imports `electron`; the IPC contract and the `window.tapebox` contextBridge surface type (`TapeboxApi`) both live in `src/shared` — preload implements the latter via `satisfies` and the renderer imports it — so the renderer never imports preload and the bridge cannot silently drift from its callers.
 
 ## Data layout
 

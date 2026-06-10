@@ -5,6 +5,7 @@ import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import { formatTime } from '@renderer/lib/format'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
+import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { Modal } from '@renderer/components/Modal'
 import { IndeterminateBar } from '@renderer/components/Progress'
 import { Button, INPUT_CLASS } from '@renderer/components/ui'
@@ -22,6 +23,7 @@ type Props = { onClose: () => void; initialUrl?: string }
  */
 export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const { url, setUrl, onPaste } = useClipboardUrl(true, initialUrl)
+  const { composingRef, handlers: composing } = useComposing()
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [entries, setEntries] = useState<ScanResult[]>([])
@@ -143,7 +145,9 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onPaste={onPaste}
-          onKeyDown={(e) => { if (e.key === 'Enter') scan() }}
+          onCompositionStart={composing.onCompositionStart}
+          onCompositionEnd={composing.onCompositionEnd}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !isComposingKeyboardEvent(composingRef, e)) scan() }}
           placeholder="Paste a page URL"
           spellCheck={false}
           className={`flex-1 ${INPUT_CLASS}`}

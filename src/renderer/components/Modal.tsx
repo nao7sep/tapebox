@@ -1,4 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { trapTabFocus } from '@renderer/lib/focusTrap'
+import { acquireScrollLock, releaseScrollLock } from '@renderer/lib/scrollLock'
 
 /**
  * Two tiers, by content:
@@ -28,22 +30,62 @@ const SIZE_CLASS: Record<ModalSize, string> = {
 
 /**
  * Shared chrome for every in-app modal: backdrop, pinned header with a close ✕,
- * scrollable body, optional pinned footer. All close paths — Escape, backdrop
- * click, and the ✕ — funnel through onClose. Escape only closes the topmost
- * dialog so stacked modals unwind one at a time.
+ * scrollable body, optional pinned footer. The shell owns the mechanics every
+ * modal inherits:
+ *   - all close paths (Escape, backdrop click, ✕) funnel through onClose;
+ *   - Escape closes only the topmost dialog, so stacked modals unwind one at a time;
+ *   - focus lands on the dialog on open, is trapped inside while open (Tab/Shift+Tab
+ *     wrap; stray focus is pulled back), and returns to the opener on close;
+ *   - background scrolling is locked while any modal is open;
+ *   - the title is the accessible name via aria-labelledby.
+ * Feature modals supply only their content, footer actions, and close logic.
  */
 export function Modal({ title, onClose, children, footer, size = 'md', fitContent = false, closeDisabled = false }: ModalProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const titleId = useId()
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Escape' || !isTopmost(panelRef.current)) return
-      e.preventDefault()
-      if (!closeDisabled) onClose()
+  // Focus containment + scroll lock for the modal's lifetime. Mount-only: the
+  // open-time focus capture and the restore on close must each happen exactly
+  // once. Escape and Tab are owned by the panel's onKeyDown below; this effect
+  // adds focus-on-open, the focusin safety net, the scroll lock, and restore.
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    const previouslyFocused = document.activeElement
+    panel?.focus()
+    acquireScrollLock()
+
+    // Pull focus back if it slips out of the topmost modal through programmatic
+    // moves or engine quirks (Tab itself is already contained by onKeyDown).
+    function onFocusIn(e: FocusEvent) {
+      if (!panel || !isTopmost(panel)) return
+      if (e.target instanceof Node && panel.contains(e.target)) return
+      panel.focus()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose, closeDisabled])
+    document.addEventListener('focusin', onFocusIn)
+
+    return () => {
+      document.removeEventListener('focusin', onFocusIn)
+      releaseScrollLock()
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
+        previouslyFocused.focus()
+      }
+    }
+  }, [])
+
+  function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const panel = panelRef.current
+    if (panel === null || !isTopmost(panel)) return
+    if (e.key === 'Escape') {
+      // The topmost modal owns Escape: swallow it so it never reaches a window-
+      // level shortcut, then close unless a busy action holds the modal open.
+      e.stopPropagation()
+      if (!closeDisabled) onClose()
+      return
+    }
+    if (e.key === 'Tab') {
+      trapTabFocus(panel, e.nativeEvent)
+    }
+  }
 
   return (
     <div
@@ -57,11 +99,14 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
         ref={panelRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         data-dialog-surface
-        className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl`}
+        onKeyDown={onKeyDown}
+        className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl focus:outline-hidden`}
       >
         <header className="flex shrink-0 items-center justify-between border-b border-zinc-700 p-4">
-          <h2 className="text-lg font-medium">{title}</h2>
+          <h2 id={titleId} className="text-lg font-medium">{title}</h2>
           <button
             onClick={onClose}
             disabled={closeDisabled}
@@ -72,7 +117,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6">{children}</div>
 
         {footer && (
           <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-700 p-4">

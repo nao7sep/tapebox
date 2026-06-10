@@ -1,18 +1,13 @@
 import type { IpcCalls, IpcEvents } from '@shared/ipc-contract'
+import type { TapeboxApi } from '@shared/bridge'
 
 /**
- * Typed wrappers around the contextBridge surface.
+ * Typed wrappers around the contextBridge surface (@shared/bridge).
  * Channels with `req: undefined` are called with no second argument;
  * channels with a payload type require it. Enforced by the conditional below.
  */
 
-type Bridge = {
-  invoke(channel: string, req: unknown): Promise<unknown>
-  on(channel: string, listener: (payload: unknown) => void): () => void
-  pathForFile(file: File): string
-}
-
-const bridge = (window as unknown as { tapebox: Bridge }).tapebox
+const bridge = (window as unknown as { tapebox: TapeboxApi }).tapebox
 
 type InvokeArgs<K extends keyof IpcCalls> =
   IpcCalls[K]['req'] extends undefined ? [] : [req: IpcCalls[K]['req']]

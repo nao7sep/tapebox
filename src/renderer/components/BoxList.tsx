@@ -6,6 +6,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useArchiveStore } from '@renderer/store/archive'
+import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { boxNameError, LOOSE_LABEL } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
 
@@ -28,6 +29,7 @@ export function BoxList() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const { composingRef, handlers: composing } = useComposing()
 
   const sorted = [...boxes].sort((a, b) => a.order - b.order)
   const archived = tapes.filter((i) => !!i.archivedAtUtc)
@@ -91,8 +93,10 @@ export function BoxList() {
                   onFocus={(e) => e.currentTarget.select()}
                   onChange={(e) => setDraftName(e.target.value)}
                   onBlur={() => commitOrDiscard(g.id)}
+                  onCompositionStart={composing.onCompositionStart}
+                  onCompositionEnd={composing.onCompositionEnd}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') void commitRename(g.id)
+                    if (e.key === 'Enter' && !isComposingKeyboardEvent(composingRef, e)) void commitRename(g.id)
                     else if (e.key === 'Escape') setEditingId(null)
                   }}
                   className={

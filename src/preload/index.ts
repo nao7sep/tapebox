@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import type { LogMessage } from '@shared/log'
+import type { TapeboxApi } from '@shared/bridge'
 
 /**
  * Generic bridge. The renderer wraps these in typed helpers
@@ -32,6 +33,6 @@ const api = {
     ipcRenderer.send('log:write', message)
   },
   isDebugEnabled: ipcRenderer.sendSync('log:debug-enabled') !== false,
-}
+} satisfies TapeboxApi
 
 contextBridge.exposeInMainWorld('tapebox', api)
