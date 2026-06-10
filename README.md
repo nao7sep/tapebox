@@ -85,7 +85,7 @@ All state lives under `~/.tapebox`:
 ~/.tapebox/
   bin/            managed yt-dlp / ffmpeg / deno executables
   library/        downloaded media + sidecar JSON
-  logs/           per-launch log files; newest 50 kept by default
+  logs/           per-launch log files; kept indefinitely, never pruned or rotated
   work/           scratch space (in-progress downloads)
   config.json     settings (self-heals to defaults if missing or invalid)
   session.json    queue/library state (load fails loud — never silently reset)
@@ -122,8 +122,9 @@ model) configured in Settings. The API key is lightly obfuscated in local JSON
 as `obf:` + base64 of the reversed key. This is not encryption.
 
 Per-launch logs are written under `~/.tapebox/logs` as JSON Lines files named
-`yyyymmdd-hhmmss-utc.log`. TapeBox keeps the newest 50 log files by default;
-advanced users can change this with `retainLogCount` in `~/.tapebox/config.json`.
+`yyyymmdd-hhmmss-utc.log`. Logs are kept indefinitely — never pruned or rotated;
+an old one may be exactly what's needed to debug a problem that surfaces much
+later. Delete `~/.tapebox/logs/` yourself if you want to reclaim space.
 
 Note: only TapeBox's own state lives under `~/.tapebox`. Electron/Chromium
 internal state (cache, cookies, GPU cache) stays in the OS-default

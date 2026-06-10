@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { stripUrlCredentials } from './url'
 
 export const BinaryEntrySchema = z.object({
   installedVersion: z.string().nullable(),
@@ -105,10 +106,6 @@ export const SettingsSchema = z.object({
     deno: BinaryEntrySchema,
   }),
 
-  // Keep only this many per-launch log files. Defaulted so configs written while
-  // the setting was absent, or before it existed, still load cleanly.
-  retainLogCount: z.number().int().min(0).default(50),
-
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
   // scan); a matching siteProfile's args are appended on top. The app's own
   // flags win on conflict (they're placed last). Defaulted for older configs.
@@ -147,9 +144,51 @@ export function defaultSettings(libraryDir: string): Settings {
       ffmpeg:   { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
       deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
     },
-    retainLogCount: 50,
     ytdlpArgs: '',
     siteProfiles: [],
     externalPlayer: '',
+  }
+}
+
+/**
+ * A summary of the effective settings for the startup record the logging
+ * conventions mandate ("the key effective configuration, secrets redacted").
+ *
+ * The hazard guarded against is a secret living inside a string *value*, which
+ * the name-based log redactor cannot catch (it matches denied field names, never
+ * string contents). Three kinds of field are therefore handled with care:
+ *
+ *   - The AI endpoint is logged with URL userinfo stripped (stripUrlCredentials),
+ *     because a credential can ride in the `user:password@` of an otherwise
+ *     reasonable baseUrl (an auth proxy / gateway), separate from the API key
+ *     held in its own file.
+ *   - Free-text whose body could carry a credential — `ytdlpArgs` and a site
+ *     profile's `args`, where a token can ride inside a header, cookie, or URL —
+ *     is reduced to presence/count and never emitted as its value.
+ *   - `prompts.slug` is unbounded user text, so it collapses to whether it still
+ *     equals the in-code default.
+ *
+ * Everything else is bounded, non-secret config (paths, the model, the toggles)
+ * logged verbatim because it is exactly what a later debugging session needs.
+ *
+ * Returns a plain object (no logging-layer import) so the domain stays unaware of
+ * who consumes it; the caller hands it to the logger as a field.
+ */
+export function summarizeSettings(s: Settings): Record<string, unknown> {
+  return {
+    libraryDir: s.libraryDir,
+    autoStartDownloads: s.autoStartDownloads,
+    maxConcurrentDownloads: s.maxConcurrentDownloads,
+    autoplay: s.autoplay,
+    playSound: s.playSound,
+    trashOnRemove: s.trashOnRemove,
+    confirmRemove: s.confirmRemove,
+    autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
+    aiBaseUrl: stripUrlCredentials(s.ai.baseUrl),
+    aiModel: s.ai.model,
+    externalPlayer: s.externalPlayer,
+    promptsCustomized: s.prompts.slug !== DEFAULT_SLUG_PROMPT,
+    ytdlpArgsSet: s.ytdlpArgs.trim().length > 0,
+    siteProfileCount: s.siteProfiles.length,
   }
 }

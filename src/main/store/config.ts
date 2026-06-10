@@ -3,7 +3,7 @@ import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { SettingsSchema, defaultSettings, type Settings } from '@shared/settings'
+import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } from '@shared/settings'
 
 /**
  * Config cache + atomic persistence for ~/.tapebox/config.json.
@@ -27,11 +27,11 @@ export async function loadSettings(): Promise<void> {
   const found = await readConfig()
   if (found) {
     cache = found
-    log.info('settings loaded')
+    log.info('settings loaded', { config: summarizeSettings(found) })
   } else {
     cache = defaultSettings(paths.library)
     await writeJsonAtomic(paths.config, cache, SettingsSchema)
-    log.info('settings missing or invalid; defaults written')
+    log.info('settings missing or invalid; defaults written', { config: summarizeSettings(cache) })
   }
 }
 

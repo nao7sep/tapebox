@@ -3,6 +3,7 @@ import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
+import { stripUrlCredentials } from '@shared/url'
 import { Job } from './job'
 
 /**
@@ -36,7 +37,7 @@ export function tick(): void {
     if (active.size >= max) break
     const job = new Job(tape)
     active.set(tape.id, job)
-    log.info('job start', { tapeId: tape.id, url: tape.sourceUrl })
+    log.info('job start', { tapeId: tape.id, url: stripUrlCredentials(tape.sourceUrl) })
     void job
       .run()
       .finally(() => {
