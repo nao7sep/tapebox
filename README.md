@@ -64,10 +64,18 @@ Convenience launchers are provided that install dependencies and start the app:
 | `npm run dev`        | Start in development mode (electron-vite)        |
 | `npm run build`      | Build main, preload, and renderer bundles        |
 | `npm run preview`    | Preview the production build                     |
-| `npm run typecheck`  | Type-check with `tsc --noEmit`                   |
+| `npm run typecheck`  | Type-check each environment (node + web + tests) |
 | `npm run pack:mac`   | Build and package an unpacked macOS app          |
 | `npm run pack:win`   | Build and package an unpacked Windows app        |
 | `npm run pack:linux` | Build and package an unpacked Linux app          |
+
+`npm run typecheck` is split by runtime environment so cross-environment
+mistakes are caught statically: `tsconfig.node.json` (main + preload, Node with
+no DOM), `tsconfig.web.json` (renderer, DOM with no Node types), and
+`tsconfig.test.json` (tests, which use both). A main-process file reaching for a
+browser global, or a renderer file reaching for a Node global, fails the check.
+Preload is checked on the Node side because it imports `electron`; the IPC
+contract type lives in `src/shared`, so the renderer never imports preload.
 
 ## Data layout
 
@@ -77,7 +85,7 @@ All state lives under `~/.tapebox`:
 ~/.tapebox/
   bin/            managed yt-dlp / ffmpeg / deno executables
   library/        downloaded media + sidecar JSON
-  logs/           per-launch log files (yyyymmdd-hhmmss-utc.log)
+  logs/           per-launch log files; newest 50 kept by default
   work/           scratch space (in-progress downloads)
   config.json     settings (self-heals to defaults if missing or invalid)
   session.json    queue/library state (load fails loud — never silently reset)
@@ -112,6 +120,10 @@ Path aliases `@main/*`, `@renderer/*`, and `@shared/*` map to the corresponding
 AI slug generation targets a single OpenAI-compatible endpoint (base URL +
 model) configured in Settings. The API key is lightly obfuscated in local JSON
 as `obf:` + base64 of the reversed key. This is not encryption.
+
+Per-launch logs are written under `~/.tapebox/logs` as JSON Lines files named
+`yyyymmdd-hhmmss-utc.log`. TapeBox keeps the newest 50 log files by default;
+advanced users can change this with `retainLogCount` in `~/.tapebox/config.json`.
 
 Note: only TapeBox's own state lives under `~/.tapebox`. Electron/Chromium
 internal state (cache, cookies, GPU cache) stays in the OS-default

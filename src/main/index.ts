@@ -3,8 +3,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs } from './paths.js'
 import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
+import { pruneOldLogs } from './io/log-retention.js'
 import { describeError } from '@shared/error'
-import { loadSettings } from './store/config.js'
+import { loadSettings, getSettings } from './store/config.js'
 import { loadSession, persistNow } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
@@ -79,6 +80,7 @@ async function startup(): Promise<void> {
   })
 
   await loadSettings()
+  await pruneOldLogs(getSettings().retainLogCount)
   await loadSession()
   await layout.loadLayout()
 
