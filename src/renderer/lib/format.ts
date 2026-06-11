@@ -1,4 +1,13 @@
 /**
+ * "N chapters", but only when the count is meaningful — more than one. A video
+ * with 0 or 1 chapters, or an unknown count (null/undefined, e.g. not yet probed),
+ * has nothing worth showing, so this returns null and callers render nothing.
+ */
+export function chapterCountLabel(count: number | null | undefined): string | null {
+  return count != null && count > 1 ? `${count} chapters` : null
+}
+
+/**
  * Time formatting for chapter timestamps and durations.
  * Returns 'M:SS' below an hour, 'H:MM:SS' for an hour or more.
  */

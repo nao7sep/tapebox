@@ -2,10 +2,11 @@ import type { Tape, TapeState } from '@shared/domain'
 import type { ProgressEntry } from '@renderer/store/tapes'
 
 /**
- * Title-case label for each tape state, shared by the list rows and the detail
- * header so a tape reads the same wherever it appears (no stray lowercase).
+ * Title-case label for each tape state. Module-private: callers go through
+ * tapeStatusLabel() below (which layers live progress on top), so a tape reads
+ * the same wherever it appears (no stray lowercase).
  */
-export const TAPE_STATE_LABEL: Record<TapeState, string> = {
+const TAPE_STATE_LABEL: Record<TapeState, string> = {
   queued: 'Queued',
   probing: 'Probing',
   ready: 'Ready',

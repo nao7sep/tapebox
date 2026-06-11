@@ -19,8 +19,10 @@ export function registerDialogHandlers(): void {
 
   handle('dialog:pickFiles', async ({ title }) => {
     const parent = BrowserWindow.getFocusedWindow() ?? undefined
+    // Import is sidecar-driven: the user picks the .json sidecars and each names its
+    // own media + thumbnail, which the importer reads from beside it.
     const filters = [
-      { name: 'Media', extensions: ['webm', 'mp4', 'm4v', 'mkv', 'mov', 'm4a', 'mp3', 'opus', 'ogg'] },
+      { name: 'TapeBox sidecar', extensions: ['json'] },
       { name: 'All files', extensions: ['*'] },
     ]
     const result = parent

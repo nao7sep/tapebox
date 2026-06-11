@@ -9,11 +9,10 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
     <Modal title="About TapeBox" onClose={onClose} size="md">
       <div className="space-y-4 text-sm">
         <div>
-          <p className="text-lg font-medium text-zinc-100">TapeBox</p>
-          <p className="mt-1 text-zinc-300">
-            A local media library with web import.
-            {version && <span className="ml-2 text-zinc-300">v{version}</span>}
+          <p className="text-lg font-medium text-zinc-100">
+            TapeBox{version && <span className="ml-2 text-sm font-normal text-zinc-400">v{version}</span>}
           </p>
+          <p className="mt-1 text-zinc-300">A local media library with web import.</p>
         </div>
         <div className="flex gap-4">
           <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-zinc-100">

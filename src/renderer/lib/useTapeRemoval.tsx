@@ -1,44 +1,34 @@
 import { useState, type ReactNode, type RefObject } from 'react'
 import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useSelectionStore } from '@renderer/store/selection'
 import { useSettingsStore } from '@renderer/store/settings'
-import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { releaseVideo } from '@renderer/lib/video'
+import { advanceSelection } from '@renderer/lib/tapeActions'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
 
 /**
  * The single removal flow, shared by the Remove button and the keyboard
- * shortcut. Removing a tape selects its neighbor (next, else previous, else
- * none), optionally behind a confirmation, and moves files to Trash or deletes
- * them per settings — both decided by the persisted Settings.
+ * shortcut. Delete always follows the 'list' policy (there's no item to follow
+ * once it's gone): selection advances to the neighbor via the shared
+ * advanceSelection, optionally behind a confirmation, and files go to Trash or
+ * are deleted per settings. The video is released before the file is touched.
  *
  * Returns `requestRemove` to trigger it and `confirmModal` to render (null
- * unless a confirmation is pending). The video element is released before the
- * file is touched, so callers pass the player ref.
+ * unless a confirmation is pending). Callers pass the player ref.
  */
 export function useTapeRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
   requestRemove: (tape: Tape) => void
   confirmModal: ReactNode
 } {
-  const visible = useVisibleTapes()
-  const select = useSelectionStore((s) => s.select)
   const confirmEnabled = useSettingsStore((s) => s.settings?.confirmRemove ?? true)
   const trashEnabled = useSettingsStore((s) => s.settings?.trashOnRemove ?? true)
   const [pending, setPending] = useState<Tape | null>(null)
 
-  /** The tape to select after `tape` is gone: next, else previous, else null. */
-  function neighborId(tape: Tape): string | null {
-    const idx = visible.findIndex((i) => i.id === tape.id)
-    if (idx === -1) return null
-    return (visible[idx + 1] ?? visible[idx - 1])?.id ?? null
-  }
-
   async function perform(tape: Tape): Promise<void> {
-    const next = neighborId(tape)
+    const advance = advanceSelection(tape) // captures the neighbor before removal
     releaseVideo(videoRef.current)
     await ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })
-    select(next)
+    advance()
   }
 
   function requestRemove(tape: Tape): void {

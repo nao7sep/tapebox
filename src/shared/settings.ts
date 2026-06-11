@@ -31,14 +31,12 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>
  * substitutes to empty when that field is unavailable.
  */
 export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
-Output ONLY the slug — lowercase ASCII letters, digits, and hyphens.
-No quotes, no explanation, no trailing period. Aim for under 60 characters;
-prefer descriptive English keywords that capture the core subject.
 
-Base the slug on the title. Use the uploader and description only as supporting
-context to clarify or disambiguate the subject. Descriptions often carry
-promotional text, links, hashtags, timestamps, and credits — ignore all of
-that, and never copy URLs, @handles, hashtags, or sponsor names into the slug.
+Write the slug in real English words. If the title is in another language, translate its MEANING into English — do not romanize or transliterate it. For example, a Japanese title becomes its English meaning (e.g. "morning-routine"), never its rōmaji (e.g. "asa-no-shuukan"). Proper names — people, places, brands, song or series titles — may stay as written when they have no common English form.
+
+Output ONLY the slug — lowercase ASCII letters, digits, and hyphens, with words separated by single hyphens. No quotes, no explanation, no trailing period. Aim for 3–6 words and under 60 characters.
+
+Base the slug on the title. Use the uploader and description only as supporting context to clarify or disambiguate the subject. Descriptions often carry promotional text, links, hashtags, timestamps, and credits — ignore all of that, and never copy URLs, @handles, hashtags, or sponsor names into the slug.
 
 <title>
 {title}
@@ -126,6 +124,16 @@ export const SettingsSchema = z.object({
   // External player for "Open in player": empty = OS default; otherwise an app
   // name or path (macOS opens it via `open -a`).
   externalPlayer: z.string().default(''),
+
+  // Default destination folder for Export. Empty = unset; the export modal then
+  // requires the user to choose a folder before it can run. A set value pre-fills
+  // the modal, and the user can still pick a different one for that export.
+  defaultExportDir: z.string().default(''),
+
+  // Whether Export removes the tape from the library after copying it out (so it
+  // becomes a "move out"). Shown in the export modal as the default, overridable
+  // per export. On by default — exporting is usually how a finished tape leaves.
+  deleteAfterExport: z.boolean().default(true),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
@@ -160,6 +168,8 @@ export function defaultSettings(libraryDir: string): Settings {
     ytdlpArgs: '',
     siteProfiles: [],
     externalPlayer: '',
+    defaultExportDir: '',
+    deleteAfterExport: true,
   }
 }
 
@@ -202,6 +212,8 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     aiBaseUrl: stripUrlCredentials(s.ai.baseUrl),
     aiModel: s.ai.model,
     externalPlayer: s.externalPlayer,
+    defaultExportDir: s.defaultExportDir,
+    deleteAfterExport: s.deleteAfterExport,
     promptsCustomized: s.prompts.slug !== DEFAULT_SLUG_PROMPT,
     ytdlpArgsSet: s.ytdlpArgs.trim().length > 0,
     siteProfileCount: s.siteProfiles.length,

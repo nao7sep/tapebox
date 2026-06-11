@@ -18,6 +18,32 @@
   --text-sm--line-height: 1.375rem;
 }
 
+/* Scrollbars — tuned to the dark palette so they don't read as a bright OS strip
+   against the near-black UI. Styled globally, so every overflow container (lists,
+   modals, the log, description boxes) matches. WebKit pseudo-elements (Electron is
+   Chromium) give the rounded, inset thumb; the track stays transparent so each
+   container's own dark background shows through, and the thumb brightens a notch
+   on hover. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-zinc-700, #3f3f46);
+  border-radius: 9999px;
+  /* A transparent border clipped to the padding box insets the thumb to a slim
+     pill with breathing room, rather than a bar filling the gutter edge to edge. */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-zinc-600, #52525b);
+}
+
 /* Indeterminate "still working" bar: a short segment sweeping left to right. */
 @keyframes tapebox-indeterminate {
   0% { transform: translateX(-100%); }

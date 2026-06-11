@@ -3,6 +3,7 @@ import type { Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
+import { LAYOUT_BOUNDS } from '@shared/layout'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -13,6 +14,7 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { useTapeRemoval } from '@renderer/lib/useTapeRemoval'
 import { useListKeyboard } from '@renderer/lib/useListKeyboard'
+import { useAppShortcuts } from '@renderer/lib/useAppShortcuts'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { BinariesModal } from '@renderer/components/BinariesModal'
@@ -61,6 +63,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { requestRemove, confirmModal } = useTapeRemoval(videoRef)
   useListKeyboard(requestRemove)
+  useAppShortcuts(() => setShowShortcuts(true))
   const leftPaneWidth = useLayoutStore((s) => s.layout.leftPaneWidth)
   const filter = useFilterStore((s) => s.filter)
   const importMedia = useImportMedia()
@@ -73,9 +76,10 @@ export default function App() {
   }
 
   async function importFiles() {
-    const picked = await ipcInvoke('dialog:pickFiles', { title: 'Import media files' })
-    // Drop any sidecar picked alongside media — it's paired by stem automatically.
-    await importMedia(picked.filter((p) => !p.toLowerCase().endsWith('.json')))
+    const picked = await ipcInvoke('dialog:pickFiles', { title: 'Import tapes — pick their .json sidecars' })
+    // Same shared path as drag-and-drop: importMedia keeps the .json sidecars (and
+    // guides the user if the selection has none, e.g. via the picker's "All files").
+    await importMedia(picked)
   }
 
   useEffect(() => {
@@ -165,8 +169,8 @@ export default function App() {
             <ResizeHandle
               edge="right"
               size={leftPaneWidth}
-              min={200}
-              max={720}
+              min={LAYOUT_BOUNDS.leftPaneWidth.min}
+              max={LAYOUT_BOUNDS.leftPaneWidth.max}
               onResize={(w) => patchLayout({ leftPaneWidth: w }, false)}
               onCommit={(w) => patchLayout({ leftPaneWidth: w }, true)}
             />

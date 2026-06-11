@@ -5,7 +5,14 @@ import { getSettings } from '@main/store/config'
 import { reserveStem } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
+import { frontOrders } from '@shared/order'
 import type { Tape } from '@shared/domain'
+
+/** Orders that drop a block of `count` new tapes onto the top of the inbox. */
+function inboxFrontOrders(count: number): number[] {
+  const inbox = session.getTapes().filter((i) => !i.archivedAtUtc)
+  return frontOrders(inbox.map((i) => i.order), count)
+}
 
 export function registerDownloadHandlers(): void {
   handle('downloads:add', async ({ url }) => {
@@ -16,7 +23,8 @@ export function registerDownloadHandlers(): void {
     if (session.getTapes().some((i) => i.sourceUrl === trimmed)) {
       throw new Error('This URL has already been added.')
     }
-    const tape = await makeQueuedTape(trimmed)
+    const [order] = inboxFrontOrders(1)
+    const tape = await makeQueuedTape(trimmed, order)
     session.upsertTape(tape)
     emit('tapes:added', [tape])
     queue.tick()
@@ -29,14 +37,22 @@ export function registerDownloadHandlers(): void {
     // set grows as we go, which collapses intra-batch repeats too. Same-video-
     // different-URL collisions are caught later, post-probe, in the queue.
     const seen = new Set(session.getTapes().map((i) => i.sourceUrl))
-    const tapes: Tape[] = []
+    const accepted: string[] = []
     for (const url of urls) {
       const trimmed = url.trim()
       if (!trimmed || seen.has(trimmed)) continue
       seen.add(trimmed)
-      tapes.push(await makeQueuedTape(trimmed))
+      accepted.push(trimmed)
     }
-    if (tapes.length === 0) return []
+    if (accepted.length === 0) return []
+    // One front-of-inbox window for the whole batch, so the paste lands as a block
+    // on top in its original order (first URL topmost). Stems are reserved
+    // sequentially to avoid two tapes racing for the same on-disk name.
+    const orders = inboxFrontOrders(accepted.length)
+    const tapes: Tape[] = []
+    for (let i = 0; i < accepted.length; i++) {
+      tapes.push(await makeQueuedTape(accepted[i], orders[i]))
+    }
     for (const tape of tapes) session.upsertTape(tape)
     emit('tapes:added', tapes)
     queue.tick()
@@ -63,7 +79,7 @@ function transition(tapeId: string, patch: Partial<Tape>): void {
   emit('tapes:updated', next)
 }
 
-async function makeQueuedTape(url: string): Promise<Tape> {
+async function makeQueuedTape(url: string, order: number): Promise<Tape> {
   const autostart = getSettings().autoStartDownloads
   const now = nowUtcIso()
   // The id doubles as the on-disk filename stem once the download lands, so it is
@@ -86,11 +102,11 @@ async function makeQueuedTape(url: string): Promise<Tape> {
     thumbnailFilename: null,
     downloadStartedAtUtc: null,
     downloadedAtUtc: null,
-    slug: null,
+    name: null,
     renamedAtUtc: null,
     archivedAtUtc: null,
     boxId: null,
-    boxOrder: 0,
+    order,
     pausedAtUtc: autostart ? null : now,
     failedAtUtc: null,
     lastError: null,

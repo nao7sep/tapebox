@@ -194,6 +194,8 @@ function pickEditable(s: Settings) {
     confirmRemove: s.confirmRemove,
     autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
     externalPlayer: s.externalPlayer,
+    defaultExportDir: s.defaultExportDir,
+    deleteAfterExport: s.deleteAfterExport,
     ai: s.ai,
     prompts: s.prompts,
     ytdlpArgs: s.ytdlpArgs,
@@ -242,6 +244,10 @@ function GeneralTab({
   busy: boolean
   onPatch: (p: Partial<Settings>) => void
 }) {
+  async function chooseExportDir() {
+    const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose default export folder' })
+    if (dir) onPatch({ defaultExportDir: dir })
+  }
   return (
     <div className="space-y-4">
       <Toggle
@@ -293,6 +299,33 @@ function GeneralTab({
         placeholder="Blank = system default (e.g. VLC)"
         disabled={busy}
         onChange={(v) => onPatch({ externalPlayer: v })}
+      />
+      <div>
+        <div className="text-xs font-medium text-zinc-300">Default export folder</div>
+        <div className="mt-1 flex items-center gap-2">
+          <input
+            type="text"
+            value={draft.defaultExportDir}
+            onChange={(e) => onPatch({ defaultExportDir: e.target.value })}
+            placeholder="Blank = ask each time"
+            spellCheck={false}
+            disabled={busy}
+            className={`flex-1 ${INPUT_CLASS}`}
+          />
+          <Button variant="secondary" size="sm" onClick={() => void chooseExportDir()} disabled={busy}>
+            Choose…
+          </Button>
+        </div>
+        <p className="mt-1 text-xs text-zinc-400">
+          Where Export copies a tape's files. Blank means the export dialog asks each time.
+        </p>
+      </div>
+      <Toggle
+        label="Delete from library after export"
+        description="After copying a tape's files out, remove it from TapeBox (respecting the Trash setting below). Off = keep the copy in the library too."
+        checked={draft.deleteAfterExport}
+        disabled={busy}
+        onChange={(v) => onPatch({ deleteAfterExport: v })}
       />
       <Toggle
         label="Confirm before removing"
@@ -368,7 +401,7 @@ function AiTab({
             className={`flex-1 ${INPUT_CLASS}`}
           />
           {keyIsSet && (
-            <Button variant="danger" onClick={onClearKey} disabled={busy}>
+            <Button variant="dangerOutline" onClick={onClearKey} disabled={busy}>
               Clear
             </Button>
           )}
@@ -470,6 +503,13 @@ function YtdlpTab({
           </Button>
         </div>
 
+        {draft.siteProfiles.length === 0 && (
+          <p className="text-xs text-zinc-400">
+            No site profiles yet. Add one to apply extra yt-dlp flags only to URLs that match a
+            pattern — handy for a site that needs a specific header or format.
+          </p>
+        )}
+
         {draft.siteProfiles.map((p) => (
           <div key={p.id} className="space-y-2 rounded border border-zinc-700 p-3">
             <div className="flex items-center gap-2">
@@ -481,7 +521,7 @@ function YtdlpTab({
                 disabled={busy}
                 className={`flex-1 ${INPUT_CLASS}`}
               />
-              <Button variant="danger" size="sm" onClick={() => removeProfile(p.id)} disabled={busy}>
+              <Button variant="dangerOutline" size="sm" onClick={() => removeProfile(p.id)} disabled={busy}>
                 Remove
               </Button>
             </div>

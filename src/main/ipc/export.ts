@@ -1,161 +1,77 @@
-import { access, constants, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { copyFile, readFile, stat } from 'node:fs/promises'
+import { extname, join } from 'node:path'
 import { handle } from './handle'
-import { emit } from './events'
+import { removeTapes } from './library'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
-import * as ffmpeg from '@main/services/ffmpeg'
-import type { AudioChannels, EncodeSpeed, VideoQuality } from '@shared/export-presets'
-import { getPreset } from '@shared/export-presets'
-import { applyChapterTemplate, DEFAULT_CHAPTER_TEMPLATE } from '@shared/export-filename'
+import { writeJsonAtomic } from '@main/io/atomic-json'
 import { sanitizeFilename } from '@main/core/filename'
 import { log } from '@main/io/logger'
 
 /**
- * export:media — bring a tape out of the box, transcoding/extracting it to the
- * user's chosen format (see @shared/export-presets).
+ * export:files — copy a tape out of the library, verbatim. No transcoding:
+ * TapeBox is a thin wrapper, not a converter. The media and its thumbnail (if any)
+ * are byte-for-byte copies; the sidecar is copied with its tapebox.name /
+ * thumbnailFilename rewritten to the exported names so the bundle stays
+ * re-importable. All three land in destinationDir under `name`.
  *
- * Modes:
- *   - whole:      one file = the entire tape in the chosen format.
- *   - perChapter: one file per chapter, named via filenameTemplate. Works for
- *                 any preset — audio or video.
- *
- * Pre-flight: resolve all output paths and refuse if any already exists. Avoids
- * partially-done exports leaving the destination in a weird state.
- *
- * Template tokens for perChapter:
- *   {slug}          tape.slug (falls back to sourceId/tapeId)
- *   {index}         1-based chapter index
- *   {index:02}      2-digit zero-padded chapter index
- *   {chapterTitle}  chapter title, filesystem-safe (preserves Unicode,
- *                   strips only reserved characters). Empty for titles that
- *                   contain only reserved characters — the index token keeps
- *                   filenames unique.
+ * Pre-flight refuses if any destination file already exists, so a partial export
+ * can't half-overwrite something in the user's folder. When deleteFromApp is set,
+ * the tape is then removed from the library (its originals trashed/deleted per the
+ * Trash setting), making export a "move out".
  */
-
-type ExportArgs = {
-  tapeId: string
-  destinationDir: string
-  mode: 'whole' | 'perChapter'
-  presetId: string
-  audioBitrateKbps?: number | null
-  audioChannels?: AudioChannels | null
-  normalizeAudio?: boolean
-  maxHeight?: number | null
-  videoQuality?: VideoQuality | null
-  encodeSpeed?: EncodeSpeed | null
-  fpsCap?: number | null
-  filenameStem?: string
-  filenameTemplate?: string
-}
-
 export function registerExportHandlers(): void {
-  handle('export:media', async (args: ExportArgs) => {
-    const tape = session.getTape(args.tapeId)
-    if (!tape) throw new Error(`Tape not found: ${args.tapeId}`)
+  handle('export:files', async ({ tapeId, destinationDir, name, deleteFromApp }) => {
+    const tape = session.getTape(tapeId)
+    if (!tape) throw new Error(`Tape not found: ${tapeId}`)
     if (!tape.filename || !tape.sidecarFilename) {
-      throw new Error('Tape has no media on disk yet')
+      throw new Error('Tape has no files on disk to export.')
+    }
+    const cleanName = sanitizeFilename(name)
+    if (!cleanName) {
+      throw new Error('Name is empty after removing characters the filesystem rejects.')
     }
 
-    const preset = getPreset(args.presetId)
-    if (!preset) throw new Error(`Unknown export preset: ${args.presetId}`)
+    const libDir = getSettings().libraryDir
+    const newThumbName = tape.thumbnailFilename ? `${cleanName}${extname(tape.thumbnailFilename)}` : null
 
-    const settings = getSettings()
-    const mediaPath = join(settings.libraryDir, tape.filename)
-    const baseStem = tape.slug ?? tape.sourceId ?? tape.id
+    const mediaDst = join(destinationDir, `${cleanName}${extname(tape.filename)}`)
+    const sidecarDst = join(destinationDir, `${cleanName}.json`)
+    const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null
 
-    // The encode knobs are identical for whole and per-chapter; the preset/ffmpeg
-    // layer ignores any that don't apply to the chosen codecs. onLog streams
-    // ffmpeg's output to the export modal so it can show live activity.
-    const knobs = {
-      audioBitrateKbps: args.audioBitrateKbps,
-      audioChannels: args.audioChannels,
-      normalizeAudio: args.normalizeAudio,
-      maxHeight: args.maxHeight,
-      videoQuality: args.videoQuality,
-      encodeSpeed: args.encodeSpeed,
-      fpsCap: args.fpsCap,
-      onLog: (line: string) => emit('export:log', { line }),
+    const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
+    for (const dst of writtenPaths) {
+      if (await exists(dst)) throw new Error(`A file already exists at the destination: ${dst}`)
     }
 
-    if (args.mode === 'whole') {
-      const stem = (args.filenameStem && sanitizeFilename(args.filenameStem)) || baseStem
-      const out = await ffmpeg.transcode({
-        mediaPath,
-        destinationDir: args.destinationDir,
-        filenameStem: stem,
-        preset,
-        chapter: null,
-        ...knobs,
-      })
-      log.info('export:whole done', { tapeId: args.tapeId, out })
-      return { writtenPaths: [out] }
+    // Media + thumbnail: byte-for-byte copies.
+    await copyFile(join(libDir, tape.filename), mediaDst)
+    if (thumbDst && tape.thumbnailFilename) {
+      await copyFile(join(libDir, tape.thumbnailFilename), thumbDst)
     }
 
-    // perChapter
-    const sidecarText = await readFile(join(settings.libraryDir, tape.sidecarFilename), 'utf8')
-    const sidecar = JSON.parse(sidecarText) as {
-      chapters?: Array<{ start_time: number; end_time: number; title: string }>
-    }
-    const chapters = Array.isArray(sidecar.chapters) ? sidecar.chapters : []
-    if (chapters.length === 0) {
-      throw new Error('This tape has no chapter markers to split.')
-    }
+    // Sidecar: rewrite the tapebox names so the exported copy describes its own
+    // files (re-importable as-is), then write it out.
+    const sidecar = JSON.parse(await readFile(join(libDir, tape.sidecarFilename), 'utf8')) as Record<string, unknown>
+    const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+    tb['name'] = cleanName
+    tb['mediaFilename'] = `${cleanName}${extname(tape.filename)}`
+    tb['thumbnailFilename'] = newThumbName
+    sidecar['tapebox'] = tb
+    await writeJsonAtomic(sidecarDst, sidecar)
 
-    const template = args.filenameTemplate || DEFAULT_CHAPTER_TEMPLATE
-    const planned: Array<{ stem: string; chapter: typeof chapters[number] }> = []
-    const seenStems = new Set<string>()
+    log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })
 
-    for (let i = 0; i < chapters.length; i++) {
-      const c = chapters[i]!
-      let stem = applyChapterTemplate(template, {
-        slug: baseStem,
-        index: i + 1,
-        chapterTitle: sanitizeFilename(c.title),
-      })
-      // Final scrub on the whole composed stem to defend against template
-      // tokens or static template text introducing reserved characters.
-      stem = sanitizeFilename(stem)
-      if (!stem) {
-        // chapterTitle collapsed AND template was sparse; fall back to index.
-        stem = sanitizeFilename(`${baseStem}-${String(i + 1).padStart(2, '0')}`)
-      }
-      if (seenStems.has(stem)) {
-        throw new Error(`Filename collision in export plan: "${stem}". Adjust the template.`)
-      }
-      seenStems.add(stem)
-      planned.push({ stem, chapter: c })
-    }
+    // Copies are safely written; only now take the tape out of the library.
+    if (deleteFromApp) await removeTapes([tapeId], true)
 
-    // Pre-flight: no existing destination files.
-    const ext = ffmpeg.resolveExt(preset, mediaPath)
-    for (const p of planned) {
-      const full = join(args.destinationDir, `${p.stem}.${ext}`)
-      if (await fileExists(full)) {
-        throw new Error(`Output already exists: ${full}`)
-      }
-    }
-
-    const writtenPaths: string[] = []
-    for (const p of planned) {
-      const out = await ffmpeg.transcode({
-        mediaPath,
-        destinationDir: args.destinationDir,
-        filenameStem: p.stem,
-        preset,
-        chapter: { startSeconds: p.chapter.start_time, endSeconds: p.chapter.end_time },
-        ...knobs,
-      })
-      writtenPaths.push(out)
-    }
-    log.info('export:perChapter done', { tapeId: args.tapeId, count: writtenPaths.length })
     return { writtenPaths }
   })
 }
 
-async function fileExists(p: string): Promise<boolean> {
+async function exists(p: string): Promise<boolean> {
   try {
-    await access(p, constants.F_OK)
+    await stat(p)
     return true
   } catch {
     return false

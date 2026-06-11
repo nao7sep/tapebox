@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { Tape, TapeState } from '@shared/domain'
 import type { ProgressEntry } from '@renderer/store/tapes'
-import { formatTime } from '@renderer/lib/format'
+import { chapterCountLabel, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
+import { isEditableElement } from '@renderer/lib/dom'
 import { IndeterminateBar, ProgressBar } from './Progress'
 
 type Props = {
@@ -28,10 +29,15 @@ export function TapeRow({ tape, progress, selected, onSelect }: Props) {
 
   // When a row becomes selected — by click, arrow keys, or after a removal —
   // move keyboard focus to it (and scroll it into view) so selection and focus
-  // never land on different rows.
+  // never land on different rows. But don't yank focus out of a text field: this
+  // effect also runs when the row merely mounts, so clearing the archive search
+  // (which swaps the results list for the box list) would otherwise steal the
+  // cursor from the search box. Scrolling into view is always safe.
   useEffect(() => {
     if (!selected) return
-    ref.current?.focus({ preventScroll: true })
+    if (!isEditableElement(document.activeElement)) {
+      ref.current?.focus({ preventScroll: true })
+    }
     ref.current?.scrollIntoView({ block: 'nearest' })
   }, [selected])
 
@@ -62,8 +68,8 @@ export function TapeRow({ tape, progress, selected, onSelect }: Props) {
             ? tape.uploader
             : tapeStatusLabel(tape, progress)}
         </span>
-        {tape.chapterCount != null && tape.chapterCount > 0 && (
-          <span className="shrink-0">· {tape.chapterCount} chapters</span>
+        {chapterCountLabel(tape.chapterCount) && (
+          <span className="shrink-0">· {chapterCountLabel(tape.chapterCount)}</span>
         )}
       </div>
       {(progress || isProcessing(tape.state)) && (

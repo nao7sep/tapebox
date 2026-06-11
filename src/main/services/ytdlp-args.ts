@@ -5,7 +5,7 @@ import type { SiteProfile } from '@shared/settings'
  * Split a CLI argument line into argv tokens. Single and double quotes group and
  * are stripped, so a spaced value stays one token in both the separated form
  * (--add-header "Accept-Language: ja") and the glued form
- * (--extractor-args="youtube:lang=ja"); whitespace separates, newlines included
+ * (--extractor-args="site:lang=ja"); whitespace separates, newlines included
  * so the multi-line global-args field works; every other character — backslash
  * included — is literal.
  *

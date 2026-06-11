@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { z } from 'zod'
 import type { Tape, TapeState } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
+import { LAYOUT_BOUNDS } from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
 import { useDownloadLogStore, type LogEntry } from '@renderer/store/downloadLog'
@@ -9,10 +10,12 @@ import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { releaseVideo } from '@renderer/lib/video'
+import { archiveTape, unarchiveTape } from '@renderer/lib/tapeActions'
+import { isShortcutBlocked } from '@renderer/lib/dom'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { useKeepAwake } from '@renderer/lib/useKeepAwake'
 import { useVolume } from '@renderer/lib/useVolume'
-import { formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
+import { chapterCountLabel, formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 import { Player } from './Player'
@@ -23,6 +26,9 @@ import { ExportModal } from './ExportModal'
 import { ResizeHandle } from './ResizeHandle'
 import { MoveToBoxButton } from './MoveToBoxButton'
 import { CaptionedPanel } from './ui'
+
+/** How long the Copy URL button shows "Copied" before reverting to "Copy URL". */
+const COPIED_RESET_MS = 1500
 
 /**
  * Chapter shape as yt-dlp writes it into the sidecar. We validate at the
@@ -53,6 +59,11 @@ export function DetailPane({
   const [showRefresh, setShowRefresh] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  // The player keeps playing while the rename modal is open; it's only torn down
+  // for the brief moment the file is actually re-stemmed (renaming), after which
+  // it remounts and seeks back to where it was (resumeRef).
+  const [renaming, setRenaming] = useState(false)
+  const resumeRef = useRef<{ at: number; play: boolean } | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const progress = useTapesStore((s) => s.progress[tape.id])
@@ -81,6 +92,7 @@ export function DetailPane({
   })()
 
   const mediaMeta = mediaMetaLine(sidecar)
+  const chapterLabel = chapterCountLabel(tape.chapterCount)
   const description = (() => {
     const d = sidecar?.['description']
     return typeof d === 'string' && d.trim() ? d.trim() : null
@@ -92,7 +104,13 @@ export function DetailPane({
   const downloaded = tape.state === 'downloaded'
   const expandable = downloaded
     ? !!tape.title || !!tape.filename || !!tape.uploader || !!description
-    : !!tape.uploader || tape.durationSeconds != null || !!tape.title || !!tape.slug
+    : !!tape.uploader || tape.durationSeconds != null || !!tape.title || !!tape.name
+
+  // The header splits into two columns only when there's a description to place on
+  // the right. The title and the rest stay in the left column so the description
+  // starts at the very top — level with the title — rather than below a short
+  // title with a stretch of empty space above it.
+  const twoColumnHeader = infoOpen && downloaded && !!description
 
   const mediaUrl = tape.filename && mediaBase
     ? `${mediaBase}/${encodeURIComponent(tape.filename)}`
@@ -108,10 +126,10 @@ export function DetailPane({
 
   useEnforcedMute(videoRef, !playSound, mediaUrl)
 
-  // Key on whether the <video> is actually mounted (a rename modal or playback
-  // error replaces it), so the wake-lock hook re-attaches its listeners when the
-  // player reappears rather than going silent until the next tape.
-  const playerSrc = tape.state === 'downloaded' && !showRename && !playbackError ? mediaUrl : null
+  // Key on whether the <video> is actually mounted (an in-progress rename or a
+  // playback error replaces it), so the wake-lock and volume hooks re-attach when
+  // the player reappears rather than going silent until the next tape.
+  const playerSrc = tape.state === 'downloaded' && !renaming && !playbackError ? mediaUrl : null
   useKeepAwake(videoRef, playerSrc)
   useVolume(videoRef, playerSrc)
 
@@ -128,20 +146,95 @@ export function DetailPane({
     try {
       await navigator.clipboard.writeText(tape.sourceUrl)
       setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      setTimeout(() => setCopied(false), COPIED_RESET_MS)
     } catch { /* clipboard unavailable; nothing actionable to show */ }
   }
 
-  async function archive()   { await ipcInvoke('library:archive',   { tapeIds: [tape.id] }) }
-  async function unarchive() { await ipcInvoke('library:unarchive', { tapeIds: [tape.id] }) }
+  // Archive / unarchive from the detail pane use the 'tape' policy: follow the
+  // video to where it lands (switch to Archive/Inbox, select + focus it there).
+  function archive()         { archiveTape(tape, 'tape') }
+  function unarchive()       { unarchiveTape(tape, 'tape') }
   async function cancel()    { await ipcInvoke('downloads:cancel',  { tapeId: tape.id }) }
   async function retry()     { await ipcInvoke('downloads:retry',   { tapeId: tape.id }) }
 
 
-  function openRename() {
-    releaseVideo(videoRef.current)
-    setShowRename(true)
+  // Renaming while watching: the video keeps playing behind the modal, and only
+  // when the rename runs do we pause + release the file (so the re-stem is safe,
+  // Windows included), then remount on the new name and seek back. The renamed
+  // file is byte-identical, so the captured timestamp stays valid.
+  async function performRename(name: string): Promise<void> {
+    const v = videoRef.current
+    resumeRef.current =
+      v && tape.state === 'downloaded' && !playbackError
+        ? { at: v.currentTime, play: !v.paused && !v.ended }
+        : null
+    releaseVideo(v) // drop the file handle now…
+    setRenaming(true) // …and unmount the player for the operation
+    try {
+      await ipcInvoke('library:rename', { tapeId: tape.id, name })
+    } finally {
+      // Remount either way: the new filename on success, the unchanged one on
+      // failure. onLoadedMetadata then restores the position (see restorePlayback).
+      setRenaming(false)
+    }
   }
+
+  // Fired when the (re)mounted player has its new source ready. Only acts right
+  // after a rename — resumeRef is null on every ordinary load, so a normal tape
+  // open isn't yanked.
+  function restorePlayback() {
+    const r = resumeRef.current
+    if (!r) return
+    resumeRef.current = null
+    const v = videoRef.current
+    if (!v) return
+    try {
+      v.currentTime = r.at
+    } catch {
+      /* position out of range (shouldn't happen — identical file) — leave at start */
+    }
+    if (r.play) void v.play().catch(() => {})
+  }
+
+  // Per-tape keyboard, live while a tape is open: Enter does the tape's primary
+  // action (play/pause a downloaded tape; scan a page; retry a failure; resume a
+  // pause), and R / E / M open the housekeeping tools. Suppressed while typing or
+  // while a modal owns the keyboard. The handler reads the live tape through a ref,
+  // so it binds once; videoRef and the modal setters are already stable.
+  const keyRef = useRef({ tape, onScanPage })
+  keyRef.current = { tape, onScanPage }
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if (e.defaultPrevented || isShortcutBlocked(e.target)) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return // plain keys only
+      const { tape, onScanPage } = keyRef.current
+
+      if (e.key === 'Enter') {
+        if (tape.state === 'downloaded') {
+          const v = videoRef.current
+          if (!v) return
+          e.preventDefault()
+          if (v.paused) void v.play().catch(() => {})
+          else v.pause()
+        } else if (tape.state === 'listing') {
+          e.preventDefault()
+          onScanPage(tape.sourceUrl)
+        } else if (tape.state === 'failed' || tape.state === 'paused') {
+          e.preventDefault()
+          void ipcInvoke('downloads:retry', { tapeId: tape.id })
+        }
+        return
+      }
+
+      if (tape.state !== 'downloaded') return // R / E / M act on a downloaded tape's files
+      const key = e.key.toLowerCase()
+      if (key === 'r') { e.preventDefault(); setShowRename(true) }
+      else if (key === 'e') { e.preventDefault(); setShowExport(true) }
+      else if (key === 'm') { e.preventDefault(); setShowRefresh(true) }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   return (
     <div className="flex h-full">
@@ -157,141 +250,157 @@ export function DetailPane({
               optional details below the fold. Every operation lives in the
               button row, so the header carries no actions. The chevron appears
               only when there is something to expand. */}
-          <div className="flex items-start gap-1">
-            {expandable ? (
-              <button
-                onClick={() => setInfoOpen((v) => !v)}
-                aria-expanded={infoOpen}
-                aria-label={infoOpen ? 'Hide details' : 'Show details'}
-                className="group flex h-7 w-5 shrink-0 items-center justify-center"
-              >
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  className={
-                    'text-zinc-400 transition-transform group-hover:text-zinc-200 ' +
-                    (infoOpen ? 'rotate-90' : '')
-                  }
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <polyline points="9 6 15 12 9 18" />
-                </svg>
-              </button>
-            ) : (
-              <span className="h-7 w-5 shrink-0" aria-hidden="true" />
-            )}
-            <div className="min-w-0 flex-1">
-              <h2 className="select-text break-words text-lg font-medium leading-7">
-                {tape.title ?? tape.sourceUrl}
-              </h2>
-              {/* Always visible: the media line for a downloaded tape (its "status"
-                  is just "In library", which says nothing), otherwise the status. */}
-              <p className="mt-0.5 truncate text-xs text-zinc-400">
-                {downloaded && mediaMeta ? mediaMeta : headerStatus(tape, progress)}
-              </p>
-            </div>
-          </div>
-          {expandable && infoOpen && (downloaded ? (
-            // Unlabeled by design: a URL, a filename (with extension), and the
-            // uploader sitting just above the description are each self-evident from
-            // their shape and position, so labels would only add noise. Order is
-            // outside-in: source → file → uploader → (rule) → description.
-            <div className="mt-2 pl-6 text-xs text-zinc-300">
-              {/* Related lines, tight: 4px apart (space-y-1). */}
-              <div className="space-y-1">
-                {tape.title && (
-                  <a
-                    href={tape.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block select-text break-all hover:text-zinc-100"
+          <div className={twoColumnHeader ? 'grid grid-cols-2 gap-6' : ''}>
+            {/* Left column (full width unless a description sits beside it): the
+                title, the always-visible status/media line, and the disclosed
+                source / file / uploader. */}
+            <div className="min-w-0">
+              <div className="flex items-start gap-1">
+                {expandable ? (
+                  <button
+                    onClick={() => setInfoOpen((v) => !v)}
+                    aria-expanded={infoOpen}
+                    aria-label={infoOpen ? 'Hide details' : 'Show details'}
+                    className="group flex h-7 w-5 shrink-0 items-center justify-center"
                   >
-                    {tape.sourceUrl}
-                  </a>
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      className={
+                        'text-zinc-400 transition-transform group-hover:text-zinc-200 ' +
+                        (infoOpen ? 'rotate-90' : '')
+                      }
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="9 6 15 12 9 18" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span className="h-7 w-5 shrink-0" aria-hidden="true" />
                 )}
-                {tape.filename && <div className="select-text break-all">{tape.filename}</div>}
-                {tape.uploader && <div className="select-text break-words">{tape.uploader}</div>}
-              </div>
-              {/* Section break: the rule is the end of the lines above, so it gets
-                  equal room on both sides — 8px (2× the line gap) above the rule
-                  from the uploader, and 8px below it before the description. */}
-              {description && (
-                <div className="mt-2 border-t border-zinc-700 pt-2">
-                  <div className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap break-words">
-                    {description}
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="select-text break-words text-lg font-medium leading-7">
+                    {tape.title ?? tape.sourceUrl}
+                  </h2>
+                  {/* Always visible: the media line for a downloaded tape (its "status"
+                      is just "In library", which says nothing), otherwise the status. */}
+                  <p className="mt-0.5 truncate text-xs text-zinc-400">
+                    {downloaded && mediaMeta ? mediaMeta : headerStatus(tape, progress)}
+                  </p>
                 </div>
-              )}
+              </div>
+              {expandable && infoOpen && (downloaded ? (
+                // Unlabeled by design: a URL, a filename, and the uploader are each
+                // self-evident from their shape and position.
+                <div className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
+                  {tape.title && (
+                    <a
+                      href={tape.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block select-text break-all hover:text-zinc-100"
+                    >
+                      {tape.sourceUrl}
+                    </a>
+                  )}
+                  {tape.filename && <div className="select-text break-all">{tape.filename}</div>}
+                  {tape.uploader && (
+                    <div className="select-text break-words">
+                      {tape.uploader}
+                      {chapterLabel && <span className="text-zinc-500"> · {chapterLabel}</span>}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <dl className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
+                  {tape.uploader && (
+                    <DetailRow label="Uploader">
+                      {tape.uploader}
+                      {chapterLabel && <span className="text-zinc-500"> · {chapterLabel}</span>}
+                    </DetailRow>
+                  )}
+                  {tape.durationSeconds != null && (
+                    <DetailRow label="Duration">{formatTime(tape.durationSeconds)}</DetailRow>
+                  )}
+                  {/* Source is the heading already when there's no title, so only show it
+                      here (as a link) when a title occupies the heading. */}
+                  {tape.title && (
+                    <DetailRow label="Source">
+                      <a
+                        href={tape.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="select-text break-all hover:text-zinc-100"
+                      >
+                        {tape.sourceUrl}
+                      </a>
+                    </DetailRow>
+                  )}
+                  {tape.name && (
+                    <DetailRow label="Name">
+                      <span className="select-text">{tape.name}</span>
+                    </DetailRow>
+                  )}
+                </dl>
+              ))}
             </div>
-          ) : (
-            <dl className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
-              {tape.uploader && <DetailRow label="Uploader">{tape.uploader}</DetailRow>}
-              {tape.durationSeconds != null && (
-                <DetailRow label="Duration">{formatTime(tape.durationSeconds)}</DetailRow>
-              )}
-              {/* Source is the heading already when there's no title, so only show it
-                  here (as a link) when a title occupies the heading. */}
-              {tape.title && (
-                <DetailRow label="Source">
-                  <a
-                    href={tape.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="select-text break-all hover:text-zinc-100"
-                  >
-                    {tape.sourceUrl}
-                  </a>
-                </DetailRow>
-              )}
-              {tape.slug && (
-                <DetailRow label="Slug">
-                  <span className="select-text">{tape.slug}</span>
-                </DetailRow>
-              )}
-            </dl>
-          ))}
+            {/* Right column: the description, top-aligned with the title so it starts
+                at the top of the header rather than floating below a short title with
+                empty space above it. */}
+            {twoColumnHeader && (
+              <div className="min-w-0">
+                <div className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap break-words pr-1 text-xs text-zinc-300">
+                  {description}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* For a downloaded tape the video fills the height between the title and
-            the buttons. Other states show a single status panel here. */}
+        {/* The preview slot between the header and the buttons. A playing video keeps
+            its own centered wrapper; every non-video state is a CaptionedPanel that
+            fills the slot, so the box stays one consistent size as a tape moves
+            through its states (no growing/shrinking) and the buttons never shift. */}
         {tape.state === 'downloaded' ? (
-          <div className="mt-3 flex min-h-[200px] min-w-0 flex-1 items-center justify-center px-4">
-            {playbackError ? (
-              <div className="w-full rounded border border-red-900 bg-red-950/30 p-4">
-                <p className="text-sm font-medium text-red-300">This tape couldn&apos;t be played</p>
-                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs text-zinc-300">
-                  {playbackError}
-                </pre>
-                <p className="mt-2 text-xs text-zinc-400">
+          playbackError ? (
+            <CaptionedPanel kind="error" caption="This tape couldn’t be played" fill>
+              <div className="min-h-0 flex-1 overflow-auto p-4">
+                <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300">{playbackError}</pre>
+                <p className="mt-3 text-xs text-zinc-400">
                   Try “Open in player” below for the system player, or reveal the session log from the menu for the full record.
                 </p>
               </div>
-            ) : mediaUrl && !showRename ? (
-              <Player
-                ref={videoRef}
-                src={mediaUrl}
-                posterSrc={posterSrc}
-                autoPlay={autoplay}
-                muted={!playSound}
-                onError={(v) => setPlaybackError(describeMediaError(v))}
-              />
-            ) : null}
-          </div>
+            </CaptionedPanel>
+          ) : (
+            <div className="my-3 flex min-h-[200px] min-w-0 flex-1 items-center justify-center px-4">
+              {mediaUrl && !renaming ? (
+                <Player
+                  ref={videoRef}
+                  src={mediaUrl}
+                  posterSrc={posterSrc}
+                  autoPlay={autoplay}
+                  muted={!playSound}
+                  onError={(v) => setPlaybackError(describeMediaError(v))}
+                  onLoadedMetadata={restorePlayback}
+                />
+              ) : null}
+            </div>
+          )
         ) : tape.state === 'listing' ? (
-          <CaptionedPanel kind="info" caption="This page lists several videos">
+          <CaptionedPanel kind="info" caption="This page lists several videos" fill>
             <p className="p-5 text-sm leading-relaxed text-zinc-300">
               TapeBox adds one video at a time. Use <strong>Scan page</strong> below
               to see its videos and pick which to add.
             </p>
           </CaptionedPanel>
         ) : tape.state === 'paused' ? (
-          <CaptionedPanel kind="warning" caption="Paused">
+          <CaptionedPanel kind="warning" caption="Paused" fill>
             <p className="p-5 text-sm leading-relaxed text-zinc-300">
               Auto-start is off, so it won't download until you resume it.
             </p>
@@ -327,7 +436,7 @@ export function DetailPane({
               {/* Housekeep: refresh first (rename and export both benefit from
                   up-to-date metadata), then rename, then export. */}
               <ActionButton onClick={() => setShowRefresh(true)}>Refresh metadata</ActionButton>
-              <ActionButton onClick={openRename}>Rename</ActionButton>
+              <ActionButton onClick={() => setShowRename(true)}>Rename</ActionButton>
               <ActionButton onClick={() => setShowExport(true)}>Export</ActionButton>
               {/* Organize, once the work is done. */}
               {tape.archivedAtUtc ? (
@@ -358,8 +467,8 @@ export function DetailPane({
           <ResizeHandle
             edge="left"
             size={chaptersPaneWidth}
-            min={200}
-            max={720}
+            min={LAYOUT_BOUNDS.chaptersPaneWidth.min}
+            max={LAYOUT_BOUNDS.chaptersPaneWidth.max}
             onResize={(w) => patchLayout({ chaptersPaneWidth: w }, false)}
             onCommit={(w) => patchLayout({ chaptersPaneWidth: w }, true)}
           />
@@ -376,10 +485,10 @@ export function DetailPane({
         <RefreshMetadataModal tape={tape} onClose={() => setShowRefresh(false)} />
       )}
       {showRename && (
-        <RenameModal tape={tape} onClose={() => setShowRename(false)} />
+        <RenameModal tape={tape} onRename={performRename} onClose={() => setShowRename(false)} />
       )}
       {showExport && (
-        <ExportModal tape={tape} onClose={() => setShowExport(false)} />
+        <ExportModal tape={tape} videoRef={videoRef} onClose={() => setShowExport(false)} />
       )}
     </div>
   )

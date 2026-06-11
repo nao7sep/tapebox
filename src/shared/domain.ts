@@ -44,25 +44,32 @@ export const TapeSchema = z.object({
   probedAtUtc: z.string().nullable(),
 
   // Filled by download. On-disk files are named by the tape's id (see core/stem.ts),
-  // not by sourceId; the slug rename later re-stems them all to the chosen slug.
+  // not by sourceId; the rename later re-stems them all to the chosen name.
   filename: z.string().nullable(),                          // basename only, no path
   sidecarFilename: z.string().nullable(),                   // basename only, no path
   thumbnailFilename: z.string().nullable().default(null),   // local poster (.jpg) basename, no path; null if the source had none
   downloadStartedAtUtc: z.string().nullable().default(null), // when state → 'downloading'
   downloadedAtUtc: z.string().nullable(),
 
-  // Filled by rename.
-  slug: z.string().nullable(),
+  // Filled by rename: the user-chosen filename stem — a slug the AI suggested, or
+  // any filesystem-safe name the user typed. Null until the tape is renamed.
+  // Defaulted so sessions written before this field was renamed from `slug` load.
+  name: z.string().nullable().default(null),
   renamedAtUtc: z.string().nullable(),
 
   // Archive marker (orthogonal to state).
   archivedAtUtc: z.string().nullable(),
 
-  // Archive organization (only meaningful while archived): which box the tape is
-  // filed in (null = Loose) and its manual position within that box. Defaulted
-  // so sessions written before boxes existed load unchanged.
+  // Which box an archived tape is filed in (null = Unboxed, and always null while
+  // in the inbox). Defaulted so sessions written before boxes existed load.
   boxId: z.string().nullable().default(null),
-  boxOrder: z.number().int().default(0),
+
+  // Manual position within the tape's CURRENT list — the inbox, a box, or Unboxed.
+  // Lower = nearer the top; new tapes get an order below everything else so they
+  // land on top (see @shared/order). Defaulted so older sessions (and the prior
+  // `boxOrder` field, now folded into this) load with everything tied at 0, which
+  // the view then breaks by recency, newest-first.
+  order: z.number().int().default(0),
 
   // State-transition markers.
   pausedAtUtc: z.string().nullable().default(null),          // when state → 'paused'
@@ -99,21 +106,25 @@ export type SidecarMedia = z.infer<typeof SidecarMediaSchema>
 
 export const SidecarTapeboxSchema = z.object({
   sourceUrl: z.string().url(),
-  slug: z.string().nullable(),
+  name: z.string().nullable().default(null),
   addedAtUtc: z.string(),
   downloadedAtUtc: z.string().nullable(),
   renamedAtUtc: z.string().nullable(),
   // Null when probing failed or for sidecars written before this existed.
   media: SidecarMediaSchema.nullable().default(null),
-  // Local poster basename saved beside the media; lets an imported tape rediscover
-  // its thumbnail. Null when the source had none. Defaulted for older sidecars.
+  // The bundle's own file names (basenames, no path), stored so an exported tape
+  // can be re-imported from its sidecar ALONE: the sidecar names which sibling file
+  // is the video and which is the poster, so import never guesses by stem or
+  // mistakes the thumbnail for the media. mediaFilename is the video; thumbnailFilename
+  // the local poster (null if the source had none). Both defaulted for older sidecars.
+  mediaFilename: z.string().nullable().default(null),
   thumbnailFilename: z.string().nullable().default(null),
 })
 export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
 
 /**
  * A box: a named, ordered collection of archived tapes. Membership is single — a
- * tape belongs to one box (via Tape.boxId) or to Loose. `order` is the
+ * tape belongs to one box (via Tape.boxId) or to Unboxed. `order` is the
  * box's position in the box list.
  */
 export const BoxSchema = z.object({

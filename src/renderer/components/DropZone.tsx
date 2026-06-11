@@ -1,24 +1,19 @@
 import { useState, type DragEvent, type ReactNode } from 'react'
 import { pathForFile } from '@renderer/ipc/client'
-import { useToastStore } from '@renderer/store/toast'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
 
 type Props = { children: ReactNode }
 
 /**
- * Window-wide drop target. Accepts media + sidecar pairs to restore tapes
- * into the library. Bare media files without a matching .json are rejected
- * by the main import handler.
- *
- * Drop UX:
- *   - Files dragged from the OS get their real paths via webUtils.
- *   - .json files alone are ignored at the renderer (no media to pair).
- *   - Outcome surfaces as a transient app toast (see store/toast); the
- *     status bar shows the headline, the console keeps the per-file reasons.
+ * Window-wide drop target for restoring exported tapes. It just resolves dropped
+ * files to paths and hands them to the shared importer (useImportMedia) — the same
+ * call the menu's "Import" uses. Import is sidecar-driven: the importer keeps the
+ * .json sidecars, and each names its own media + thumbnail (read from beside it).
+ * So a user can drop a whole export folder (video + image + json) and only the json
+ * drives the import; the files dropped alongside are pulled in via the sidecar.
  */
 export function DropZone({ children }: Props) {
   const [active, setActive] = useState(false)
-  const notify = useToastStore((s) => s.notify)
   const importMedia = useImportMedia()
 
   function isFileDrag(e: DragEvent): boolean {
@@ -46,22 +41,13 @@ export function DropZone({ children }: Props) {
     if (!isFileDrag(e)) return
     e.preventDefault()
     setActive(false)
-    const files = Array.from(e.dataTransfer?.files ?? [])
-    if (files.length === 0) return
-
-    const mediaPaths: string[] = []
-    for (const f of files) {
-      const path = pathForFile(f)
-      if (!path) continue
-      if (path.toLowerCase().endsWith('.json')) continue // sidecar discovered automatically by stem
-      mediaPaths.push(path)
-    }
-    if (mediaPaths.length === 0) {
-      notify('Drop media files — sidecar JSON is paired automatically by name.', 'info')
-      return
-    }
-
-    await importMedia(mediaPaths)
+    // Hand every dropped file's path to importMedia — it keeps the .json sidecars
+    // (and guides the user if there are none). The video/image dropped alongside a
+    // sidecar are read from the sidecar, not from the drop.
+    const paths = Array.from(e.dataTransfer?.files ?? [])
+      .map((f) => pathForFile(f))
+      .filter((p): p is string => !!p)
+    await importMedia(paths)
   }
 
   return (
@@ -77,7 +63,7 @@ export function DropZone({ children }: Props) {
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-zinc-950/70">
           <div className="rounded-lg border-2 border-dashed border-zinc-400 px-8 py-6 text-center">
             <p className="text-sm font-medium text-zinc-100">Drop to restore tapes</p>
-            <p className="mt-1 text-xs text-zinc-300">media + sidecar JSON pairs only</p>
+            <p className="mt-1 text-xs text-zinc-300">drop the .json sidecars — video &amp; image come along</p>
           </div>
         </div>
       )}

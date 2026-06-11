@@ -30,12 +30,14 @@ export type ProbeChapter = { start_time: number; end_time: number; title: string
 export type ProbeVideo = {
   kind: 'video'
   id: string
-  // yt-dlp's extractor (e.g. 'youtube'). yt-dlp's `id` is unique only within an
-  // extractor, so (extractor, id) is the pair that identifies a video globally —
-  // the same key yt-dlp's own --download-archive records. Used for dedup.
+  // yt-dlp's extractor (the site-specific module that handled the URL). yt-dlp's
+  // `id` is unique only within an extractor, so (extractor, id) is the pair that
+  // identifies a video globally — the same key yt-dlp's own --download-archive
+  // records. Used for dedup.
   extractor: string | null
   title: string
   uploader: string | null
+  description: string | null
   duration: number | null
   chapters: ProbeChapter[] | null
 }
@@ -75,6 +77,7 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
     // steer it with an Accept-Language header via global args or a site profile.
     title: String(info['title'] ?? ''),
     uploader: stringOrNull(info['uploader'] ?? info['channel']),
+    description: stringOrNull(info['description']),
     duration: typeof info['duration'] === 'number' ? info['duration'] : null,
     chapters: Array.isArray(info['chapters']) ? (info['chapters'] as ProbeChapter[]) : null,
   }
@@ -127,8 +130,8 @@ function finiteOrUndefined(raw: string | undefined): number | undefined {
 
 /**
  * Download video+audio, merged, with sidecar info.json.
- * Filename stem is opts.outputId (yt-dlp's video id) so the on-disk name is
- * stable until the user renames to a slug.
+ * Filename stem is opts.outputId (the tape's own id) so the on-disk name is
+ * stable until the user renames the tape.
  */
 export async function download(opts: DownloadOptions): Promise<DownloadResult> {
   // Start from a clean slate: wipe everything a prior attempt left for this stem.

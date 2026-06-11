@@ -3,11 +3,12 @@ import { trapTabFocus } from '@renderer/lib/focusTrap'
 import { acquireScrollLock, releaseScrollLock } from '@renderer/lib/scrollLock'
 
 /**
- * Two tiers, by content:
- *   md  — prompts & short forms (Confirm, About, Shortcuts, Export, Rename)
- *   2xl — data-dense panels (Settings, Scan-a-page, Required-tools)
+ * Three tiers, by content:
+ *   md  — prompts & short forms (Confirm, About, Shortcuts)
+ *   2xl — data-dense panels (Settings, Scan-a-page, Required-tools, Rename, Export)
+ *   4xl — wide side-by-side comparisons (Refresh metadata: current vs new)
  */
-type ModalSize = 'md' | '2xl'
+type ModalSize = 'md' | '2xl' | '4xl'
 
 type ModalProps = {
   title: string
@@ -26,6 +27,7 @@ type ModalProps = {
 const SIZE_CLASS: Record<ModalSize, string> = {
   md: 'max-w-md',
   '2xl': 'max-w-3xl',
+  '4xl': 'max-w-5xl',
 }
 
 /**

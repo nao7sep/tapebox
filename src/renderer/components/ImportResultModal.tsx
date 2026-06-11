@@ -5,9 +5,12 @@ import { Button } from '@renderer/components/ui'
 type Props = { result: ImportResult; onClose: () => void }
 
 /**
- * Blocking summary of an import: what entered the library and what was rejected
- * (with reasons). Shown after every import attempt so a sidecar-less file can't
- * silently vanish. Per-file — successes and failures are listed side by side.
+ * Blocking summary of an import: what entered the library and what didn't (with
+ * reasons), so nothing silently vanishes. Each section appears only when it has
+ * something to show — an import where everything was a duplicate shows just the
+ * skipped list, not a hollow "Imported (0)". The skipped reasons sit in a plain
+ * list (a subtle left rule per item) rather than a boxed red frame that would
+ * indent them away from everything else.
  */
 export function ImportResultModal({ result, onClose }: Props) {
   const { imported, rejected } = result
@@ -20,14 +23,12 @@ export function ImportResultModal({ result, onClose }: Props) {
 
   return (
     <Modal title="Import results" onClose={onClose} size="md" footer={footer}>
-      <div className="space-y-4">
-        <section>
-          <h3 className="mb-1 text-xs font-medium text-zinc-300">
-            Imported ({imported.length})
-          </h3>
-          {imported.length === 0 ? (
-            <p className="text-xs text-zinc-400">Nothing was imported.</p>
-          ) : (
+      <div className="space-y-5">
+        {imported.length > 0 && (
+          <section>
+            <h3 className="mb-1.5 text-xs font-medium text-zinc-300">
+              Added {imported.length} {imported.length === 1 ? 'tape' : 'tapes'}
+            </h3>
             <ul className="space-y-1">
               {imported.map((tape) => (
                 <li key={tape.id} className="truncate text-sm text-zinc-100">
@@ -35,22 +36,29 @@ export function ImportResultModal({ result, onClose }: Props) {
                 </li>
               ))}
             </ul>
-          )}
-        </section>
+          </section>
+        )}
 
         {rejected.length > 0 && (
-          <section className="rounded border border-red-900 bg-red-950/40 px-3 py-2">
-            <h3 className="mb-1 text-xs font-medium text-red-300">
-              Failed ({rejected.length})
+          <section>
+            <h3 className="mb-1.5 text-xs font-medium text-zinc-400">
+              {imported.length > 0
+                ? `Skipped ${rejected.length}`
+                : `Couldn’t import ${rejected.length === 1 ? 'this' : `these ${rejected.length}`}`}
             </h3>
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {rejected.map((r) => (
-                <li key={r.path} className="text-xs text-red-300">
-                  <span className="text-red-200">{basename(r.path)}</span> — {r.reason}
+                <li key={r.path} className="border-l-2 border-zinc-700 pl-2.5 text-xs">
+                  <div className="truncate text-zinc-200">{basename(r.path)}</div>
+                  <div className="text-zinc-400">{r.reason}</div>
                 </li>
               ))}
             </ul>
           </section>
+        )}
+
+        {imported.length === 0 && rejected.length === 0 && (
+          <p className="text-sm text-zinc-400">Nothing to import.</p>
         )}
       </div>
     </Modal>

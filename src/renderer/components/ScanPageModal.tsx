@@ -128,7 +128,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const footer = (
     <>
       {inLibraryCount > 0 && (
-        <span className="mr-auto text-xs text-amber-400">{inLibraryCount} already in your library</span>
+        <span className="mr-auto text-xs text-zinc-400">{inLibraryCount} already in your library</span>
       )}
       <Button variant="ghost" onClick={onClose} disabled={adding}>Cancel</Button>
       <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0} loading={adding}>
@@ -212,7 +212,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
                       onChange={() => toggle(e.sourceUrl)}
                       disabled={disabled}
                     />
-                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-amber-400">in library</span>}
+                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-zinc-400">In library</span>}
                     <span className="min-w-0 flex-1 truncate">
                       {e.title ?? e.sourceUrl}
                       {e.unavailable && <span className="ml-2 text-xs text-zinc-300">({e.unavailable.reason})</span>}

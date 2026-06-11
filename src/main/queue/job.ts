@@ -84,10 +84,11 @@ export class Job {
       this.update({ state: 'listing', lastError: null, probedAtUtc: nowUtcIso() })
       return false
     }
-    // Two URLs can resolve to the same video (e.g. youtu.be/X vs watch?v=X), and
-    // we don't want two library rows for one video. yt-dlp's id is unique only
-    // within an extractor, so the identity is the (extractor, id) pair — the same
-    // key its --download-archive uses. Only known post-probe, so we catch it here.
+    // Two URLs can resolve to the same video (e.g. a short share link and the
+    // canonical page), and we don't want two library rows for one video. The id
+    // is unique only within an extractor, so the identity is the (extractor, id)
+    // pair — the same key its --download-archive uses. Only known post-probe, so
+    // we catch it here.
     const duplicate = session
       .getTapes()
       .find((i) => i.id !== this.tapeId && i.sourceId === result.id && i.extractor === result.extractor)
@@ -176,11 +177,12 @@ export class Job {
       sidecarPath,
       tapeboxAdditions: {
         sourceUrl: cur.sourceUrl,
-        slug: null,
+        name: null,
         addedAtUtc: cur.addedAtUtc,
         downloadedAtUtc: nowUtcIso(),
         renamedAtUtc: null,
         media,
+        mediaFilename: mediaBasename,
         thumbnailFilename,
       },
     })

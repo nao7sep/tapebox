@@ -38,17 +38,19 @@ export async function generateSlug(opts: {
     .replace(/\{description\}/g, opts.description ?? '')
 
   log.info('ai: generateSlug request', { model: ai.model })
+  // Keep the request structurally minimal — just the model and a single user
+  // message — so it works across the whole spread of OpenAI-compatible providers
+  // and model families. Tuning parameters are the usual portability landmines:
+  // newer OpenAI models reject `max_tokens` (demanding `max_completion_tokens`)
+  // and some reject a non-default `temperature` outright. Every instruction
+  // (length cap, format, what to ignore) already lives in the prompt, so none of
+  // those knobs is needed; slugifyAscii + sanitizeFilename bound the result anyway.
   const res = await withRetry(
     HTTP_RETRY,
     () =>
       client.chat.completions.create({
         model: ai.model,
-        messages: [
-          { role: 'system', content: 'You generate short, descriptive, English file slugs.' },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 60,
+        messages: [{ role: 'user', content: userPrompt }],
       }),
     { isRetryable: isRetryableAiError },
   )

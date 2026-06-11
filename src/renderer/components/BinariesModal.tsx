@@ -72,20 +72,22 @@ export function BinariesModal() {
         yt-dlp, ffmpeg, and Deno handle downloading and media processing.
       </p>
 
-      <div className="mt-4 flex items-center justify-between text-xs text-zinc-300">
+      <div className="mt-5 flex items-center justify-between text-xs text-zinc-300">
         <span>{lastCheckedHint(statuses, checking)}</span>
         <Button variant="secondary" size="sm" onClick={() => void refresh()} loading={checking}>
           {checking ? 'Checking…' : 'Check for updates'}
         </Button>
       </div>
 
-      <table className="mt-4 w-full text-sm">
+      {/* Fixed layout with explicit widths so the three data columns spread evenly
+          instead of bunching at the left and leaving a gap before the action. */}
+      <table className="mt-5 w-full table-fixed text-sm">
         <thead>
           <tr className="text-left text-xs font-medium text-zinc-300">
-            <th className="pb-2">Tool</th>
-            <th className="pb-2">Installed</th>
-            <th className="pb-2">Latest</th>
-            <th className="pb-2" />
+            <th className="w-1/4 pb-3">Tool</th>
+            <th className="w-1/4 pb-3">Installed</th>
+            <th className="w-1/4 pb-3">Latest</th>
+            <th className="w-1/4 pb-3" />
           </tr>
         </thead>
         <tbody>
@@ -103,7 +105,7 @@ export function BinariesModal() {
       </table>
 
       {error && (
-        <p className="mt-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
+        <p className="mt-5 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
       )}
     </Modal>
   )
@@ -127,12 +129,12 @@ function BinaryRow({
 
   return (
     <tr className="border-t border-zinc-700">
-      <td className="py-2 font-medium">{status.name}</td>
-      <td className={`py-2 ${warm ? 'text-amber-300' : 'text-zinc-300'}`}>
+      <td className="py-3 font-medium">{status.name}</td>
+      <td className={`py-3 ${warm ? 'text-amber-300' : 'text-zinc-300'}`}>
         {status.installedVersion ?? 'not installed'}
       </td>
-      <td className="py-2 text-zinc-300">{latestText(status, checking)}</td>
-      <td className="py-2 text-right">
+      <td className="py-3 text-zinc-300">{latestText(status, checking)}</td>
+      <td className="py-3 text-right">
         {progress ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
             <Spinner />

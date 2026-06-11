@@ -1,7 +1,6 @@
 import type { Box, Tape } from './domain'
 import type { Settings } from './settings'
 import type { Layout } from './layout'
-import type { AudioChannels, EncodeSpeed, VideoQuality } from './export-presets'
 
 /**
  * Request/response contract for ipcMain.handle / ipcRenderer.invoke channels.
@@ -26,8 +25,15 @@ export type IpcCalls = {
   // ── Library ──────────────────────────────────────────────────────────────
   'library:list':            { req: undefined;                                       res: Tape[] }
   'library:remove':          { req: { tapeIds: string[]; deleteFiles: boolean };     res: void }
-  'library:renameToSlug':    { req: { tapeId: string; slug: string };                res: Tape }
-  'library:import':          { req: { mediaPaths: string[] };                        res: ImportResult }
+  // Rename a downloaded tape's on-disk files (media + sidecar + thumbnail) to a
+  // user-chosen name — any filesystem-safe name, not just a slug. The AI can
+  // suggest a slug, but the user may type a regular filename.
+  'library:rename':          { req: { tapeId: string; name: string };                 res: Tape }
+  // Import is sidecar-driven: each path is a TapeBox .json sidecar, which names its
+  // own media + thumbnail files (sitting beside it). The app reads those from the
+  // sidecar — no guessing a media file by stem, no mistaking a thumbnail for the
+  // video. Anything that isn't a sidecar is ignored by the caller before this point.
+  'library:import':          { req: { sidecarPaths: string[] };                      res: ImportResult }
   'library:archive':         { req: { tapeIds: string[] };                           res: void }
   'library:unarchive':       { req: { tapeIds: string[] };                           res: void }
   'library:getSidecar':      { req: { tapeId: string };                              res: SidecarRaw }
@@ -41,44 +47,33 @@ export type IpcCalls = {
   'library:probeMetadata':   { req: { tapeId: string };                              res: RefreshedMetadata }
   'library:applyMetadata':   { req: { tapeId: string; metadata: RefreshedMetadata }; res: Tape }
 
+  // ── Tape ordering (manual position within a list) ────────────────────────
+  // Reindex one list (the inbox, a box, or Unboxed) to the given sequence: each id
+  // gets order = its index, top first. The caller sends the list's full new order
+  // after a drag; the tapes keep their archived/box membership — this is reorder,
+  // not move. Used by both the inbox and the archive's within-box reorder.
+  'tapes:reorder': { req: { orderedIds: string[] };          res: void }
+
   // ── Archive organization (boxes for archived tapes) ──────────────────────
   // A box holds archived tapes in manual order; a tape is in one box or none.
-  // placeTapes is the workhorse behind assign / reorder / move-between: drop
-  // these tapes into `boxId` (null = Loose) before `beforeTapeId` (or at
-  // the end), reindexing that box's order.
+  // `boxes:place` files tapes INTO `boxId` (null = Unboxed) at the front of that
+  // list, reindexing it — the cross-list move (click menu or drag onto a box).
+  // Reordering WITHIN a list goes through tapes:reorder above.
   'boxes:list':    { req: undefined;                         res: Box[] }
   'boxes:create':   { req: { name: string };                  res: Box }
   'boxes:rename':   { req: { boxId: string; name: string }; res: Box }
   'boxes:delete':   { req: { boxId: string };               res: void }
   'boxes:reorder': { req: { orderedIds: string[] };          res: void }
-  'boxes:place': {
-    req: { tapeIds: string[]; boxId: string | null; beforeTapeId: string | null }
-    res: void
-  }
+  'boxes:place':   { req: { tapeIds: string[]; boxId: string | null }; res: void }
 
-  // ── Export (outside the box) ─────────────────────────────────────────────
-  // Transcode/extract a tape to the user's chosen format. `presetId` selects a
-  // container+codec from @shared/export-presets; the remaining fields are
-  // optional quality/output knobs the chosen preset applies only where they're
-  // meaningful (e.g. video knobs are ignored by an audio preset). `mode` splits
-  // per-chapter or exports the whole tape. `filenameStem` names the whole-tape
-  // output; `filenameTemplate` names per-chapter files (see @shared/export-filename).
-  'export:media': {
-    req: {
-      tapeId: string
-      destinationDir: string
-      mode: 'whole' | 'perChapter'
-      presetId: string
-      audioBitrateKbps?: number | null
-      audioChannels?: AudioChannels | null
-      normalizeAudio?: boolean
-      maxHeight?: number | null
-      videoQuality?: VideoQuality | null
-      encodeSpeed?: EncodeSpeed | null
-      fpsCap?: number | null
-      filenameStem?: string
-      filenameTemplate?: string
-    }
+  // ── Export (copy out of the library) ─────────────────────────────────────
+  // Copy a tape's files verbatim — media, thumbnail (if any), and sidecar — into
+  // destinationDir, renaming all three to `name`. No transcoding: TapeBox is a
+  // wrapper, not a converter. When deleteFromApp is true the tape is removed from
+  // the library afterwards (its files trashed/deleted per the trash setting), so
+  // export doubles as "move out". Returns the paths written.
+  'export:files': {
+    req: { tapeId: string; destinationDir: string; name: string; deleteFromApp: boolean }
     res: { writtenPaths: string[] }
   }
 
@@ -182,16 +177,17 @@ export type RuntimeInfo = {
 }
 
 /**
- * The subset of a tape's metadata a re-probe can refresh. Identity fields
- * (sourceId, on-disk filenames) are deliberately absent — a refresh never
- * touches them. Returned by probeMetadata for review, then passed back to
- * applyMetadata verbatim if the user accepts it.
+ * The catalog metadata a re-probe can refresh: the fields that can genuinely
+ * improve from the source over time. Duration and chapter count are deliberately
+ * absent — they're fixed by the downloaded file and can't change unless it's
+ * replaced. Identity fields (sourceId, filenames) are never touched either.
+ * Returned by probeMetadata for review, then passed back to applyMetadata if the
+ * user accepts it. Title/uploader update the tape; description updates the sidecar.
  */
 export type RefreshedMetadata = {
   title: string | null
   uploader: string | null
-  durationSeconds: number | null
-  chapterCount: number | null
+  description: string | null
 }
 
 export type ScanResult = {
@@ -236,10 +232,6 @@ export type IpcEvents = {
   'scan:entry':        { sessionId: string; entry: ScanResult }
   'scan:done':         { sessionId: string; totalCount: number }
   'scan:error':        { sessionId: string; error: string }
-
-  // Live ffmpeg output during an export, one line at a time — just enough for the
-  // export modal to show that work is happening (not parsed).
-  'export:log':        { line: string }
 
   'binaries:progress':        { name: BinaryName; percent: number; phase: 'download' | 'verify' | 'install' }
   'binaries:ready':           { name: BinaryName; version: string }

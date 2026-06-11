@@ -13,6 +13,11 @@ type Kind = 'error' | 'warning' | 'info' | 'neutral'
  *
  * `fill` makes the panel grow to fill the available height; the body controls
  * its own padding and scroll (a short notice vs. a scrollable failure log).
+ *
+ * The panel carries its own margins (mx-4 for the side gutters, my-3 top and
+ * bottom) so it sits evenly between the header rule above and the button-row
+ * separator below — a `fill` panel would otherwise grow flush against that
+ * separator with no breathing room.
  */
 const KIND: Record<Kind, { box: string; divider: string; caption: string }> = {
   error:   { box: 'border-red-900 bg-red-950/40',       divider: 'border-red-900',    caption: 'text-red-300' },
@@ -36,7 +41,7 @@ export function CaptionedPanel({
   return (
     <div
       className={
-        'mx-4 mt-3 flex flex-col overflow-hidden rounded border ' +
+        'mx-4 my-3 flex flex-col overflow-hidden rounded border ' +
         c.box +
         (fill ? ' min-h-0 flex-1' : '')
       }

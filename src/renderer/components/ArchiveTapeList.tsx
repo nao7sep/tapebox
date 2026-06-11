@@ -1,16 +1,15 @@
-import type { ReactNode } from 'react'
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { TapeRow } from './TapeRow'
+import { SortableTape } from './SortableTape'
 
 /**
  * The selected box's tapes, in manual order, as a sortable list. Reorder within
  * the box (drag a tape over another) and move between boxes (drag a tape onto a
  * box row) are both handled by the parent DndContext's onDragEnd. Rows reuse the
- * shared TapeRow; only the sortable wrapper is new.
+ * shared TapeRow; the sortable wrapper is shared with the inbox.
  */
 export function ArchiveTapeList() {
   const tapes = useVisibleTapes()
@@ -37,24 +36,5 @@ export function ArchiveTapeList() {
         ))}
       </ul>
     </SortableContext>
-  )
-}
-
-function SortableTape({ id, children }: { id: string; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    data: { type: 'tape' },
-  })
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    // Hidden (not just dimmed) while dragging: the DragOverlay renders the moving
-    // copy, so the original only holds its place in the list.
-    opacity: isDragging ? 0 : 1,
-  }
-  return (
-    <li ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
-    </li>
   )
 }

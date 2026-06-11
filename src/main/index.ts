@@ -11,6 +11,7 @@ import { registerIpcHandlers } from './ipc/index.js'
 import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
+import { applyDevDockIcon, reassertDevDockIconAfterRepaint } from './dock-icon.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -58,6 +59,14 @@ function createMainWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
+  // Leaving fullscreen (most often the player's native <video> fullscreen) un-hides
+  // the macOS Dock and rebuilds its tile, dropping the dev icon overlay. Re-assert
+  // it then — deferred, since that rebuild is async (see dock-icon.ts). Both events
+  // are covered because video fullscreen can surface as window- or HTML-level; the
+  // re-assert self-guards, so this is a no-op when packaged or off macOS.
+  win.on('leave-full-screen', reassertDevDockIconAfterRepaint)
+  win.webContents.on('leave-html-full-screen', reassertDevDockIconAfterRepaint)
+
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) {
     void win.loadURL(devUrl)
@@ -92,6 +101,9 @@ async function startup(): Promise<void> {
   // follows the OS theme and looks pasted-on-light against the app's #09090b body.
   nativeTheme.themeSource = 'dark'
   createMainWindow()
+
+  // Dev-only Dock icon overlay (macOS); no-op when packaged or off-macOS.
+  applyDevDockIcon()
 }
 
 /**
@@ -144,6 +156,8 @@ void app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+    // macOS rebuilds the Dock tile on reactivation, dropping the dev overlay.
+    applyDevDockIcon()
   })
 })
 

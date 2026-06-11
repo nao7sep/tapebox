@@ -2,13 +2,15 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useBoxesStore } from '@renderer/store/boxes'
-import { LOOSE_LABEL } from '@shared/box-names'
+import { moveTapeToBox } from '@renderer/lib/tapeActions'
+import { UNBOXED_LABEL } from '@shared/box-names'
 
 /**
- * Files an archived tape into a box (or Loose, or a brand-new box) via a
- * small dropdown. This is the click/keyboard path; drag-and-drop hits the same
- * archive:placeTapes. The menu opens upward since it lives in the bottom button
- * row.
+ * Files an archived tape into a box (or Unboxed, or a brand-new box) via a small
+ * dropdown — a deliberate "put this one there" click, so it uses the 'tape' policy:
+ * the view follows the tape into its new box and keeps it selected. Drag-and-drop
+ * hits the same moveTapeToBox but with the 'list' policy. The menu opens upward
+ * since it lives in the bottom button row.
  */
 export function MoveToBoxButton({ tape }: { tape: Tape }) {
   const boxes = useBoxesStore((s) => s.boxes)
@@ -32,15 +34,15 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
     }
   }, [open])
 
-  async function moveTo(boxId: string | null) {
+  function moveTo(boxId: string | null) {
     setOpen(false)
-    await ipcInvoke('boxes:place', { tapeIds: [tape.id], boxId, beforeTapeId: null })
+    moveTapeToBox(tape, boxId, 'tape')
   }
 
   async function newBoxAndMove() {
     const box = await ipcInvoke('boxes:create', { name: 'New box' })
     setOpen(false)
-    await ipcInvoke('boxes:place', { tapeIds: [tape.id], boxId: box.id, beforeTapeId: null })
+    moveTapeToBox(tape, box.id, 'tape')
   }
 
   return (
@@ -54,7 +56,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
       {open && (
         <div className="absolute bottom-full z-40 mb-1 max-h-64 w-52 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
           <MenuItem onClick={() => void moveTo(null)} active={tape.boxId === null}>
-            {LOOSE_LABEL}
+            {UNBOXED_LABEL}
           </MenuItem>
           {sorted.map((g) => (
             <MenuItem key={g.id} onClick={() => void moveTo(g.id)} active={tape.boxId === g.id}>

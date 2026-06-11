@@ -37,4 +37,19 @@ describe('TapeSchema back-compat', () => {
     const parsed = TapeSchema.parse(legacyTape()) as Record<string, unknown>
     expect('thumbnailUrl' in parsed).toBe(false)
   })
+
+  it('defaults order/boxId for a tape written before manual ordering existed', () => {
+    const parsed = TapeSchema.parse(legacyTape())
+    expect(parsed.order).toBe(0)
+    expect(parsed.boxId).toBeNull()
+  })
+
+  it('folds the prior boxOrder field into a default order of 0', () => {
+    // boxOrder was renamed to order; an old session carrying boxOrder must still
+    // load (the unknown key is dropped, order falls back to its default).
+    const parsed = TapeSchema.parse({ ...legacyTape(), boxId: 'box1', boxOrder: 7 }) as Record<string, unknown>
+    expect('boxOrder' in parsed).toBe(false)
+    expect(parsed.order).toBe(0)
+    expect(parsed.boxId).toBe('box1')
+  })
 })

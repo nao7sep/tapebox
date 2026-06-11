@@ -1,101 +1,69 @@
-import type { Tape } from '@shared/domain'
+import type { Box, Tape } from '@shared/domain'
 import { useTapesStore } from '@renderer/store/tapes'
+import { useBoxesStore } from '@renderer/store/boxes'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
 import { useArchiveStore } from '@renderer/store/archive'
 
 /**
  * The on-screen order of the tape list — the single source of truth shared by
- * the list view, keyboard navigation, and removal, so they all agree on which
- * tape is "next" and "previous".
+ * the list view, drag-reordering, keyboard navigation, and removal, so they all
+ * agree on which tape is next and previous.
  *
- * Inbox (everything not archived) is sorted by bucket, each bucket newest-first:
- *   1. Failed       (failedAtUtc)
- *   2. Downloading  (downloadStartedAtUtc)
- *   3. Pending      (addedAtUtc) — queued, probing, ready, paused
- *   4. Downloaded   (downloadedAtUtc)
+ * Order is explicit and manual: every tape carries an `order` (lower = nearer the
+ * top) within its current list — the inbox, a box, or Unboxed. New tapes are
+ * inserted at the top and the user can drag any tape anywhere. A tape's state
+ * (downloading, failed, a page-of-videos dead-end) no longer moves it: that
+ * information lives in the status bar and on the row itself, so a failed download
+ * stays exactly where it was instead of jumping the list.
  *
- * Archived is sorted by downloadedAtUtc so archive/unarchive cycles don't
- * reshuffle the list.
+ * Order ties — a fresh library where nothing's been hand-ordered yet, so every
+ * tape sits at the default 0 — break by recency, newest first. That gives the
+ * new-on-top feel before anyone has dragged a thing.
  */
 
-function matchesFilter(tape: Tape, filter: Filter): boolean {
-  return filter === 'archived' ? !!tape.archivedAtUtc : !tape.archivedAtUtc
+/** Newest-first key: when the tape landed, falling back to when it was added. */
+function recencyKey(tape: Tape): string {
+  return tape.downloadedAtUtc ?? tape.addedAtUtc
 }
 
-type Bucket = 'listing' | 'failed' | 'downloading' | 'pending' | 'downloaded'
-
-function bucketOf(tape: Tape): Bucket {
-  if (tape.state === 'listing') return 'listing'
-  if (tape.state === 'failed') return 'failed'
-  if (tape.state === 'downloading') return 'downloading'
-  if (tape.state === 'downloaded') return 'downloaded'
-  return 'pending' // queued, probing, ready, paused
-}
-
-// Listing dead-ends and failures sort to the top — both want the user's attention.
-const BUCKET_RANK: Record<Bucket, number> = {
-  listing: 0,
-  failed: 1,
-  downloading: 2,
-  pending: 3,
-  downloaded: 4,
-}
-
-/** Newest-first key per bucket; falls back to addedAtUtc if the marker is missing. */
-function sortKey(tape: Tape, bucket: Bucket): string {
-  switch (bucket) {
-    case 'listing':        return tape.probedAtUtc ?? tape.addedAtUtc
-    case 'failed':      return tape.failedAtUtc ?? tape.addedAtUtc
-    case 'downloading': return tape.downloadStartedAtUtc ?? tape.addedAtUtc
-    case 'pending':     return tape.addedAtUtc
-    case 'downloaded':  return tape.downloadedAtUtc ?? tape.addedAtUtc
-  }
-}
-
-function sortFor(filter: Filter, tapes: Tape[]): Tape[] {
-  if (filter === 'archived') {
-    return [...tapes].sort((a, b) =>
-      (b.downloadedAtUtc ?? b.addedAtUtc).localeCompare(a.downloadedAtUtc ?? a.addedAtUtc),
-    )
-  }
-  return [...tapes].sort((a, b) => {
-    const ba = bucketOf(a)
-    const bb = bucketOf(b)
-    if (BUCKET_RANK[ba] !== BUCKET_RANK[bb]) return BUCKET_RANK[ba] - BUCKET_RANK[bb]
-    return sortKey(b, ba).localeCompare(sortKey(a, ba))
-  })
+/** Manual order ascending (top first), ties broken newest-first. */
+function byOrder(a: Tape, b: Tape): number {
+  return a.order - b.order || recencyKey(b).localeCompare(recencyKey(a))
 }
 
 /**
- * Pure: the on-screen tape order. The inbox is auto-sorted by bucket/recency.
- * The archived view shows one box at a time (selectedBoxId, null = Loose)
- * in manual order, falling back to recency for tapes not yet hand-ordered —
- * unless a search query is active, in which case it shows matching tapes across
- * ALL boxes by recency (read-only, the order isn't a box order).
+ * Pure: the on-screen tape order. The inbox is every non-archived tape in manual
+ * order. The archived view shows one box at a time (selectedBoxId, null = Unboxed)
+ * in manual order — unless a search query is active, in which case it spans ALL
+ * boxes, ordered the same way the box list reads (Unboxed first, then boxes by their
+ * order) and within each box by that box's manual order. Search is read-only (not
+ * drag-reorderable), but it's no longer recency-shuffled: a tape from box A always
+ * precedes one from box B when A precedes B.
  */
 export function visibleTapes(
   tapes: Tape[],
   filter: Filter,
   selectedBoxId: string | null = null,
   query = '',
+  boxes: Box[] = [],
 ): Tape[] {
   if (filter !== 'archived') {
-    return sortFor(filter, tapes.filter((i) => matchesFilter(i, filter)))
+    return tapes.filter((t) => !t.archivedAtUtc).sort(byOrder)
   }
 
-  const archived = tapes.filter((i) => !!i.archivedAtUtc)
-  const byRecency = (a: Tape, b: Tape) =>
-    (b.downloadedAtUtc ?? b.addedAtUtc).localeCompare(a.downloadedAtUtc ?? a.addedAtUtc)
-
+  const archived = tapes.filter((t) => !!t.archivedAtUtc)
   const q = query.trim().toLowerCase()
   if (q) {
+    // Unboxed (no box) leads, mirroring the box list where Unboxed sits on top; then
+    // boxes in their own order. Unknown box ids (shouldn't happen) sort last.
+    const boxRankById = new Map(boxes.map((b) => [b.id, b.order]))
+    const boxRank = (boxId: string | null) =>
+      boxId === null ? -Infinity : boxRankById.get(boxId) ?? Infinity
     return archived
-      .filter((i) => (i.title ?? i.sourceUrl).toLowerCase().includes(q))
-      .sort(byRecency)
+      .filter((t) => (t.title ?? t.sourceUrl).toLowerCase().includes(q))
+      .sort((a, b) => boxRank(a.boxId) - boxRank(b.boxId) || byOrder(a, b))
   }
-  return archived
-    .filter((i) => i.boxId === selectedBoxId)
-    .sort((a, b) => a.boxOrder - b.boxOrder || byRecency(a, b))
+  return archived.filter((t) => t.boxId === selectedBoxId).sort(byOrder)
 }
 
 /** Reactive: the on-screen tape order for the current filter, box, and search. */
@@ -104,5 +72,6 @@ export function useVisibleTapes(): Tape[] {
   const filter = useFilterStore((s) => s.filter)
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
   const query = useArchiveStore((s) => s.query)
-  return visibleTapes(tapes, filter, selectedBoxId, query)
+  const boxes = useBoxesStore((s) => s.boxes)
+  return visibleTapes(tapes, filter, selectedBoxId, query, boxes)
 }

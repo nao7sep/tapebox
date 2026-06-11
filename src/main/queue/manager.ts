@@ -18,7 +18,7 @@ import { Job } from './job'
  *
  * cancel() returns a Promise that resolves once the underlying yt-dlp
  * process has exited and the Job's finally blocks have run. Callers that
- * need to touch the tape's files (library:remove, library:renameToSlug)
+ * need to touch the tape's files (library:remove, library:rename)
  * must await this before doing so — otherwise yt-dlp keeps writing into
  * paths that have just been unlinked.
  */

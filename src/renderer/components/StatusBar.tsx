@@ -35,17 +35,19 @@ export function StatusBar() {
 }
 
 /**
- * The live pulse. Priority: active downloads (with summed speed + ETA) > a
- * waiting queue (amber when auto-start is off, since nothing will move until the
- * user acts) > an idle library count. A non-zero failed count trails in amber
- * regardless, so tapes needing attention are always visible.
+ * The live pulse, read left to right in pipeline order. The lead reflects the
+ * most active stage with anything in it: active downloads (with summed speed +
+ * ETA) > a working queue > tapes paused waiting for the user > an idle library
+ * count. Then the attention items trail in a fixed order — failed, then pages to
+ * scan — because they no longer jump the list, so this bar is where you spot them.
  */
 function ActivityZone() {
   const tapes = useTapesStore((s) => s.tapes)
   const progress = useTapesStore((s) => s.progress)
   const autoStart = useSettingsStore((s) => s.settings?.autoStartDownloads ?? true)
 
-  const { downloading, queued, failed, totalSpeedBps, etaSec } = summarizeActivity(tapes, progress)
+  const { downloading, queued, paused, failed, listing, totalSpeedBps, etaSec } =
+    summarizeActivity(tapes, progress)
 
   let text: string
   let tone: string
@@ -57,8 +59,12 @@ function ActivityZone() {
     text = parts.join(' · ')
     tone = 'text-sky-300'
   } else if (queued > 0) {
-    text = autoStart ? `${queued} queued` : `Paused · ${queued} waiting`
-    tone = autoStart ? 'text-teal-300' : 'text-amber-300'
+    text = `${queued} queued`
+    tone = 'text-teal-300'
+  } else if (paused > 0) {
+    // Paused tapes won't move until the user starts them — amber, like the chips.
+    text = `${paused} paused`
+    tone = 'text-amber-300'
   } else {
     text = tapes.length === 0 ? 'No tapes yet' : `${tapes.length} ${tapes.length === 1 ? 'tape' : 'tapes'}`
     tone = 'text-zinc-300'
@@ -72,7 +78,8 @@ function ActivityZone() {
     <span className="flex items-center gap-1.5 truncate">
       {active && <Spinner className={tone} />}
       <span className={tone}>{text}</span>
-      {failed > 0 && <span className="text-red-300"> · {failed} failed</span>}
+      {failed > 0 && <span className="text-red-300">· {failed} failed</span>}
+      {listing > 0 && <span className="text-violet-300">· {listing} to scan</span>}
     </span>
   )
 }

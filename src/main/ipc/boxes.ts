@@ -4,11 +4,12 @@ import { emit } from './events'
 import * as session from '@main/store/session'
 import { log } from '@main/io/logger'
 import { boxNameError, uniqueBoxName } from '@shared/box-names'
+import { frontOrders } from '@shared/order'
 import type { Box, Tape } from '@shared/domain'
 
 /**
  * Organization of archived tapes into boxes. A box is a named, ordered list; a
- * tape belongs to one box (Tape.boxId) or to Loose. Box membership and
+ * tape belongs to one box (Tape.boxId) or to Unboxed. Box membership and
  * within-box order live on the tapes; the box list itself is in the session.
  */
 export function registerBoxHandlers(): void {
@@ -45,15 +46,21 @@ export function registerBoxHandlers(): void {
 
   handle('boxes:delete', async ({ boxId }) => {
     session.removeBox(boxId)
-    // Tapes in the deleted box fall back to Loose.
+    // The deleted box's tapes fall back to Unboxed, landing on top as a block in the
+    // order they held inside the box — so their arrangement survives the delete
+    // and their orders can't collide with whatever Unboxed already holds.
+    const orphans = session
+      .getTapes()
+      .filter((t) => t.boxId === boxId)
+      .sort((a, b) => a.order - b.order)
+    const unboxed = session.getTapes().filter((t) => t.archivedAtUtc && t.boxId === null)
+    const orders = frontOrders(unboxed.map((t) => t.order), orphans.length)
     const changed: Tape[] = []
-    for (const tape of session.getTapes()) {
-      if (tape.boxId === boxId) {
-        const updated = { ...tape, boxId: null }
-        session.upsertTape(updated)
-        changed.push(updated)
-      }
-    }
+    orphans.forEach((tape, i) => {
+      const updated = { ...tape, boxId: null, order: orders[i] }
+      session.upsertTape(updated)
+      changed.push(updated)
+    })
     emit('boxes:changed', session.getBoxes())
     if (changed.length > 0) emit('tapes:updatedMany', changed)
     log.info('archive: box deleted', { id: boxId, orphaned: changed.length })
@@ -68,31 +75,28 @@ export function registerBoxHandlers(): void {
     emit('boxes:changed', session.getBoxes())
   })
 
-  handle('boxes:place', async ({ tapeIds, boxId, beforeTapeId }) => {
+  handle('boxes:place', async ({ tapeIds, boxId }) => {
     const moving = new Set(tapeIds)
     const all = session.getTapes()
 
-    // The target box's current members, minus anything being moved, in order.
+    // The destination list's current members (archived tapes filed there), minus
+    // anything being moved. Unboxed is boxId === null, so the archived guard keeps
+    // inbox tapes — which also have boxId null — out of it.
     const members = all
-      .filter((i) => i.boxId === boxId && !moving.has(i.id))
-      .sort((a, b) => a.boxOrder - b.boxOrder)
+      .filter((i) => i.archivedAtUtc && i.boxId === boxId && !moving.has(i.id))
+      .sort((a, b) => a.order - b.order)
 
-    // The moved tapes, kept in the caller's requested order.
+    // The moved tapes, kept in the caller's requested order, placed on top — newly
+    // filed tapes land at the front of their new box.
     const movingTapes = tapeIds
       .map((id) => all.find((i) => i.id === id))
       .filter((i): i is Tape => i !== undefined)
 
-    let insertAt = members.length
-    if (beforeTapeId) {
-      const idx = members.findIndex((i) => i.id === beforeTapeId)
-      if (idx >= 0) insertAt = idx
-    }
-
-    const ordered = [...members.slice(0, insertAt), ...movingTapes, ...members.slice(insertAt)]
+    const ordered = [...movingTapes, ...members]
     const changed: Tape[] = []
     ordered.forEach((tape, order) => {
-      if (tape.boxId !== boxId || tape.boxOrder !== order) {
-        const updated = { ...tape, boxId, boxOrder: order }
+      if (tape.boxId !== boxId || tape.order !== order) {
+        const updated = { ...tape, boxId, order }
         session.upsertTape(updated)
         changed.push(updated)
       }
