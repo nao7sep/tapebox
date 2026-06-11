@@ -1,5 +1,5 @@
-import { access, constants } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { access, constants, rename, unlink } from 'node:fs/promises'
+import { basename, extname, join, resolve } from 'node:path'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 import { execCapture, makeLineBuffer, spawnStreaming, SubprocessError, waitForExit } from '@main/io/spawn'
@@ -129,6 +129,87 @@ export async function transcode(req: TranscodeRequest): Promise<string> {
     lineBuffer.flush()
   }
   return outPath
+}
+
+// Thumbnail encoding — fixed, not user-configurable. Every poster image passes
+// through saveThumbnailJpeg, so these literals are the one place the library's
+// thumbnail format is decided. Values target a clean preview at modest size, not
+// archival fidelity: a poster is only ever shown letterboxed in the player.
+const THUMBNAIL_JPEG_QSCALE = 3      // ffmpeg mjpeg -q:v: 2 (best) … 31 (worst)
+const THUMBNAIL_MAX_EDGE_PX = 1280   // cap the longer side; never upscales smaller art
+const THUMBNAIL_IDLE_TIMEOUT_MS = 30_000
+
+/**
+ * The single gate through which every thumbnail is persisted. Transcodes a raw
+ * source image (any format yt-dlp fetched) to a normalized JPEG at
+ * {destDir}/{stem}.jpg and returns that basename — so the rest of the app never
+ * has to wonder what format or quality a thumbnail is.
+ *
+ * Writes through a staging file then renames into place, which lets the source
+ * legitimately BE {stem}.jpg (a re-encode in place); the source is removed
+ * afterwards unless it already was the destination. Throws on failure — the
+ * caller decides whether a missing poster is fatal (it isn't) or worth surfacing.
+ */
+export async function saveThumbnailJpeg(
+  sourceImagePath: string,
+  destDir: string,
+  stem: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const finalName = `${stem}.jpg`
+  const finalPath = join(destDir, finalName)
+  // Staging must keep a real .jpg extension: ffmpeg chooses the output muxer from
+  // the extension, and a bare `.staging` suffix leaves it "unable to choose an
+  // output format". It's renamed onto finalPath once written; findThumbnail
+  // ignores it because its stem ("{stem}.staging") differs.
+  const stagePath = join(destDir, `${stem}.staging.jpg`)
+
+  const args = [
+    '-hide_banner',
+    '-i', sourceImagePath,
+    // Fit within a MAX×MAX box preserving aspect, only ever shrinking: the box is
+    // clamped to the source's own size, so a thumbnail smaller than the cap is
+    // passed through untouched rather than upscaled. Commas inside the expressions
+    // are arguments to min(), not filter separators, so no escaping is needed in
+    // an argv array (unlike a shell).
+    '-vf', `scale='min(${THUMBNAIL_MAX_EDGE_PX},iw)':'min(${THUMBNAIL_MAX_EDGE_PX},ih)':force_original_aspect_ratio=decrease`,
+    '-q:v', String(THUMBNAIL_JPEG_QSCALE),
+    // Write exactly one image to the fixed filename: the image2 muxer otherwise
+    // expects a numbered sequence pattern (%03d) and warns without these.
+    '-frames:v', '1',
+    '-update', '1',
+    '-y', stagePath,
+  ]
+
+  const child = spawnStreaming(binaryPath('ffmpeg'), args, { signal, idleTimeoutMs: THUMBNAIL_IDLE_TIMEOUT_MS })
+  const recentLines: string[] = []
+  const lineBuffer = makeLineBuffer((line) => {
+    if (!line.trim()) return
+    recentLines.push(line)
+    if (recentLines.length > 40) recentLines.shift()
+  }, { splitOnCR: true })
+  child.stdout.on('data', lineBuffer.feed)
+  child.stderr.on('data', lineBuffer.feed)
+
+  try {
+    await waitForExit(child, { command: 'ffmpeg thumbnail' })
+  } catch (err) {
+    lineBuffer.flush()
+    await unlink(stagePath).catch(() => {}) // a partial staging file may have landed
+    if (err instanceof SubprocessError) {
+      throw new SubprocessError(err.command, err.exitCode, recentLines.join('\n').trim() || err.stderr)
+    }
+    throw err
+  } finally {
+    lineBuffer.flush()
+  }
+
+  await rename(stagePath, finalPath)
+  // The source is consumed. Drop it unless it WAS the destination (a jpg→jpg
+  // re-encode), in which case the rename above already replaced it.
+  if (resolve(sourceImagePath) !== resolve(finalPath)) await unlink(sourceImagePath).catch(() => {})
+  log.info('thumbnail saved', { stem, source: basename(sourceImagePath) })
+  return finalName
 }
 
 /** Video filter chain: downscale and/or frame-rate cap, joined into one -vf. */

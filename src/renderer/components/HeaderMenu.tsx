@@ -52,7 +52,7 @@ export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortc
         aria-expanded={open}
         className="flex items-center justify-center rounded-md p-2 -m-2 hover:bg-zinc-800"
       >
-        <svg width="28" height="28" viewBox="3 3 18 18" aria-hidden="true">
+        <svg width="24" height="24" viewBox="3 3 18 18" aria-hidden="true">
           {/* bottom bun */}
           <path d="M3.8 16.6 H20.2 V18 Q20.2 20.8 12 20.8 Q3.8 20.8 3.8 18 Z" fill="#E3A857" />
           {/* beef patty */}

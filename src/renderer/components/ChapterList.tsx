@@ -17,7 +17,7 @@ export function ChapterList({ chapters, onSeek }: Props) {
         <li key={i}>
           <button
             onClick={() => onSeek(c.start_time)}
-            className="flex w-full items-baseline gap-3 rounded px-2 py-1 text-left text-sm hover:bg-zinc-800/60"
+            className="flex w-full items-baseline gap-3 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-zinc-800/60 active:bg-zinc-700"
           >
             <span className="w-16 shrink-0 text-xs tabular-nums text-zinc-300">
               {formatTime(c.start_time)}

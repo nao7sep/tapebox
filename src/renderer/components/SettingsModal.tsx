@@ -189,6 +189,7 @@ function pickEditable(s: Settings) {
     maxConcurrentDownloads: s.maxConcurrentDownloads,
     autoplay: s.autoplay,
     playSound: s.playSound,
+    keepAwakeWhilePlaying: s.keepAwakeWhilePlaying,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
     autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
@@ -278,6 +279,13 @@ function GeneralTab({
         checked={draft.playSound}
         disabled={busy}
         onChange={(v) => onPatch({ playSound: v })}
+      />
+      <Toggle
+        label="Keep the computer awake while playing"
+        description="Hold a system wake lock while a tape is playing, so the screen won't dim and the computer won't sleep mid-watch. Released as soon as playback stops."
+        checked={draft.keepAwakeWhilePlaying}
+        disabled={busy}
+        onChange={(v) => onPatch({ keepAwakeWhilePlaying: v })}
       />
       <TextField
         label="External player"

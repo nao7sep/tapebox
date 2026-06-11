@@ -30,10 +30,13 @@ export type ProbeChapter = { start_time: number; end_time: number; title: string
 export type ProbeVideo = {
   kind: 'video'
   id: string
+  // yt-dlp's extractor (e.g. 'youtube'). yt-dlp's `id` is unique only within an
+  // extractor, so (extractor, id) is the pair that identifies a video globally —
+  // the same key yt-dlp's own --download-archive records. Used for dedup.
+  extractor: string | null
   title: string
   uploader: string | null
   duration: number | null
-  thumbnail: string | null
   chapters: ProbeChapter[] | null
 }
 /** A single video to download, or a page of videos the caller should reject. */
@@ -67,12 +70,12 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
   return {
     kind: 'video',
     id: String(info['id'] ?? ''),
+    extractor: stringOrNull(info['extractor']),
     // Whatever language yt-dlp returns the title in is the one we keep; a user can
     // steer it with an Accept-Language header via global args or a site profile.
     title: String(info['title'] ?? ''),
     uploader: stringOrNull(info['uploader'] ?? info['channel']),
     duration: typeof info['duration'] === 'number' ? info['duration'] : null,
-    thumbnail: stringOrNull(info['thumbnail']),
     chapters: Array.isArray(info['chapters']) ? (info['chapters'] as ProbeChapter[]) : null,
   }
 }
@@ -128,10 +131,15 @@ function finiteOrUndefined(raw: string | undefined): number | undefined {
  * stable until the user renames to a slug.
  */
 export async function download(opts: DownloadOptions): Promise<DownloadResult> {
-  // Start from a clean slate: a leftover .part from a prior failed/cancelled run
-  // can be stale or oversized and makes yt-dlp's resume fail with HTTP 416.
-  // Completed per-format streams are kept and reused.
-  await clearPartials(opts.libraryDir, opts.outputId)
+  // Start from a clean slate: wipe everything a prior attempt left for this stem.
+  // The stem is the tape's own id, so {stem}.* belongs to exactly this tape, and a
+  // fresh attempt owns it outright. This avoids two failure modes at once: a stale
+  // .part triggering an HTTP 416 on resume, and — more subtly — a *completed*
+  // merged file from a half-finished prior run (one that died after merge) making
+  // yt-dlp skip the download entirely, which leaves us with no final path. We
+  // deliberately don't try to resume across attempts; yt-dlp resumes fragments
+  // within an attempt, and a user-triggered retry starting fresh is predictable.
+  await clearStem(opts.libraryDir, opts.outputId)
   // Never auto-retried: re-running hammers the site and risks a block. yt-dlp
   // runs its own internal --retries for transient blips within the attempt. No
   // idle watchdog: yt-dlp goes silent during the post-download ffmpeg merge of a
@@ -149,6 +157,11 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
       ...resolveYtdlpArgs(opts.url),
       '--paths', `home:${opts.libraryDir}`,
       '--write-info-json',
+      // Write the source thumbnail beside the media as {outputId}.{ext}. We do NOT
+      // ask yt-dlp to convert it — every image goes through our own gate
+      // (ffmpeg.saveThumbnailJpeg) so the format and quality are ours to guarantee,
+      // not yt-dlp's to vary. A missing thumbnail is non-fatal (yt-dlp warns).
+      '--write-thumbnail',
       '--output', `${opts.outputId}.%(ext)s`,
       '--no-playlist',
       '--no-warnings',
@@ -249,4 +262,78 @@ export async function clearPartials(libraryDir: string, outputId: string): Promi
       await unlink(join(libraryDir, name)).catch(() => {})
     }
   }
+}
+
+/**
+ * Remove every file for a stem — the whole {stem}.* namespace. Used to give a
+ * fresh download attempt a clean slate (see download()); the stem is the tape's
+ * id, so this can only touch that one tape's files.
+ */
+export async function clearStem(libraryDir: string, stem: string): Promise<void> {
+  let entries: string[]
+  try {
+    entries = await readdir(libraryDir)
+  } catch {
+    return
+  }
+  const prefix = `${stem}.`
+  for (const name of entries) {
+    if (name.startsWith(prefix)) {
+      await unlink(join(libraryDir, name)).catch(() => {})
+    }
+  }
+}
+
+// Image extensions yt-dlp may write for a thumbnail. None overlap the media or
+// sidecar extensions, so a match for our stem is unambiguously the thumbnail.
+const THUMBNAIL_SOURCE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif'])
+
+/**
+ * Locate the raw thumbnail yt-dlp wrote for a stem, whatever image format it
+ * chose, or null if --write-thumbnail produced none (the source had no
+ * thumbnail). The stem is the tape's unique id, so only its own file can match.
+ */
+export async function findThumbnail(libraryDir: string, stem: string): Promise<string | null> {
+  let entries: string[]
+  try {
+    entries = await readdir(libraryDir)
+  } catch {
+    return null
+  }
+  for (const name of entries) {
+    const ext = extname(name).slice(1).toLowerCase()
+    if (name.slice(0, name.length - extname(name).length) === stem && THUMBNAIL_SOURCE_EXTS.has(ext)) {
+      return join(libraryDir, name)
+    }
+  }
+  return null
+}
+
+/**
+ * Fetch only the thumbnail for a URL (no media), writing the raw image as
+ * {stem}.{ext} in libraryDir and returning its path, or null if the source has
+ * none. Used to backfill a local poster for a tape downloaded before thumbnails
+ * were saved; the caller passes the result through the image gate.
+ */
+export async function downloadThumbnail(
+  url: string,
+  libraryDir: string,
+  stem: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  await execCapture(
+    binaryPath('yt-dlp'),
+    [
+      ...resolveYtdlpArgs(url),
+      '--skip-download',
+      '--write-thumbnail',
+      '--no-playlist',
+      '--no-warnings',
+      '--paths', `home:${libraryDir}`,
+      '--output', `${stem}.%(ext)s`,
+      url,
+    ],
+    { env: ytdlpEnv(), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS },
+  )
+  return findThumbnail(libraryDir, stem)
 }

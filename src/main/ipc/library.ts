@@ -12,7 +12,8 @@ import { describeError } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { isValidSlug, slugifyAscii } from '@main/core/slug'
 import * as queue from '@main/queue/manager'
-import { clearPartials, probe } from '@main/services/ytdlp'
+import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
+import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
@@ -63,11 +64,13 @@ export function registerLibraryHandlers(): void {
         if (tape.sidecarFilename) {
           await discardFile(join(settings.libraryDir, tape.sidecarFilename), settings.trashOnRemove)
         }
-        // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
-        // junk, always deleted outright (never trashed).
-        if (tape.sourceId) {
-          await clearPartials(settings.libraryDir, tape.sourceId)
+        if (tape.thumbnailFilename) {
+          await discardFile(join(settings.libraryDir, tape.thumbnailFilename), settings.trashOnRemove)
         }
+        // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
+        // junk, always deleted outright (never trashed). They're named by the
+        // on-disk stem, which is the tape id.
+        await clearPartials(settings.libraryDir, tape.id)
       }
     }
     session.removeTapes(tapeIds)
@@ -123,77 +126,79 @@ export function registerLibraryHandlers(): void {
     }
 
     const settings = getSettings()
-    const mediaExt = extname(tape.filename)
-    const newMediaName = `${cleanSlug}${mediaExt}`
-    const newSidecarName = `${cleanSlug}.json`
+    const p = (name: string) => join(settings.libraryDir, name)
 
-    if (newMediaName === tape.filename && newSidecarName === tape.sidecarFilename) {
+    const newMediaName = `${cleanSlug}${extname(tape.filename)}`
+    const newSidecarName = `${cleanSlug}.json`
+    const newThumbName = tape.thumbnailFilename ? `${cleanSlug}${extname(tape.thumbnailFilename)}` : null
+
+    if (
+      newMediaName === tape.filename &&
+      newSidecarName === tape.sidecarFilename &&
+      newThumbName === tape.thumbnailFilename
+    ) {
       return tape
     }
 
-    const oldMediaPath = join(settings.libraryDir, tape.filename)
-    const oldSidecarPath = join(settings.libraryDir, tape.sidecarFilename)
-    const newMediaPath = join(settings.libraryDir, newMediaName)
-    const newSidecarPath = join(settings.libraryDir, newSidecarName)
-
-    // Stage-then-swap: write copies under .staging suffixes, then atomically
-    // rename them into place, then unlink the originals. The originals stay
-    // intact until both staging files exist, so any failure mid-flight leaves
-    // disk state recoverable without a rollback dance.
-    const stageMedia = `${newMediaPath}.staging`
-    const stageSidecar = `${newSidecarPath}.staging`
-
-    // Collision check: target files (and our staging files) must not exist.
-    if (newMediaPath !== oldMediaPath)     await assertMissing(newMediaPath)
-    if (newSidecarPath !== oldSidecarPath) await assertMissing(newSidecarPath)
-    await assertMissing(stageMedia)
-    await assertMissing(stageSidecar)
-
     const nowUtc = nowUtcIso()
+    const sidecarFresh = p(newSidecarName)
 
-    try {
-      await copyFile(oldMediaPath, stageMedia)
+    // Re-stem a tape's files to the slug as one unit: the media and (optional)
+    // thumbnail are plain copies, the sidecar is rewritten with the new slug,
+    // timestamp, and thumbnail name. Stage every file under a .staging suffix,
+    // then rename them all into place; the originals are untouched until the very
+    // end, so a failure mid-swap is undone by deleting just the new files we
+    // created — the session record still points at the intact originals.
+    const items = [
+      { old: p(tape.filename), fresh: p(newMediaName) },
+      { old: p(tape.sidecarFilename), fresh: sidecarFresh },
+      ...(tape.thumbnailFilename && newThumbName
+        ? [{ old: p(tape.thumbnailFilename), fresh: p(newThumbName) }]
+        : []),
+    ].map((it) => ({ ...it, stage: `${it.fresh}.staging` }))
 
-      const sidecarText = await readFile(oldSidecarPath, 'utf8')
-      const sidecar = JSON.parse(sidecarText) as Record<string, unknown>
-      const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
-      tb['slug'] = cleanSlug
-      tb['renamedAtUtc'] = nowUtc
-      sidecar['tapebox'] = tb
-      await writeJsonAtomic(stageSidecar, sidecar)
+    for (const it of items) {
+      if (it.fresh !== it.old) await assertMissing(it.fresh)
+      await assertMissing(it.stage)
+    }
 
-      // Atomic swap: rename staging -> final. Same filesystem so this is
-      // a single inode operation each. Windows refuses the rename if
-      // newMediaPath happens to be an open file handle; that condition
-      // bubbles up as a clear error instead of leaving partial state.
-      await rename(stageMedia, newMediaPath)
-      await rename(stageSidecar, newSidecarPath)
-
-      await unlink(oldMediaPath).catch(() => {})
-      await unlink(oldSidecarPath).catch(() => {})
-    } catch (err) {
-      // Clean up staging if it landed.
-      await unlink(stageMedia).catch(() => {})
-      await unlink(stageSidecar).catch(() => {})
-      // If the FIRST rename succeeded but the second failed, the new media
-      // file exists at the target but the sidecar does not. Roll the media
-      // rename back so the session record stays consistent with disk.
-      if (await fileExists(newMediaPath) && !(await fileExists(newSidecarPath))) {
-        await rename(newMediaPath, oldMediaPath).catch((rollbackErr) => {
-          log.error('renameToSlug: rollback failed', {
-            from: newMediaPath,
-            to: oldMediaPath,
-            error: describeError(rollbackErr),
-          })
-        })
+    for (const it of items) {
+      if (it.fresh === sidecarFresh) {
+        const sidecar = JSON.parse(await readFile(it.old, 'utf8')) as Record<string, unknown>
+        const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+        tb['slug'] = cleanSlug
+        tb['renamedAtUtc'] = nowUtc
+        tb['thumbnailFilename'] = newThumbName
+        sidecar['tapebox'] = tb
+        await writeJsonAtomic(it.stage, sidecar)
+      } else {
+        await copyFile(it.old, it.stage)
       }
+    }
+
+    // Atomic swap: rename staging -> final, one inode op each on the same
+    // filesystem. Windows refuses the rename if a target is an open file handle;
+    // that surfaces as a clear error rather than partial state.
+    const done: typeof items = []
+    try {
+      for (const it of items) {
+        await rename(it.stage, it.fresh)
+        done.push(it)
+      }
+    } catch (err) {
+      // The originals are still in place (their unlink is the last step), so undo
+      // is just removing the new files we created and any leftover staging.
+      for (const it of done) if (it.fresh !== it.old) await unlink(it.fresh).catch(() => {})
+      for (const it of items) await unlink(it.stage).catch(() => {})
       throw err
     }
+    for (const it of items) if (it.fresh !== it.old) await unlink(it.old).catch(() => {})
 
     const updated = {
       ...tape,
       filename: newMediaName,
       sidecarFilename: newSidecarName,
+      thumbnailFilename: newThumbName,
       slug: cleanSlug,
       renamedAtUtc: nowUtc,
     }
@@ -219,13 +224,28 @@ export function registerLibraryHandlers(): void {
       uploader: result.uploader,
       durationSeconds: result.duration,
       chapterCount: result.chapters?.length ?? null,
-      thumbnailUrl: result.thumbnail,
     }
   })
 
   handle('library:applyMetadata', async ({ tapeId, metadata }) => {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
+
+    // Backfill a local poster for a downloaded tape that has none — e.g. one
+    // downloaded before thumbnails were saved locally. Best-effort: the catalog
+    // metadata the user reviewed must still apply even if the fetch fails. Routed
+    // through the same image gate as a fresh download.
+    let thumbnailFilename = tape.thumbnailFilename
+    if (thumbnailFilename === null && tape.filename) {
+      const dir = getSettings().libraryDir
+      const stem = tape.filename.slice(0, -extname(tape.filename).length)
+      try {
+        const raw = await downloadThumbnail(tape.sourceUrl, dir, stem, new AbortController().signal)
+        if (raw) thumbnailFilename = await saveThumbnailJpeg(raw, dir, stem)
+      } catch (err) {
+        log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })
+      }
+    }
 
     // Persist exactly the catalog metadata the user accepted from the preview.
     // sourceId and the on-disk filenames are the tape's identity — leave them
@@ -236,7 +256,7 @@ export function registerLibraryHandlers(): void {
       uploader: metadata.uploader,
       durationSeconds: metadata.durationSeconds,
       chapterCount: metadata.chapterCount ?? tape.chapterCount,
-      thumbnailUrl: metadata.thumbnailUrl,
+      thumbnailFilename,
       probedAtUtc: nowUtcIso(),
     }
     session.upsertTape(updated)
@@ -301,20 +321,40 @@ export function registerLibraryHandlers(): void {
         continue
       }
 
+      // Bring the local poster along if the sidecar names one and it's sitting
+      // beside the media. Best-effort: a missing or unreadable thumbnail just
+      // imports the tape without a poster — it never rejects the import.
+      let thumbnailFilename: string | null = null
+      const tbThumb = typeof tb['thumbnailFilename'] === 'string' ? tb['thumbnailFilename'] : null
+      if (tbThumb) {
+        const srcThumb = join(dir, tbThumb)
+        const dstThumb = join(settings.libraryDir, tbThumb)
+        try {
+          if (srcThumb !== dstThumb) {
+            await assertMissing(dstThumb)
+            await copyFile(srcThumb, dstThumb)
+          }
+          thumbnailFilename = tbThumb
+        } catch (err) {
+          log.debug('import: thumbnail copy skipped', { path: srcThumb, error: describeError(err) })
+        }
+      }
+
       const tape: Tape = {
         id: nanoid(10),
         sourceUrl,
         state: 'downloaded',
         addedAtUtc: (typeof tb['addedAtUtc'] === 'string' ? tb['addedAtUtc'] : null) ?? nowUtcIso(),
         sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
+        extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
         title: typeof sidecar['title'] === 'string' ? sidecar['title'] : null,
         uploader: typeof sidecar['uploader'] === 'string' ? sidecar['uploader'] : null,
         durationSeconds: typeof sidecar['duration'] === 'number' ? sidecar['duration'] : null,
         chapterCount: Array.isArray(sidecar['chapters']) ? (sidecar['chapters'] as unknown[]).length : 0,
-        thumbnailUrl: typeof sidecar['thumbnail'] === 'string' ? sidecar['thumbnail'] : null,
         probedAtUtc: nowUtcIso(),
         filename: mediaBasename,
         sidecarFilename: `${stem}.json`,
+        thumbnailFilename,
         downloadStartedAtUtc: null,
         downloadedAtUtc: typeof tb['downloadedAtUtc'] === 'string' ? tb['downloadedAtUtc'] : nowUtcIso(),
         slug: typeof tb['slug'] === 'string' ? tb['slug'] : null,

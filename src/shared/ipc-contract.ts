@@ -127,6 +127,10 @@ export type IpcCalls = {
   'app:runtimeInfo':       { req: undefined;                         res: RuntimeInfo }
   // Reveal the current launch's log file in the OS file manager.
   'app:revealLog':         { req: undefined;                         res: void }
+  // Report whether a tape is currently playing, so main can hold or release an OS
+  // wake lock that keeps the machine (and display) awake during playback. Gated
+  // by the keepAwakeWhilePlaying setting.
+  'app:setVideoPlaying':   { req: { playing: boolean };              res: void }
 }
 
 export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
@@ -188,7 +192,6 @@ export type RefreshedMetadata = {
   uploader: string | null
   durationSeconds: number | null
   chapterCount: number | null
-  thumbnailUrl: string | null
 }
 
 export type ScanResult = {

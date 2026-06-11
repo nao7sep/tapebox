@@ -1,8 +1,8 @@
-import { nanoid } from 'nanoid'
 import { handle } from './handle'
 import { emit } from './events'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
+import { reserveStem } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
@@ -16,7 +16,7 @@ export function registerDownloadHandlers(): void {
     if (session.getTapes().some((i) => i.sourceUrl === trimmed)) {
       throw new Error('This URL has already been added.')
     }
-    const tape = makeQueuedTape(trimmed)
+    const tape = await makeQueuedTape(trimmed)
     session.upsertTape(tape)
     emit('tapes:added', [tape])
     queue.tick()
@@ -34,7 +34,7 @@ export function registerDownloadHandlers(): void {
       const trimmed = url.trim()
       if (!trimmed || seen.has(trimmed)) continue
       seen.add(trimmed)
-      tapes.push(makeQueuedTape(trimmed))
+      tapes.push(await makeQueuedTape(trimmed))
     }
     if (tapes.length === 0) return []
     for (const tape of tapes) session.upsertTape(tape)
@@ -63,23 +63,27 @@ function transition(tapeId: string, patch: Partial<Tape>): void {
   emit('tapes:updated', next)
 }
 
-function makeQueuedTape(url: string): Tape {
+async function makeQueuedTape(url: string): Promise<Tape> {
   const autostart = getSettings().autoStartDownloads
   const now = nowUtcIso()
+  // The id doubles as the on-disk filename stem once the download lands, so it is
+  // reserved against the library to guarantee a free {id}.* namespace.
+  const id = await reserveStem(getSettings().libraryDir)
   return {
-    id: nanoid(10),
+    id,
     sourceUrl: url,
     state: autostart ? 'queued' : 'paused',
     addedAtUtc: now,
     sourceId: null,
+    extractor: null,
     title: null,
     uploader: null,
     durationSeconds: null,
     chapterCount: null,
-    thumbnailUrl: null,
     probedAtUtc: null,
     filename: null,
     sidecarFilename: null,
+    thumbnailFilename: null,
     downloadStartedAtUtc: null,
     downloadedAtUtc: null,
     slug: null,

@@ -13,6 +13,26 @@ describe('SettingsSchema', () => {
 
     expect(SettingsSchema.parse(raw).autoplay).toBe(false)
   })
+
+  it('defaults keepAwakeWhilePlaying for configs that do not have the field yet', () => {
+    const raw: Record<string, unknown> = { ...defaultSettings('/tmp/tapebox-library') }
+    delete raw['keepAwakeWhilePlaying']
+
+    expect(SettingsSchema.parse(raw).keepAwakeWhilePlaying).toBe(true)
+  })
+
+  it('defaults volume to full for configs that do not have the field yet', () => {
+    const raw: Record<string, unknown> = { ...defaultSettings('/tmp/tapebox-library') }
+    delete raw['volume']
+
+    expect(SettingsSchema.parse(raw).volume).toBe(1)
+  })
+
+  it('rejects an out-of-range volume rather than persisting it', () => {
+    const raw = { ...defaultSettings('/tmp/tapebox-library'), volume: 1.5 }
+
+    expect(SettingsSchema.safeParse(raw).success).toBe(false)
+  })
 })
 
 describe('summarizeSettings', () => {

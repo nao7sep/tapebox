@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs } from './paths.js'
@@ -10,6 +10,7 @@ import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
+import { releaseWakeLock } from './power-blocker.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -85,6 +86,11 @@ async function startup(): Promise<void> {
   await startMediaServer()
   registerIpcHandlers()
   queue.start()
+
+  // Force the native chrome — the window's title bar, menus, and native dialogs —
+  // dark to match the renderer, which is a dark-only UI. Without this the title bar
+  // follows the OS theme and looks pasted-on-light against the app's #09090b body.
+  nativeTheme.themeSource = 'dark'
   createMainWindow()
 }
 
@@ -98,6 +104,9 @@ function shutdown(reason: string): Promise<void> {
   if (shutdownPromise) return shutdownPromise
   shutdownPromise = (async () => {
     log.info('shutdown', { reason })
+    // The renderer can't report a final pause once we're tearing down, so drop any
+    // held playback wake lock up front.
+    releaseWakeLock()
     try {
       await persistNow()
     } catch {
@@ -139,8 +148,11 @@ void app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  // macOS keeps the app (and its media server) alive in the dock for reactivation;
-  // teardown belongs to the actual quit below. Other platforms quit on last close.
+  // No window means no <video>, so a playback wake lock is now stale — release it
+  // even on macOS, where the app (and its media server) lingers in the dock for
+  // reactivation. Other platforms quit on last close; teardown belongs to the
+  // actual quit below.
+  releaseWakeLock()
   if (process.platform !== 'darwin') app.quit()
 })
 

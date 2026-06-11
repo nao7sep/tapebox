@@ -35,17 +35,19 @@ export const TapeSchema = z.object({
   addedAtUtc: z.string(),
 
   // Filled by probe.
-  sourceId: z.string().nullable(),       // yt-dlp's id; used as on-disk filename stem
+  sourceId: z.string().nullable(),       // yt-dlp's id (unique only within an extractor)
+  extractor: z.string().nullable().default(null), // yt-dlp's extractor; with sourceId, the duplicate-detection key
   title: z.string().nullable(),
   uploader: z.string().nullable(),
   durationSeconds: z.number().nullable(),
   chapterCount: z.number().int().nullable(),
-  thumbnailUrl: z.string().nullable(),
   probedAtUtc: z.string().nullable(),
 
-  // Filled by download.
+  // Filled by download. On-disk files are named by the tape's id (see core/stem.ts),
+  // not by sourceId; the slug rename later re-stems them all to the chosen slug.
   filename: z.string().nullable(),                          // basename only, no path
   sidecarFilename: z.string().nullable(),                   // basename only, no path
+  thumbnailFilename: z.string().nullable().default(null),   // local poster (.jpg) basename, no path; null if the source had none
   downloadStartedAtUtc: z.string().nullable().default(null), // when state → 'downloading'
   downloadedAtUtc: z.string().nullable(),
 
@@ -103,6 +105,9 @@ export const SidecarTapeboxSchema = z.object({
   renamedAtUtc: z.string().nullable(),
   // Null when probing failed or for sidecars written before this existed.
   media: SidecarMediaSchema.nullable().default(null),
+  // Local poster basename saved beside the media; lets an imported tape rediscover
+  // its thumbnail. Null when the source had none. Defaulted for older sidecars.
+  thumbnailFilename: z.string().nullable().default(null),
 })
 export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
 

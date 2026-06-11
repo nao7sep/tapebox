@@ -44,6 +44,9 @@ const MIME_TYPES: Record<string, string> = {
   '.mp3': 'audio/mpeg',
   '.opus': 'audio/ogg',
   '.ogg': 'audio/ogg',
+  // Tape posters. Every thumbnail is normalized to JPEG by the image gate
+  // (ffmpeg.saveThumbnailJpeg), so .jpg is the only image type the library holds.
+  '.jpg': 'image/jpeg',
 }
 
 let server: Server | null = null

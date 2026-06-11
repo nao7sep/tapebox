@@ -10,6 +10,8 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { releaseVideo } from '@renderer/lib/video'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
+import { useKeepAwake } from '@renderer/lib/useKeepAwake'
+import { useVolume } from '@renderer/lib/useVolume'
 import { formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
@@ -96,10 +98,22 @@ export function DetailPane({
     ? `${mediaBase}/${encodeURIComponent(tape.filename)}`
     : null
 
+  // Local poster, served from the same loopback media server as the video.
+  const posterSrc = tape.thumbnailFilename && mediaBase
+    ? `${mediaBase}/${encodeURIComponent(tape.thumbnailFilename)}`
+    : undefined
+
   // A new source clears any prior playback error (and a fresh load may succeed).
   useEffect(() => { setPlaybackError(null) }, [mediaUrl])
 
   useEnforcedMute(videoRef, !playSound, mediaUrl)
+
+  // Key on whether the <video> is actually mounted (a rename modal or playback
+  // error replaces it), so the wake-lock hook re-attaches its listeners when the
+  // player reappears rather than going silent until the next tape.
+  const playerSrc = tape.state === 'downloaded' && !showRename && !playbackError ? mediaUrl : null
+  useKeepAwake(videoRef, playerSrc)
+  useVolume(videoRef, playerSrc)
 
   function seek(seconds: number) {
     const v = videoRef.current
@@ -262,7 +276,7 @@ export function DetailPane({
               <Player
                 ref={videoRef}
                 src={mediaUrl}
-                poster={tape.thumbnailUrl ?? undefined}
+                posterSrc={posterSrc}
                 autoPlay={autoplay}
                 muted={!playSound}
                 onError={(v) => setPlaybackError(describeMediaError(v))}

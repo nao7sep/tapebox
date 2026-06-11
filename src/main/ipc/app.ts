@@ -1,9 +1,11 @@
 import { app, shell } from 'electron'
 import { handle } from './handle'
 import { getCurrentLogPath } from '@main/io/logger'
+import { setVideoPlaying } from '@main/power-blocker'
 
 /**
- * Read-only facts about the current process, plus revealing this launch's log.
+ * Read-only facts about the current process, revealing this launch's log, and the
+ * renderer's playback heartbeat that drives the keep-awake wake lock.
  */
 export function registerAppHandlers(): void {
   handle('app:runtimeInfo', async () => ({
@@ -15,5 +17,9 @@ export function registerAppHandlers(): void {
   handle('app:revealLog', async () => {
     const path = getCurrentLogPath()
     if (path) shell.showItemInFolder(path)
+  })
+
+  handle('app:setVideoPlaying', async ({ playing }) => {
+    setVideoPlaying(playing)
   })
 }

@@ -84,6 +84,17 @@ export const SettingsSchema = z.object({
   // Play video audio. When off, every video is muted and can't be unmuted.
   playSound: z.boolean().default(true),
 
+  // Last playback volume (0..1), remembered across tapes and restarts so a new
+  // tape opens at the level the user last set rather than resetting to full. Set
+  // live from the player's own volume control, not the Settings dialog. Defaulted
+  // so configs written before this field existed still load cleanly.
+  volume: z.number().min(0).max(1).default(1),
+
+  // Hold an OS wake lock while a tape is playing, so the screen doesn't dim and
+  // the machine doesn't sleep mid-watch; released the moment playback stops.
+  // Defaulted so configs written before this field existed still load cleanly.
+  keepAwakeWhilePlaying: z.boolean().default(true),
+
   // Removing a tape moves its files to the OS Trash (recoverable) when on, or
   // deletes them permanently when off. confirmRemove gates a confirmation
   // dialog before any removal. Both default on (and are defaulted so older
@@ -129,6 +140,8 @@ export function defaultSettings(libraryDir: string): Settings {
     maxConcurrentDownloads: 2,
     autoplay: true,
     playSound: true,
+    keepAwakeWhilePlaying: true,
+    volume: 1,
     trashOnRemove: true,
     confirmRemove: true,
     autoCheckBinaryUpdates: true,
@@ -181,6 +194,8 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     maxConcurrentDownloads: s.maxConcurrentDownloads,
     autoplay: s.autoplay,
     playSound: s.playSound,
+    keepAwakeWhilePlaying: s.keepAwakeWhilePlaying,
+    volume: s.volume,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
     autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
