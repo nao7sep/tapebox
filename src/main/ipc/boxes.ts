@@ -41,6 +41,7 @@ export function registerBoxHandlers(): void {
     const updated = { ...box, name: trimmed }
     session.upsertBox(updated)
     emit('boxes:changed', session.getBoxes())
+    log.info('archive: box renamed', { id: box.id, from: box.name, to: trimmed })
     return updated
   })
 
@@ -73,6 +74,7 @@ export function registerBoxHandlers(): void {
       if (g && g.order !== order) session.upsertBox({ ...g, order })
     })
     emit('boxes:changed', session.getBoxes())
+    log.info('archive: boxes reordered', { count: orderedIds.length })
   })
 
   handle('boxes:place', async ({ tapeIds, boxId }) => {

@@ -31,7 +31,12 @@ export async function loadLayout(): Promise<void> {
     return
   }
   const parsed = LayoutSchema.safeParse(raw)
-  cache = parsed.success ? parsed.data : { ...defaultLayout }
+  if (parsed.success) {
+    cache = parsed.data
+  } else {
+    log.warn('layout invalid; using defaults', { error: describeError(parsed.error) })
+    cache = { ...defaultLayout }
+  }
 }
 
 export function getLayout(): Layout {
