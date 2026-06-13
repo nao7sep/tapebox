@@ -142,12 +142,20 @@ export class Job {
       },
     })
 
-    // If yt-dlp wrote into a subdirectory (it shouldn't with our --paths), flatten
-    // the media so it sits at {libraryDir}/{stem}.{ext} like its siblings.
+    // yt-dlp should write straight into the library root via --paths, but if it
+    // ever lands the media in a subdirectory, flatten it to {libraryDir}/{stem}.{ext}
+    // so it sits beside its siblings. This is unexpected, so record it — and let a
+    // failed move surface as a failed job (the runInner catch) rather than leaving a
+    // tape whose filename points at a file that isn't there.
     const mediaBasename = basename(result.mediaPath)
     const expectedMediaPath = join(settings.libraryDir, mediaBasename)
     if (result.mediaPath !== expectedMediaPath) {
-      await rename(result.mediaPath, expectedMediaPath).catch(() => {})
+      log.warn('yt-dlp wrote media outside the library root; relocating', {
+        tapeId: this.tapeId,
+        from: result.mediaPath,
+        to: expectedMediaPath,
+      })
+      await rename(result.mediaPath, expectedMediaPath)
     }
 
     // Parse the actual file for reliable technical metadata — yt-dlp's info.json
