@@ -52,7 +52,8 @@ Press <kbd>?</kbd> in the app for the full list. The main ones:
 
 | Keys | Action |
 | --- | --- |
-| Up / Down | Move selection |
+| Up / Down | Move selection in the active list — videos, chapters, or boxes |
+| Left / Right | Seek the player back / forward |
 | Cmd/Ctrl + 1 / 2 | Inbox / Archived |
 | Slash | Search the archive |
 | Enter | Selected tape's main action (play/pause, scan, retry, resume) |
@@ -64,7 +65,7 @@ Press <kbd>?</kbd> in the app for the full list. The main ones:
 | ? | Show the shortcuts list |
 | Esc | Close a dialog |
 
-When the video is focused, its native keys apply too: <kbd>Space</kbd> play/pause, <kbd>Left</kbd>/<kbd>Right</kbd> seek, <kbd>Up</kbd>/<kbd>Down</kbd> volume.
+Arrow keys act on whichever list you last clicked: the videos, the chapters (Up/Down jumps the player between them), or the boxes in the archive. Left/Right seek the open player from anywhere. When the video element itself is focused, <kbd>Space</kbd> toggles play/pause.
 
 ## Configuration
 

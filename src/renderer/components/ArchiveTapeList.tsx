@@ -2,6 +2,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
+import { selectTape } from '@renderer/lib/selectTape'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
 
@@ -15,7 +16,6 @@ export function ArchiveTapeList() {
   const tapes = useVisibleTapes()
   const progress = useTapesStore((s) => s.progress)
   const selectedId = useSelectionStore((s) => s.selectedId)
-  const select = useSelectionStore((s) => s.select)
 
   if (tapes.length === 0) {
     return <div className="p-6 text-sm text-zinc-300">This box is empty.</div>
@@ -30,7 +30,7 @@ export function ArchiveTapeList() {
               tape={tape}
               progress={progress[tape.id]}
               selected={tape.id === selectedId}
-              onSelect={() => select(tape.id)}
+              onSelect={() => selectTape(tape.id)}
             />
           </SortableTape>
         ))}

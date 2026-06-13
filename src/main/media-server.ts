@@ -161,11 +161,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
     const start = range.kind === 'partial' ? range.start : 0
     const end = range.kind === 'partial' ? range.end : Math.max(0, size - 1)
+    // Deliberately no 'Cache-Control: no-store'. Library files are content-stable —
+    // a rename changes the URL's filename, and the token is per-process — so letting
+    // Chromium cache and reuse byte ranges is safe, and it's what keeps seeking
+    // smooth: with no-store the media stack re-fetched on every seek, stalling
+    // playback for a beat each time.
     const headers: Record<string, string> = {
       'Content-Type': contentType,
       'Content-Length': String(size === 0 ? 0 : end - start + 1),
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-store',
     }
     if (range.kind === 'partial') {
       headers['Content-Range'] = `bytes ${start}-${end}/${size}`

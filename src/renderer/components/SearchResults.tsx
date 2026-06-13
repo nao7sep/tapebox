@@ -3,6 +3,7 @@ import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
+import { selectTape } from '@renderer/lib/selectTape'
 import { UNBOXED_LABEL } from '@shared/box-names'
 import { TapeRow } from './TapeRow'
 
@@ -19,7 +20,6 @@ export function SearchResults() {
   const boxes = useBoxesStore((s) => s.boxes)
   const progress = useTapesStore((s) => s.progress)
   const selectedId = useSelectionStore((s) => s.selectedId)
-  const select = useSelectionStore((s) => s.select)
 
   if (tapes.length === 0) {
     return <div className="p-6 text-sm text-zinc-300">No archived tapes match.</div>
@@ -51,7 +51,7 @@ export function SearchResults() {
                   tape={tape}
                   progress={progress[tape.id]}
                   selected={tape.id === selectedId}
-                  onSelect={() => select(tape.id)}
+                  onSelect={() => selectTape(tape.id)}
                 />
               </li>
             ))}

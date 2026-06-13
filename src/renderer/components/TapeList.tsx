@@ -13,6 +13,7 @@ import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { useTapeDragSensors } from '@renderer/lib/dnd'
+import { selectTape } from '@renderer/lib/selectTape'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
 
@@ -25,7 +26,6 @@ import { SortableTape } from './SortableTape'
 export function TapeList() {
   const progress = useTapesStore((s) => s.progress)
   const selectedId = useSelectionStore((s) => s.selectedId)
-  const select = useSelectionStore((s) => s.select)
   const filter = useFilterStore((s) => s.filter)
   const visible = useVisibleTapes()
 
@@ -88,7 +88,7 @@ export function TapeList() {
                 tape={tape}
                 progress={progress[tape.id]}
                 selected={tape.id === selectedId}
-                onSelect={() => select(tape.id)}
+                onSelect={() => selectTape(tape.id)}
               />
             </SortableTape>
           ))}

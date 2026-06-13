@@ -44,6 +44,26 @@
   background-color: var(--color-zinc-600, #52525b);
 }
 
+/* Focus ring — replace the browser default (a bright, theme-clashing outline) with
+   a quiet, sky-accented ring, and only for keyboard focus (:focus-visible). Plain
+   click focus shows nothing; hover and selection already carry state.
+
+   This MUST live in the `base` layer: controls that signal focus their own way
+   (list rows, inputs, the modal surface, the <video>) opt out with `focus:outline-*`
+   utilities, and Tailwind utilities sit in the later `utilities` layer. Cascade
+   layers beat specificity — an unlayered rule here would override every opt-out
+   (the symptom: a clipped blue outline on chapter rows). In `base`, the utilities
+   win and the opt-outs work. */
+@layer base {
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-sky-500, #0ea5e9);
+    outline-offset: 2px;
+  }
+}
+
 /* Indeterminate "still working" bar: a short segment sweeping left to right. */
 @keyframes tapebox-indeterminate {
   0% { transform: translateX(-100%); }

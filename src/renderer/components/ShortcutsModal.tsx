@@ -6,13 +6,15 @@ type Group = { title: string; note?: string; shortcuts: Shortcut[] }
 
 /**
  * The keyboard map, grouped by where the keys apply. Kept in sync by hand with the
- * three handlers that own them — useListKeyboard (selection), DetailPane (the open
- * tape), and useAppShortcuts (navigation) — plus the player's own native keys.
+ * handlers that own them — useListKeyboard (videos), useBoxKeyboard (boxes),
+ * DetailPane (the open tape: Enter/R/E/M, seek, and chapter jumps), and
+ * useAppShortcuts (navigation).
  */
 function groups(mod: string): Group[] {
   return [
     {
       title: 'Navigate',
+      note: 'arrows act on the list you last clicked — videos, chapters, or boxes',
       shortcuts: [
         { label: 'Move selection up / down', keys: 'Up / Down' },
         { label: 'Inbox', keys: `${mod} 1` },
@@ -35,11 +37,10 @@ function groups(mod: string): Group[] {
     },
     {
       title: 'Player',
-      note: 'when the video is focused',
+      note: 'while a tape is open',
       shortcuts: [
-        { label: 'Play / pause', keys: 'Space' },
         { label: 'Seek back / forward', keys: 'Left / Right' },
-        { label: 'Volume down / up', keys: 'Down / Up' },
+        { label: 'Jump to chapter (in the chapter list)', keys: 'Up / Down' },
       ],
     },
     {

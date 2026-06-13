@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { z } from 'zod'
 import type { Tape, TapeState } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
@@ -15,6 +15,9 @@ import { isShortcutBlocked } from '@renderer/lib/dom'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { useKeepAwake } from '@renderer/lib/useKeepAwake'
 import { useVolume } from '@renderer/lib/useVolume'
+import { useNavStore } from '@renderer/store/nav'
+import { useCurrentChapter } from '@renderer/lib/currentChapter'
+import { nextIndex } from '@renderer/lib/nextIndex'
 import { chapterCountLabel, formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
@@ -29,6 +32,9 @@ import { CaptionedPanel } from './ui'
 
 /** How long the Copy URL button shows "Copied" before reverting to "Copy URL". */
 const COPIED_RESET_MS = 1500
+
+/** Seconds the Left/Right arrows move the playhead. */
+const SEEK_STEP_SECONDS = 10
 
 /**
  * Chapter shape as yt-dlp writes it into the sidecar. We validate at the
@@ -84,12 +90,14 @@ export function DetailPane({
     return () => { cancelled = true }
   }, [tape.id, tape.state, tape.sidecarFilename])
 
-  const chapters: Chapter[] = (() => {
+  // Memoized so its reference is stable across renders: useCurrentChapter keys an
+  // effect on it, and the chapter set only changes when the sidecar does.
+  const chapters: Chapter[] = useMemo(() => {
     const raw = sidecar?.chapters
     if (!Array.isArray(raw)) return []
     const parsed = z.array(SidecarChapterSchema).safeParse(raw)
     return parsed.success ? parsed.data : []
-  })()
+  }, [sidecar])
 
   const mediaMeta = mediaMetaLine(sidecar)
   const chapterLabel = chapterCountLabel(tape.chapterCount)
@@ -132,6 +140,14 @@ export function DetailPane({
   const playerSrc = tape.state === 'downloaded' && !renaming && !playbackError ? mediaUrl : null
   useKeepAwake(videoRef, playerSrc)
   useVolume(videoRef, playerSrc)
+
+  // Which list owns Up/Down, and the chapter currently under the playhead (derived
+  // from playback, so the highlight follows along and Up/Down jumps from where we
+  // actually are). Chapters is memoized above, so this effect re-binds only on a
+  // real source / chapter-set change.
+  const activePanel = useNavStore((s) => s.activePanel)
+  const setActivePanel = useNavStore((s) => s.setActivePanel)
+  const currentChapterIndex = useCurrentChapter(videoRef, chapters, playerSrc)
 
   function seek(seconds: number) {
     const v = videoRef.current
@@ -196,18 +212,46 @@ export function DetailPane({
     if (r.play) void v.play().catch(() => {})
   }
 
-  // Per-tape keyboard, live while a tape is open: Enter does the tape's primary
-  // action (play/pause a downloaded tape; scan a page; retry a failure; resume a
-  // pause), and R / E / M open the housekeeping tools. Suppressed while typing or
-  // while a modal owns the keyboard. The handler reads the live tape through a ref,
-  // so it binds once; videoRef and the modal setters are already stable.
-  const keyRef = useRef({ tape, onScanPage })
-  keyRef.current = { tape, onScanPage }
+  // Per-tape keyboard, live while a tape is open: the arrows drive the player
+  // (Left/Right seek, Up/Down jump chapters — see below), Enter does the tape's
+  // primary action (play/pause a downloaded tape; scan a page; retry a failure;
+  // resume a pause), and R / E / M open the housekeeping tools. Suppressed while
+  // typing or while a modal owns the keyboard. The handler reads live state through
+  // a ref, so it binds once; videoRef and the modal setters are already stable.
+  const keyRef = useRef({ tape, onScanPage, chapters, activePanel, currentChapterIndex })
+  keyRef.current = { tape, onScanPage, chapters, activePanel, currentChapterIndex }
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.defaultPrevented || isShortcutBlocked(e.target)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return // plain keys only
-      const { tape, onScanPage } = keyRef.current
+      const { tape, onScanPage, chapters, activePanel, currentChapterIndex } = keyRef.current
+
+      // Arrows drive the player. Left/Right seek the open video regardless of which
+      // list owns Up/Down — so seeking works the instant a tape is selected, without
+      // clicking into the player. Up/Down jump between chapters only while the
+      // chapter list is the active panel, relative to the chapter under the playhead;
+      // otherwise they fall through to the video/box list handlers (no preventDefault).
+      if (
+        tape.state === 'downloaded' &&
+        (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')
+      ) {
+        const v = videoRef.current
+        if (!v) return
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault()
+          const delta = e.key === 'ArrowRight' ? SEEK_STEP_SECONDS : -SEEK_STEP_SECONDS
+          const max = Number.isFinite(v.duration) ? v.duration : Infinity
+          v.currentTime = Math.min(Math.max(v.currentTime + delta, 0), max)
+          return
+        }
+        if (activePanel === 'chapters' && chapters.length > 0) {
+          e.preventDefault()
+          const next = nextIndex(currentChapterIndex, chapters.length, e.key === 'ArrowDown' ? 1 : -1)
+          v.currentTime = chapters[next].start_time
+          void v.play().catch(() => {})
+        }
+        return
+      }
 
       if (e.key === 'Enter') {
         if (tape.state === 'downloaded') {
@@ -476,7 +520,14 @@ export function DetailPane({
           <div className="min-h-0 flex-1 overflow-y-auto">
             {sidecarError
               ? <p className="text-xs text-red-300">{sidecarError}</p>
-              : <ChapterList chapters={chapters} onSeek={seek} />}
+              : (
+                <ChapterList
+                  chapters={chapters}
+                  currentIndex={currentChapterIndex}
+                  active={activePanel === 'chapters'}
+                  onActivate={(i) => { setActivePanel('chapters'); seek(chapters[i].start_time) }}
+                />
+              )}
           </div>
         </aside>
       )}

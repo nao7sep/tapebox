@@ -6,6 +6,9 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useArchiveStore } from '@renderer/store/archive'
+import { useNavStore } from '@renderer/store/nav'
+import { useBoxKeyboard } from '@renderer/lib/useBoxKeyboard'
+import { useRovingFocus } from '@renderer/lib/useRovingFocus'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { boxNameError, UNBOXED_LABEL } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
@@ -25,6 +28,10 @@ export function BoxList() {
   const tapes = useTapesStore((s) => s.tapes)
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
   const selectBox = useArchiveStore((s) => s.selectBox)
+  const setActivePanel = useNavStore((s) => s.setActivePanel)
+  // Clicking a box selects it AND makes the box list the active keyboard panel.
+  const selectBoxPanel = (id: string | null) => { selectBox(id); setActivePanel('boxes') }
+  useBoxKeyboard()
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
@@ -45,7 +52,7 @@ export function BoxList() {
 
   async function newBox() {
     const box = await ipcInvoke('boxes:create', { name: 'New box' })
-    selectBox(box.id)
+    selectBoxPanel(box.id)
     setDraftName(box.name)
     setEditingId(box.id)
   }
@@ -82,7 +89,7 @@ export function BoxList() {
       </div>
 
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-        <UnboxedRow count={countOf(null)} selected={selectedBoxId === null} onSelect={() => selectBox(null)} />
+        <UnboxedRow count={countOf(null)} selected={selectedBoxId === null} onSelect={() => selectBoxPanel(null)} />
         <SortableContext items={sorted.map((g) => g.id)} strategy={verticalListSortingStrategy}>
           {sorted.map((g) =>
             editingId === g.id ? (
@@ -115,7 +122,7 @@ export function BoxList() {
                 label={g.name}
                 count={countOf(g.id)}
                 selected={selectedBoxId === g.id}
-                onSelect={() => selectBox(g.id)}
+                onSelect={() => selectBoxPanel(g.id)}
                 onRename={() => { setDraftName(g.name); setEditingId(g.id) }}
                 onDelete={() => setConfirmDeleteId(g.id)}
               />
@@ -169,9 +176,13 @@ function useDraggingTape(): boolean {
 function UnboxedRow({ count, selected, onSelect }: { count: number; selected: boolean; onSelect: () => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: UNBOXED_DROP_ID })
   const draggingTape = useDraggingTape()
+  // Focus follows the selection while the box list owns the keys, so it never lags
+  // behind on a clicked row; the accent fill is the only marker (no focus outline).
+  const active = useNavStore((s) => s.activePanel === 'boxes')
+  const btnRef = useRovingFocus<HTMLButtonElement>(active, selected)
   return (
     <div ref={setNodeRef} className={rowClass(selected, isOver && draggingTape && !selected)}>
-      <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
+      <button ref={btnRef} onClick={onSelect} className="min-w-0 flex-1 truncate text-left focus:outline-none">
         {UNBOXED_LABEL}
       </button>
       <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
@@ -201,6 +212,8 @@ function SortableBoxRow({
     data: { type: 'box' },
   })
   const draggingTape = useDraggingTape()
+  const active = useNavStore((s) => s.activePanel === 'boxes')
+  const btnRef = useRovingFocus<HTMLButtonElement>(active, selected)
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -209,7 +222,7 @@ function SortableBoxRow({
   }
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={rowClass(selected, isOver && draggingTape && !selected)}>
-      <button onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
+      <button ref={btnRef} onClick={onSelect} className="min-w-0 flex-1 truncate text-left focus:outline-none">
         {label}
       </button>
       <button

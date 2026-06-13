@@ -1,6 +1,5 @@
 import { powerSaveBlocker } from 'electron'
 import { getSettings } from './store/config.js'
-import { log } from './io/logger.js'
 
 /**
  * Cross-platform "caffeinate" for playback: holds a single OS power assertion
@@ -39,15 +38,18 @@ function shouldStayAwake(): boolean {
 
 // Idempotent: keeps at most one assertion alive. Starting twice would leak the
 // first id, so we early-return when the desired state already holds.
+//
+// Not logged: this fires on every play/pause/seek/source-switch — the very events
+// we already don't log — so logging each adjustment would only bury the lines that
+// matter. There is also no failure to report: powerSaveBlocker's start/stop/
+// isStarted are synchronous and don't throw; they return ids/booleans.
 function setWakeLock(active: boolean): void {
   if (active) {
     if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) return
     blockerId = powerSaveBlocker.start('prevent-display-sleep')
-    log.info('wake lock acquired', { blockerId })
   } else {
     if (blockerId === null) return
     if (powerSaveBlocker.isStarted(blockerId)) powerSaveBlocker.stop(blockerId)
-    log.info('wake lock released', { blockerId })
     blockerId = null
   }
 }
