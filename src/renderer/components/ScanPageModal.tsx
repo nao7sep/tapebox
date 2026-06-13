@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ScanResult } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
-import { describeError } from '@shared/error'
+import { useToastStore } from '@renderer/store/toast'
+import { describeError, errorMessage } from '@shared/error'
 import { formatTime } from '@renderer/lib/format'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
@@ -24,6 +25,7 @@ type Props = { onClose: () => void; initialUrl?: string }
 export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const { url, setUrl, onPaste } = useClipboardUrl(true, initialUrl)
   const { composingRef, handlers: composing } = useComposing()
+  const notify = useToastStore((s) => s.notify)
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [entries, setEntries] = useState<ScanResult[]>([])
@@ -75,7 +77,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     setScanning(true)
     void ipcInvoke('scan:start', { url: v })
       .then((r) => { sessionIdRef.current = r.sessionId })
-      .catch((err) => { setError(String(err)); setScanning(false); setScanned(true) })
+      .catch((err) => { setError(errorMessage(err)); setScanning(false); setScanned(true) })
   }
 
   async function stopScan() {
@@ -119,6 +121,12 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     try {
       await ipcInvoke('downloads:addBulk', { urls })
       onClose()
+    } catch (err) {
+      // Route through the app's error toast — the same convention TopBar uses for
+      // a single add. It persists until dismissed and outlives the modal, so a
+      // failed add can't be missed; the modal stays open with the selection intact
+      // for a retry. (The inline `error` slot below is reserved for scan errors.)
+      notify(errorMessage(err), 'error')
     } finally {
       setAdding(false)
     }

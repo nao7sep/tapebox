@@ -3,6 +3,7 @@ import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries
 import { useToastStore } from '@renderer/store/toast'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
+import { errorMessage } from '@shared/error'
 import { Button } from '@renderer/components/ui'
 
 type Props = {
@@ -29,7 +30,7 @@ export function TopBar({ clipboardEnabled }: Props) {
       await ipcInvoke('downloads:add', { url: v })
       consume()
     } catch (err) {
-      notify(String(err), 'error')
+      notify(errorMessage(err), 'error')
     }
   }
 

@@ -1,5 +1,6 @@
 import { powerSaveBlocker } from 'electron'
 import { getSettings } from './store/config.js'
+import { log } from './io/logger.js'
 
 /**
  * Cross-platform "caffeinate" for playback: holds a single OS power assertion
@@ -36,20 +37,30 @@ function shouldStayAwake(): boolean {
   return getSettings().keepAwakeWhilePlaying && videoPlaying
 }
 
-// Idempotent: keeps at most one assertion alive. Starting twice would leak the
-// first id, so we early-return when the desired state already holds.
+// Idempotent: holds at most one assertion. Starting twice would leak the first
+// id, so when the desired state already holds we return without touching it —
+// which means the only calls that fall through to act are the real acquire and
+// release transitions, not the play/pause/seek/source-switch churn that drives
+// them.
 //
-// Not logged: this fires on every play/pause/seek/source-switch — the very events
-// we already don't log — so logging each adjustment would only bury the lines that
-// matter. There is also no failure to report: powerSaveBlocker's start/stop/
-// isStarted are synchronous and don't throw; they return ids/booleans.
+// Those transitions are logged at debug, not info. A wake lock is a derived side
+// effect of playback — which the app itself doesn't log — and it cannot fail:
+// powerSaveBlocker's start/stop/isStarted are synchronous and return ids/booleans
+// rather than throwing, so there is no error to surface and no production log
+// reader who needs the line. But holding a system assertion is exactly the kind of
+// platform-flaky behavior this module exists to manage (macOS clamshell, Linux
+// inhibit support), so when a developer is chasing a "screen dimmed mid-video" or
+// "machine wouldn't sleep" report, the acquire/release timeline is the record they
+// reach for — and debug keeps it off real users' disks.
 function setWakeLock(active: boolean): void {
   if (active) {
     if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) return
     blockerId = powerSaveBlocker.start('prevent-display-sleep')
+    log.debug('wake lock acquired', { blockerId })
   } else {
     if (blockerId === null) return
     if (powerSaveBlocker.isStarted(blockerId)) powerSaveBlocker.stop(blockerId)
+    log.debug('wake lock released', { blockerId })
     blockerId = null
   }
 }

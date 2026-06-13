@@ -5,6 +5,7 @@ import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
 import { getSettings, updateSettings } from '@main/store/config'
 import { execCapture } from '@main/io/spawn'
+import { writeFileAtomicVia } from '@main/io/atomic-file'
 import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
 import { withRetry } from '@main/io/retry'
@@ -21,7 +22,10 @@ import { extractFileFromZip } from './archive'
  *   ~/.tapebox/bin/{name}{ext}              -- the installed executable
  *   ~/.tapebox/work/downloads/{tmp}         -- in-progress downloads
  *
- * Install is atomic: download to temp, extract/move to final, then chmod.
+ * Install is atomic and crash-durable: download to a work temp, then prepare the
+ * executable at a staging file (extract or move, then chmod) and publish it with
+ * one fsync'd rename (writeFileAtomicVia) — so the file at bin/ only ever appears
+ * complete, executable, and flushed, never mid-extract or pre-chmod.
  * Concurrent installOrUpdate for the same name is serialized by a Set lock.
  *
  * Update-check policy: settings.binaries.<name>.{latestKnownVersion,
@@ -130,13 +134,13 @@ async function performInstall(name: BinaryName): Promise<void> {
   log.info('binary resolved', { name, version: resolved.version, url: resolved.downloadUrl })
 
   await ensureDirs()
-  const tempPath = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
+  const downloadTemp = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
 
   let lastEmittedPct = -1
   await withRetry(HTTP_RETRY, () =>
     downloadWithProgress({
       url: resolved.downloadUrl,
-      destPath: tempPath,
+      destPath: downloadTemp,
       idleTimeoutMs: BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
       onProgress: (received, total) => {
         const pct = total > 0 ? Math.floor((received / total) * 100) : 0
@@ -152,22 +156,27 @@ async function performInstall(name: BinaryName): Promise<void> {
 
   const finalPath = binaryPath(name)
   try {
-    if (resolved.archive) {
-      await extractFileFromZip(tempPath, resolved.archive.innerName, finalPath)
-    } else {
-      await rename(tempPath, finalPath)
-    }
+    // Prepare the complete, executable binary at a staging file, then publish it
+    // with one atomic fsync'd rename. The chmod/de-quarantine happen on the stage
+    // BEFORE it becomes finalPath, so a concurrent status check or a crash can
+    // never catch the binary present-but-not-yet-runnable.
+    await writeFileAtomicVia(finalPath, async (stage) => {
+      if (resolved.archive) {
+        await extractFileFromZip(downloadTemp, resolved.archive.innerName, stage)
+      } else {
+        await rename(downloadTemp, stage)
+      }
+      if (process.platform !== 'win32') {
+        await chmod(stage, 0o755)
+        // Strip macOS Gatekeeper quarantine if present; harmless when absent.
+        if (process.platform === 'darwin') {
+          await execCapture('xattr', ['-d', 'com.apple.quarantine', stage], { reject: false })
+            .catch(() => {})
+        }
+      }
+    })
   } finally {
-    await unlink(tempPath).catch(() => {})
-  }
-
-  if (process.platform !== 'win32') {
-    await chmod(finalPath, 0o755)
-    // Strip macOS Gatekeeper quarantine if present; harmless when absent.
-    if (process.platform === 'darwin') {
-      await execCapture('xattr', ['-d', 'com.apple.quarantine', finalPath], { reject: false })
-        .catch(() => {})
-    }
+    await unlink(downloadTemp).catch(() => {})
   }
 
   emit('binaries:progress', { name, percent: 100, phase: 'verify' })
