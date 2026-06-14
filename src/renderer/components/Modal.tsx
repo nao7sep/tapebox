@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { trapTabFocus } from '@renderer/lib/focusTrap'
 import { acquireScrollLock, releaseScrollLock } from '@renderer/lib/scrollLock'
+import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 
 /**
  * Three tiers, by content:
@@ -74,10 +75,15 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
     }
   }, [])
 
+  const composing = useComposing()
+
   function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     const panel = panelRef.current
     if (panel === null || !isTopmost(panel)) return
     if (e.key === 'Escape') {
+      // During IME composition, Escape cancels the candidate: let it reach the
+      // input and leave the modal open.
+      if (isComposingKeyboardEvent(composing.composingRef, e)) return
       // The topmost modal owns Escape: swallow it so it never reaches a window-
       // level shortcut, then close unless a busy action holds the modal open.
       e.stopPropagation()
@@ -105,6 +111,8 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
         tabIndex={-1}
         data-dialog-surface
         onKeyDown={onKeyDown}
+        onCompositionStart={composing.handlers.onCompositionStart}
+        onCompositionEnd={composing.handlers.onCompositionEnd}
         className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl focus:outline-hidden`}
       >
         <header className="flex shrink-0 items-center justify-between border-b border-zinc-700 p-4">

@@ -141,4 +141,17 @@ describe('Modal Escape handling', () => {
 
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  it('does not close on Escape while an IME composition is in progress', async () => {
+    const onClose = vi.fn()
+    await mountModal('Scan a page', { onClose })
+
+    // Escape during composition cancels the IME candidate; it must not close the modal.
+    dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true }))
+    expect(onClose).not.toHaveBeenCalled()
+
+    // A plain Escape (no active composition) still closes.
+    dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
 })

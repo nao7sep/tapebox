@@ -14,7 +14,7 @@ function groups(mod: string): Group[] {
   return [
     {
       title: 'Navigate',
-      note: 'arrows act on the list you last clicked — videos, chapters, or boxes',
+      note: 'arrows act on the list you tabbed into or last clicked — videos, chapters, or boxes',
       shortcuts: [
         { label: 'Move selection up / down', keys: 'Up / Down' },
         { label: 'Inbox', keys: `${mod} 1` },
