@@ -16,7 +16,7 @@ It is deliberately a *collection*, not a media player on steroids: there's no re
 - **Refresh metadata** — re-probe a tape's source and review current-vs-new side by side before applying, so a re-probe can never silently overwrite good data with worse.
 - **Export** — copy a tape's files (video, poster, sidecar) to a folder of your choice, optionally renamed, and optionally removing it from the library at the same time. No transcoding — the files leave exactly as they came in.
 - **Re-import** — drop a previously exported `.json` sidecar back onto the window; TapeBox reads the video and poster names from it and brings the whole bundle back in.
-- **Managed binaries** — `yt-dlp`, `ffmpeg`, and `deno` are downloaded and updated by the app into `~/.tapebox/bin`; nothing to install by hand.
+- **Managed binaries** — `yt-dlp` and `ffmpeg` are downloaded and updated by the app into `~/.tapebox/bin`; nothing to install by hand. (ffmpeg auto-install is macOS and Windows only — on Linux, install `ffmpeg` yourself and place it at `~/.tapebox/bin/ffmpeg`.)
 - **Custom `yt-dlp` args** — pass your own flags globally or per matching site profile (e.g. an `Accept-Language` header for titles in another language); the app's own flags always win on conflict.
 - **Keyboard-driven** — navigate, archive, rename, export, and remove without leaving the keys (see [Keyboard shortcuts](#keyboard-shortcuts)).
 
@@ -25,7 +25,7 @@ It is deliberately a *collection*, not a media player on steroids: there's no re
 - Node.js and npm
 - macOS, Windows, or Linux
 
-`yt-dlp`, `ffmpeg`, and `deno` are **not** prerequisites — TapeBox downloads and manages them itself on first run.
+`yt-dlp` and `ffmpeg` are **not** prerequisites — TapeBox downloads and manages them on first run, *except* `ffmpeg` on Linux, which you install yourself and place at `~/.tapebox/bin/ffmpeg` (its auto-install is macOS/Windows only).
 
 ## Getting started
 
@@ -79,7 +79,7 @@ Everything TapeBox creates lives under `~/.tapebox`:
 
 ```
 ~/.tapebox/
-  bin/            managed yt-dlp / ffmpeg / deno executables
+  bin/            managed yt-dlp / ffmpeg executables
   library/        downloaded media + sidecar JSON + poster thumbnails (.jpg)
   logs/           per-launch JSON-Lines logs (kept indefinitely, never pruned)
   work/           scratch space for in-progress downloads
@@ -96,7 +96,7 @@ Only TapeBox's own state lives here. Electron/Chromium internals (cache, cookies
 TapeBox is local-first and has no analytics or telemetry. It reaches the internet only when:
 
 - you download or scan (via `yt-dlp`), or refresh a tape's metadata;
-- it checks GitHub for newer `yt-dlp`/`ffmpeg`/`deno` versions (once per launch, throttled — toggleable in Settings);
+- it checks GitHub for newer `yt-dlp`/`ffmpeg` versions (once per launch, throttled — toggleable in Settings);
 - you request an AI rename suggestion (to your configured endpoint).
 
 Just watching or organizing never touches the network.

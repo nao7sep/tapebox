@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { binaryPath, ensureDirs, paths } from '@main/paths'
 import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
-import { getSettings, updateSettings } from '@main/store/config'
+import { getSettings, mutateSettings } from '@main/store/config'
 import { execCapture } from '@main/io/spawn'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
 import { describeError } from '@shared/error'
@@ -14,6 +14,7 @@ import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import { downloadWithProgress } from './http'
 import { extractFileFromZip } from './archive'
+import { resolveExpectedSha256, sha256OfFile } from './checksum'
 
 /**
  * Per-binary install / update orchestration.
@@ -86,21 +87,14 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
  */
 export async function checkForUpdates(): Promise<BinaryStatus[]> {
   const now = nowUtcIso()
-  const current = getSettings().binaries
-  const nextBinaries = { ...current }
-  let resolved = 0
+  const resolvedVersions = new Map<BinaryName, string>()
   let failed = 0
 
   await Promise.all(
     binaryNames.map(async (name) => {
       try {
         const asset = await binarySpecs[name].resolveLatest()
-        nextBinaries[name] = {
-          ...current[name],
-          latestKnownVersion: asset.version,
-          lastCheckedAtUtc: now,
-        }
-        resolved++
+        resolvedVersions.set(name, asset.version)
       } catch (err) {
         failed++
         log.warn('binary update check failed', { name, error: describeError(err) })
@@ -108,8 +102,19 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
     }),
   )
 
-  log.info('binary update check complete', { resolved, failed })
-  if (resolved > 0) await updateSettings({ binaries: nextBinaries })
+  log.info('binary update check complete', { resolved: resolvedVersions.size, failed })
+  if (resolvedVersions.size > 0) {
+    // Apply inside the settings critical section: read the *current* binaries (so a
+    // concurrent install's installedVersion is preserved) and override only the
+    // resolved fields.
+    await mutateSettings((s) => {
+      const nextBinaries = { ...s.binaries }
+      for (const [name, version] of resolvedVersions) {
+        nextBinaries[name] = { ...s.binaries[name], latestKnownVersion: version, lastCheckedAtUtc: now }
+      }
+      return { binaries: nextBinaries }
+    })
+  }
   return getAllStatuses()
 }
 
@@ -152,10 +157,25 @@ async function performInstall(name: BinaryName): Promise<void> {
     }),
   )
 
-  emit('binaries:progress', { name, percent: 0, phase: 'install' })
-
   const finalPath = binaryPath(name)
   try {
+    // Integrity gate: verify the downloaded bytes against the vendor's published
+    // SHA-256 before making them executable. A mismatch aborts the install (the temp
+    // is cleaned in the finally below); a vendor that publishes no checksum is logged
+    // and installed unverified (https-only transport still applies).
+    const expectedSha256 = await resolveExpectedSha256(resolved)
+    if (expectedSha256) {
+      const actual = await sha256OfFile(downloadTemp)
+      if (actual !== expectedSha256) {
+        throw new Error(`${name} download failed its checksum (expected ${expectedSha256}, got ${actual})`)
+      }
+      log.info('binary checksum verified', { name, sha256: expectedSha256 })
+    } else {
+      log.warn('binary checksum unavailable; installed unverified', { name })
+    }
+
+    emit('binaries:progress', { name, percent: 0, phase: 'install' })
+
     // Prepare the complete, executable binary at a staging file, then publish it
     // with one atomic fsync'd rename. The chmod/de-quarantine happen on the stage
     // BEFORE it becomes finalPath, so a concurrent status check or a crash can
@@ -181,24 +201,23 @@ async function performInstall(name: BinaryName): Promise<void> {
 
   emit('binaries:progress', { name, percent: 100, phase: 'verify' })
   // Confirm the binary executes, but record resolved.version rather than the
-  // self-reported one: ffmpeg reports a builder suffix ("8.1.1-tessus") and
-  // deno a "v" prefix, which would otherwise never equal the upstream version
-  // the update check compares against, flagging a phantom update on install.
+  // self-reported one: ffmpeg reports a builder suffix ("8.1.1-tessus") that would
+  // otherwise never equal the upstream version the update check compares against,
+  // flagging a phantom update on install.
   const selfReported = await verifyVersion(name)
   log.info('binary installed', { name, version: resolved.version, selfReported })
 
-  const current = getSettings().binaries
-  await updateSettings({
+  await mutateSettings((s) => ({
     binaries: {
-      ...current,
+      ...s.binaries,
       [name]: {
-        ...current[name],
+        ...s.binaries[name],
         installedVersion: resolved.version,
         latestKnownVersion: resolved.version,
         lastCheckedAtUtc: nowUtcIso(),
       },
     },
-  })
+  }))
 
   emit('binaries:ready', { name, version: resolved.version })
 }

@@ -25,6 +25,19 @@ export type DownloadOptions = {
 }
 
 export async function downloadWithProgress(opts: DownloadOptions): Promise<void> {
+  // These bytes are written to ~/.tapebox/bin and then executed, so refuse anything
+  // but https up front — a plain-http download URL (from a registry bug or a
+  // downgrade) must never reach the network here.
+  let scheme = ''
+  try {
+    scheme = new URL(opts.url).protocol
+  } catch {
+    throw new Error(`invalid binary download URL: ${opts.url}`)
+  }
+  if (scheme !== 'https:') {
+    throw new Error(`refusing non-https binary download URL: ${opts.url}`)
+  }
+
   // Connect phase: bound the wait for response headers. The watchdog aborts the
   // fetch signal; undici rejects fetch with the abort reason, so a stalled
   // connect surfaces as the same IdleTimeoutError a stalled transfer does.

@@ -68,8 +68,19 @@ export function registerBoxHandlers(): void {
   })
 
   handle('boxes:reorder', async ({ orderedIds }) => {
-    const byId = new Map(session.getBoxes().map((g) => [g.id, g]))
-    orderedIds.forEach((id, order) => {
+    // Reindex the FULL box list from the caller's sequence: ids that vanished are
+    // ignored, and any boxes the caller didn't name keep their place after the named
+    // ones (by current order). So a partial or stale set can't collide orders with
+    // the rest.
+    const boxes = session.getBoxes()
+    const byId = new Map(boxes.map((g) => [g.id, g]))
+    const namedIds = orderedIds.filter((id) => byId.has(id))
+    const named = new Set(namedIds)
+    const sequence = [
+      ...namedIds,
+      ...boxes.filter((g) => !named.has(g.id)).sort((a, b) => a.order - b.order).map((g) => g.id),
+    ]
+    sequence.forEach((id, order) => {
       const g = byId.get(id)
       if (g && g.order !== order) session.upsertBox({ ...g, order })
     })

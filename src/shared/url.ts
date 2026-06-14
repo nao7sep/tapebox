@@ -29,3 +29,25 @@ export function stripUrlCredentials(raw: string): string {
   parsed.password = ''
   return parsed.toString()
 }
+
+/**
+ * Parse `raw` as an importable media URL — a syntactically valid http(s) URL —
+ * returning the parsed URL, or null for anything else (file:, internal schemes,
+ * garbage). This is the single gate every renderer-supplied URL must cross before
+ * it reaches yt-dlp, so a non-web scheme can't drive the downloader at local files
+ * or internal endpoints.
+ */
+export function parseImportableUrl(raw: string): URL | null {
+  let parsed: URL
+  try {
+    parsed = new URL(raw.trim())
+  } catch {
+    return null
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed : null
+}
+
+/** True when `raw` is a syntactically valid http(s) URL. See parseImportableUrl. */
+export function isImportableUrl(raw: string): boolean {
+  return parseImportableUrl(raw) !== null
+}

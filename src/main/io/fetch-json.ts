@@ -15,3 +15,17 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
     }),
   )
 }
+
+/**
+ * GET + return the response body as text, same retry/timeout policy as fetchJson.
+ * Used for small upstream text lookups such as a `SHA2-256SUMS` checksum file.
+ */
+export async function fetchText(url: string, init?: RequestInit): Promise<string> {
+  return withRetry(HTTP_RETRY, () =>
+    withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, undefined, async (signal) => {
+      const res = await fetch(url, { ...init, signal })
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
+      return res.text()
+    }),
+  )
+}

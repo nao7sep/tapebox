@@ -4,6 +4,7 @@ import { emit } from './events'
 import * as scanService from '@main/services/ytdlp-scan'
 import * as session from '@main/store/session'
 import { describeError, errorMessage } from '@shared/error'
+import { isImportableUrl } from '@shared/url'
 import { log } from '@main/io/logger'
 import type { ScanResult } from '@shared/ipc-contract'
 
@@ -22,6 +23,10 @@ const active = new Map<string, scanService.ScanHandle>()
 
 export function registerScanHandlers(): void {
   handle('scan:start', async ({ url }) => {
+    // Same trust-boundary gate as downloads: only http(s) reaches yt-dlp.
+    if (!isImportableUrl(url)) {
+      throw new Error('Enter a valid http(s) URL to scan.')
+    }
     const sessionId = nanoid(8)
     // Dedupe against the library by video id AND url. id is the reliable key but
     // is only set once an tape has been probed; url is the fallback that catches

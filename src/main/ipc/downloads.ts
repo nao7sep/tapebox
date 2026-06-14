@@ -6,6 +6,7 @@ import { reserveStem } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
+import { isImportableUrl } from '@shared/url'
 import type { Tape } from '@shared/domain'
 
 /** Orders that drop a block of `count` new tapes onto the top of the inbox. */
@@ -17,6 +18,11 @@ function inboxFrontOrders(count: number): number[] {
 export function registerDownloadHandlers(): void {
   handle('downloads:add', async ({ url }) => {
     const trimmed = url.trim()
+    // Gate the scheme at the trust boundary: only http(s) reaches yt-dlp, never
+    // file:// or an internal scheme a renderer could otherwise drive it at.
+    if (!isImportableUrl(trimmed)) {
+      throw new Error('Enter a valid http(s) URL.')
+    }
     // URL-based dedup for the single-add path (no id yet — it's unprobed). Any
     // existing tape with this URL blocks the add, in any state; a failed one is
     // resumed via Retry, not re-added.
@@ -40,7 +46,8 @@ export function registerDownloadHandlers(): void {
     const accepted: string[] = []
     for (const url of urls) {
       const trimmed = url.trim()
-      if (!trimmed || seen.has(trimmed)) continue
+      // Skip blanks, dupes, and any non-http(s) scheme (the trust-boundary gate).
+      if (!trimmed || seen.has(trimmed) || !isImportableUrl(trimmed)) continue
       seen.add(trimmed)
       accepted.push(trimmed)
     }

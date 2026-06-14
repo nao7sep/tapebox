@@ -6,6 +6,7 @@ import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { sanitizeFilename } from '@main/core/filename'
+import { SidecarTapeboxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
 
 /**
@@ -44,26 +45,35 @@ export function registerExportHandlers(): void {
       if (await exists(dst)) throw new Error(`A file already exists at the destination: ${dst}`)
     }
 
-    // Media + thumbnail: byte-for-byte copies.
-    await copyFile(join(libDir, tape.filename), mediaDst)
-    if (thumbDst && tape.thumbnailFilename) {
-      await copyFile(join(libDir, tape.thumbnailFilename), thumbDst)
-    }
-
-    // Sidecar: rewrite the tapebox names so the exported copy describes its own
-    // files (re-importable as-is), then write it out.
+    // Read + rewrite + validate the sidecar's tapebox namespace UP FRONT — before any
+    // file is copied out — so a corrupt source sidecar (or a rewrite that would
+    // downgrade it below what import accepts) fails the export before it leaves
+    // partial files in the user's folder.
     const sidecar = JSON.parse(await readFile(join(libDir, tape.sidecarFilename), 'utf8')) as Record<string, unknown>
     const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
     tb['name'] = cleanName
     tb['mediaFilename'] = `${cleanName}${extname(tape.filename)}`
     tb['thumbnailFilename'] = newThumbName
-    sidecar['tapebox'] = tb
+    sidecar['tapebox'] = SidecarTapeboxSchema.parse(tb)
+
+    // Media + thumbnail: byte-for-byte copies; then the validated sidecar.
+    await copyFile(join(libDir, tape.filename), mediaDst)
+    if (thumbDst && tape.thumbnailFilename) {
+      await copyFile(join(libDir, tape.thumbnailFilename), thumbDst)
+    }
     await writeJsonAtomic(sidecarDst, sidecar)
 
     log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })
 
-    // Copies are safely written; only now take the tape out of the library.
-    if (deleteFromApp) await removeTapes([tapeId], true)
+    // Copies are safely written; only now take the tape out of the library. The copy
+    // already succeeded, so a discard failure must say "exported, but the original
+    // wasn't removed" rather than leave an untracked orphan while claiming success.
+    if (deleteFromApp) {
+      const { failed } = await removeTapes([tapeId], true)
+      if (failed.length > 0) {
+        throw new Error(`Exported, but couldn't remove the original from the library: ${failed[0].error}`)
+      }
+    }
 
     return { writtenPaths }
   })

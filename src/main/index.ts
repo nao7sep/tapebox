@@ -1,11 +1,11 @@
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs } from './paths.js'
 import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
 import { describeError } from '@shared/error'
 import { loadSettings } from './store/config.js'
-import { loadSession, persistNow } from './store/session.js'
+import { loadSession, persistNow, persistNowSync } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import * as queue from './queue/manager.js'
@@ -89,7 +89,7 @@ async function startup(): Promise<void> {
   })
 
   await loadSettings()
-  await loadSession()
+  const sessionResult = await loadSession()
   await layout.loadLayout()
 
   await startMediaServer()
@@ -104,6 +104,26 @@ async function startup(): Promise<void> {
 
   // Dev-only Dock icon overlay (macOS); no-op when packaged or off-macOS.
   applyDevDockIcon()
+
+  // If the library file was unreadable, it was set aside (never wiped); tell the
+  // user at the app edge — the session store stays UI-free.
+  if (sessionResult.status === 'recovered') {
+    notifyCorruptSession(sessionResult.quarantinePath)
+  }
+}
+
+/**
+ * Native error box (works before the renderer is ready) telling the user their
+ * library file was corrupt and has been preserved, so an empty window is never a
+ * silent surprise.
+ */
+function notifyCorruptSession(quarantinePath: string): void {
+  dialog.showErrorBox(
+    'Library could not be opened',
+    'Your tapebox library file was unreadable and has been set aside so nothing is lost:\n\n' +
+      `${quarantinePath}\n\n` +
+      'tapebox has started with an empty library. Your downloaded media files are untouched.',
+  )
 }
 
 /**
@@ -138,6 +158,7 @@ function shutdown(reason: string): Promise<void> {
 // final synchronous flush for any path that bypasses the clean shutdown.
 process.on('uncaughtException', (err) => {
   log.error('uncaught exception', { error: describeError(err) })
+  persistNowSync()
   closeLogger()
   process.exit(1)
 })
@@ -145,6 +166,7 @@ process.on('unhandledRejection', (reason) => {
   log.error('unhandled rejection', { error: describeError(reason) })
 })
 process.on('exit', () => {
+  persistNowSync()
   closeLogger()
 })
 

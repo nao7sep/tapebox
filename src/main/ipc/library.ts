@@ -8,7 +8,7 @@ import { emit } from './events'
 import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
-import { describeError } from '@shared/error'
+import { describeError, errorMessage } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { sanitizeFilename } from '@main/core/filename'
 import * as queue from '@main/queue/manager'
@@ -16,7 +16,7 @@ import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import type { Tape } from '@shared/domain'
+import { SidecarTapeboxSchema, type Tape } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
 
 export function registerLibraryHandlers(): void {
@@ -58,9 +58,33 @@ export function registerLibraryHandlers(): void {
   // Reindex one list (the inbox, a box, or Unboxed) to the caller's sequence after
   // a drag — order = position, top first. Membership (archived / box) is left
   // untouched; this is reorder-in-place, not a move between lists.
+  //
+  // Reindex the targeted list's FULL membership rather than blindly numbering the
+  // caller's ids 0..n-1: ids that vanished (a concurrent removal) are ignored, and
+  // any members the caller didn't name keep their place after the named ones. So a
+  // partial or stale set can never collide orders with the rest of the same list.
   handle('tapes:reorder', async ({ orderedIds }) => {
+    const named = orderedIds
+      .map((id) => session.getTape(id))
+      .filter((t): t is Tape => !!t)
+    if (named.length === 0) return
+
+    const listKey = (t: Tape) => (t.archivedAtUtc ? `box:${t.boxId ?? 'unboxed'}` : 'inbox')
+    const key = listKey(named[0])
+    const namedInList = named.filter((t) => listKey(t) === key)
+    const namedIds = new Set(namedInList.map((t) => t.id))
+
+    const sequence = [
+      ...namedInList.map((t) => t.id),
+      ...session
+        .getTapes()
+        .filter((t) => listKey(t) === key && !namedIds.has(t.id))
+        .sort((a, b) => a.order - b.order)
+        .map((t) => t.id),
+    ]
+
     const changed: Tape[] = []
-    orderedIds.forEach((id, order) => {
+    sequence.forEach((id, order) => {
       const tape = session.getTape(id)
       if (tape && tape.order !== order) {
         const updated = { ...tape, order }
@@ -72,7 +96,16 @@ export function registerLibraryHandlers(): void {
   })
 
   handle('library:remove', async ({ tapeIds, deleteFiles }) => {
-    await removeTapes(tapeIds, deleteFiles)
+    const { failed } = await removeTapes(tapeIds, deleteFiles)
+    // Tapes whose files couldn't be discarded are KEPT (not removed from the list);
+    // surface the failure so the user is never told a removal succeeded while the
+    // files (and the catalog entry) actually remain.
+    if (failed.length > 0) {
+      const noun = failed.length === 1 ? 'tape' : 'tapes'
+      throw new Error(
+        `Couldn't remove the files for ${failed.length} ${noun}: ${failed.map((f) => f.error).join('; ')}`,
+      )
+    }
   })
 
   handle('library:getSidecar', async ({ tapeId }) => {
@@ -162,33 +195,37 @@ export function registerLibraryHandlers(): void {
       await assertMissing(it.stage)
     }
 
-    for (const it of items) {
-      if (it.fresh === sidecarFresh) {
-        const sidecar = JSON.parse(await readFile(it.old, 'utf8')) as Record<string, unknown>
-        const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
-        tb['name'] = cleanName
-        tb['renamedAtUtc'] = nowUtc
-        tb['mediaFilename'] = newMediaName
-        tb['thumbnailFilename'] = newThumbName
-        sidecar['tapebox'] = tb
-        await writeJsonAtomic(it.stage, sidecar)
-      } else {
-        await copyFile(it.old, it.stage)
-      }
-    }
-
-    // Atomic swap: rename staging -> final, one inode op each on the same
-    // filesystem. Windows refuses the rename if a target is an open file handle;
-    // that surfaces as a clear error rather than partial state.
+    // Build every staging file, then atomically swap them into place. Both phases
+    // share one cleanup: the originals stay put (their unlink is the very last step),
+    // so undo is just removing any staging files plus any finals already swapped in —
+    // whether the failure was a copy, the sidecar validation, or a rename.
     const done: typeof items = []
     try {
+      for (const it of items) {
+        if (it.fresh === sidecarFresh) {
+          const sidecar = JSON.parse(await readFile(it.old, 'utf8')) as Record<string, unknown>
+          const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+          tb['name'] = cleanName
+          tb['renamedAtUtc'] = nowUtc
+          tb['mediaFilename'] = newMediaName
+          tb['thumbnailFilename'] = newThumbName
+          // Validate the rewritten tapebox namespace so a rename can never downgrade
+          // the sidecar into something a later import would reject.
+          sidecar['tapebox'] = SidecarTapeboxSchema.parse(tb)
+          await writeJsonAtomic(it.stage, sidecar)
+        } else {
+          await copyFile(it.old, it.stage)
+        }
+      }
+
+      // Atomic swap: rename staging -> final, one inode op each on the same
+      // filesystem. Windows refuses the rename if a target is an open file handle;
+      // that surfaces as a clear error rather than partial state.
       for (const it of items) {
         await rename(it.stage, it.fresh)
         done.push(it)
       }
     } catch (err) {
-      // The originals are still in place (their unlink is the last step), so undo
-      // is just removing the new files we created and any leftover staging.
       for (const it of done) if (it.fresh !== it.old) await unlink(it.fresh).catch(() => {})
       for (const it of items) await unlink(it.stage).catch(() => {})
       throw err
@@ -418,8 +455,14 @@ export function registerLibraryHandlers(): void {
  * Shared by library:remove and Export's "delete from app" (export copies the
  * files out, then calls this to take the tape out of the library).
  */
-export async function removeTapes(tapeIds: string[], deleteFiles: boolean): Promise<void> {
+export async function removeTapes(
+  tapeIds: string[],
+  deleteFiles: boolean,
+): Promise<{ removed: string[]; failed: { tapeId: string; error: string }[] }> {
   const settings = getSettings()
+  const removed: string[] = []
+  const failed: { tapeId: string; error: string }[] = []
+
   for (const id of tapeIds) {
     const tape = session.getTape(id)
     if (!tape) continue
@@ -429,42 +472,55 @@ export async function removeTapes(tapeIds: string[], deleteFiles: boolean): Prom
     }
 
     if (deleteFiles) {
-      if (tape.filename) {
-        await discardFile(join(settings.libraryDir, tape.filename), settings.trashOnRemove)
+      try {
+        if (tape.filename) {
+          await discardFile(join(settings.libraryDir, tape.filename), settings.trashOnRemove)
+        }
+        if (tape.sidecarFilename) {
+          await discardFile(join(settings.libraryDir, tape.sidecarFilename), settings.trashOnRemove)
+        }
+        if (tape.thumbnailFilename) {
+          await discardFile(join(settings.libraryDir, tape.thumbnailFilename), settings.trashOnRemove)
+        }
+        // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
+        // junk, always deleted outright (never trashed). They're named by the
+        // on-disk stem, which is the tape id.
+        await clearPartials(settings.libraryDir, tape.id)
+      } catch (err) {
+        // The files couldn't be discarded — keep the catalog entry so the tape never
+        // vanishes from the list while its files are left orphaned on disk.
+        failed.push({ tapeId: id, error: errorMessage(err) })
+        continue
       }
-      if (tape.sidecarFilename) {
-        await discardFile(join(settings.libraryDir, tape.sidecarFilename), settings.trashOnRemove)
-      }
-      if (tape.thumbnailFilename) {
-        await discardFile(join(settings.libraryDir, tape.thumbnailFilename), settings.trashOnRemove)
-      }
-      // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
-      // junk, always deleted outright (never trashed). They're named by the
-      // on-disk stem, which is the tape id.
-      await clearPartials(settings.libraryDir, tape.id)
     }
+    removed.push(id)
   }
-  session.removeTapes(tapeIds)
-  emit('tapes:removed', { tapeIds })
+
+  if (removed.length > 0) {
+    session.removeTapes(removed)
+    emit('tapes:removed', { tapeIds: removed })
+  }
+  return { removed, failed }
 }
 
 /**
  * Discard one file on removal: move it to the OS Trash (recoverable) when
- * trashing is on, else delete it permanently. A missing file is a no-op either
- * way. trashItem rejects on real failure — surfaced via log, not swallowed, so
- * a claimed "moved to Trash" is actually true.
+ * trashing is on, else delete it permanently. A missing file is a no-op either way.
+ * A real failure THROWS (it is not swallowed) so the caller can keep the catalog
+ * entry rather than claim a removal that actually left the files behind.
  */
 async function discardFile(path: string, toTrash: boolean): Promise<void> {
   if (!toTrash) {
-    await unlink(path).catch(() => {})
+    try {
+      await unlink(path)
+    } catch (err) {
+      // Already gone is success; any other failure is real and propagates.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
     return
   }
   if (!(await fileExists(path))) return
-  try {
-    await shell.trashItem(path)
-  } catch (err) {
-    log.error('library:remove: trashItem failed', { path, error: describeError(err) })
-  }
+  await shell.trashItem(path)
 }
 
 async function assertMissing(path: string): Promise<void> {

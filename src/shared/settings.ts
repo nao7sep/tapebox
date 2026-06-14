@@ -100,7 +100,7 @@ export const SettingsSchema = z.object({
   trashOnRemove: z.boolean().default(true),
   confirmRemove: z.boolean().default(true),
 
-  // Check GitHub/upstream for newer yt-dlp/ffmpeg/deno releases once at startup.
+  // Check GitHub/upstream for newer yt-dlp/ffmpeg releases once at startup.
   autoCheckBinaryUpdates: z.boolean(),
 
   ai: AiSettingsSchema,
@@ -112,7 +112,6 @@ export const SettingsSchema = z.object({
   binaries: z.object({
     'yt-dlp': BinaryEntrySchema,
     ffmpeg: BinaryEntrySchema,
-    deno: BinaryEntrySchema,
   }),
 
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
@@ -163,7 +162,6 @@ export function defaultSettings(libraryDir: string): Settings {
     binaries: {
       'yt-dlp': { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
       ffmpeg:   { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
-      deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
     },
     ytdlpArgs: '',
     siteProfiles: [],

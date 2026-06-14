@@ -289,7 +289,7 @@ function GeneralTab({
     <div className="space-y-4">
       <Toggle
         label="Check for tool updates on startup"
-        description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
+        description="Look for newer yt-dlp and ffmpeg releases once when TapeBox launches."
         checked={draft.autoCheckBinaryUpdates}
         disabled={busy}
         onChange={(v) => onPatch({ autoCheckBinaryUpdates: v })}

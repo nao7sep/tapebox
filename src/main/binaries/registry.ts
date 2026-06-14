@@ -15,6 +15,12 @@ export type ResolvedAsset = {
   version: string
   downloadUrl: string
   archive: { kind: 'zip'; innerName: string } | null
+  // Vendor-published integrity, verified before the binary is made executable (see
+  // checksum.ts). Either a directly-known hash, or a sums file to fetch and parse at
+  // install time. Both absent ⇒ the vendor publishes none for this asset; it installs
+  // unverified (logged), with https-only transport still enforced.
+  sha256?: string | null
+  checksums?: { url: string; assetName: string } | null
 }
 
 export type BinarySpec = {
@@ -41,42 +47,14 @@ const ytDlpSpec: BinarySpec = {
     const assetName = ytDlpAssetName()
     const asset = release.assets.find((a) => a.name === assetName)
     if (!asset) throw new Error(`yt-dlp asset not found: ${assetName}`)
+    // yt-dlp publishes a SHA2-256SUMS file alongside its binaries — found here in the
+    // already-fetched release (no extra request) and parsed at install time.
+    const sums = release.assets.find((a) => a.name === 'SHA2-256SUMS')
     return {
       version: release.tag_name,
       downloadUrl: asset.browser_download_url,
       archive: null,
-    }
-  },
-}
-
-// ── Deno ────────────────────────────────────────────────────────────────────
-function denoAssetName(): string {
-  const p = process.platform
-  const a = process.arch
-  if (p === 'darwin' && a === 'arm64') return 'deno-aarch64-apple-darwin.zip'
-  if (p === 'darwin' && a === 'x64')   return 'deno-x86_64-apple-darwin.zip'
-  if (p === 'win32'  && a === 'x64')   return 'deno-x86_64-pc-windows-msvc.zip'
-  if (p === 'linux'  && a === 'x64')   return 'deno-x86_64-unknown-linux-gnu.zip'
-  if (p === 'linux'  && a === 'arm64') return 'deno-aarch64-unknown-linux-gnu.zip'
-  throw new Error(`Unsupported platform/arch for deno: ${p}/${a}`)
-}
-
-const denoSpec: BinarySpec = {
-  name: 'deno',
-  versionFlag: '--version',
-  parseVersion: (stdout) => {
-    const m = stdout.match(/deno ([\d.]+)/)
-    return m?.[1] ?? stdout.trim().split('\n')[0] ?? 'unknown'
-  },
-  resolveLatest: async () => {
-    const release = await fetchLatestRelease('denoland', 'deno')
-    const assetName = denoAssetName()
-    const asset = release.assets.find((a) => a.name === assetName)
-    if (!asset) throw new Error(`deno asset not found: ${assetName}`)
-    return {
-      version: release.tag_name,
-      downloadUrl: asset.browser_download_url,
-      archive: { kind: 'zip', innerName: process.platform === 'win32' ? 'deno.exe' : 'deno' },
+      checksums: sums ? { url: sums.browser_download_url, assetName } : null,
     }
   },
 }
@@ -84,7 +62,7 @@ const denoSpec: BinarySpec = {
 // ── ffmpeg ──────────────────────────────────────────────────────────────────
 type EvermeetInfo = {
   version: string
-  download: { zip: { url: string } }
+  download: { zip: { url: string; sha256?: string } }
 }
 
 async function resolveFfmpegMacOS(): Promise<ResolvedAsset> {
@@ -93,6 +71,7 @@ async function resolveFfmpegMacOS(): Promise<ResolvedAsset> {
     version: info.version,
     downloadUrl: info.download.zip.url,
     archive: { kind: 'zip', innerName: 'ffmpeg' },
+    sha256: info.download.zip.sha256 ?? null,
   }
 }
 
@@ -100,6 +79,8 @@ async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
   const release = await fetchLatestRelease('BtbN', 'FFmpeg-Builds')
   const asset = release.assets.find((a) => a.name === 'ffmpeg-master-latest-win64-gpl.zip')
   if (!asset) throw new Error('ffmpeg Windows asset not found')
+  // BtbN's nightly builds publish no per-asset checksum, so this installs unverified
+  // (logged); https-only transport is still enforced.
   return {
     version: release.tag_name,
     downloadUrl: asset.browser_download_url,
@@ -127,7 +108,6 @@ const ffmpegSpec: BinarySpec = {
 export const binarySpecs: Record<BinaryName, BinarySpec> = {
   'yt-dlp': ytDlpSpec,
   ffmpeg: ffmpegSpec,
-  deno: denoSpec,
 }
 
-export const binaryNames: readonly BinaryName[] = ['yt-dlp', 'ffmpeg', 'deno']
+export const binaryNames: readonly BinaryName[] = ['yt-dlp', 'ffmpeg']

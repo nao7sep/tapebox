@@ -15,7 +15,7 @@ import {
  * yt-dlp subprocess service.
  *
  * Adds ~/.tapebox/bin to PATH when spawning so yt-dlp can locate the bundled
- * ffmpeg and Deno.
+ * ffmpeg.
  */
 
 export function ytdlpEnv(): NodeJS.ProcessEnv {

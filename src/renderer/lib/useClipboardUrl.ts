@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
+import { isImportableUrl } from '@shared/url'
 
-const URL_PATTERN = /^https?:\/\//i
 const CLIPBOARD_POLL_MS = 1500
 
 /**
@@ -37,7 +37,7 @@ export function useClipboardUrl(enabled: boolean, initial = '') {
       }
       const field = urlRef.current.trim()
       const owned = field !== '' && field !== autoFilledRef.current
-      if (URL_PATTERN.test(text) && text !== autoFilledRef.current && !owned) {
+      if (isImportableUrl(text) && text !== autoFilledRef.current && !owned) {
         setUrl(text)
         autoFilledRef.current = text
       }
@@ -53,7 +53,7 @@ export function useClipboardUrl(enabled: boolean, initial = '') {
 
   function onPaste(e: ClipboardEvent) {
     const pasted = e.clipboardData.getData('text').trim()
-    if (URL_PATTERN.test(pasted)) autoFilledRef.current = pasted
+    if (isImportableUrl(pasted)) autoFilledRef.current = pasted
   }
 
   /** Clear the field after using its value, suppressing immediate re-fill. */
