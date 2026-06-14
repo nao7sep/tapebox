@@ -54,9 +54,21 @@ export async function generateSlug(opts: {
       }),
     { isRetryable: isRetryableAiError },
   )
-  const text = res.choices[0]?.message?.content?.trim() ?? ''
-  if (!text) throw new Error('AI returned an empty response')
-  return text
+  // Result line for the external boundary (the request was logged above): the
+  // finish_reason distinguishes a normal stop from a length/content-filter cutoff.
+  log.info('ai: generateSlug response', { model: ai.model, finishReason: res.choices[0]?.finish_reason })
+  const message = res.choices[0]?.message
+  // A refusal (or content-filter) comes back as a `refusal` string with null content;
+  // surface its reason rather than a generic "empty response".
+  if (message?.refusal) {
+    throw new Error(`The AI declined to suggest a name: ${message.refusal}`)
+  }
+  // Content can be null or a non-string structured part; only a non-empty string is usable.
+  const content = message?.content
+  if (typeof content !== 'string' || content.trim() === '') {
+    throw new Error('AI returned no usable text')
+  }
+  return content.trim()
 }
 
 /**

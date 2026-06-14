@@ -2,8 +2,6 @@ import type { Tape, TapeState } from '@shared/domain'
 import type { ProgressEntry } from '@renderer/store/tapes'
 import { chapterCountLabel, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
-import { useNavStore } from '@renderer/store/nav'
-import { useRovingFocus } from '@renderer/lib/useRovingFocus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 
 type Props = {
@@ -11,8 +9,8 @@ type Props = {
   progress: ProgressEntry | undefined
   selected: boolean
   onSelect: () => void
-  /** Whether this row is the list's single tab stop (roving tabindex). */
-  tabbable?: boolean
+  /** DOM id of this option, so its listbox's aria-activedescendant can target it. */
+  id?: string
 }
 
 
@@ -22,30 +20,24 @@ type Props = {
  * plus chapter count. The background/border tint carries the tape's state at a
  * glance; selection brightens the border on top without erasing that state cue.
  *
- * No "archived" marker: a row only ever appears in a list already filtered to
- * one side (Inbox or Archived), so the flag would be the same on every row.
+ * A non-focusable option: its listbox container holds the single tab stop and the
+ * keys, and points aria-activedescendant at the selected row's id. Clicking the row
+ * selects the tape (and, since the row sits inside the focusable container, hands the
+ * arrows to this list). No "archived" marker: a row only ever appears in a list
+ * already filtered to one side (Inbox or Archived), so the flag would be the same on
+ * every row.
  */
-export function TapeRow({ tape, progress, selected, onSelect, tabbable = false }: Props) {
+export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
   const palette = paletteFor(tape, selected)
-  // The selection ring (in `palette`) shows regardless of focus, so a selected video
-  // stays marked even when another pane owns the keys. Only the active video list's
-  // selected row additionally takes focus, so the focus ring follows the arrow keys.
-  const active = useNavStore((s) => s.activePanel === 'tapes')
-  const setActivePanel = useNavStore((s) => s.setActivePanel)
-  const ref = useRovingFocus<HTMLButtonElement>(active, selected)
 
   return (
-    <button
-      ref={ref}
+    <div
+      id={id}
       role="option"
       aria-selected={selected}
-      tabIndex={tabbable ? 0 : -1}
       onClick={onSelect}
-      // Focusing a row routes Up/Down to the video list, so Tab-ing into the list
-      // (not only clicking) makes its arrows live.
-      onFocus={() => setActivePanel('tapes')}
       className={
-        'block w-full rounded-md border px-3 py-2 text-left transition focus:outline-none ' +
+        'block w-full cursor-pointer rounded-md border px-3 py-2 text-left transition ' +
         palette
       }
     >
@@ -80,7 +72,7 @@ export function TapeRow({ tape, progress, selected, onSelect, tabbable = false }
           )}
         </div>
       )}
-    </button>
+    </div>
   )
 }
 
@@ -89,10 +81,11 @@ function paletteFor(tape: Tape, selected: boolean): string {
   const archived = !!tape.archivedAtUtc
 
   // Selection overlays a bright border on top of the state palette so the
-  // selected row is always obvious without erasing its state colour.
+  // selected row — the listbox's active descendant — is always obvious without
+  // erasing its state colour.
   const selectionRing = selected
-    ? 'border-zinc-100 ring-1 ring-zinc-100/40 focus:border-zinc-100'
-    : 'focus:border-zinc-500'
+    ? 'border-zinc-100 ring-1 ring-zinc-100/40'
+    : ''
 
   const baseBgBorder = archived
     ? 'bg-zinc-950/40 border-zinc-700/70 hover:border-zinc-700'

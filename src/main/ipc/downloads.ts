@@ -6,7 +6,7 @@ import { reserveStem } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import { isImportableUrl } from '@shared/url'
+import { canonicalizeForDedup, isImportableUrl } from '@shared/url'
 import type { Tape } from '@shared/domain'
 
 /** Orders that drop a block of `count` new tapes onto the top of the inbox. */
@@ -23,10 +23,12 @@ export function registerDownloadHandlers(): void {
     if (!isImportableUrl(trimmed)) {
       throw new Error('Enter a valid http(s) URL.')
     }
-    // URL-based dedup for the single-add path (no id yet — it's unprobed). Any
-    // existing tape with this URL blocks the add, in any state; a failed one is
-    // resumed via Retry, not re-added.
-    if (session.getTapes().some((i) => i.sourceUrl === trimmed)) {
+    // URL-based dedup for the single-add path (no id yet — it's unprobed). Compare
+    // canonical forms so the same video pasted with tracking junk / a fragment isn't
+    // added twice and re-probed. Any existing tape blocks the add, in any state; a
+    // failed one is resumed via Retry, not re-added.
+    const canonical = canonicalizeForDedup(trimmed)
+    if (session.getTapes().some((i) => canonicalizeForDedup(i.sourceUrl) === canonical)) {
       throw new Error('This URL has already been added.')
     }
     const [order] = inboxFrontOrders(1)
@@ -42,13 +44,16 @@ export function registerDownloadHandlers(): void {
     // same scan twice (or a list with repeats) can't create duplicate rows. The
     // set grows as we go, which collapses intra-batch repeats too. Same-video-
     // different-URL collisions are caught later, post-probe, in the queue.
-    const seen = new Set(session.getTapes().map((i) => i.sourceUrl))
+    const seen = new Set(session.getTapes().map((i) => canonicalizeForDedup(i.sourceUrl)))
     const accepted: string[] = []
     for (const url of urls) {
       const trimmed = url.trim()
-      // Skip blanks, dupes, and any non-http(s) scheme (the trust-boundary gate).
-      if (!trimmed || seen.has(trimmed) || !isImportableUrl(trimmed)) continue
-      seen.add(trimmed)
+      // Skip blanks and any non-http(s) scheme (the trust-boundary gate); dedup by
+      // canonical form so tracking-param variants of the same link collapse.
+      if (!trimmed || !isImportableUrl(trimmed)) continue
+      const canonical = canonicalizeForDedup(trimmed)
+      if (seen.has(canonical)) continue
+      seen.add(canonical)
       accepted.push(trimmed)
     }
     if (accepted.length === 0) return []

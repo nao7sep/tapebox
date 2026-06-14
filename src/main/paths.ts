@@ -24,7 +24,7 @@ export const paths = {
   apiKeys:        join(tapeboxRoot, 'api-keys.json'),
 } as const
 
-export function binaryPath(name: 'yt-dlp' | 'ffmpeg'): string {
+export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
   const ext = process.platform === 'win32' ? '.exe' : ''
   return join(paths.bin, `${name}${ext}`)
 }

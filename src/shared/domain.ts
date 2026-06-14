@@ -36,7 +36,7 @@ export const TapeSchema = z.object({
 
   // Filled by probe.
   sourceId: z.string().nullable(),       // yt-dlp's id (unique only within an extractor)
-  extractor: z.string().nullable().default(null), // yt-dlp's extractor; with sourceId, the duplicate-detection key
+  extractor: z.string().nullable(),      // yt-dlp's extractor; with sourceId, the duplicate-detection key
   title: z.string().nullable(),
   uploader: z.string().nullable(),
   durationSeconds: z.number().nullable(),
@@ -47,33 +47,30 @@ export const TapeSchema = z.object({
   // not by sourceId; the rename later re-stems them all to the chosen name.
   filename: z.string().nullable(),                          // basename only, no path
   sidecarFilename: z.string().nullable(),                   // basename only, no path
-  thumbnailFilename: z.string().nullable().default(null),   // local poster (.jpg) basename, no path; null if the source had none
-  downloadStartedAtUtc: z.string().nullable().default(null), // when state → 'downloading'
+  thumbnailFilename: z.string().nullable(),   // local poster (.jpg) basename, no path; null if the source had none
+  downloadStartedAtUtc: z.string().nullable(), // when state → 'downloading'
   downloadedAtUtc: z.string().nullable(),
 
   // Filled by rename: the user-chosen filename stem — a slug the AI suggested, or
   // any filesystem-safe name the user typed. Null until the tape is renamed.
-  // Defaulted so sessions written before this field was renamed from `slug` load.
-  name: z.string().nullable().default(null),
+  name: z.string().nullable(),
   renamedAtUtc: z.string().nullable(),
 
   // Archive marker (orthogonal to state).
   archivedAtUtc: z.string().nullable(),
 
   // Which box an archived tape is filed in (null = Unboxed, and always null while
-  // in the inbox). Defaulted so sessions written before boxes existed load.
-  boxId: z.string().nullable().default(null),
+  // in the inbox).
+  boxId: z.string().nullable(),
 
   // Manual position within the tape's CURRENT list — the inbox, a box, or Unboxed.
   // Lower = nearer the top; new tapes get an order below everything else so they
-  // land on top (see @shared/order). Defaulted so older sessions (and the prior
-  // `boxOrder` field, now folded into this) load with everything tied at 0, which
-  // the view then breaks by recency, newest-first.
-  order: z.number().int().default(0),
+  // land on top (see @shared/order).
+  order: z.number().int(),
 
   // State-transition markers.
-  pausedAtUtc: z.string().nullable().default(null),          // when state → 'paused'
-  failedAtUtc: z.string().nullable().default(null),          // when state → 'failed'
+  pausedAtUtc: z.string().nullable(),          // when state → 'paused'
+  failedAtUtc: z.string().nullable(),          // when state → 'failed'
   lastError: z.string().nullable(),
 })
 export type Tape = z.infer<typeof TapeSchema>
@@ -106,19 +103,19 @@ export type SidecarMedia = z.infer<typeof SidecarMediaSchema>
 
 export const SidecarTapeboxSchema = z.object({
   sourceUrl: z.string().url(),
-  name: z.string().nullable().default(null),
+  name: z.string().nullable(),
   addedAtUtc: z.string(),
   downloadedAtUtc: z.string().nullable(),
   renamedAtUtc: z.string().nullable(),
-  // Null when probing failed or for sidecars written before this existed.
-  media: SidecarMediaSchema.nullable().default(null),
+  // Null when probing failed.
+  media: SidecarMediaSchema.nullable(),
   // The bundle's own file names (basenames, no path), stored so an exported tape
   // can be re-imported from its sidecar ALONE: the sidecar names which sibling file
   // is the video and which is the poster, so import never guesses by stem or
   // mistakes the thumbnail for the media. mediaFilename is the video; thumbnailFilename
-  // the local poster (null if the source had none). Both defaulted for older sidecars.
-  mediaFilename: z.string().nullable().default(null),
-  thumbnailFilename: z.string().nullable().default(null),
+  // the local poster (null if the source had none).
+  mediaFilename: z.string().nullable(),
+  thumbnailFilename: z.string().nullable(),
 })
 export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
 
@@ -141,6 +138,6 @@ export type Box = z.infer<typeof BoxSchema>
  */
 export const SessionSchema = z.object({
   tapes: z.array(TapeSchema),
-  boxes: z.array(BoxSchema).default([]),
+  boxes: z.array(BoxSchema),
 })
 export type Session = z.infer<typeof SessionSchema>

@@ -74,7 +74,11 @@ export class IdleTimeoutError extends Error implements LoggableError {
   }
 }
 
-type StreamingChild = ChildProcessByStdio<null, Readable, Readable>
+type StreamingChild = ChildProcessByStdio<null, Readable, Readable> & {
+  // Set by the idle watchdog when it kills the process; waitForExit/execCapture
+  // surface it as the close cause instead of a generic non-zero exit.
+  idleError?: IdleTimeoutError | null
+}
 
 function startIdleWatch(
   child: StreamingChild,
@@ -158,18 +162,16 @@ export function spawnStreaming(
   }) as StreamingChild
 
   if (opts.idleTimeoutMs != null) {
-    let idleError: IdleTimeoutError | null = null
     const idle = startIdleWatch(child, opts.idleTimeoutMs, () => {
-      idleError = new IdleTimeoutError(command, opts.idleTimeoutMs!)
+      // Record the cause on the child; waitForExit consults it on close. We do NOT
+      // replay it as an 'error' event on the already-killed child — that depended on
+      // listener ordering against a dead process.
+      child.idleError = new IdleTimeoutError(command, opts.idleTimeoutMs!)
     })
     child.stdout.on('data', () => idle.kick())
     child.stderr.on('data', () => idle.kick())
     child.on('close', () => idle.stop())
     child.on('error', () => idle.stop())
-    // Attach the idle-error rethrow on close.
-    child.on('close', () => {
-      if (idleError) child.emit('error', idleError)
-    })
   }
 
   return child
@@ -182,6 +184,9 @@ export function waitForExit(
   return new Promise<number | null>((resolve, reject) => {
     child.on('error', reject)
     child.on('close', (code) => {
+      // An idle timeout killed the process — surface that as the cause rather than a
+      // generic non-zero exit.
+      if (child.idleError) return reject(child.idleError)
       if (code === 0 || opts.reject === false) resolve(code)
       else reject(new SubprocessError(opts.command ?? 'process', code, ''))
     })

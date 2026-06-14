@@ -4,6 +4,7 @@ import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { selectTape } from '@renderer/lib/selectTape'
+import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { UNBOXED_LABEL } from '@shared/box-names'
 import { TapeRow } from './TapeRow'
 
@@ -20,6 +21,9 @@ export function SearchResults() {
   const boxes = useBoxesStore((s) => s.boxes)
   const progress = useTapesStore((s) => s.progress)
   const selectedId = useSelectionStore((s) => s.selectedId)
+  // One listbox over the whole flat result set; the box headers are just group
+  // separators, so Up/Down crosses them seamlessly.
+  const kb = useTapeListboxKeyboard<HTMLDivElement>(tapes, selectedId)
 
   if (tapes.length === 0) {
     return <div className="p-6 text-sm text-zinc-300">No archived tapes match.</div>
@@ -37,12 +41,8 @@ export function SearchResults() {
     else groups.push({ boxId: tape.boxId, tapes: [tape] })
   }
 
-  // The list's single tab stop (roving tabindex), across the whole flat result
-  // set: the selected row, or the first row when the selection isn't shown here.
-  const tabbableId = tapes.some((t) => t.id === selectedId) ? selectedId : tapes[0]?.id
-
   return (
-    <div role="listbox" aria-label="Search results" className="pb-3">
+    <div ref={kb.ref} {...kb.listboxProps} role="listbox" aria-label="Search results" className="pb-3 outline-none">
       {groups.map((group) => (
         <section
           key={group.boxId ?? '__unboxed__'}
@@ -59,7 +59,7 @@ export function SearchResults() {
                   tape={tape}
                   progress={progress[tape.id]}
                   selected={tape.id === selectedId}
-                  tabbable={tape.id === tabbableId}
+                  id={kb.optionId(tape.id)}
                   onSelect={() => selectTape(tape.id)}
                 />
               </li>

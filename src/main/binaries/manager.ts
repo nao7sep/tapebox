@@ -14,7 +14,7 @@ import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import { downloadWithProgress } from './http'
 import { extractFileFromZip } from './archive'
-import { resolveExpectedSha256, sha256OfFile } from './checksum'
+import { verifyBinaryIntegrity } from './integrity'
 
 /**
  * Per-binary install / update orchestration.
@@ -160,18 +160,15 @@ async function performInstall(name: BinaryName): Promise<void> {
   const finalPath = binaryPath(name)
   try {
     // Integrity gate: verify the downloaded bytes against the vendor's published
-    // SHA-256 before making them executable. A mismatch aborts the install (the temp
-    // is cleaned in the finally below); a vendor that publishes no checksum is logged
-    // and installed unverified (https-only transport still applies).
-    const expectedSha256 = await resolveExpectedSha256(resolved)
-    if (expectedSha256) {
-      const actual = await sha256OfFile(downloadTemp)
-      if (actual !== expectedSha256) {
-        throw new Error(`${name} download failed its checksum (expected ${expectedSha256}, got ${actual})`)
-      }
-      log.info('binary checksum verified', { name, sha256: expectedSha256 })
+    // integrity material (a SHA-256 sums file or a pinned-key OpenPGP signature)
+    // before making them executable. A failure throws and aborts the install (the
+    // temp is cleaned in the finally below); a vendor that publishes nothing is
+    // logged and installed unverified (https-only transport still applies).
+    const integrity = await verifyBinaryIntegrity(downloadTemp, resolved.integrity)
+    if (integrity.verified) {
+      log.info('binary integrity verified', { name, method: integrity.method })
     } else {
-      log.warn('binary checksum unavailable; installed unverified', { name })
+      log.warn('binary integrity unavailable; installed unverified', { name })
     }
 
     emit('binaries:progress', { name, percent: 0, phase: 'install' })
@@ -201,9 +198,9 @@ async function performInstall(name: BinaryName): Promise<void> {
 
   emit('binaries:progress', { name, percent: 100, phase: 'verify' })
   // Confirm the binary executes, but record resolved.version rather than the
-  // self-reported one: ffmpeg reports a builder suffix ("8.1.1-tessus") that would
-  // otherwise never equal the upstream version the update check compares against,
-  // flagging a phantom update on install.
+  // self-reported one: ffmpeg reports a builder suffix ("8.1.1-tessus") and deno a
+  // "v" prefix, which would otherwise never equal the upstream version the update
+  // check compares against, flagging a phantom update on install.
   const selfReported = await verifyVersion(name)
   log.info('binary installed', { name, version: resolved.version, selfReported })
 

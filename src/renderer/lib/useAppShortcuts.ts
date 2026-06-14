@@ -4,7 +4,7 @@ import { useArchiveStore } from '@renderer/store/archive'
 import { isShortcutBlocked } from '@renderer/lib/dom'
 
 /**
- * App-level navigation shortcuts — distinct from list/selection keys (useListKeyboard)
+ * App-level navigation shortcuts — distinct from the per-list keys (useListboxKeyboard)
  * and per-tape keys (DetailPane):
  *   - ?              open the shortcuts list
  *   - ⌘/Ctrl 1 / 2   switch to Inbox / Archived

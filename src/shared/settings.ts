@@ -12,19 +12,39 @@ export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
  * Single OpenAI-compatible provider configuration. The API key is stored
  * separately in lightly obfuscated local JSON under a fixed slot.
  */
+/**
+ * The AI base URL must use https, so the API key is never sent in plaintext —
+ * except to a loopback endpoint (a local OpenAI-compatible server like Ollama or
+ * LM Studio), where http is normal and the request never leaves the machine. This
+ * blocks a plaintext key leak to a remote host without breaking local endpoints.
+ */
+function isLoopbackOrHttps(raw: string): boolean {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return false
+  }
+  if (url.protocol === 'https:') return true
+  if (url.protocol === 'http:') {
+    return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname)
+  }
+  return false
+}
+
 export const AiSettingsSchema = z.object({
-  baseUrl: z.string().url(),
+  baseUrl: z.string().url().refine(isLoopbackOrHttps, {
+    message: 'AI base URL must use https (http is allowed only for a localhost endpoint).',
+  }),
   model: z.string().min(1),
 })
 export type AiSettings = z.infer<typeof AiSettingsSchema>
 
 /**
- * Configurable AI prompts. Each default lives here in code, so a key missing
- * from a user's config auto-fills (Zod .default) — prompts added by a future
- * app update simply appear. Editing is opt-in via Settings → AI; a Restore
- * button rewrites a field back to its in-code default. Because .default only
- * fills missing keys, a newer app default never overwrites a value the user has
- * saved — they adopt it explicitly by Restoring, then saving.
+ * Configurable AI prompts. The in-code DEFAULT_SLUG_PROMPT seeds a fresh config
+ * (see defaultSettings) and backs the Settings → AI "Restore" button, which
+ * rewrites a field back to it. The schema is authoritative — `slug` is required,
+ * not defaulted; the config writer always emits it.
  *
  * Template tokens are substituted before the call: {title}, {uploader},
  * {description}. A token the user omits is simply not sent; a token left in
@@ -51,7 +71,7 @@ Base the slug on the title. Use the uploader and description only as supporting 
 </description>`
 
 export const PromptsSettingsSchema = z.object({
-  slug: z.string().default(DEFAULT_SLUG_PROMPT),
+  slug: z.string(),
 })
 export type PromptsSettings = z.infer<typeof PromptsSettingsSchema>
 
@@ -76,63 +96,59 @@ export const SettingsSchema = z.object({
   maxConcurrentDownloads: z.number().int().min(1).max(8),
 
   // Start playback automatically when a downloaded tape is opened in the player.
-  // Defaulted so configs written before this field existed still load cleanly.
-  autoplay: z.boolean().default(true),
+  autoplay: z.boolean(),
 
   // Play video audio. When off, every video is muted and can't be unmuted.
-  playSound: z.boolean().default(true),
+  playSound: z.boolean(),
 
   // Last playback volume (0..1), remembered across tapes and restarts so a new
   // tape opens at the level the user last set rather than resetting to full. Set
-  // live from the player's own volume control, not the Settings dialog. Defaulted
-  // so configs written before this field existed still load cleanly.
-  volume: z.number().min(0).max(1).default(1),
+  // live from the player's own volume control, not the Settings dialog.
+  volume: z.number().min(0).max(1),
 
   // Hold an OS wake lock while a tape is playing, so the screen doesn't dim and
   // the machine doesn't sleep mid-watch; released the moment playback stops.
-  // Defaulted so configs written before this field existed still load cleanly.
-  keepAwakeWhilePlaying: z.boolean().default(true),
+  keepAwakeWhilePlaying: z.boolean(),
 
   // Removing a tape moves its files to the OS Trash (recoverable) when on, or
   // deletes them permanently when off. confirmRemove gates a confirmation
-  // dialog before any removal. Both default on (and are defaulted so older
-  // configs still load).
-  trashOnRemove: z.boolean().default(true),
-  confirmRemove: z.boolean().default(true),
+  // dialog before any removal.
+  trashOnRemove: z.boolean(),
+  confirmRemove: z.boolean(),
 
-  // Check GitHub/upstream for newer yt-dlp/ffmpeg releases once at startup.
+  // Check GitHub/upstream for newer yt-dlp/ffmpeg/deno releases once at startup.
   autoCheckBinaryUpdates: z.boolean(),
 
   ai: AiSettingsSchema,
 
-  // Configurable AI prompts; defaulted so older configs (and newly-added
-  // prompts) auto-fill from code. See PromptsSettingsSchema.
-  prompts: PromptsSettingsSchema.default({ slug: DEFAULT_SLUG_PROMPT }),
+  // Configurable AI prompts. See PromptsSettingsSchema.
+  prompts: PromptsSettingsSchema,
 
   binaries: z.object({
     'yt-dlp': BinaryEntrySchema,
     ffmpeg: BinaryEntrySchema,
+    deno: BinaryEntrySchema,
   }),
 
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
   // scan); a matching siteProfile's args are appended on top. The app's own
-  // flags win on conflict (they're placed last). Defaulted for older configs.
-  ytdlpArgs: z.string().default(''),
-  siteProfiles: z.array(SiteProfileSchema).default([]),
+  // flags win on conflict (they're placed last).
+  ytdlpArgs: z.string(),
+  siteProfiles: z.array(SiteProfileSchema),
 
   // External player for "Open in player": empty = OS default; otherwise an app
   // name or path (macOS opens it via `open -a`).
-  externalPlayer: z.string().default(''),
+  externalPlayer: z.string(),
 
   // Default destination folder for Export. Empty = unset; the export modal then
   // requires the user to choose a folder before it can run. A set value pre-fills
   // the modal, and the user can still pick a different one for that export.
-  defaultExportDir: z.string().default(''),
+  defaultExportDir: z.string(),
 
   // Whether Export removes the tape from the library after copying it out (so it
   // becomes a "move out"). Shown in the export modal as the default, overridable
   // per export. On by default — exporting is usually how a finished tape leaves.
-  deleteAfterExport: z.boolean().default(true),
+  deleteAfterExport: z.boolean(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
@@ -162,6 +178,7 @@ export function defaultSettings(libraryDir: string): Settings {
     binaries: {
       'yt-dlp': { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
       ffmpeg:   { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
+      deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
     },
     ytdlpArgs: '',
     siteProfiles: [],

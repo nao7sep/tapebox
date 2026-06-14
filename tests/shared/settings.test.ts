@@ -2,30 +2,27 @@ import { describe, expect, it } from 'vitest'
 import { defaultSettings, SettingsSchema, summarizeSettings } from '@shared/settings'
 
 describe('SettingsSchema', () => {
-  it('defaults autoplay for configs that do not have the field yet', () => {
-    const raw = settingsWithoutAutoplay()
+  it('parses a complete config', () => {
+    const raw = defaultSettings('/tmp/tapebox-library')
 
     expect(SettingsSchema.parse(raw).autoplay).toBe(true)
   })
 
-  it('preserves an explicit autoplay-off value', () => {
-    const raw = { ...settingsWithoutAutoplay(), autoplay: false }
+  it('preserves an explicit value rather than overriding it', () => {
+    const raw = { ...defaultSettings('/tmp/tapebox-library'), autoplay: false }
 
     expect(SettingsSchema.parse(raw).autoplay).toBe(false)
   })
 
-  it('defaults keepAwakeWhilePlaying for configs that do not have the field yet', () => {
+  // The schema carries NO field defaults: a config missing a field is rejected
+  // (config.ts then self-heals the disposable prefs file to defaults) rather than
+  // half-loaded with a guessed value. Guards against silently re-introducing a
+  // back-compat default.
+  it('is authoritative — rejects a config missing a field rather than defaulting it', () => {
     const raw: Record<string, unknown> = { ...defaultSettings('/tmp/tapebox-library') }
     delete raw['keepAwakeWhilePlaying']
 
-    expect(SettingsSchema.parse(raw).keepAwakeWhilePlaying).toBe(true)
-  })
-
-  it('defaults volume to full for configs that do not have the field yet', () => {
-    const raw: Record<string, unknown> = { ...defaultSettings('/tmp/tapebox-library') }
-    delete raw['volume']
-
-    expect(SettingsSchema.parse(raw).volume).toBe(1)
+    expect(SettingsSchema.safeParse(raw).success).toBe(false)
   })
 
   it('rejects an out-of-range volume rather than persisting it', () => {
@@ -94,9 +91,3 @@ describe('summarizeSettings', () => {
     expect(summarizeSettings(customized).promptsCustomized).toBe(true)
   })
 })
-
-function settingsWithoutAutoplay(): Record<string, unknown> {
-  const raw: Record<string, unknown> = { ...defaultSettings('/tmp/tapebox-library') }
-  delete raw['autoplay']
-  return raw
-}

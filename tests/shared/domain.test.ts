@@ -1,55 +1,52 @@
 import { describe, expect, it } from 'vitest'
 import { TapeSchema } from '@shared/domain'
 
-/** A tape as written before extractor/thumbnailFilename existed and while the
- *  now-removed remote `thumbnailUrl` was still stored. */
-function legacyTape(): Record<string, unknown> {
+/** A complete current Tape — every field present, as the app always writes it. */
+function completeTape(): Record<string, unknown> {
   return {
     id: 'abc1234567',
     sourceUrl: 'https://example.com/watch?v=x',
     state: 'downloaded',
     addedAtUtc: '2024-01-01T00:00:00.000Z',
     sourceId: 'x',
+    extractor: 'example',
     title: 'A video',
     uploader: 'Someone',
     durationSeconds: 12,
     chapterCount: 0,
-    thumbnailUrl: 'https://cdn.example.com/x.jpg',
     probedAtUtc: '2024-01-01T00:00:00.000Z',
     filename: 'x.mp4',
     sidecarFilename: 'x.json',
+    thumbnailFilename: null,
+    downloadStartedAtUtc: null,
     downloadedAtUtc: '2024-01-01T00:00:00.000Z',
-    slug: null,
+    name: null,
     renamedAtUtc: null,
     archivedAtUtc: null,
+    boxId: null,
+    order: 0,
+    pausedAtUtc: null,
+    failedAtUtc: null,
     lastError: null,
   }
 }
 
-describe('TapeSchema back-compat', () => {
-  it('loads a tape written before extractor/thumbnailFilename existed', () => {
-    const parsed = TapeSchema.parse(legacyTape())
-    expect(parsed.extractor).toBeNull()
-    expect(parsed.thumbnailFilename).toBeNull()
+describe('TapeSchema', () => {
+  it('parses a complete tape', () => {
+    expect(TapeSchema.parse(completeTape()).id).toBe('abc1234567')
   })
 
-  it('drops the removed remote thumbnailUrl field rather than failing to load', () => {
-    const parsed = TapeSchema.parse(legacyTape()) as Record<string, unknown>
+  // Pre-release the schema carries NO migration defaults: an incomplete or outdated
+  // session is rejected (and quarantined by the caller) rather than half-loaded with
+  // guessed values. This guards against silently re-introducing a back-compat default.
+  it('is authoritative — rejects a tape missing a field rather than defaulting it', () => {
+    const missingOrder = completeTape()
+    delete missingOrder.order
+    expect(() => TapeSchema.parse(missingOrder)).toThrow()
+  })
+
+  it('strips unknown keys (e.g. a since-removed field) instead of failing', () => {
+    const parsed = TapeSchema.parse({ ...completeTape(), thumbnailUrl: 'https://cdn/x.jpg' }) as Record<string, unknown>
     expect('thumbnailUrl' in parsed).toBe(false)
-  })
-
-  it('defaults order/boxId for a tape written before manual ordering existed', () => {
-    const parsed = TapeSchema.parse(legacyTape())
-    expect(parsed.order).toBe(0)
-    expect(parsed.boxId).toBeNull()
-  })
-
-  it('folds the prior boxOrder field into a default order of 0', () => {
-    // boxOrder was renamed to order; an old session carrying boxOrder must still
-    // load (the unknown key is dropped, order falls back to its default).
-    const parsed = TapeSchema.parse({ ...legacyTape(), boxId: 'box1', boxOrder: 7 }) as Record<string, unknown>
-    expect('boxOrder' in parsed).toBe(false)
-    expect(parsed.order).toBe(0)
-    expect(parsed.boxId).toBe('box1')
   })
 })

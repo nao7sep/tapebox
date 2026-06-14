@@ -40,7 +40,9 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     const offs = [
       ipcOn('scan:entry', (e) => {
         if (e.sessionId !== sessionIdRef.current) return
-        setEntries((prev) => [...prev, e.entry])
+        // The same video can surface twice on a listing page; dedup by sourceUrl so the
+        // list keys and the (sourceUrl-keyed) selection stay unambiguous.
+        setEntries((prev) => (prev.some((x) => x.sourceUrl === e.entry.sourceUrl) ? prev : [...prev, e.entry]))
         if (!e.entry.alreadyInLibrary && !e.entry.unavailable) {
           setSelected((prev) => {
             const next = new Set(prev)

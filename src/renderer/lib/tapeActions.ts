@@ -1,5 +1,6 @@
 import type { Tape } from '@shared/domain'
 import { nowUtcIso } from '@shared/utc'
+import { frontOrders } from '@shared/order'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { visibleTapes } from '@renderer/lib/tapeOrder'
 import { useTapesStore } from '@renderer/store/tapes'
@@ -12,9 +13,9 @@ import { useSelectionStore } from '@renderer/store/selection'
  * The selection layer for tape actions.
  *
  * One principle keeps this from becoming a tangle of "after X do Y": selection is
- * the single source of truth, and focus is derived from it — a selected TapeRow
- * focuses and scrolls itself. So the only thing an action must get right is WHAT
- * ENDS UP SELECTED, and there are exactly two policies:
+ * the single source of truth, and the view follows it — the selected row is its
+ * listbox's active descendant, scrolled into view. So the only thing an action must
+ * get right is WHAT ENDS UP SELECTED, and there are exactly two policies:
  *
  *   keep: 'list' — the item left the current list; move selection to its neighbor
  *                  so the user can keep working the list. Used by keyboard shortcuts
@@ -66,7 +67,8 @@ export function advanceSelection(tape: Tape): () => void {
 }
 
 /** The 'tape' policy: point the view at where the tape now lives and select it.
- *  Focus and scroll follow because the selected row handles them itself. */
+ *  The selected row becomes its listbox's active descendant and scrolls into view;
+ *  a view switch also hands focus to that list (see useAutoFocusList). */
 export function revealTape(tapeId: string, dest: { archived: boolean; boxId: string | null }): void {
   useFilterStore.getState().setFilter(dest.archived ? 'archived' : 'inbox')
   if (dest.archived) {
@@ -74,6 +76,17 @@ export function revealTape(tapeId: string, dest: { archived: boolean; boxId: str
     useArchiveStore.getState().selectBox(dest.boxId)
   }
   useSelectionStore.getState().select(tapeId)
+}
+
+/** A front-of-list `order` for the destination list, so an optimistic move lands the
+ *  tape at the top at once — matching where the IPC re-emit will file it — instead of
+ *  briefly showing it at its old position before the authoritative order arrives. */
+function frontOrderFor(dest: { archived: boolean; boxId: string | null }, excludeId: string): number {
+  const members = useTapesStore.getState().tapes.filter((t) =>
+    t.id !== excludeId &&
+    (dest.archived ? !!t.archivedAtUtc && t.boxId === dest.boxId : !t.archivedAtUtc),
+  )
+  return frontOrders(members.map((t) => t.order), 1)[0]
 }
 
 /** Run a relocation optimistically (so the item leaves its list now), persist it,
@@ -86,7 +99,9 @@ function relocate(
   persist: () => void,
 ): void {
   const advance = keep === 'list' ? advanceSelection(tape) : null
-  useTapesStore.getState().upsert({ ...tape, ...patch })
+  // Place it at the front of the destination optimistically so it doesn't flash at
+  // its old order before boxes:place / library:archive re-emit the authoritative one.
+  useTapesStore.getState().upsert({ ...tape, ...patch, order: frontOrderFor(dest, tape.id) })
   persist()
   if (advance) advance()
   else revealTape(tape.id, dest)

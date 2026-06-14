@@ -6,9 +6,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useArchiveStore } from '@renderer/store/archive'
-import { useNavStore } from '@renderer/store/nav'
-import { useBoxKeyboard } from '@renderer/lib/useBoxKeyboard'
-import { useRovingFocus } from '@renderer/lib/useRovingFocus'
+import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { boxNameError, UNBOXED_LABEL } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
@@ -28,10 +26,6 @@ export function BoxList() {
   const tapes = useTapesStore((s) => s.tapes)
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
   const selectBox = useArchiveStore((s) => s.selectBox)
-  const setActivePanel = useNavStore((s) => s.setActivePanel)
-  // Clicking a box selects it AND makes the box list the active keyboard panel.
-  const selectBoxPanel = (id: string | null) => { selectBox(id); setActivePanel('boxes') }
-  useBoxKeyboard()
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
@@ -41,6 +35,17 @@ export function BoxList() {
   const sorted = [...boxes].sort((a, b) => a.order - b.order)
   const archived = tapes.filter((i) => !!i.archivedAtUtc)
   const countOf = (boxId: string | null) => archived.filter((i) => i.boxId === boxId).length
+
+  // The box list is a listbox over the always-present Unboxed row (id UNBOXED_DROP_ID)
+  // followed by the boxes in display order — the order the list reads. Clicking a row
+  // selects it and, since the row sits inside this focusable container, hands Up/Down
+  // to the box list; arrowing selects whichever box is moved to.
+  const kb = useListboxKeyboard<HTMLDivElement>({
+    itemIds: [UNBOXED_DROP_ID, ...sorted.map((g) => g.id)],
+    activeId: selectedBoxId ?? UNBOXED_DROP_ID,
+    onActivate: (id) => selectBox(id === UNBOXED_DROP_ID ? null : id),
+    idPrefix: 'box',
+  })
 
   // Names of every box except the one being edited — what a rename collides with.
   const otherNames = (id: string) => sorted.filter((g) => g.id !== id).map((g) => g.name)
@@ -52,7 +57,7 @@ export function BoxList() {
 
   async function newBox() {
     const box = await ipcInvoke('boxes:create', { name: 'New box' })
-    selectBoxPanel(box.id)
+    selectBox(box.id)
     setDraftName(box.name)
     setEditingId(box.id)
   }
@@ -89,11 +94,18 @@ export function BoxList() {
       </div>
 
       <div
+        ref={kb.ref}
+        {...kb.listboxProps}
         role="listbox"
         aria-label="Boxes"
-        className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2"
+        className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 outline-none"
       >
-        <UnboxedRow count={countOf(null)} selected={selectedBoxId === null} onSelect={() => selectBoxPanel(null)} />
+        <UnboxedRow
+          id={kb.optionId(UNBOXED_DROP_ID)}
+          count={countOf(null)}
+          selected={selectedBoxId === null}
+          onSelect={() => selectBox(null)}
+        />
         <SortableContext items={sorted.map((g) => g.id)} strategy={verticalListSortingStrategy}>
           {sorted.map((g) =>
             editingId === g.id ? (
@@ -107,7 +119,10 @@ export function BoxList() {
                   onCompositionStart={composing.onCompositionStart}
                   onCompositionEnd={composing.onCompositionEnd}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !isComposingKeyboardEvent(composingRef, e)) void commitRename(g.id)
+                    // Ignore Enter/Escape mid-IME-composition: Enter should commit the
+                    // candidate and Escape should cancel it, not act on the rename.
+                    if (isComposingKeyboardEvent(composingRef, e)) return
+                    if (e.key === 'Enter') void commitRename(g.id)
                     else if (e.key === 'Escape') setEditingId(null)
                   }}
                   className={
@@ -123,10 +138,11 @@ export function BoxList() {
               <SortableBoxRow
                 key={g.id}
                 id={g.id}
+                optionId={kb.optionId(g.id)}
                 label={g.name}
                 count={countOf(g.id)}
                 selected={selectedBoxId === g.id}
-                onSelect={() => selectBoxPanel(g.id)}
+                onSelect={() => selectBox(g.id)}
                 onRename={() => { setDraftName(g.name); setEditingId(g.id) }}
                 onDelete={() => setConfirmDeleteId(g.id)}
               />
@@ -179,27 +195,23 @@ function useDraggingTape(): boolean {
   return active?.data.current?.type === 'tape'
 }
 
-function UnboxedRow({ count, selected, onSelect }: { count: number; selected: boolean; onSelect: () => void }) {
+function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: number; selected: boolean; onSelect: () => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: UNBOXED_DROP_ID })
   const draggingTape = useDraggingTape()
-  // Focus follows the selection while the box list owns the keys, so it never lags
-  // behind on a clicked row; the accent fill is the only marker (no focus outline).
-  const active = useNavStore((s) => s.activePanel === 'boxes')
-  const setActivePanel = useNavStore((s) => s.setActivePanel)
-  const btnRef = useRovingFocus<HTMLButtonElement>(active, selected)
+  // A non-focusable option — the box list container holds the single tab stop and
+  // the keys, pointing aria-activedescendant at the selected row. The accent fill is
+  // the only marker (a flat row, no ring).
   return (
     <div ref={setNodeRef} role="presentation" className={rowClass(selected, isOver && draggingTape && !selected)}>
-      <button
-        ref={btnRef}
+      <div
+        id={id}
         role="option"
         aria-selected={selected}
-        tabIndex={selected ? 0 : -1}
         onClick={onSelect}
-        onFocus={() => setActivePanel('boxes')}
-        className="min-w-0 flex-1 truncate text-left focus:outline-none"
+        className="min-w-0 flex-1 cursor-pointer truncate text-left"
       >
         {UNBOXED_LABEL}
-      </button>
+      </div>
       <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
     </div>
   )
@@ -207,6 +219,7 @@ function UnboxedRow({ count, selected, onSelect }: { count: number; selected: bo
 
 function SortableBoxRow({
   id,
+  optionId,
   label,
   count,
   selected,
@@ -215,6 +228,7 @@ function SortableBoxRow({
   onDelete,
 }: {
   id: string
+  optionId: string
   label: string
   count: number
   selected: boolean
@@ -230,9 +244,6 @@ function SortableBoxRow({
     data: { type: 'box' },
   })
   const draggingTape = useDraggingTape()
-  const active = useNavStore((s) => s.activePanel === 'boxes')
-  const setActivePanel = useNavStore((s) => s.setActivePanel)
-  const btnRef = useRovingFocus<HTMLButtonElement>(active, selected)
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -241,17 +252,16 @@ function SortableBoxRow({
   }
   return (
     <div ref={setNodeRef} style={style} role="presentation" {...listeners} className={rowClass(selected, isOver && draggingTape && !selected)}>
-      <button
-        ref={btnRef}
+      {/* A non-focusable option (the listbox container owns focus and the keys). */}
+      <div
+        id={optionId}
         role="option"
         aria-selected={selected}
-        tabIndex={selected ? 0 : -1}
         onClick={onSelect}
-        onFocus={() => setActivePanel('boxes')}
-        className="min-w-0 flex-1 truncate text-left focus:outline-none"
+        className="min-w-0 flex-1 cursor-pointer truncate text-left"
       >
         {label}
-      </button>
+      </div>
       <button
         onClick={onRename}
         aria-label="Rename box"

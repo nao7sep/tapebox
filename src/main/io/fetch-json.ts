@@ -29,3 +29,17 @@ export async function fetchText(url: string, init?: RequestInit): Promise<string
     }),
   )
 }
+
+/**
+ * GET + return the response body as raw bytes, same retry/timeout policy as
+ * fetchJson. Used for small binary lookups such as a detached OpenPGP `.sig`.
+ */
+export async function fetchBytes(url: string, init?: RequestInit): Promise<Uint8Array> {
+  return withRetry(HTTP_RETRY, () =>
+    withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, undefined, async (signal) => {
+      const res = await fetch(url, { ...init, signal })
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
+      return new Uint8Array(await res.arrayBuffer())
+    }),
+  )
+}

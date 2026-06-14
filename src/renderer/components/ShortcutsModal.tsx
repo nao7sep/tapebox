@@ -6,9 +6,9 @@ type Group = { title: string; note?: string; shortcuts: Shortcut[] }
 
 /**
  * The keyboard map, grouped by where the keys apply. Kept in sync by hand with the
- * handlers that own them — useListKeyboard (videos), useBoxKeyboard (boxes),
- * DetailPane (the open tape: Enter/R/E/M, seek, and chapter jumps), and
- * useAppShortcuts (navigation).
+ * handlers that own them — the per-list listboxes (videos / boxes / chapters, via
+ * useListboxKeyboard), DetailPane (the open tape: A, Backspace/Delete, Enter/R/E/M,
+ * and Left/Right seek), and useAppShortcuts (navigation).
  */
 function groups(mod: string): Group[] {
   return [

@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { TapeSchema, type Tape } from '@shared/domain'
 import { visibleTapes } from '@renderer/lib/tapeOrder'
 
-/** A valid Tape from a few overrides — schema defaults fill the rest. */
+/** A complete valid Tape from a few overrides (the schema is authoritative — no
+ *  defaults fill missing fields, so every field is supplied here). */
 function tape(overrides: Partial<Tape> & { id: string }): Tape {
   return TapeSchema.parse({
     sourceUrl: `https://example.com/watch?v=${overrides.id}`,
     state: 'downloaded',
     addedAtUtc: '2024-01-01T00:00:00.000Z',
     sourceId: overrides.id,
+    extractor: null,
     title: overrides.id,
     uploader: null,
     durationSeconds: null,
@@ -16,9 +18,16 @@ function tape(overrides: Partial<Tape> & { id: string }): Tape {
     probedAtUtc: null,
     filename: `${overrides.id}.mp4`,
     sidecarFilename: `${overrides.id}.json`,
+    thumbnailFilename: null,
+    downloadStartedAtUtc: null,
     downloadedAtUtc: null,
+    name: null,
     renamedAtUtc: null,
     archivedAtUtc: null,
+    boxId: null,
+    order: 0,
+    pausedAtUtc: null,
+    failedAtUtc: null,
     lastError: null,
     ...overrides,
   })

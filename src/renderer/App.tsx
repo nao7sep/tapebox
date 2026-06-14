@@ -7,14 +7,12 @@ import { LAYOUT_BOUNDS } from '@shared/layout'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
-import { useNavStore } from '@renderer/store/nav'
 import { useFilterStore } from '@renderer/store/filter'
 import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { useTapeRemoval } from '@renderer/lib/useTapeRemoval'
-import { useListKeyboard } from '@renderer/lib/useListKeyboard'
 import { useAppShortcuts } from '@renderer/lib/useAppShortcuts'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
@@ -52,7 +50,6 @@ export default function App() {
   const tapes = useTapesStore((s) => s.tapes)
   const selectedId = useSelectionStore((s) => s.selectedId)
   const select = useSelectionStore((s) => s.select)
-  const setActivePanel = useNavStore((s) => s.setActivePanel)
   const binaryStatuses = useBinariesStore((s) => s.statuses)
   const binariesModalOpen = useBinariesStore((s) => s.modalOpen)
   const openBinariesModal = useBinariesStore((s) => s.openModal)
@@ -64,7 +61,6 @@ export default function App() {
   const decidedFirstRun = useRef(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const { requestRemove, confirmModal } = useTapeRemoval(videoRef)
-  useListKeyboard(requestRemove)
   useAppShortcuts(() => setShowShortcuts(true))
   const leftPaneWidth = useLayoutStore((s) => s.layout.leftPaneWidth)
   const filter = useFilterStore((s) => s.filter)
@@ -128,16 +124,6 @@ export default function App() {
   useEffect(() => {
     if (selectedId && !tapes.some((i) => i.id === selectedId)) select(null)
   }, [tapes, selectedId, select])
-
-  // Keep the active keyboard panel from stranding. Switching Inbox/Archived hands
-  // Up/Down to the now-visible video list; and when the open tape changes (new
-  // selection, or the current one removed), a chapter focus from the old tape is
-  // stale, so the keys go back to the video list. The chapter check reads live state
-  // so clicking a chapter — which doesn't change selectedId — is left untouched.
-  useEffect(() => { setActivePanel('tapes') }, [filter, setActivePanel])
-  useEffect(() => {
-    if (useNavStore.getState().activePanel === 'chapters') setActivePanel('tapes')
-  }, [selectedId, setActivePanel])
 
   const selectedTape = tapes.find((i) => i.id === selectedId) ?? null
 

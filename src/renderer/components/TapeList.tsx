@@ -14,6 +14,7 @@ import { useFilterStore, type Filter } from '@renderer/store/filter'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { useTapeDragSensors } from '@renderer/lib/dnd'
 import { selectTape } from '@renderer/lib/selectTape'
+import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
 
@@ -31,6 +32,7 @@ export function TapeList() {
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const sensors = useTapeDragSensors()
+  const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId)
 
   // Scroll the newly-added tape into view. New tapes land at the top, so a top
   // sentinel + scrollIntoView('nearest') reveals them when the list is scrolled
@@ -70,9 +72,6 @@ export function TapeList() {
   }
 
   const activeTape = activeId ? visible.find((t) => t.id === activeId) : undefined
-  // The list's single tab stop (roving tabindex): the selected row, or the first
-  // row when the selection isn't in this list.
-  const tabbableId = visible.some((t) => t.id === selectedId) ? selectedId : visible[0]?.id
 
   return (
     <DndContext
@@ -84,14 +83,20 @@ export function TapeList() {
     >
       <div ref={topRef} />
       <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <ul role="listbox" aria-label="Tapes" className="space-y-1.5 p-3">
+        <ul
+          ref={kb.ref}
+          {...kb.listboxProps}
+          role="listbox"
+          aria-label="Tapes"
+          className="space-y-1.5 p-3 outline-none"
+        >
           {visible.map((tape) => (
             <SortableTape key={tape.id} id={tape.id}>
               <TapeRow
                 tape={tape}
                 progress={progress[tape.id]}
                 selected={tape.id === selectedId}
-                tabbable={tape.id === tabbableId}
+                id={kb.optionId(tape.id)}
                 onSelect={() => selectTape(tape.id)}
               />
             </SortableTape>

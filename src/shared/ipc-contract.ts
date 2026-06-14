@@ -128,7 +128,7 @@ export type IpcCalls = {
   'app:setVideoPlaying':   { req: { playing: boolean };              res: void }
 }
 
-export type BinaryName = 'yt-dlp' | 'ffmpeg'
+export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
 
 /**
  * The sidecar JSON on disk: yt-dlp's full info.json (with path fields stripped)

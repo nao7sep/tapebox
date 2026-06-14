@@ -46,6 +46,16 @@ async function key(el: HTMLElement, k: string): Promise<void> {
   })
 }
 
+// Let the menu's open-focus requestAnimationFrame settle before a test drives focus
+// itself — otherwise that queued rAF can fire mid-test and re-focus the first item,
+// clobbering the keyboard-nav assertions. (Production behavior is correct; this only
+// makes the test deterministic against the rAF it legitimately uses.)
+async function flushRaf(): Promise<void> {
+  await act(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  })
+}
+
 afterEach(() => {
   act(() => root?.unmount())
   container?.remove()
@@ -74,6 +84,7 @@ describe('Menu', () => {
   it('moves focus with Down/Up (stopping at the ends) and Home/End', async () => {
     await mountMenu({ a: vi.fn(), b: vi.fn(), c: vi.fn() })
     await click(trigger())
+    await flushRaf() // let the open-focus rAF settle before driving focus ourselves
     items()[0].focus()
     await key(items()[0], 'ArrowDown')
     expect(document.activeElement).toBe(items()[1])

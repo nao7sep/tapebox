@@ -15,9 +15,7 @@ import { isShortcutBlocked } from '@renderer/lib/dom'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { useKeepAwake } from '@renderer/lib/useKeepAwake'
 import { useVolume } from '@renderer/lib/useVolume'
-import { useNavStore } from '@renderer/store/nav'
 import { useCurrentChapter } from '@renderer/lib/currentChapter'
-import { nextIndex } from '@renderer/lib/nextIndex'
 import { chapterCountLabel, formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
@@ -141,12 +139,9 @@ export function DetailPane({
   useKeepAwake(videoRef, playerSrc)
   useVolume(videoRef, playerSrc)
 
-  // Which list owns Up/Down, and the chapter currently under the playhead (derived
-  // from playback, so the highlight follows along and Up/Down jumps from where we
-  // actually are). Chapters is memoized above, so this effect re-binds only on a
-  // real source / chapter-set change.
-  const activePanel = useNavStore((s) => s.activePanel)
-  const setActivePanel = useNavStore((s) => s.setActivePanel)
+  // The chapter currently under the playhead (derived from playback, so the highlight
+  // follows along and the chapter list's Up/Down jump from where we actually are).
+  // Chapters is memoized above, so this re-binds only on a real source/chapter change.
   const currentChapterIndex = useCurrentChapter(videoRef, chapters, playerSrc)
 
   function seek(seconds: number) {
@@ -212,44 +207,46 @@ export function DetailPane({
     if (r.play) void v.play().catch(() => {})
   }
 
-  // Per-tape keyboard, live while a tape is open: the arrows drive the player
-  // (Left/Right seek, Up/Down jump chapters — see below), Enter does the tape's
-  // primary action (play/pause a downloaded tape; scan a page; retry a failure;
-  // resume a pause), and R / E / M open the housekeeping tools. Suppressed while
-  // typing or while a modal owns the keyboard. The handler reads live state through
-  // a ref, so it binds once; videoRef and the modal setters are already stable.
-  const keyRef = useRef({ tape, onScanPage, chapters, activePanel, currentChapterIndex })
-  keyRef.current = { tape, onScanPage, chapters, activePanel, currentChapterIndex }
+  // Per-tape keyboard, live while a tape is open and acting on the selected tape no
+  // matter which list has focus: A archives/unarchives, Backspace/Delete removes,
+  // Left/Right seek the player, Enter does the tape's primary action (play/pause;
+  // scan a page; retry/resume), and R / E / M open the housekeeping tools. Up/Down
+  // are deliberately NOT handled here — they belong to whichever listbox has focus
+  // (the chapter list jumps chapters). Suppressed while typing or while a modal owns
+  // the keyboard. The handler reads live state through a ref, so it binds once.
+  const keyRef = useRef({ tape, onScanPage, onRequestRemove })
+  keyRef.current = { tape, onScanPage, onRequestRemove }
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.defaultPrevented || isShortcutBlocked(e.target)) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return // plain keys only
-      const { tape, onScanPage, chapters, activePanel, currentChapterIndex } = keyRef.current
+      const { tape, onScanPage, onRequestRemove } = keyRef.current
 
-      // Arrows drive the player. Left/Right seek the open video regardless of which
-      // list owns Up/Down — so seeking works the instant a tape is selected, without
-      // clicking into the player. Up/Down jump between chapters only while the
-      // chapter list is the active panel, relative to the chapter under the playhead;
-      // otherwise they fall through to the video/box list handlers (no preventDefault).
-      if (
-        tape.state === 'downloaded' &&
-        (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')
-      ) {
+      // Selected-tape commands first, so they work regardless of focus and tolerate
+      // their own modifier rules. Backspace/Delete (with or without Cmd/Ctrl) removes;
+      // A (plain) archives/unarchives — the keyboard's triage 'list' policy, advancing
+      // selection to a neighbor (the detail-pane button uses 'tape' to follow it).
+      if ((e.key === 'Backspace' || e.key === 'Delete') && !e.altKey) {
+        e.preventDefault()
+        onRequestRemove(tape)
+        return
+      }
+      if ((e.key === 'a' || e.key === 'A') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (tape.archivedAtUtc) { e.preventDefault(); unarchiveTape(tape, 'list') }
+        else if (tape.state === 'downloaded') { e.preventDefault(); archiveTape(tape, 'list') }
+        return
+      }
+
+      if (e.metaKey || e.ctrlKey || e.altKey) return // remaining keys are plain only
+
+      // Left/Right seek the open video regardless of which list owns Up/Down — so
+      // seeking works the instant a tape is selected, without clicking into the player.
+      if (tape.state === 'downloaded' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         const v = videoRef.current
         if (!v) return
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          e.preventDefault()
-          const delta = e.key === 'ArrowRight' ? SEEK_STEP_SECONDS : -SEEK_STEP_SECONDS
-          const max = Number.isFinite(v.duration) ? v.duration : Infinity
-          v.currentTime = Math.min(Math.max(v.currentTime + delta, 0), max)
-          return
-        }
-        if (activePanel === 'chapters' && chapters.length > 0) {
-          e.preventDefault()
-          const next = nextIndex(currentChapterIndex, chapters.length, e.key === 'ArrowDown' ? 1 : -1)
-          v.currentTime = chapters[next].start_time
-          void v.play().catch(() => {})
-        }
+        e.preventDefault()
+        const delta = e.key === 'ArrowRight' ? SEEK_STEP_SECONDS : -SEEK_STEP_SECONDS
+        const max = Number.isFinite(v.duration) ? v.duration : Infinity
+        v.currentTime = Math.min(Math.max(v.currentTime + delta, 0), max)
         return
       }
 
@@ -524,8 +521,7 @@ export function DetailPane({
                 <ChapterList
                   chapters={chapters}
                   currentIndex={currentChapterIndex}
-                  active={activePanel === 'chapters'}
-                  onActivate={(i) => { setActivePanel('chapters'); seek(chapters[i].start_time) }}
+                  onActivate={(i) => seek(chapters[i].start_time)}
                 />
               )}
           </div>

@@ -13,7 +13,9 @@ export function Toaster() {
   if (errors.length === 0) return null
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-full max-w-md flex-col gap-2">
+    // Toasts sit at z-[45]: above menus / drop overlays (z-40) but below modals (z-50),
+    // so an error toast never obscures an open modal's controls (it waits behind it).
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[45] flex w-full max-w-md flex-col gap-2">
       {errors.map((t) => (
         <div
           key={t.id}

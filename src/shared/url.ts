@@ -51,3 +51,31 @@ export function parseImportableUrl(raw: string): URL | null {
 export function isImportableUrl(raw: string): boolean {
   return parseImportableUrl(raw) !== null
 }
+
+// Share/analytics params that never change which media a link points to. Stripping
+// them lets the same video pasted with tracking junk dedup against a clean copy.
+const TRACKING_PARAMS = new Set([
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'fbclid', 'gclid', 'igshid', 'si',
+])
+
+/**
+ * Canonicalize a URL for **duplicate detection only** — never for storage or
+ * fetching (the raw URL the user gave is what gets downloaded). Drops the fragment
+ * and well-known tracking params; the URL parser already lowercases scheme + host.
+ * Other query params (`v`, `t`, `list`, …) are preserved — they can select which
+ * media a link points to. A string that doesn't parse is returned trimmed.
+ */
+export function canonicalizeForDedup(raw: string): string {
+  let url: URL
+  try {
+    url = new URL(raw.trim())
+  } catch {
+    return raw.trim()
+  }
+  url.hash = ''
+  for (const key of [...url.searchParams.keys()]) {
+    if (TRACKING_PARAMS.has(key.toLowerCase())) url.searchParams.delete(key)
+  }
+  return url.toString()
+}
