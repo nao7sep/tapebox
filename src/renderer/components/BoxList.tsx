@@ -88,7 +88,11 @@ export function BoxList() {
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+      <div
+        role="listbox"
+        aria-label="Boxes"
+        className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2"
+      >
         <UnboxedRow count={countOf(null)} selected={selectedBoxId === null} onSelect={() => selectBoxPanel(null)} />
         <SortableContext items={sorted.map((g) => g.id)} strategy={verticalListSortingStrategy}>
           {sorted.map((g) =>
@@ -179,10 +183,19 @@ function UnboxedRow({ count, selected, onSelect }: { count: number; selected: bo
   // Focus follows the selection while the box list owns the keys, so it never lags
   // behind on a clicked row; the accent fill is the only marker (no focus outline).
   const active = useNavStore((s) => s.activePanel === 'boxes')
+  const setActivePanel = useNavStore((s) => s.setActivePanel)
   const btnRef = useRovingFocus<HTMLButtonElement>(active, selected)
   return (
-    <div ref={setNodeRef} className={rowClass(selected, isOver && draggingTape && !selected)}>
-      <button ref={btnRef} onClick={onSelect} className="min-w-0 flex-1 truncate text-left focus:outline-none">
+    <div ref={setNodeRef} role="presentation" className={rowClass(selected, isOver && draggingTape && !selected)}>
+      <button
+        ref={btnRef}
+        role="option"
+        aria-selected={selected}
+        tabIndex={selected ? 0 : -1}
+        onClick={onSelect}
+        onFocus={() => setActivePanel('boxes')}
+        className="min-w-0 flex-1 truncate text-left focus:outline-none"
+      >
         {UNBOXED_LABEL}
       </button>
       <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
@@ -207,12 +220,16 @@ function SortableBoxRow({
   onRename: () => void
   onDelete: () => void
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
+  // Spread dnd-kit's `listeners` (pointer drag) but NOT its `attributes`: those put
+  // role="button" and a tab index on the row wrapper, which would add a second tab
+  // stop and shadow the inner option. Keyboard reorder isn't enabled here.
+  const { listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
     id,
     data: { type: 'box' },
   })
   const draggingTape = useDraggingTape()
   const active = useNavStore((s) => s.activePanel === 'boxes')
+  const setActivePanel = useNavStore((s) => s.setActivePanel)
   const btnRef = useRovingFocus<HTMLButtonElement>(active, selected)
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -221,13 +238,22 @@ function SortableBoxRow({
     opacity: isDragging ? 0 : 1,
   }
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={rowClass(selected, isOver && draggingTape && !selected)}>
-      <button ref={btnRef} onClick={onSelect} className="min-w-0 flex-1 truncate text-left focus:outline-none">
+    <div ref={setNodeRef} style={style} role="presentation" {...listeners} className={rowClass(selected, isOver && draggingTape && !selected)}>
+      <button
+        ref={btnRef}
+        role="option"
+        aria-selected={selected}
+        tabIndex={selected ? 0 : -1}
+        onClick={onSelect}
+        onFocus={() => setActivePanel('boxes')}
+        className="min-w-0 flex-1 truncate text-left focus:outline-none"
+      >
         {label}
       </button>
       <button
         onClick={onRename}
         aria-label="Rename box"
+        tabIndex={-1}
         className="hidden shrink-0 items-center justify-center rounded p-1 text-zinc-400 transition hover:bg-zinc-700/60 hover:text-zinc-200 group-hover:inline-flex"
       >
         <PencilGlyph />
@@ -235,6 +261,7 @@ function SortableBoxRow({
       <button
         onClick={onDelete}
         aria-label="Delete box"
+        tabIndex={-1}
         className="hidden shrink-0 items-center justify-center rounded p-1 text-zinc-400 transition hover:bg-zinc-700/60 hover:text-red-300 group-hover:inline-flex"
       >
         <TrashGlyph />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { AiSettings, Settings, SiteProfile } from '@shared/settings'
 import { DEFAULT_SLUG_PROMPT } from '@shared/settings'
@@ -209,27 +209,64 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'ytdlp', label: 'yt-dlp' },
 ]
 
+// A vertical tablist: one tab stop (the active tab via roving tabindex), Up/Down
+// move and activate immediately (switching a settings panel is cheap), Home/End
+// jump to the ends, and the arrows stop at the ends rather than wrapping.
 function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+  const listRef = useRef<HTMLDivElement>(null)
+  const activeIndex = TABS.findIndex((t) => t.id === tab)
+
+  const focusTab = (index: number) => {
+    ;(
+      listRef.current?.querySelector(
+        `[data-tab-index="${index}"]`,
+      ) as HTMLElement | null
+    )?.focus()
+  }
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    let target: number | null = null
+    if (e.key === 'ArrowDown') target = Math.min(activeIndex + 1, TABS.length - 1)
+    else if (e.key === 'ArrowUp') target = Math.max(activeIndex - 1, 0)
+    else if (e.key === 'Home') target = 0
+    else if (e.key === 'End') target = TABS.length - 1
+    else return
+    e.preventDefault()
+    onTab(TABS[target].id)
+    focusTab(target)
+  }
+
   return (
-    <nav className="w-32 shrink-0">
-      <ul className="space-y-0.5">
-        {TABS.map((t) => (
-          <li key={t.id}>
-            <button
-              onClick={() => onTab(t.id)}
-              className={
-                'w-full rounded px-3 py-1.5 text-left text-sm transition ' +
-                (tab === t.id
-                  ? 'bg-zinc-800 text-zinc-100'
-                  : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100')
-              }
-            >
-              {t.label}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <div
+      ref={listRef}
+      role="tablist"
+      aria-orientation="vertical"
+      aria-label="Settings sections"
+      onKeyDown={onKeyDown}
+      className="w-32 shrink-0 space-y-0.5"
+    >
+      {TABS.map((t, i) => {
+        const selected = tab === t.id
+        return (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            data-tab-index={i}
+            onClick={() => onTab(t.id)}
+            className={
+              'block w-full rounded px-3 py-1.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 ' +
+              (selected
+                ? 'bg-zinc-800 text-zinc-100'
+                : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100')
+            }
+          >
+            {t.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

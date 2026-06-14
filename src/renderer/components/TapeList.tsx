@@ -70,6 +70,9 @@ export function TapeList() {
   }
 
   const activeTape = activeId ? visible.find((t) => t.id === activeId) : undefined
+  // The list's single tab stop (roving tabindex): the selected row, or the first
+  // row when the selection isn't in this list.
+  const tabbableId = visible.some((t) => t.id === selectedId) ? selectedId : visible[0]?.id
 
   return (
     <DndContext
@@ -81,13 +84,14 @@ export function TapeList() {
     >
       <div ref={topRef} />
       <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <ul className="space-y-1.5 p-3">
+        <ul role="listbox" aria-label="Tapes" className="space-y-1.5 p-3">
           {visible.map((tape) => (
             <SortableTape key={tape.id} id={tape.id}>
               <TapeRow
                 tape={tape}
                 progress={progress[tape.id]}
                 selected={tape.id === selectedId}
+                tabbable={tape.id === tabbableId}
                 onSelect={() => selectTape(tape.id)}
               />
             </SortableTape>

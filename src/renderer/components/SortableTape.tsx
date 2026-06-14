@@ -11,7 +11,13 @@ import { CSS } from '@dnd-kit/utilities'
  * container's edge would clip and vanish; it only holds its place here.
  */
 export function SortableTape({ id, children }: { id: string; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  // Spread dnd-kit's `listeners` (pointer drag) but NOT its `attributes`: those
+  // set role="button" and a tab index on the <li>, which would make every row a
+  // second tab stop and break the listbox's single-tab-stop / option semantics.
+  // Drag is pointer-only here (no KeyboardSensor), so dropping the keyboard-drag
+  // a11y attributes costs nothing. role="presentation" keeps the option (the
+  // inner TapeRow button) a clean child of the listbox.
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     data: { type: 'tape' },
   })
@@ -21,7 +27,7 @@ export function SortableTape({ id, children }: { id: string; children: ReactNode
     opacity: isDragging ? 0 : 1,
   }
   return (
-    <li ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <li ref={setNodeRef} style={style} role="presentation" {...listeners}>
       {children}
     </li>
   )

@@ -37,20 +37,29 @@ export function SearchResults() {
     else groups.push({ boxId: tape.boxId, tapes: [tape] })
   }
 
+  // The list's single tab stop (roving tabindex), across the whole flat result
+  // set: the selected row, or the first row when the selection isn't shown here.
+  const tabbableId = tapes.some((t) => t.id === selectedId) ? selectedId : tapes[0]?.id
+
   return (
-    <div className="pb-3">
+    <div role="listbox" aria-label="Search results" className="pb-3">
       {groups.map((group) => (
-        <section key={group.boxId ?? '__unboxed__'}>
+        <section
+          key={group.boxId ?? '__unboxed__'}
+          role="group"
+          aria-label={boxName(group.boxId)}
+        >
           <div className="sticky top-0 z-10 bg-zinc-800/95 px-3 py-1 text-xs font-medium uppercase tracking-wide text-zinc-300 backdrop-blur-sm">
             {boxName(group.boxId)}
           </div>
-          <ul className="space-y-1.5 px-3 py-2">
+          <ul role="presentation" className="space-y-1.5 px-3 py-2">
             {group.tapes.map((tape) => (
-              <li key={tape.id}>
+              <li key={tape.id} role="presentation">
                 <TapeRow
                   tape={tape}
                   progress={progress[tape.id]}
                   selected={tape.id === selectedId}
+                  tabbable={tape.id === tabbableId}
                   onSelect={() => selectTape(tape.id)}
                 />
               </li>

@@ -11,6 +11,8 @@ type Props = {
   progress: ProgressEntry | undefined
   selected: boolean
   onSelect: () => void
+  /** Whether this row is the list's single tab stop (roving tabindex). */
+  tabbable?: boolean
 }
 
 
@@ -23,18 +25,25 @@ type Props = {
  * No "archived" marker: a row only ever appears in a list already filtered to
  * one side (Inbox or Archived), so the flag would be the same on every row.
  */
-export function TapeRow({ tape, progress, selected, onSelect }: Props) {
+export function TapeRow({ tape, progress, selected, onSelect, tabbable = false }: Props) {
   const palette = paletteFor(tape, selected)
   // The selection ring (in `palette`) shows regardless of focus, so a selected video
   // stays marked even when another pane owns the keys. Only the active video list's
   // selected row additionally takes focus, so the focus ring follows the arrow keys.
   const active = useNavStore((s) => s.activePanel === 'tapes')
+  const setActivePanel = useNavStore((s) => s.setActivePanel)
   const ref = useRovingFocus<HTMLButtonElement>(active, selected)
 
   return (
     <button
       ref={ref}
+      role="option"
+      aria-selected={selected}
+      tabIndex={tabbable ? 0 : -1}
       onClick={onSelect}
+      // Focusing a row routes Up/Down to the video list, so Tab-ing into the list
+      // (not only clicking) makes its arrows live.
+      onFocus={() => setActivePanel('tapes')}
       className={
         'block w-full rounded-md border px-3 py-2 text-left transition focus:outline-none ' +
         palette

@@ -18,24 +18,34 @@ export function FilterChips() {
     archived: tapes.filter((i) => !!i.archivedAtUtc).length,
   }
 
+  // A single-choice filter selector, so a native radio group: one tab stop, the
+  // arrow keys move and select among the chips for free, and the checked state is
+  // exposed to assistive tech. The radio input is visually hidden; the styled
+  // label is the chip.
   return (
-    <div className="flex gap-2">
+    <div role="radiogroup" aria-label="Tape filter" className="flex gap-2">
       {order.map((f) => {
         const active = f === filter
         return (
-          <button
+          <label
             key={f}
-            onClick={() => setFilter(f)}
             className={
-              'rounded px-2.5 py-1 text-xs transition ' +
+              'cursor-pointer rounded px-2.5 py-1 text-xs transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-zinc-400 ' +
               (active
                 ? 'bg-zinc-100 text-zinc-950'
                 : 'border border-zinc-700 text-zinc-300 hover:border-zinc-600')
             }
           >
+            <input
+              type="radio"
+              name="tape-filter"
+              className="sr-only"
+              checked={active}
+              onChange={() => setFilter(f)}
+            />
             {labels[f]}
             <span className="ml-1.5 opacity-60">{counts[f]}</span>
-          </button>
+          </label>
         )
       })}
     </div>
