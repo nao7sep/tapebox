@@ -150,10 +150,12 @@ export function BoxList() {
 }
 
 /**
- * The selected box gets an accent fill (not just a grey tint): it's effectively
- * "which box you're in" — the home of the currently selected tape — so it should
- * read clearly even while the box list doesn't have focus, the way a Finder
- * sidebar selection does.
+ * Box rows are flat (no border), so the selected box shows its emphasis the way a
+ * flat item should — an accent fill, not a ring: it's effectively "which box you're
+ * in", the home of the currently selected tape, so it should read clearly even
+ * while the box list doesn't have focus, the way a Finder sidebar selection does.
+ * (The bordered tape and chapter rows use a ring for the same reason — each item
+ * emphasizes in its own affordance.)
  *
  * `dropTarget` — a tape being dragged over this box — is the ONLY drop affordance:
  * a bright filled ring saying "let go to file it here". It's suppressed on the

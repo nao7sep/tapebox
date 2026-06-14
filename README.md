@@ -65,7 +65,7 @@ Press <kbd>?</kbd> in the app for the full list. The main ones:
 | ? | Show the shortcuts list |
 | Esc | Close a dialog |
 
-Arrow keys act on whichever list you last clicked: the videos, the chapters (Up/Down jumps the player between them), or the boxes in the archive. Left/Right seek the open player from anywhere. When the video element itself is focused, <kbd>Space</kbd> toggles play/pause.
+Each list — the videos, the chapters, the boxes — is a single tab stop you enter with <kbd>Tab</kbd> and leave with <kbd>Tab</kbd>; the arrow keys move within it. Arrow keys act on whichever list you last entered, by clicking it *or* by tabbing into it (the chapters' Up/Down jumps the player between them). The Inbox/Archived filter and the Settings sections are likewise arrow-navigable groups, and menus open from their button, navigate with Up/Down, and close on <kbd>Esc</kbd> back to that button. Left/Right seek the open player from anywhere. When the video element itself is focused, <kbd>Space</kbd> toggles play/pause.
 
 ## Configuration
 
