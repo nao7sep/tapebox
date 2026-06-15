@@ -36,10 +36,11 @@ npm install
 npm run dev
 ```
 
-Or use the convenience launchers, which install dependencies and start the app:
+Or use the convenience launchers, each a `scripts/<name>.command` (macOS / Linux) / `scripts/<name>.ps1` (Windows) pair:
 
-- macOS / Linux: `scripts/run.command`
-- Windows: `scripts/run.ps1`
+- **run-dev** — installs dependencies and starts the app in development mode.
+- **run-built** — launches the existing build without rebuilding.
+- **rebuild** — builds fresh, then launches.
 
 ## Usage
 

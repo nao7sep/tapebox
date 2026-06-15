@@ -6,7 +6,7 @@ import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { sanitizeFilename } from '@main/core/filename'
-import { SidecarTapeboxSchema } from '@shared/domain'
+import { SidecarTapeBoxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
 
 /**
@@ -54,7 +54,7 @@ export function registerExportHandlers(): void {
     tb['name'] = cleanName
     tb['mediaFilename'] = `${cleanName}${extname(tape.filename)}`
     tb['thumbnailFilename'] = newThumbName
-    sidecar['tapebox'] = SidecarTapeboxSchema.parse(tb)
+    sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
 
     // Media + thumbnail: byte-for-byte copies; then the validated sidecar.
     await copyFile(join(libDir, tape.filename), mediaDst)

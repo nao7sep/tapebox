@@ -1,12 +1,12 @@
 import { readFile, unlink } from 'node:fs/promises'
 import { writeJsonAtomic } from '@main/io/atomic-json'
-import type { SidecarTapebox } from '@shared/domain'
+import type { SidecarTapeBox } from '@shared/domain'
 
 /**
  * Build the final sidecar JSON from yt-dlp's info.json output.
  *
  * Layout:
- *   { ...ytDlpInfoJson_with_paths_stripped, tapebox: SidecarTapebox }
+ *   { ...ytDlpInfoJson_with_paths_stripped, tapebox: SidecarTapeBox }
  *
  * The yt-dlp portion is intentionally NOT zod-validated (large, evolving
  * surface); only the 'tapebox' namespace is validated by callers.
@@ -28,7 +28,7 @@ const NESTED_PATH_KEYS = ['filepath'] as const
 export async function finalize(opts: {
   infoJsonPath: string
   sidecarPath: string
-  tapeboxAdditions: SidecarTapebox
+  tapeboxAdditions: SidecarTapeBox
 }): Promise<void> {
   const text = await readFile(opts.infoJsonPath, 'utf8')
   const data = JSON.parse(text) as Record<string, unknown>

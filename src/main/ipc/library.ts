@@ -16,7 +16,7 @@ import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import { SidecarTapeboxSchema, type Tape } from '@shared/domain'
+import { SidecarTapeBoxSchema, type Tape } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
 
 export function registerLibraryHandlers(): void {
@@ -211,7 +211,7 @@ export function registerLibraryHandlers(): void {
           tb['thumbnailFilename'] = newThumbName
           // Validate the rewritten tapebox namespace so a rename can never downgrade
           // the sidecar into something a later import would reject.
-          sidecar['tapebox'] = SidecarTapeboxSchema.parse(tb)
+          sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
           await writeJsonAtomic(it.stage, sidecar)
         } else {
           await copyFile(it.old, it.stage)

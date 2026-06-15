@@ -77,7 +77,7 @@ export type Tape = z.infer<typeof TapeSchema>
 
 /**
  * Sidecar JSON layout:
- *   { ...ytDlpInfoJson, tapebox: SidecarTapebox }
+ *   { ...ytDlpInfoJson, tapebox: SidecarTapeBox }
  *
  * Path-containing yt-dlp fields (filename, _filename, filepath, etc.) are
  * stripped before write — sidecars must be portable when files move.
@@ -101,7 +101,7 @@ export const SidecarMediaSchema = z.object({
 })
 export type SidecarMedia = z.infer<typeof SidecarMediaSchema>
 
-export const SidecarTapeboxSchema = z.object({
+export const SidecarTapeBoxSchema = z.object({
   sourceUrl: z.string().url(),
   name: z.string().nullable(),
   addedAtUtc: z.string(),
@@ -117,7 +117,7 @@ export const SidecarTapeboxSchema = z.object({
   mediaFilename: z.string().nullable(),
   thumbnailFilename: z.string().nullable(),
 })
-export type SidecarTapebox = z.infer<typeof SidecarTapeboxSchema>
+export type SidecarTapeBox = z.infer<typeof SidecarTapeBoxSchema>
 
 /**
  * A box: a named, ordered collection of archived tapes. Membership is single — a
