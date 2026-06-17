@@ -27,10 +27,6 @@ npm install
 npm run dev
 ```
 
-## Privacy
-
-TapeBox is local-first with no analytics or telemetry; it reaches the network only to download/scan, to check for binary updates, or for an AI rename suggestion. The AI key in `~/.tapebox/api-keys.json` is lightly obfuscated, **not encrypted** — treat it as sensitive if you share `~/.tapebox`.
-
 ## License
 
 MIT © 2026 Yoshinao Inoguchi
