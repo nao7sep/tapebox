@@ -46,4 +46,19 @@ describe('resolveStorageRoot', () => {
       else process.env.TAPEBOX_TEST_ROOT = previous
     }
   })
+
+  it('throws when a set override expands to empty, rather than collapsing onto home', () => {
+    // A non-empty override that is ENTIRELY an unset $VAR reference expands to ''.
+    // That is a misconfiguration the convention says to report as a startup error,
+    // not to silently fall back to ~/.tapebox (which a bare-home collapse would do).
+    const previous = process.env.TAPEBOX_UNSET_VAR
+    delete process.env.TAPEBOX_UNSET_VAR
+    try {
+      // It must throw — not return the home directory or the default ~/.tapebox.
+      expect(() => resolveStorageRoot('$TAPEBOX_UNSET_VAR', HOME)).toThrow(/empty path/)
+    } finally {
+      if (previous === undefined) delete process.env.TAPEBOX_UNSET_VAR
+      else process.env.TAPEBOX_UNSET_VAR = previous
+    }
+  })
 })
