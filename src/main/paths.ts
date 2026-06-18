@@ -38,7 +38,18 @@ export function resolveStorageRoot(rawOverride: string | undefined, homeDirector
     return join(homeDirectory, '.tapebox')
   }
 
-  let value = expandEnvReferences(trimmed)
+  let value = expandEnvReferences(trimmed).trim()
+
+  // An override that is set but expands to nothing — an unset `$VAR`/`%VAR%`,
+  // say — is a misconfiguration. Rejecting it is the "reported startup error,
+  // not a silent fallback" the convention requires, and it avoids silently
+  // collapsing the root onto the bare home directory.
+  if (value.length === 0) {
+    throw new Error(
+      `TAPEBOX_HOME is set to "${rawOverride}" but expands to an empty path ` +
+        `(an unset $VAR/%VAR%?). Set it to a usable directory, or unset it to use ~/.tapebox.`,
+    )
+  }
 
   // Expand a leading `~` / `~/` (and `~\` on Windows) to the home directory.
   if (value === '~') {
@@ -48,32 +59,37 @@ export function resolveStorageRoot(rawOverride: string | undefined, homeDirector
   }
 
   // A still-relative override is resolved against HOME, not the working
-  // directory, so launch context can never move the storage root.
-  const absolute = isAbsolute(value) ? resolve(value) : resolve(homeDirectory, value)
-
-  if (!isAbsolute(absolute)) {
-    throw new Error(
-      `TAPEBOX_HOME could not be resolved to a usable absolute path (from "${rawOverride}").`,
-    )
-  }
-
-  return absolute
+  // directory, so launch context can never move the storage root. resolve()
+  // always returns an absolute path, so no further absolute-ness guard is needed.
+  return isAbsolute(value) ? resolve(value) : resolve(homeDirectory, value)
 }
 
-export const tapeboxRoot = resolveStorageRoot(process.env.TAPEBOX_HOME, homedir())
+// The storage root is resolved lazily on first access — not frozen at import —
+// so resolution happens at a defined startup point with the environment fully
+// known, and an unusable TAPEBOX_HOME surfaces as a reported startup error when
+// ensureDirs() first reads `paths.*`, never as an import-time crash with no UI.
+// Every consumer reads `paths.*` inside a function, so the first access is the
+// startup ensureDirs() call.
+let cachedRoot: string | null = null
+function storageRoot(): string {
+  if (cachedRoot === null) {
+    cachedRoot = resolveStorageRoot(process.env.TAPEBOX_HOME, homedir())
+  }
+  return cachedRoot
+}
 
 export const paths = {
-  root:           tapeboxRoot,
-  bin:            join(tapeboxRoot, 'bin'),
-  library:        join(tapeboxRoot, 'library'),
-  logs:           join(tapeboxRoot, 'logs'),
-  work:           join(tapeboxRoot, 'work'),
-  workDownloads:  join(tapeboxRoot, 'work', 'downloads'),
-  config:         join(tapeboxRoot, 'config.json'),
-  session:        join(tapeboxRoot, 'session.json'),
-  layout:         join(tapeboxRoot, 'layout.json'),
-  apiKeys:        join(tapeboxRoot, 'api-keys.json'),
-} as const
+  get root()          { return storageRoot() },
+  get bin()           { return join(storageRoot(), 'bin') },
+  get library()       { return join(storageRoot(), 'library') },
+  get logs()          { return join(storageRoot(), 'logs') },
+  get work()          { return join(storageRoot(), 'work') },
+  get workDownloads() { return join(storageRoot(), 'work', 'downloads') },
+  get config()        { return join(storageRoot(), 'config.json') },
+  get session()       { return join(storageRoot(), 'session.json') },
+  get layout()        { return join(storageRoot(), 'layout.json') },
+  get apiKeys()       { return join(storageRoot(), 'api-keys.json') },
+}
 
 export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
   const ext = process.platform === 'win32' ? '.exe' : ''
@@ -86,18 +102,21 @@ export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
  * that depend on a particular dir should call this defensively rather than
  * trust startup, so they keep working if the user wipes ~/.tapebox between
  * startup and the operation.
+ *
+ * This is also the defined startup point where the storage root is first
+ * resolved: `paths.*` is read here, so an unusable TAPEBOX_HOME throws from this
+ * awaited call and is reported by the caller, rather than at import time.
  */
-const REQUIRED_DIRS: readonly string[] = [
-  paths.root,
-  paths.bin,
-  paths.library,
-  paths.logs,
-  paths.work,
-  paths.workDownloads,
-]
-
 export async function ensureDirs(): Promise<void> {
-  for (const dir of REQUIRED_DIRS) {
+  const requiredDirs: readonly string[] = [
+    paths.root,
+    paths.bin,
+    paths.library,
+    paths.logs,
+    paths.work,
+    paths.workDownloads,
+  ]
+  for (const dir of requiredDirs) {
     await mkdir(dir, { recursive: true })
   }
 }

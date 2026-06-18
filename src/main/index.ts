@@ -173,6 +173,13 @@ process.on('exit', () => {
 void app.whenReady().then(() => {
   void startup().catch((err) => {
     log.error('startup failed', { error: describeError(err) })
+    // Report before stopping so a failed launch — most visibly an unusable
+    // TAPEBOX_HOME that cannot be resolved or created — is never a silent
+    // no-window quit. dialog is safe here: app is ready.
+    dialog.showErrorBox(
+      'tapebox could not start',
+      `${err instanceof Error ? err.message : String(err)}\n\ntapebox will now quit.`,
+    )
     app.quit()
   })
 
