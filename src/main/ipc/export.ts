@@ -1,5 +1,5 @@
 import { copyFile, readFile, stat } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { extname, isAbsolute, join } from 'node:path'
 import { handle } from './handle'
 import { removeTapes } from './library'
 import * as session from '@main/store/session'
@@ -31,6 +31,11 @@ export function registerExportHandlers(): void {
     const cleanName = sanitizeFilename(name)
     if (!cleanName) {
       throw new Error('Name is empty after removing characters the filesystem rejects.')
+    }
+    // The destination is a GUI-supplied folder; require it absolute so a relative
+    // value can never join against the working directory (storage-path-conventions).
+    if (!isAbsolute(destinationDir)) {
+      throw new Error(`Export destination must be an absolute folder path: ${destinationDir}`)
     }
 
     const libDir = getLibraryDir()

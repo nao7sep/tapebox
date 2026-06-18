@@ -1,4 +1,5 @@
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { isAbsolute, join, resolve } from 'node:path'
 import { handle } from './handle'
 import * as config from '@main/store/config'
 import * as apiKeys from '@main/services/api-keys'
@@ -39,6 +40,32 @@ function effectiveLibraryDir(libraryDir: string): string {
 }
 
 /**
+ * Normalize a user-typed folder setting (libraryDir, defaultExportDir) at the
+ * boundary, before it is stored or used. Blank stays blank (= the app default);
+ * a leading ~ / ~/ / ~\ expands to the home directory. The result must be
+ * absolute — a relative path typed into the field is rejected here, so it can
+ * never reach a path join and resolve against the working directory, which on a
+ * double-clicked build is `/` (storage-path-conventions). The Choose… picker
+ * always yields an absolute path, so this only ever rejects a hand-typed value.
+ */
+function normalizeUserDir(label: string, value: string): string {
+  const trimmed = value.trim()
+  if (trimmed === '') return ''
+  let expanded = trimmed
+  if (expanded === '~') expanded = homedir()
+  else if (expanded.startsWith('~/') || expanded.startsWith('~\\')) {
+    expanded = join(homedir(), expanded.slice(2))
+  }
+  if (!isAbsolute(expanded)) {
+    throw new Error(
+      `${label} must be an absolute path (or left blank for the default). ` +
+        'Use the Choose… button, or type a full path or one starting with ~.',
+    )
+  }
+  return expanded
+}
+
+/**
  * Relocate the library when a settings patch changes the effective library dir.
  * Runs the move BEFORE the new setting is committed: only if every file lands does
  * the caller persist libraryDir, so a failed move leaves the catalog pointing at the
@@ -76,16 +103,26 @@ export function registerSettingsHandlers(): void {
   handle('settings:defaultLibraryDir', async () => paths.library)
   handle('settings:update', async (patch) => {
     const wasAutostart = config.getSettings().autoStartDownloads
+    // Normalize user-typed folder fields at the boundary: blank stays default, ~
+    // expands, and a relative value is rejected here so it can never reach a path
+    // join and resolve against the working directory (storage-path-conventions).
+    const normalized: Partial<Settings> = { ...patch }
+    if (patch.libraryDir !== undefined) {
+      normalized.libraryDir = normalizeUserDir('Library folder', patch.libraryDir)
+    }
+    if (patch.defaultExportDir !== undefined) {
+      normalized.defaultExportDir = normalizeUserDir('Default export folder', patch.defaultExportDir)
+    }
     // Validate the full merged result BEFORE touching any files, so an invalid
     // sibling field in the same patch can't leave the library moved but the setting
     // unsaved. updateSettings re-validates too (this doesn't replace it); doing it
     // here just guarantees the move only runs for a patch that will persist.
-    SettingsSchema.parse({ ...config.getSettings(), ...patch })
+    SettingsSchema.parse({ ...config.getSettings(), ...normalized })
     // Move the library first; if it throws (collision, in-flight downloads, a
     // failed-and-rolled-back move) the new libraryDir is never committed, so the
     // renderer surfaces the error and the catalog still points at the old folder.
-    await relocateIfLibraryDirChanged(patch)
-    const next = await config.updateSettings(patch)
+    await relocateIfLibraryDirChanged(normalized)
+    const next = await config.updateSettings(normalized)
     // Flipping autostart on should start anything already waiting.
     if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
     // Toggling keep-awake off mid-playback must release the held wake lock now
