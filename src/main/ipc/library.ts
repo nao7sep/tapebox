@@ -6,7 +6,7 @@ import { nanoid } from 'nanoid'
 import { handle } from './handle'
 import { emit } from './events'
 import * as session from '@main/store/session'
-import { getSettings } from '@main/store/config'
+import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError, errorMessage } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
@@ -113,7 +113,7 @@ export function registerLibraryHandlers(): void {
     if (!tape || !tape.sidecarFilename) {
       throw new Error(`Sidecar not available for tape ${tapeId}`)
     }
-    const path = join(getSettings().libraryDir, tape.sidecarFilename)
+    const path = join(getLibraryDir(), tape.sidecarFilename)
     const text = await readFile(path, 'utf8')
     return JSON.parse(text) as SidecarRaw
   })
@@ -121,13 +121,13 @@ export function registerLibraryHandlers(): void {
   handle('library:reveal', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape?.filename) throw new Error('No file to reveal for this tape')
-    shell.showItemInFolder(join(getSettings().libraryDir, tape.filename))
+    shell.showItemInFolder(join(getLibraryDir(), tape.filename))
   })
 
   handle('library:playExternal', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape?.filename) throw new Error('No file to play for this tape')
-    const full = join(getSettings().libraryDir, tape.filename)
+    const full = join(getLibraryDir(), tape.filename)
     const player = getSettings().externalPlayer.trim()
 
     if (!player) {
@@ -158,8 +158,8 @@ export function registerLibraryHandlers(): void {
       throw new Error('Name is empty after removing characters the filesystem rejects.')
     }
 
-    const settings = getSettings()
-    const p = (rel: string) => join(settings.libraryDir, rel)
+    const libraryDir = getLibraryDir()
+    const p = (rel: string) => join(libraryDir, rel)
 
     const newMediaName = `${cleanName}${extname(tape.filename)}`
     const newSidecarName = `${cleanName}.json`
@@ -268,7 +268,7 @@ export function registerLibraryHandlers(): void {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
 
-    const dir = getSettings().libraryDir
+    const dir = getLibraryDir()
 
     // The description lives in the sidecar (yt-dlp's info.json field), not on the
     // tape, so the accepted description is written there. Best-effort: a sidecar
@@ -320,7 +320,7 @@ export function registerLibraryHandlers(): void {
   // guessing a media file by stem — which is what let a thumbnail get imported as the
   // video. One sidecar = one tape, so a duplicate is reported once, not per file.
   handle('library:import', async ({ sidecarPaths }) => {
-    const settings = getSettings()
+    const libraryDir = getLibraryDir()
     const imported: Tape[] = []
     const rejected: { path: string; reason: string }[] = []
 
@@ -376,8 +376,8 @@ export function registerLibraryHandlers(): void {
       // Library names follow the media file's stem so the bundle stays internally
       // consistent (media + sidecar share a stem) regardless of the sidecar's own name.
       const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
-      const targetMedia = join(settings.libraryDir, mediaFilename)
-      const targetSidecar = join(settings.libraryDir, `${mediaStem}.json`)
+      const targetMedia = join(libraryDir, mediaFilename)
+      const targetSidecar = join(libraryDir, `${mediaStem}.json`)
       try {
         if (srcMedia !== targetMedia) {
           await assertMissing(targetMedia)
@@ -398,7 +398,7 @@ export function registerLibraryHandlers(): void {
       let thumbnailFilename: string | null = null
       if (tbThumb) {
         const srcThumb = join(dir, tbThumb)
-        const dstThumb = join(settings.libraryDir, tbThumb)
+        const dstThumb = join(libraryDir, tbThumb)
         try {
           if (srcThumb !== dstThumb) {
             await assertMissing(dstThumb)
@@ -460,6 +460,7 @@ export async function removeTapes(
   deleteFiles: boolean,
 ): Promise<{ removed: string[]; failed: { tapeId: string; error: string }[] }> {
   const settings = getSettings()
+  const libraryDir = getLibraryDir()
   const removed: string[] = []
   const failed: { tapeId: string; error: string }[] = []
 
@@ -474,18 +475,18 @@ export async function removeTapes(
     if (deleteFiles) {
       try {
         if (tape.filename) {
-          await discardFile(join(settings.libraryDir, tape.filename), settings.trashOnRemove)
+          await discardFile(join(libraryDir, tape.filename), settings.trashOnRemove)
         }
         if (tape.sidecarFilename) {
-          await discardFile(join(settings.libraryDir, tape.sidecarFilename), settings.trashOnRemove)
+          await discardFile(join(libraryDir, tape.sidecarFilename), settings.trashOnRemove)
         }
         if (tape.thumbnailFilename) {
-          await discardFile(join(settings.libraryDir, tape.thumbnailFilename), settings.trashOnRemove)
+          await discardFile(join(libraryDir, tape.thumbnailFilename), settings.trashOnRemove)
         }
         // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
         // junk, always deleted outright (never trashed). They're named by the
         // on-disk stem, which is the tape id.
-        await clearPartials(settings.libraryDir, tape.id)
+        await clearPartials(libraryDir, tape.id)
       } catch (err) {
         // The files couldn't be discarded — keep the catalog entry so the tape never
         // vanishes from the list while its files are left orphaned on disk.

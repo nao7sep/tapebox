@@ -91,6 +91,13 @@ export const SiteProfileSchema = z.object({
 export type SiteProfile = z.infer<typeof SiteProfileSchema>
 
 export const SettingsSchema = z.object({
+  // Folder where the library lives — where tapes are saved and read from. Empty =
+  // use the default library folder (~/.tapebox/library); main resolves it via
+  // getLibraryDir(). A set value is a custom folder used as-is. Never read this as a
+  // path directly in main — always go through getLibraryDir() so an empty value
+  // can't become a cwd-relative path. Changing this relocates the existing library:
+  // ipc/settings moves every tracked file to the new folder before committing the
+  // new value (refused while downloads are running).
   libraryDir: z.string(),
   autoStartDownloads: z.boolean(),
   maxConcurrentDownloads: z.number().int().min(1).max(8),
@@ -154,11 +161,14 @@ export type Settings = z.infer<typeof SettingsSchema>
 
 /**
  * Default settings used when config.json is missing on first launch.
- * The libraryDir is parameterized because path resolution lives in main/.
+ * libraryDir defaults to '' — an empty value means "use the default library
+ * folder", which main/ resolves to paths.library via getLibraryDir(). The actual
+ * path lives in main/ (path resolution stays there); the persisted default is just
+ * blank, exactly like defaultExportDir.
  */
-export function defaultSettings(libraryDir: string): Settings {
+export function defaultSettings(): Settings {
   return {
-    libraryDir,
+    libraryDir: '',
     autoStartDownloads: true,
     maxConcurrentDownloads: 2,
     autoplay: true,

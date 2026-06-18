@@ -31,7 +31,7 @@ export async function loadSettings(): Promise<void> {
     cache = found
     log.info('settings loaded', { config: summarizeSettings(found) })
   } else {
-    cache = defaultSettings(paths.library)
+    cache = defaultSettings()
     await writeJsonAtomic(paths.config, cache, SettingsSchema)
     log.info('settings missing or invalid; defaults written', { config: summarizeSettings(cache) })
   }
@@ -56,6 +56,17 @@ async function readConfig(): Promise<Settings | null> {
 export function getSettings(): Settings {
   if (!cache) throw new Error('config.ts: loadSettings() must be awaited first')
   return cache
+}
+
+/**
+ * The resolved library directory every main consumer must use. An empty (or
+ * whitespace-only) libraryDir means "use the default", which resolves to
+ * paths.library; a set value is a custom folder used as-is. Routing all consumers
+ * through this is what keeps a cleared Settings field from ever producing a
+ * cwd-relative path (join('', file)) — see storage-path-conventions.
+ */
+export function getLibraryDir(): string {
+  return getSettings().libraryDir.trim() || paths.library
 }
 
 // Serializes all settings writes so two concurrent read-modify-write callers (e.g.

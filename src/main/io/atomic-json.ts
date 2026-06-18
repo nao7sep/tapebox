@@ -31,8 +31,12 @@ export async function writeJsonAtomic<S extends z.ZodType>(
   path: string,
   data: z.input<S> | z.infer<S>,
   schema?: S,
+  // POSIX file mode for the written file (e.g. 0o600 for a secrets file). When
+  // omitted, write-file-atomic keeps the existing file's mode (or the process
+  // default for a new file).
+  mode?: number,
 ): Promise<void> {
   const validated = schema ? schema.parse(data) : data
   const text = JSON.stringify(validated, null, 2) + '\n'
-  await writeFileAtomic(path, text, { encoding: 'utf8', fsync: true })
+  await writeFileAtomic(path, text, { encoding: 'utf8', fsync: true, ...(mode === undefined ? {} : { mode }) })
 }

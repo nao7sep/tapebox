@@ -89,6 +89,10 @@ export type IpcCalls = {
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }
   'settings:update':       { req: Partial<Settings>;                 res: Settings }
+  // The resolved default library folder (paths.library). The Settings dialog shows
+  // it as the placeholder for an empty libraryDir field, so the user sees where
+  // downloads land when they leave the field blank.
+  'settings:defaultLibraryDir': { req: undefined;                    res: string }
   'settings:setApiKey':    { req: { apiKey: string };                res: void }
   'settings:clearApiKey':  { req: undefined;                         res: void }
   'settings:hasApiKey':    { req: undefined;                         res: boolean }

@@ -78,6 +78,18 @@ export function isActive(tapeId: string): boolean {
 }
 
 /**
+ * How many jobs are running right now (probing/downloading/finalizing). Used to
+ * refuse a library relocation while any download is in flight — a job finalizes
+ * straight into the current library dir, so moving the library underneath it would
+ * strand or lose its files. The catalog's queued/paused tapes are NOT counted: they
+ * own no on-disk files yet and the next tick() simply picks them up against the new
+ * dir after the move.
+ */
+export function activeCount(): number {
+  return active.size
+}
+
+/**
  * Called once at startup. Any tape that was 'probing' or 'downloading' when
  * we shut down has been orphaned — its process is gone. Reset to 'queued'
  * (or 'paused' if autostart is off) so the queue picks it back up.

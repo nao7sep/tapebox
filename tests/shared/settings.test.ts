@@ -3,13 +3,13 @@ import { defaultSettings, SettingsSchema, summarizeSettings } from '@shared/sett
 
 describe('SettingsSchema', () => {
   it('parses a complete config', () => {
-    const raw = defaultSettings('/tmp/tapebox-library')
+    const raw = defaultSettings()
 
     expect(SettingsSchema.parse(raw).autoplay).toBe(true)
   })
 
   it('preserves an explicit value rather than overriding it', () => {
-    const raw = { ...defaultSettings('/tmp/tapebox-library'), autoplay: false }
+    const raw = { ...defaultSettings(), autoplay: false }
 
     expect(SettingsSchema.parse(raw).autoplay).toBe(false)
   })
@@ -19,22 +19,31 @@ describe('SettingsSchema', () => {
   // half-loaded with a guessed value. Guards against silently re-introducing a
   // back-compat default.
   it('is authoritative — rejects a config missing a field rather than defaulting it', () => {
-    const raw: Record<string, unknown> = { ...defaultSettings('/tmp/tapebox-library') }
+    const raw: Record<string, unknown> = { ...defaultSettings() }
     delete raw['keepAwakeWhilePlaying']
 
     expect(SettingsSchema.safeParse(raw).success).toBe(false)
   })
 
   it('rejects an out-of-range volume rather than persisting it', () => {
-    const raw = { ...defaultSettings('/tmp/tapebox-library'), volume: 1.5 }
+    const raw = { ...defaultSettings(), volume: 1.5 }
 
     expect(SettingsSchema.safeParse(raw).success).toBe(false)
+  })
+
+  // libraryDir defaults to blank ("use the default folder"), exactly like
+  // defaultExportDir. main resolves blank → paths.library via getLibraryDir(); the
+  // persisted default must never be an absolute path or a cleared field couldn't
+  // mean "default".
+  it('defaults libraryDir to blank, not an absolute path', () => {
+    expect(defaultSettings().libraryDir).toBe('')
   })
 })
 
 describe('summarizeSettings', () => {
   it('summarizes bounded, non-secret config verbatim', () => {
-    const s = defaultSettings('/lib')
+    const s = defaultSettings()
+    s.libraryDir = '/lib'
     s.ai = { baseUrl: 'https://api.example.com/v1', model: 'gpt-x' }
     s.maxConcurrentDownloads = 4
     s.autoplay = false
@@ -49,7 +58,7 @@ describe('summarizeSettings', () => {
   })
 
   it('reduces secret-bearing free-text to presence/count, never its value', () => {
-    const s = defaultSettings('/lib')
+    const s = defaultSettings()
     s.ytdlpArgs = '--add-header "Authorization: Bearer YTDLP_SECRET"'
     s.siteProfiles = [
       { id: '1', name: 'a', urlPattern: 'x', isRegex: false, args: '--cookies PROFILE_SECRET', comment: '' },
@@ -68,7 +77,7 @@ describe('summarizeSettings', () => {
   })
 
   it('strips credentials from the AI baseUrl before logging it', () => {
-    const s = defaultSettings('/lib')
+    const s = defaultSettings()
     s.ai = { baseUrl: 'https://admin:sk-BASEURL-SECRET@gateway.example/v1', model: 'm' }
 
     const summary = summarizeSettings(s)
@@ -77,16 +86,16 @@ describe('summarizeSettings', () => {
   })
 
   it('treats blank or whitespace-only ytdlpArgs as unset', () => {
-    const s = defaultSettings('/lib')
+    const s = defaultSettings()
     s.ytdlpArgs = '   '
 
     expect(summarizeSettings(s).ytdlpArgsSet).toBe(false)
   })
 
   it('flags whether the slug prompt still equals the in-code default', () => {
-    expect(summarizeSettings(defaultSettings('/lib')).promptsCustomized).toBe(false)
+    expect(summarizeSettings(defaultSettings()).promptsCustomized).toBe(false)
 
-    const customized = defaultSettings('/lib')
+    const customized = defaultSettings()
     customized.prompts = { slug: 'totally custom prompt' }
     expect(summarizeSettings(customized).promptsCustomized).toBe(true)
   })

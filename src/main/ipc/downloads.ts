@@ -1,7 +1,7 @@
 import { handle } from './handle'
 import { emit } from './events'
 import * as session from '@main/store/session'
-import { getSettings } from '@main/store/config'
+import { getLibraryDir, getSettings } from '@main/store/config'
 import { reserveStem } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
@@ -96,7 +96,7 @@ async function makeQueuedTape(url: string, order: number): Promise<Tape> {
   const now = nowUtcIso()
   // The id doubles as the on-disk filename stem once the download lands, so it is
   // reserved against the library to guarantee a free {id}.* namespace.
-  const id = await reserveStem(getSettings().libraryDir)
+  const id = await reserveStem(getLibraryDir())
   return {
     id,
     sourceUrl: url,

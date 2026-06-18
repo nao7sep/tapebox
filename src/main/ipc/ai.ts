@@ -4,7 +4,7 @@ import * as session from '@main/store/session'
 import * as ai from '@main/services/ai-client'
 import { readSidecar } from '@main/core/sidecar'
 import { slugifyAscii } from '@main/core/slug'
-import { getSettings } from '@main/store/config'
+import { getLibraryDir } from '@main/store/config'
 import type { Tape } from '@shared/domain'
 
 export function registerAiHandlers(): void {
@@ -30,7 +30,7 @@ export function registerAiHandlers(): void {
  */
 async function readDescription(tape: Tape): Promise<string | null> {
   if (!tape.sidecarFilename) return null
-  const data = await readSidecar(join(getSettings().libraryDir, tape.sidecarFilename))
+  const data = await readSidecar(join(getLibraryDir(), tape.sidecarFilename))
   const description = data?.['description']
   return typeof description === 'string' ? description : null
 }

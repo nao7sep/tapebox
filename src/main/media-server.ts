@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { extname, join, normalize, sep } from 'node:path'
 import { nanoid } from 'nanoid'
-import { getSettings } from '@main/store/config'
+import { getLibraryDir } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 
@@ -209,7 +209,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 function resolveLibraryFile(filename: string): string | null {
   if (!filename) return null
   if (filename.includes('/') || filename.includes('\\') || filename.includes('\0')) return null
-  const libDir = normalize(getSettings().libraryDir)
+  const libDir = normalize(getLibraryDir())
   const full = normalize(join(libDir, filename))
   const within = full === libDir || full.startsWith(libDir + sep)
   return within ? full : null

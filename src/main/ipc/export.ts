@@ -3,7 +3,7 @@ import { extname, join } from 'node:path'
 import { handle } from './handle'
 import { removeTapes } from './library'
 import * as session from '@main/store/session'
-import { getSettings } from '@main/store/config'
+import { getLibraryDir } from '@main/store/config'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { sanitizeFilename } from '@main/core/filename'
 import { SidecarTapeBoxSchema } from '@shared/domain'
@@ -33,7 +33,7 @@ export function registerExportHandlers(): void {
       throw new Error('Name is empty after removing characters the filesystem rejects.')
     }
 
-    const libDir = getSettings().libraryDir
+    const libDir = getLibraryDir()
     const newThumbName = tape.thumbnailFilename ? `${cleanName}${extname(tape.thumbnailFilename)}` : null
 
     const mediaDst = join(destinationDir, `${cleanName}${extname(tape.filename)}`)

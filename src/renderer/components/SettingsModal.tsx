@@ -4,6 +4,7 @@ import type { AiSettings, Settings, SiteProfile } from '@shared/settings'
 import { DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useSettingsStore } from '@renderer/store/settings'
+import { useTapesStore } from '@renderer/store/tapes'
 import { Modal } from '@renderer/components/Modal'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
 import {
@@ -26,19 +27,25 @@ type Tab = 'general' | 'ai' | 'ytdlp'
  * changes prompts a shared ConfirmModal to discard. The AI tab folds the API
  * key into the same save (no separate "Save key" button).
  *
- * Library directory is intentionally left out of the UI for v1 — the default is
- * sensible; advanced users can edit ~/.tapebox/config.json directly.
+ * The library folder is a picker-backed field on the General tab, grouped with the
+ * download settings. Leaving it blank uses the default folder (shown as the
+ * field's placeholder); a set value points the library at a custom folder. Changing
+ * it moves every existing tape's files to the new folder as part of Save (main does
+ * the move, then commits the setting), so a confirm prompts first; the move is
+ * refused while downloads are running.
  */
 export function SettingsModal({ onClose }: Props) {
   const [tab, setTab] = useState<Tab>('general')
   const [original, setOriginal] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Settings | null>(null)
   const [hadApiKey, setHadApiKey] = useState(false)
+  const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [confirmMove, setConfirmMove] = useState<{ count: number } | null>(null)
 
   useEffect(() => {
     void Promise.all([
@@ -46,10 +53,14 @@ export function SettingsModal({ onClose }: Props) {
       // On failure (main logs it) degrade to "no key set" rather than block the
       // form — a value fallback, not an ignored error.
       ipcInvoke('settings:hasApiKey').catch(() => false),
-    ]).then(([s, has]) => {
+      // The default library folder, shown as the empty-field placeholder. On
+      // failure just fall back to no placeholder rather than block the form.
+      ipcInvoke('settings:defaultLibraryDir').catch(() => ''),
+    ]).then(([s, has, defaultLibDir]) => {
       setOriginal(s)
       setDraft(s)
       setHadApiKey(has)
+      setDefaultLibraryDir(defaultLibDir)
     })
   }, [])
 
@@ -72,8 +83,38 @@ export function SettingsModal({ onClose }: Props) {
   const apiKeyDirty = apiKeyDraft.length > 0 || wantsClearKey
   const dirty = settingsDirty || apiKeyDirty
 
+  // How many existing tapes have files on disk that a library move would relocate.
+  // Used only to decide whether to prompt before Save and to phrase the prompt;
+  // main does the actual move and is the source of truth for what's moved.
+  function tapesOnDiskCount(): number {
+    return useTapesStore.getState().tapes.filter((t) => t.filename).length
+  }
+
+  // The library folder effectively changed when its resolved value differs — blank
+  // means the default folder, so blank↔default and any custom↔custom edit count,
+  // while a whitespace-only tweak that still resolves to the same folder does not.
+  function libraryDirChanged(): boolean {
+    if (!original || !draft) return false
+    const effective = (v: string) => v.trim() || defaultLibraryDir
+    return effective(original.libraryDir) !== effective(draft.libraryDir)
+  }
+
+  // Save splits into a request (which may prompt) and the commit. A library move is
+  // a real, user-visible relocation of their files, so it gets a confirm first when
+  // there are tapes to move; everything else saves straight through.
+  function requestSave() {
+    if (!draft) return
+    const count = tapesOnDiskCount()
+    if (libraryDirChanged() && count > 0) {
+      setConfirmMove({ count })
+      return
+    }
+    void save()
+  }
+
   async function save() {
     if (!draft) return
+    setConfirmMove(null)
     setBusy(true)
     setError(null)
     try {
@@ -113,7 +154,7 @@ export function SettingsModal({ onClose }: Props) {
       <Button variant="ghost" onClick={requestClose} disabled={busy}>
         Cancel
       </Button>
-      <Button variant="primary" onClick={() => void save()} disabled={!dirty} loading={busy}>
+      <Button variant="primary" onClick={requestSave} disabled={!dirty} loading={busy}>
         {busy ? 'Saving…' : 'Save'}
       </Button>
     </>
@@ -132,7 +173,12 @@ export function SettingsModal({ onClose }: Props) {
           <TabBar tab={tab} onTab={setTab} />
           <div className="min-w-0 flex-1">
             {tab === 'general' && (
-              <GeneralTab draft={draft} busy={busy} onPatch={patchDraft} />
+              <GeneralTab
+                draft={draft}
+                busy={busy}
+                onPatch={patchDraft}
+                defaultLibraryDir={defaultLibraryDir}
+              />
             )}
             {tab === 'ai' && (
               <AiTab
@@ -179,12 +225,27 @@ export function SettingsModal({ onClose }: Props) {
           }}
         />
       )}
+
+      {confirmMove && (
+        <ConfirmModal
+          title="Move library?"
+          message={
+            `This will move ${confirmMove.count} ${confirmMove.count === 1 ? 'tape' : 'tapes'} to the new folder. ` +
+            `The move must finish completely before the new folder is saved.`
+          }
+          cancelLabel="Cancel"
+          confirmLabel="Move"
+          onCancel={() => setConfirmMove(null)}
+          onConfirm={() => void save()}
+        />
+      )}
     </>
   )
 }
 
 function pickEditable(s: Settings) {
   return {
+    libraryDir: s.libraryDir,
     autoStartDownloads: s.autoStartDownloads,
     maxConcurrentDownloads: s.maxConcurrentDownloads,
     autoplay: s.autoplay,
@@ -276,14 +337,20 @@ function GeneralTab({
   draft,
   busy,
   onPatch,
+  defaultLibraryDir,
 }: {
   draft: Settings
   busy: boolean
   onPatch: (p: Partial<Settings>) => void
+  defaultLibraryDir: string
 }) {
   async function chooseExportDir() {
     const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose default export folder' })
     if (dir) onPatch({ defaultExportDir: dir })
+  }
+  async function chooseLibraryDir() {
+    const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose library folder' })
+    if (dir) onPatch({ libraryDir: dir })
   }
   return (
     <div className="space-y-4">
@@ -309,6 +376,27 @@ function GeneralTab({
         disabled={busy}
         onChange={(v) => onPatch({ maxConcurrentDownloads: v })}
       />
+      <div>
+        <div className="text-xs font-medium text-zinc-300">Library folder</div>
+        <div className="mt-1 flex items-center gap-2">
+          <input
+            type="text"
+            value={draft.libraryDir}
+            onChange={(e) => onPatch({ libraryDir: e.target.value })}
+            placeholder={defaultLibraryDir}
+            spellCheck={false}
+            disabled={busy}
+            className={`flex-1 ${INPUT_CLASS}`}
+          />
+          <Button variant="secondary" size="sm" onClick={() => void chooseLibraryDir()} disabled={busy}>
+            Choose…
+          </Button>
+        </div>
+        <p className="mt-1 text-xs text-zinc-400">
+          Where tapes are saved. Changing this moves your existing tapes to the new
+          folder. Not available while downloads are running.
+        </p>
+      </div>
       <Toggle
         label="Autoplay"
         description="Start playback automatically when a downloaded tape is opened."

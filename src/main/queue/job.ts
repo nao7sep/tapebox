@@ -4,7 +4,7 @@ import * as ytdlp from '@main/services/ytdlp'
 import * as ffmpeg from '@main/services/ffmpeg'
 import * as sidecar from '@main/core/sidecar'
 import * as session from '@main/store/session'
-import { getSettings } from '@main/store/config'
+import { getLibraryDir } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { describeError, errorMessage } from '@shared/error'
 import { log } from '@main/io/logger'
@@ -121,7 +121,7 @@ export class Job {
     const cur = this.current()
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
-    const settings = getSettings()
+    const libraryDir = getLibraryDir()
 
     this.update({ state: 'downloading', downloadStartedAtUtc: nowUtcIso() })
 
@@ -131,7 +131,7 @@ export class Job {
 
     const result = await ytdlp.download({
       url: cur.sourceUrl,
-      libraryDir: settings.libraryDir,
+      libraryDir,
       outputId: stem,
       signal: this.controller.signal,
       onProgress: (progress) => {
@@ -148,7 +148,7 @@ export class Job {
     // failed move surface as a failed job (the runInner catch) rather than leaving a
     // tape whose filename points at a file that isn't there.
     const mediaBasename = basename(result.mediaPath)
-    const expectedMediaPath = join(settings.libraryDir, mediaBasename)
+    const expectedMediaPath = join(libraryDir, mediaBasename)
     if (result.mediaPath !== expectedMediaPath) {
       log.warn('yt-dlp wrote media outside the library root; relocating', {
         tapeId: this.tapeId,
@@ -169,16 +169,16 @@ export class Job {
     // whose media is already on disk — degrade to no poster and record why.
     let thumbnailFilename: string | null = null
     try {
-      const rawThumb = await ytdlp.findThumbnail(settings.libraryDir, stem)
+      const rawThumb = await ytdlp.findThumbnail(libraryDir, stem)
       if (rawThumb) {
-        thumbnailFilename = await ffmpeg.saveThumbnailJpeg(rawThumb, settings.libraryDir, stem, this.controller.signal)
+        thumbnailFilename = await ffmpeg.saveThumbnailJpeg(rawThumb, libraryDir, stem, this.controller.signal)
       }
     } catch (err) {
       log.warn('thumbnail skipped', { tapeId: this.tapeId, error: describeError(err) })
     }
 
     const sidecarFilename = `${stem}.json`
-    const sidecarPath = join(settings.libraryDir, sidecarFilename)
+    const sidecarPath = join(libraryDir, sidecarFilename)
 
     await sidecar.finalize({
       infoJsonPath: result.infoJsonPath,
