@@ -1,3 +1,6 @@
+import { useRef } from 'react'
+import { clampSplitter } from '@shared/layout'
+
 type Edge = 'left' | 'right' | 'top' | 'bottom'
 
 type Props = {
@@ -7,6 +10,14 @@ type Props = {
   size: number
   min: number
   max: number
+  /**
+   * Σ minimums of the panes on the OTHER side of this handle within the same
+   * container. The drag is clamped so the dragged pane never takes so much that a
+   * sibling would fall below its minimum: the live ceiling is
+   * `container − siblingMin` (window-chrome-conventions: splitters clamped against
+   * the minimums). Defaults to 0 — a lone pane with no siblings to starve.
+   */
+  siblingMin?: number
   /** Live size during the drag (in-memory only). */
   onResize: (size: number) => void
   /** Final size when the drag ends (persist to disk). */
@@ -25,16 +36,24 @@ const POSITION: Record<Edge, string> = {
  * and commits the final size on release. It highlights on hover rather than
  * swapping the mouse cursor, per the project's no-cursor-change rule.
  */
-export function ResizeHandle({ edge, size, min, max, onResize, onCommit }: Props) {
+export function ResizeHandle({ edge, size, min, max, siblingMin = 0, onResize, onCommit }: Props) {
   const alongY = edge === 'top' || edge === 'bottom'
   const grows = edge === 'right' || edge === 'bottom' // moving toward this edge grows the region
+  const handleRef = useRef<HTMLDivElement>(null)
 
   function onMouseDown(e: React.MouseEvent) {
     e.preventDefault()
     const start = alongY ? e.clientY : e.clientX
     const startSize = size
-    const clamp = (s: number) => Math.max(min, Math.min(max, Math.round(s)))
-    let current = startSize
+    // The live container extent, captured at drag start: the flex container that
+    // holds this pane and its siblings. The dragged pane lives inside the pane
+    // element, which is the handle's offsetParent (positioned ancestor); its
+    // parent is the container. Measuring live (not from a prop) means the clamp
+    // re-derives the ceiling against the current window size on every drag.
+    const container = handleRef.current?.offsetParent?.parentElement ?? null
+    const available = container ? (alongY ? container.clientHeight : container.clientWidth) : Infinity
+    const clamp = (s: number) => clampSplitter(s, { available, siblingMin, min, max })
+    let current = clamp(startSize)
 
     function onMove(ev: MouseEvent) {
       const pos = alongY ? ev.clientY : ev.clientX
@@ -56,6 +75,7 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit }: Props
 
   return (
     <div
+      ref={handleRef}
       onMouseDown={onMouseDown}
       role="separator"
       aria-orientation={alongY ? 'horizontal' : 'vertical'}

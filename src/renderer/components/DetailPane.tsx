@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { z } from 'zod'
 import type { Tape, TapeState } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
-import { LAYOUT_BOUNDS } from '@shared/layout'
+import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
 import { useDownloadLogStore, type LogEntry } from '@renderer/store/downloadLog'
@@ -510,6 +510,9 @@ export function DetailPane({
             size={chaptersPaneWidth}
             min={LAYOUT_BOUNDS.chaptersPaneWidth.min}
             max={LAYOUT_BOUNDS.chaptersPaneWidth.max}
+            // Reserve the media/action content column on the far side so widening
+            // the chapters pane can't pinch it below its usable minimum.
+            siblingMin={detailPaneWidth.min}
             onResize={(w) => patchLayout({ chaptersPaneWidth: w }, false)}
             onCommit={(w) => patchLayout({ chaptersPaneWidth: w }, true)}
           />

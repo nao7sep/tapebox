@@ -12,6 +12,7 @@ import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { applyDevDockIcon, reassertDevDockIconAfterRepaint } from './dock-icon.js'
+import { windowOptions } from './window-options.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -33,24 +34,7 @@ app.on('second-instance', () => {
 })
 
 function createMainWindow(): BrowserWindow {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    show: false,
-    backgroundColor: '#09090b',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.cjs'),
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-      // Let the player's autoplay setting take effect without requiring a
-      // per-load user gesture. Whether a tape actually autoplays is still
-      // gated by the in-app setting (passed as <video autoPlay>).
-      autoplayPolicy: 'no-user-gesture-required',
-    },
-  })
+  const win = new BrowserWindow(windowOptions(join(__dirname, '../preload/index.cjs')))
 
   // Open external links (About modal, etc.) in the OS browser, never a new
   // Electron window.

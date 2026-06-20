@@ -23,7 +23,13 @@
    modals, the log, description boxes) matches. WebKit pseudo-elements (Electron is
    Chromium) give the rounded, inset thumb; the track stays transparent so each
    container's own dark background shows through, and the thumb brightens a notch
-   on hover. */
+   on hover.
+
+   The `color-scheme: dark` declaration in the base layer below is the other half
+   of this (window-chrome-conventions: a web UI needs both). The pseudo-element
+   styling shapes the scroll bar; color-scheme tells the platform the page is dark
+   so native form controls and the scroll-corner square render in the dark palette
+   rather than a pasted-on-light default. Neither alone is sufficient. */
 ::-webkit-scrollbar {
   width: 12px;
   height: 12px;
@@ -55,6 +61,12 @@
    (the symptom: a clipped blue outline on chapter rows). In `base`, the utilities
    win and the opt-outs work. */
 @layer base {
+  /* Declare the page's color scheme so the platform paints native form controls
+     and the scroll-corner square in the dark palette. Pairs with the
+     ::-webkit-scrollbar styling above (window-chrome-conventions). */
+  :root {
+    color-scheme: dark;
+  }
   :focus {
     outline: none;
   }

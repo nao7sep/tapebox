@@ -3,7 +3,7 @@ import type { Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
-import { LAYOUT_BOUNDS } from '@shared/layout'
+import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -169,11 +169,18 @@ export default function App() {
               size={leftPaneWidth}
               min={LAYOUT_BOUNDS.leftPaneWidth.min}
               max={LAYOUT_BOUNDS.leftPaneWidth.max}
+              // Reserve the detail pane and (always-reserved) chapters pane on the
+              // far side so widening the left pane can't squeeze either below its
+              // minimum — the same Σ the window minimum reserves.
+              siblingMin={detailPaneWidth.min + LAYOUT_BOUNDS.chaptersPaneWidth.min}
               onResize={(w) => patchLayout({ leftPaneWidth: w }, false)}
               onCommit={(w) => patchLayout({ leftPaneWidth: w }, true)}
             />
           </aside>
-          <section className="flex-1 overflow-y-auto">
+          <section
+            className="flex-1 overflow-y-auto min-w-0"
+            style={{ minWidth: detailPaneWidth.min }}
+          >
             {selectedTape ? (
               <DetailPane
                 tape={selectedTape}

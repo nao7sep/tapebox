@@ -7,7 +7,12 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
-import { LAYOUT_BOUNDS } from '@shared/layout'
+import {
+  LAYOUT_BOUNDS,
+  archiveLowerListMin,
+  ARCHIVE_SEARCH_BOX_HEIGHT,
+  clampSplitter,
+} from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
@@ -51,11 +56,16 @@ export function ArchiveOrganizer() {
     setPendingSearchFocus(false)
   }, [pendingSearchFocus, setPendingSearchFocus])
 
-  // The boxes list height is persisted, but a window smaller than last run could
-  // make a tall stored height swallow the lower list and shove its separator
-  // off-screen. So we cap the *rendered* height to the available space (keeping
-  // room for the search box, a usable lower list, and the handle) without touching
-  // the stored preference — it returns in full when the window grows again.
+  // Re-clamp the rendered boxes height against the live pane (window-chrome-
+  // conventions require re-clamping on resize and when restoring a persisted
+  // value): a window smaller than last run could otherwise let a tall stored
+  // height swallow the lower list and shove its separator off-screen. This is a
+  // graceful refinement layered on a guaranteed-sufficient floor — the window
+  // minimum already reserves the whole content row, so the cap only narrows a
+  // *persisted* height that was saved larger on a bigger window, never the
+  // already-protected minimum, and the stored preference is untouched (it returns
+  // in full when the window grows). The reserve is derived from named sibling
+  // minimums (search box + lower list), not a hand-typed magic number.
   const paneRef = useRef<HTMLDivElement>(null)
   const [paneHeight, setPaneHeight] = useState<number | null>(null)
   useEffect(() => {
@@ -66,10 +76,16 @@ export function ArchiveOrganizer() {
     setPaneHeight(el.clientHeight)
     return () => ro.disconnect()
   }, [])
-  const RESERVE_PX = 180 // search box + minimum lower list + the handle
-  const maxBoxesHeight =
-    paneHeight != null ? Math.max(LAYOUT_BOUNDS.archiveBoxesHeight.min, paneHeight - RESERVE_PX) : boxesHeight
-  const effectiveBoxesHeight = Math.min(boxesHeight, maxBoxesHeight)
+  const siblingMin = ARCHIVE_SEARCH_BOX_HEIGHT + archiveLowerListMin.min
+  const effectiveBoxesHeight =
+    paneHeight != null
+      ? clampSplitter(boxesHeight, {
+          available: paneHeight,
+          siblingMin,
+          min: LAYOUT_BOUNDS.archiveBoxesHeight.min,
+          max: LAYOUT_BOUNDS.archiveBoxesHeight.max,
+        })
+      : boxesHeight
 
   // What's being dragged, so a DragOverlay can render a copy that follows the
   // cursor unclipped — without it, dragging a tape up over the boxes list pulls
@@ -155,6 +171,10 @@ export function ArchiveOrganizer() {
             size={effectiveBoxesHeight}
             min={LAYOUT_BOUNDS.archiveBoxesHeight.min}
             max={LAYOUT_BOUNDS.archiveBoxesHeight.max}
+            // Reserve the search box and the lower list's minimum below, so
+            // dragging the boxes taller can't push the lower list off-screen —
+            // the live counterpart of the render-time clamp above.
+            siblingMin={siblingMin}
             onResize={(h) => patchLayout({ archiveBoxesHeight: h }, false)}
             onCommit={(h) => patchLayout({ archiveBoxesHeight: h }, true)}
           />
