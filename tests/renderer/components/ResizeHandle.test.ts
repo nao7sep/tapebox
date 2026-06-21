@@ -3,7 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
-import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
+import { LAYOUT_BOUNDS } from '@shared/layout'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -25,37 +25,24 @@ afterEach(() => {
 })
 
 /**
- * jsdom computes no layout, so the handle's live-container lookup
- * (`offsetParent.parentElement`) and the container's `clientWidth` are stubbed to
- * model a flex row: an outer container of `available` px holding the resized pane,
- * which holds the handle. The handle reads the container width at drag start, so
- * stubbing it drives the real clamp path the component uses in production.
+ * The handle reports the pane's INTENT — the size the drag reaches for, bounded
+ * only by the pane's own min/max. It does NOT clamp against the live container
+ * (that's the consumer's derivation, usePaneSize → clampSplitter), so the test
+ * needs no container stub: only the pane's own bounds gate the drag.
  */
-function mountWithContainer(props: {
+function mount(props: {
   edge: 'left' | 'right'
   size: number
   min: number
   max: number
-  siblingMin: number
-  available: number
   onResize: (n: number) => void
   onCommit: (n: number) => void
 }) {
-  const { available, ...handleProps } = props
   root = createRoot(container)
   act(() => {
-    root!.render(React.createElement(ResizeHandle, handleProps))
+    root!.render(React.createElement(ResizeHandle, props))
   })
-  const handle = container.querySelector('[role="separator"]') as HTMLElement
-  // pane = the handle's positioned ancestor; outer = the flex container.
-  const pane = document.createElement('div')
-  const outer = document.createElement('div')
-  Object.defineProperty(outer, 'clientWidth', { value: available, configurable: true })
-  outer.append(pane)
-  // jsdom returns null for offsetParent; point it at the pane whose parent is the
-  // flex container, matching the real DOM nesting the component walks.
-  Object.defineProperty(handle, 'offsetParent', { value: pane, configurable: true })
-  return handle
+  return container.querySelector('[role="separator"]') as HTMLElement
 }
 
 function drag(handle: HTMLElement, fromX: number, toX: number): void {
@@ -70,56 +57,65 @@ function drag(handle: HTMLElement, fromX: number, toX: number): void {
   })
 }
 
-describe('ResizeHandle drag clamping', () => {
-  it('caps a left-pane widening drag at container − siblingMin, not the absolute max', () => {
+describe('ResizeHandle intent drag', () => {
+  it('reports the dragged intent capped at the pane max, ignoring the container', () => {
     const onResize = vi.fn()
     const onCommit = vi.fn()
-    // A real-shaped narrow window: at the window minimum width, the left pane can
-    // only ever reach its own minimum — the siblings (detail + chapters mins) eat
-    // the rest. A drag far past that is capped at the boundary, not leftPane.max.
-    const available = LAYOUT_BOUNDS.leftPaneWidth.min + detailPaneWidth.min + LAYOUT_BOUNDS.chaptersPaneWidth.min
-    const handle = mountWithContainer({
+    // The handle takes no container/siblingMin: a drag far past the pane max is
+    // capped at the pane's OWN max — the intent the consumer then clamps to the
+    // live container when it derives the displayed size. A would-be-starving
+    // window is the derivation's concern, not the handle's.
+    const handle = mount({
       edge: 'right',
       size: LAYOUT_BOUNDS.leftPaneWidth.min,
       min: LAYOUT_BOUNDS.leftPaneWidth.min,
       max: LAYOUT_BOUNDS.leftPaneWidth.max,
-      siblingMin: detailPaneWidth.min + LAYOUT_BOUNDS.chaptersPaneWidth.min,
-      available,
       onResize,
       onCommit,
     })
 
-    // Drag the right edge far to the right (tries to grow the left pane huge).
     drag(handle, 0, 5000)
 
     const committed = onCommit.mock.calls.at(-1)?.[0] as number
-    // Capped at the boundary (its own min here), never the absolute max.
-    expect(committed).toBe(LAYOUT_BOUNDS.leftPaneWidth.min)
-    expect(committed).toBeLessThan(LAYOUT_BOUNDS.leftPaneWidth.max)
+    expect(committed).toBe(LAYOUT_BOUNDS.leftPaneWidth.max)
   })
 
-  it('on a wide window the same drag stops at container − siblingMin', () => {
+  it('floors a shrinking drag at the pane min', () => {
     const onResize = vi.fn()
     const onCommit = vi.fn()
-    // Wide enough that the boundary (container − siblingMin) is a real interior
-    // value, below the pane's absolute max — the drag must stop there.
-    const siblingMin = detailPaneWidth.min + LAYOUT_BOUNDS.chaptersPaneWidth.min
-    const available = 1000
-    const handle = mountWithContainer({
+    const handle = mount({
       edge: 'right',
-      size: LAYOUT_BOUNDS.leftPaneWidth.min,
+      size: LAYOUT_BOUNDS.leftPaneWidth.default,
       min: LAYOUT_BOUNDS.leftPaneWidth.min,
       max: LAYOUT_BOUNDS.leftPaneWidth.max,
-      siblingMin,
-      available,
       onResize,
       onCommit,
     })
 
-    drag(handle, 0, 5000)
+    // Drag the right edge far to the left — the intent floors at the pane min.
+    drag(handle, 1000, -5000)
 
     const committed = onCommit.mock.calls.at(-1)?.[0] as number
-    expect(committed).toBe(available - siblingMin)
-    expect(committed).toBeLessThan(LAYOUT_BOUNDS.leftPaneWidth.max)
+    expect(committed).toBe(LAYOUT_BOUNDS.leftPaneWidth.min)
+  })
+
+  it('passes an in-range drag through as the new intent', () => {
+    const onResize = vi.fn()
+    const onCommit = vi.fn()
+    const start = LAYOUT_BOUNDS.leftPaneWidth.default
+    const handle = mount({
+      edge: 'right',
+      size: start,
+      min: LAYOUT_BOUNDS.leftPaneWidth.min,
+      max: LAYOUT_BOUNDS.leftPaneWidth.max,
+      onResize,
+      onCommit,
+    })
+
+    // +40px to the right grows the pane by 40, well within [min, max].
+    drag(handle, 100, 140)
+
+    expect(onResize).toHaveBeenLastCalledWith(start + 40)
+    expect(onCommit).toHaveBeenLastCalledWith(start + 40)
   })
 })

@@ -1,26 +1,22 @@
 import { useRef } from 'react'
-import { clampSplitter } from '@shared/layout'
 
 type Edge = 'left' | 'right' | 'top' | 'bottom'
 
 type Props = {
   /** Which edge of the region the handle sits on. Left/right resize width; top/bottom resize height. */
   edge: Edge
-  /** Current size (width for left/right, height for top/bottom). */
+  /**
+   * The pane's current DISPLAYED size (width for left/right, height for
+   * top/bottom) — the value the consumer already derived by clamping the stored
+   * intent to the live container. The drag starts from here, so the handle picks
+   * up exactly where the pane is shown.
+   */
   size: number
   min: number
   max: number
-  /**
-   * Σ minimums of the panes on the OTHER side of this handle within the same
-   * container. The drag is clamped so the dragged pane never takes so much that a
-   * sibling would fall below its minimum: the live ceiling is
-   * `container − siblingMin` (window-chrome-conventions: splitters clamped against
-   * the minimums). Defaults to 0 — a lone pane with no siblings to starve.
-   */
-  siblingMin?: number
-  /** Live size during the drag (in-memory only). */
+  /** Live intent during the drag (in-memory only — the consumer re-derives the display). */
   onResize: (size: number) => void
-  /** Final size when the drag ends (persist to disk). */
+  /** Final intent when the drag ends (persist to disk). */
   onCommit: (size: number) => void
 }
 
@@ -32,11 +28,19 @@ const POSITION: Record<Edge, string> = {
 }
 
 /**
- * A thin drag handle pinned to a region's edge. Dragging resizes the region live
- * and commits the final size on release. It highlights on hover rather than
- * swapping the mouse cursor, per the project's no-cursor-change rule.
+ * A thin drag handle pinned to a region's edge. A drag sets the pane's INTENT —
+ * the size the user is reaching for, bounded only by the pane's own min/max, NOT
+ * by the live container. The consumer persists this intent and separately derives
+ * the displayed size by clamping it to the container (so a too-small window
+ * narrows the *display* while the intent — and thus the size the pane returns to
+ * when the window grows — is preserved). The handle therefore does no
+ * container-aware clamping itself; that lives in the consumer's derivation
+ * (clampSplitter), the single place the intent meets the live geometry.
+ *
+ * It highlights on hover rather than swapping the mouse cursor, per the project's
+ * no-cursor-change rule.
  */
-export function ResizeHandle({ edge, size, min, max, siblingMin = 0, onResize, onCommit }: Props) {
+export function ResizeHandle({ edge, size, min, max, onResize, onCommit }: Props) {
   const alongY = edge === 'top' || edge === 'bottom'
   const grows = edge === 'right' || edge === 'bottom' // moving toward this edge grows the region
   const handleRef = useRef<HTMLDivElement>(null)
@@ -45,20 +49,15 @@ export function ResizeHandle({ edge, size, min, max, siblingMin = 0, onResize, o
     e.preventDefault()
     const start = alongY ? e.clientY : e.clientX
     const startSize = size
-    // The live container extent, captured at drag start: the flex container that
-    // holds this pane and its siblings. The dragged pane lives inside the pane
-    // element, which is the handle's offsetParent (positioned ancestor); its
-    // parent is the container. Measuring live (not from a prop) means the clamp
-    // re-derives the ceiling against the current window size on every drag.
-    const container = handleRef.current?.offsetParent?.parentElement ?? null
-    const available = container ? (alongY ? container.clientHeight : container.clientWidth) : Infinity
-    const clamp = (s: number) => clampSplitter(s, { available, siblingMin, min, max })
-    let current = clamp(startSize)
+    // The intent is bounded by the pane's own min/max only; the consumer clamps it
+    // to the live container when it derives the displayed size.
+    const toIntent = (s: number) => Math.max(min, Math.min(max, Math.round(s)))
+    let current = toIntent(startSize)
 
     function onMove(ev: MouseEvent) {
       const pos = alongY ? ev.clientY : ev.clientX
       const delta = grows ? pos - start : start - pos
-      current = clamp(startSize + delta)
+      current = toIntent(startSize + delta)
       onResize(current)
     }
     function onUp() {

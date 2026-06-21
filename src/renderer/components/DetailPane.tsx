@@ -9,6 +9,7 @@ import { useDownloadLogStore, type LogEntry } from '@renderer/store/downloadLog'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
+import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { releaseVideo } from '@renderer/lib/video'
 import { archiveTape, unarchiveTape } from '@renderer/lib/tapeActions'
 import { isShortcutBlocked } from '@renderer/lib/dom'
@@ -75,7 +76,21 @@ export function DetailPane({
   const mediaBase = useMediaStore((s) => s.baseUrl)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
-  const chaptersPaneWidth = useLayoutStore((s) => s.layout.chaptersPaneWidth)
+  // Persisted chaptersPaneWidth is the drag-set INTENT; the displayed width is
+  // derived from it and the live detail row (this component's flex row),
+  // narrowing toward the pane min when the window shrinks and returning to the
+  // intent when it grows. Display-only; only a splitter drag persists. The
+  // far-side reserve is the media/action column's minimum.
+  const chaptersPaneIntent = useLayoutStore((s) => s.layout.chaptersPaneWidth)
+  const { containerRef: detailRowRef, displayed: chaptersPaneWidth } = usePaneSize<HTMLDivElement>(
+    chaptersPaneIntent,
+    false,
+    {
+      siblingMin: detailPaneWidth.min,
+      min: LAYOUT_BOUNDS.chaptersPaneWidth.min,
+      max: LAYOUT_BOUNDS.chaptersPaneWidth.max,
+    },
+  )
 
   useEffect(() => {
     setSidecar(null)
@@ -278,7 +293,7 @@ export function DetailPane({
   }, [])
 
   return (
-    <div className="flex h-full">
+    <div ref={detailRowRef} className="flex h-full">
       {/* Left column: title, video (or status panel), and action buttons stacked
           full height. Chapters sit alongside as a sibling so they run the whole
           height of the pane, not just the space under the title. Padding lives on
@@ -507,12 +522,12 @@ export function DetailPane({
         >
           <ResizeHandle
             edge="left"
+            // Start from the displayed width; the handle reports the new INTENT,
+            // persisted on commit. The displayed width re-derives from that intent
+            // against the live detail row.
             size={chaptersPaneWidth}
             min={LAYOUT_BOUNDS.chaptersPaneWidth.min}
             max={LAYOUT_BOUNDS.chaptersPaneWidth.max}
-            // Reserve the media/action content column on the far side so widening
-            // the chapters pane can't pinch it below its usable minimum.
-            siblingMin={detailPaneWidth.min}
             onResize={(w) => patchLayout({ chaptersPaneWidth: w }, false)}
             onCommit={(w) => patchLayout({ chaptersPaneWidth: w }, true)}
           />

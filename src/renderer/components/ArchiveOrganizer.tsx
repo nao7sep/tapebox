@@ -11,13 +11,13 @@ import {
   LAYOUT_BOUNDS,
   archiveLowerListMin,
   ARCHIVE_SEARCH_BOX_HEIGHT,
-  clampSplitter,
 } from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useArchiveStore } from '@renderer/store/archive'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
+import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { useTapeDragSensors } from '@renderer/lib/dnd'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
@@ -40,7 +40,7 @@ export function ArchiveOrganizer() {
   const setQuery = useArchiveStore((s) => s.setQuery)
   const pendingSearchFocus = useArchiveStore((s) => s.pendingSearchFocus)
   const setPendingSearchFocus = useArchiveStore((s) => s.setPendingSearchFocus)
-  const boxesHeight = useLayoutStore((s) => s.layout.archiveBoxesHeight)
+  const boxesIntent = useLayoutStore((s) => s.layout.archiveBoxesHeight)
   const progress = useTapesStore((s) => s.progress)
   const tapes = useVisibleTapes()
   const searching = query.trim().length > 0
@@ -56,36 +56,24 @@ export function ArchiveOrganizer() {
     setPendingSearchFocus(false)
   }, [pendingSearchFocus, setPendingSearchFocus])
 
-  // Re-clamp the rendered boxes height against the live pane (window-chrome-
-  // conventions require re-clamping on resize and when restoring a persisted
-  // value): a window smaller than last run could otherwise let a tall stored
-  // height swallow the lower list and shove its separator off-screen. This is a
-  // graceful refinement layered on a guaranteed-sufficient floor — the window
-  // minimum already reserves the whole content row, so the cap only narrows a
-  // *persisted* height that was saved larger on a bigger window, never the
-  // already-protected minimum, and the stored preference is untouched (it returns
-  // in full when the window grows). The reserve is derived from named sibling
-  // minimums (search box + lower list), not a hand-typed magic number.
-  const paneRef = useRef<HTMLDivElement>(null)
-  const [paneHeight, setPaneHeight] = useState<number | null>(null)
-  useEffect(() => {
-    const el = paneRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => setPaneHeight(el.clientHeight))
-    ro.observe(el)
-    setPaneHeight(el.clientHeight)
-    return () => ro.disconnect()
-  }, [])
+  // The persisted archiveBoxesHeight is the drag-set INTENT; the DISPLAYED height
+  // is derived from it and the live pane (window-chrome-conventions: re-clamp on
+  // resize and when restoring a persisted value). A window smaller than last run
+  // narrows the *display* toward the boxes minimum so a tall intent can't swallow
+  // the lower list and shove its separator off-screen; the intent is untouched
+  // and returns in full when the window grows. Display-only — only a splitter
+  // drag persists. The far-side reserve is derived from named sibling minimums
+  // (search box + lower list), not a hand-typed magic number.
   const siblingMin = ARCHIVE_SEARCH_BOX_HEIGHT + archiveLowerListMin.min
-  const effectiveBoxesHeight =
-    paneHeight != null
-      ? clampSplitter(boxesHeight, {
-          available: paneHeight,
-          siblingMin,
-          min: LAYOUT_BOUNDS.archiveBoxesHeight.min,
-          max: LAYOUT_BOUNDS.archiveBoxesHeight.max,
-        })
-      : boxesHeight
+  const { containerRef: paneRef, displayed: effectiveBoxesHeight } = usePaneSize<HTMLDivElement>(
+    boxesIntent,
+    true,
+    {
+      siblingMin,
+      min: LAYOUT_BOUNDS.archiveBoxesHeight.min,
+      max: LAYOUT_BOUNDS.archiveBoxesHeight.max,
+    },
+  )
 
   // What's being dragged, so a DragOverlay can render a copy that follows the
   // cursor unclipped — without it, dragging a tape up over the boxes list pulls
@@ -168,13 +156,12 @@ export function ArchiveOrganizer() {
           <BoxList />
           <ResizeHandle
             edge="bottom"
+            // Start from the displayed height; the handle reports the new INTENT,
+            // persisted on commit. The displayed height re-derives from that
+            // intent against the live pane (the clamp above).
             size={effectiveBoxesHeight}
             min={LAYOUT_BOUNDS.archiveBoxesHeight.min}
             max={LAYOUT_BOUNDS.archiveBoxesHeight.max}
-            // Reserve the search box and the lower list's minimum below, so
-            // dragging the boxes taller can't push the lower list off-screen —
-            // the live counterpart of the render-time clamp above.
-            siblingMin={siblingMin}
             onResize={(h) => patchLayout({ archiveBoxesHeight: h }, false)}
             onCommit={(h) => patchLayout({ archiveBoxesHeight: h }, true)}
           />

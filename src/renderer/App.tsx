@@ -12,6 +12,7 @@ import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
+import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useTapeRemoval } from '@renderer/lib/useTapeRemoval'
 import { useAppShortcuts } from '@renderer/lib/useAppShortcuts'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
@@ -62,7 +63,21 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { requestRemove, confirmModal } = useTapeRemoval(videoRef)
   useAppShortcuts(() => setShowShortcuts(true))
-  const leftPaneWidth = useLayoutStore((s) => s.layout.leftPaneWidth)
+  // The persisted leftPaneWidth is the drag-set INTENT; the displayed width is
+  // derived from it and the live content row, narrowing toward the pane min when
+  // the window shrinks and returning to the intent when it grows (display-only,
+  // never persisted). The far-side reserve is the detail + chapters pane mins —
+  // the same Σ the window minimum and the splitter clamp use.
+  const leftPaneIntent = useLayoutStore((s) => s.layout.leftPaneWidth)
+  const { containerRef: contentRowRef, displayed: leftPaneWidth } = usePaneSize<HTMLDivElement>(
+    leftPaneIntent,
+    false,
+    {
+      siblingMin: detailPaneWidth.min + LAYOUT_BOUNDS.chaptersPaneWidth.min,
+      min: LAYOUT_BOUNDS.leftPaneWidth.min,
+      max: LAYOUT_BOUNDS.leftPaneWidth.max,
+    },
+  )
   const filter = useFilterStore((s) => s.filter)
   const importMedia = useImportMedia()
   const importResult = useImportResultStore((s) => s.result)
@@ -148,7 +163,7 @@ export default function App() {
           />
         </header>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div ref={contentRowRef} className="flex flex-1 overflow-hidden">
           <aside
             style={{ width: leftPaneWidth }}
             className="relative flex shrink-0 flex-col border-r border-zinc-700"
@@ -166,13 +181,14 @@ export default function App() {
             )}
             <ResizeHandle
               edge="right"
+              // Start the drag from the displayed width; the handle reports the new
+              // INTENT (bounded by the pane's own min/max), which we persist on
+              // commit. The displayed width above re-derives from that intent
+              // against the live row — so a drag that overshoots the room is held
+              // back visually while the intent is kept for when the window grows.
               size={leftPaneWidth}
               min={LAYOUT_BOUNDS.leftPaneWidth.min}
               max={LAYOUT_BOUNDS.leftPaneWidth.max}
-              // Reserve the detail pane and (always-reserved) chapters pane on the
-              // far side so widening the left pane can't squeeze either below its
-              // minimum — the same Σ the window minimum reserves.
-              siblingMin={detailPaneWidth.min + LAYOUT_BOUNDS.chaptersPaneWidth.min}
               onResize={(w) => patchLayout({ leftPaneWidth: w }, false)}
               onCommit={(w) => patchLayout({ leftPaneWidth: w }, true)}
             />
