@@ -9,7 +9,18 @@
   "main": "out/main/index.js",
   "build": {
     "appId": "io.github.nao7sep.tapebox",
-    "productName": "TapeBox"
+    "productName": "TapeBox",
+    "extraResources": [
+      {
+        "from": "build/Assets.car",
+        "to": "Assets.car"
+      }
+    ],
+    "mac": {
+      "extendInfo": {
+        "CFBundleIconName": "vhs-cassette-front-azure"
+      }
+    }
   },
   "engines": {
     "node": ">=20.19.0"
