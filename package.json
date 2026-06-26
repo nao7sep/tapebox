@@ -17,9 +17,13 @@
       }
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "extendInfo": {
         "CFBundleIconName": "vhs-cassette-front-azure-rose"
       }
+    },
+    "win": {
+      "icon": "build/icon.ico"
     }
   },
   "engines": {
