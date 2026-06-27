@@ -8,9 +8,10 @@ import { Button, Spinner } from '@renderer/components/ui'
 /**
  * Tools modal for installing and updating yt-dlp / ffmpeg / Deno. Each row's
  * action is derived from its state (missing / outdated / current); installs run
- * concurrently so other rows stay interactive while one is in flight. There's
- * no footer — close via ✕ / Esc / backdrop — and no bulk button: with only
- * three rows, per-row actions are clearer than a "do everything" CTA.
+ * concurrently so other rows stay interactive while one is in flight. The footer
+ * carries only a Close button — the per-row Install/Update actions are the work,
+ * and there's no bulk button: with only three rows, per-row actions are clearer
+ * than a "do everything" CTA.
  *
  * The modal does NOT auto-check on open. Update checks happen at startup
  * (gated by autoCheckBinaryUpdates and skipped if checked within 24h) or when
@@ -67,7 +68,17 @@ export function BinariesModal() {
   }
 
   return (
-    <Modal title="Required tools" onClose={closeModal} size="2xl" fitContent>
+    <Modal
+      title="Required tools"
+      onClose={closeModal}
+      size="2xl"
+      fitContent
+      footer={
+        <Button variant="ghost" onClick={closeModal}>
+          Close
+        </Button>
+      }
+    >
       <p className="text-sm text-zinc-300">
         yt-dlp downloads media and ffmpeg processes it; Deno is the JavaScript runtime
         yt-dlp uses for sites that need it.

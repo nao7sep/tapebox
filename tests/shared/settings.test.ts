@@ -38,6 +38,13 @@ describe('SettingsSchema', () => {
   it('defaults libraryDir to blank, not an absolute path', () => {
     expect(defaultSettings().libraryDir).toBe('')
   })
+
+  // The UI font is family-only and engine-resolved; blank means "use the built-in
+  // default stack" (globals.css @theme --font-sans), exactly like a blank
+  // libraryDir/externalPlayer means "use the default".
+  it('defaults uiFontFamily to blank, meaning the built-in default font', () => {
+    expect(defaultSettings().uiFontFamily).toBe('')
+  })
 })
 
 describe('summarizeSettings', () => {
@@ -47,6 +54,7 @@ describe('summarizeSettings', () => {
     s.ai = { baseUrl: 'https://api.example.com/v1', model: 'gpt-x' }
     s.maxConcurrentDownloads = 4
     s.autoplay = false
+    s.uiFontFamily = 'Iosevka, monospace'
 
     expect(summarizeSettings(s)).toMatchObject({
       libraryDir: '/lib',
@@ -54,6 +62,7 @@ describe('summarizeSettings', () => {
       aiModel: 'gpt-x',
       maxConcurrentDownloads: 4,
       autoplay: false,
+      uiFontFamily: 'Iosevka, monospace',
     })
   })
 

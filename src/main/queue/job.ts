@@ -12,6 +12,45 @@ import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
 
 /**
+ * Everything the job lifecycle reaches into the rest of the app for. Injected so
+ * the probe -> download -> finalize state machine can be driven with fakes; the
+ * production default ({@link defaultJobDeps}) binds these to the real services, so
+ * the queue manager constructs jobs exactly as before.
+ */
+export interface JobDeps {
+  ytdlp: {
+    probe: typeof ytdlp.probe
+    download: typeof ytdlp.download
+    findThumbnail: typeof ytdlp.findThumbnail
+  }
+  ffmpeg: {
+    probeMedia: typeof ffmpeg.probeMedia
+    saveThumbnailJpeg: typeof ffmpeg.saveThumbnailJpeg
+  }
+  sidecar: { finalize: typeof sidecar.finalize }
+  session: {
+    getTape: typeof session.getTape
+    getTapes: typeof session.getTapes
+    upsertTape: typeof session.upsertTape
+  }
+  getLibraryDir: typeof getLibraryDir
+  emit: typeof emit
+  log: { info: typeof log.info; warn: typeof log.warn; error: typeof log.error }
+  now: () => string
+}
+
+export const defaultJobDeps: JobDeps = {
+  ytdlp: { probe: ytdlp.probe, download: ytdlp.download, findThumbnail: ytdlp.findThumbnail },
+  ffmpeg: { probeMedia: ffmpeg.probeMedia, saveThumbnailJpeg: ffmpeg.saveThumbnailJpeg },
+  sidecar: { finalize: sidecar.finalize },
+  session: { getTape: session.getTape, getTapes: session.getTapes, upsertTape: session.upsertTape },
+  getLibraryDir,
+  emit,
+  log: { info: log.info, warn: log.warn, error: log.error },
+  now: nowUtcIso,
+}
+
+/**
  * Single job lifecycle: probe -> download -> finalize sidecar.
  *
  * Cancellation is awaitable: cancel() returns the same Promise that run()
@@ -23,9 +62,11 @@ export class Job {
   private controller = new AbortController()
   private cancelled = false
   private runPromise: Promise<void> | null = null
+  private readonly d: JobDeps
 
-  constructor(tape: Tape) {
+  constructor(tape: Tape, deps: JobDeps = defaultJobDeps) {
     this.tapeId = tape.id
+    this.d = deps
   }
 
   /**
@@ -47,41 +88,41 @@ export class Job {
 
   private async runInner(): Promise<void> {
     // Fresh attempt: clear any log buffered from a prior (failed) run.
-    emit('tapes:logReset', { tapeId: this.tapeId })
+    this.d.emit('tapes:logReset', { tapeId: this.tapeId })
     try {
       const isVideo = await this.probe()
       if (!isVideo || this.cancelled) return
       await this.download()
     } catch (err) {
       if (this.cancelled) {
-        this.update({ state: 'paused', lastError: null, pausedAtUtc: nowUtcIso() })
+        this.update({ state: 'paused', lastError: null, pausedAtUtc: this.d.now() })
         return
       }
       const message = errorMessage(err)
-      log.error('job failed', { tapeId: this.tapeId, error: describeError(err) })
-      this.update({ state: 'failed', lastError: message, failedAtUtc: nowUtcIso() })
-      emit('tapes:failed', { tapeId: this.tapeId, error: message })
+      this.d.log.error('job failed', { tapeId: this.tapeId, error: describeError(err) })
+      this.update({ state: 'failed', lastError: message, failedAtUtc: this.d.now() })
+      this.d.emit('tapes:failed', { tapeId: this.tapeId, error: message })
     }
   }
 
   private current(): Tape | undefined {
-    return session.getTape(this.tapeId)
+    return this.d.session.getTape(this.tapeId)
   }
 
   private update(patch: Partial<Tape>): void {
     const cur = this.current()
     if (!cur) return
     const next = { ...cur, ...patch }
-    session.upsertTape(next)
-    emit('tapes:updated', next)
+    this.d.session.upsertTape(next)
+    this.d.emit('tapes:updated', next)
   }
 
   /** Returns true if a downloadable video; false if the URL is a page of videos. */
   private async probe(): Promise<boolean> {
     this.update({ state: 'probing' })
-    const result = await ytdlp.probe(this.current()!.sourceUrl, this.controller.signal)
+    const result = await this.d.ytdlp.probe(this.current()!.sourceUrl, this.controller.signal)
     if (result.kind === 'page') {
-      this.update({ state: 'listing', lastError: null, probedAtUtc: nowUtcIso() })
+      this.update({ state: 'listing', lastError: null, probedAtUtc: this.d.now() })
       return false
     }
     // Two URLs can resolve to the same video (e.g. a short share link and the
@@ -89,18 +130,18 @@ export class Job {
     // is unique only within an extractor, so the identity is the (extractor, id)
     // pair — the same key its --download-archive uses. Only known post-probe, so
     // we catch it here.
-    const duplicate = session
+    const duplicate = this.d.session
       .getTapes()
       .find((i) => i.id !== this.tapeId && i.sourceId === result.id && i.extractor === result.extractor)
     if (duplicate) {
       // A terminal outcome that bypasses the runInner() catch, so log it here —
       // otherwise a download that "failed" leaves no trace in the session log.
-      log.info('job rejected: duplicate', { tapeId: this.tapeId, extractor: result.extractor, sourceId: result.id, duplicateOf: duplicate.id })
+      this.d.log.info('job rejected: duplicate', { tapeId: this.tapeId, extractor: result.extractor, sourceId: result.id, duplicateOf: duplicate.id })
       this.update({
         state: 'failed',
         lastError: `Duplicate of an existing tape (same video). Not downloaded again.`,
-        failedAtUtc: nowUtcIso(),
-        probedAtUtc: nowUtcIso(),
+        failedAtUtc: this.d.now(),
+        probedAtUtc: this.d.now(),
       })
       return false
     }
@@ -112,7 +153,7 @@ export class Job {
       uploader: result.uploader,
       durationSeconds: result.duration,
       chapterCount: result.chapters?.length ?? 0,
-      probedAtUtc: nowUtcIso(),
+      probedAtUtc: this.d.now(),
     })
     return true
   }
@@ -121,24 +162,24 @@ export class Job {
     const cur = this.current()
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
-    const libraryDir = getLibraryDir()
+    const libraryDir = this.d.getLibraryDir()
 
-    this.update({ state: 'downloading', downloadStartedAtUtc: nowUtcIso() })
+    this.update({ state: 'downloading', downloadStartedAtUtc: this.d.now() })
 
     // The tape's id is the on-disk stem — opaque and unique by construction, so
     // there's no source-id collision to dodge and no file to clobber.
     const stem = cur.id
 
-    const result = await ytdlp.download({
+    const result = await this.d.ytdlp.download({
       url: cur.sourceUrl,
       libraryDir,
       outputId: stem,
       signal: this.controller.signal,
       onProgress: (progress) => {
-        emit('tapes:progress', { tapeId: this.tapeId, phase: 'downloading', ...progress })
+        this.d.emit('tapes:progress', { tapeId: this.tapeId, phase: 'downloading', ...progress })
       },
       onLog: (line) => {
-        emit('tapes:log', { tapeId: this.tapeId, line })
+        this.d.emit('tapes:log', { tapeId: this.tapeId, line })
       },
     })
 
@@ -150,7 +191,7 @@ export class Job {
     const mediaBasename = basename(result.mediaPath)
     const expectedMediaPath = join(libraryDir, mediaBasename)
     if (result.mediaPath !== expectedMediaPath) {
-      log.warn('yt-dlp wrote media outside the library root; relocating', {
+      this.d.log.warn('yt-dlp wrote media outside the library root; relocating', {
         tapeId: this.tapeId,
         from: result.mediaPath,
         to: expectedMediaPath,
@@ -161,7 +202,7 @@ export class Job {
     // Parse the actual file for reliable technical metadata — yt-dlp's info.json
     // is sparse for generic/direct downloads (sites without a dedicated
     // extractor). Best-effort: a probe failure just leaves it null.
-    const media = await ffmpeg.probeMedia(expectedMediaPath, this.controller.signal).catch(() => null)
+    const media = await this.d.ffmpeg.probeMedia(expectedMediaPath, this.controller.signal).catch(() => null)
 
     // Normalize the source thumbnail (whatever format yt-dlp fetched) to our
     // canonical {stem}.jpg through the one image gate. The poster is a nice-to-have:
@@ -169,25 +210,25 @@ export class Job {
     // whose media is already on disk — degrade to no poster and record why.
     let thumbnailFilename: string | null = null
     try {
-      const rawThumb = await ytdlp.findThumbnail(libraryDir, stem)
+      const rawThumb = await this.d.ytdlp.findThumbnail(libraryDir, stem)
       if (rawThumb) {
-        thumbnailFilename = await ffmpeg.saveThumbnailJpeg(rawThumb, libraryDir, stem, this.controller.signal)
+        thumbnailFilename = await this.d.ffmpeg.saveThumbnailJpeg(rawThumb, libraryDir, stem, this.controller.signal)
       }
     } catch (err) {
-      log.warn('thumbnail skipped', { tapeId: this.tapeId, error: describeError(err) })
+      this.d.log.warn('thumbnail skipped', { tapeId: this.tapeId, error: describeError(err) })
     }
 
     const sidecarFilename = `${stem}.json`
     const sidecarPath = join(libraryDir, sidecarFilename)
 
-    await sidecar.finalize({
+    await this.d.sidecar.finalize({
       infoJsonPath: result.infoJsonPath,
       sidecarPath,
       tapeboxAdditions: {
         sourceUrl: cur.sourceUrl,
         name: null,
         addedAtUtc: cur.addedAtUtc,
-        downloadedAtUtc: nowUtcIso(),
+        downloadedAtUtc: this.d.now(),
         renamedAtUtc: null,
         media,
         mediaFilename: mediaBasename,
@@ -200,12 +241,12 @@ export class Job {
       filename: mediaBasename,
       sidecarFilename,
       thumbnailFilename,
-      downloadedAtUtc: nowUtcIso(),
+      downloadedAtUtc: this.d.now(),
     })
     // Close the bracket opened by 'job start': the queue logs start and the catch
     // logs failure, so without this the app's central operation — a finished
     // download — would be the one outcome absent from the session log.
-    log.info('job done', { tapeId: this.tapeId, sourceId: cur.sourceId, filename: mediaBasename })
-    emit('tapes:completed', { tapeId: this.tapeId })
+    this.d.log.info('job done', { tapeId: this.tapeId, sourceId: cur.sourceId, filename: mediaBasename })
+    this.d.emit('tapes:completed', { tapeId: this.tapeId })
   }
 }

@@ -5,6 +5,7 @@ import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
 import { stripUrlCredentials } from '@shared/url'
 import { Job } from './job'
+import { planOrphanResets, selectTapesToStart } from './schedule'
 
 /**
  * Download queue.
@@ -27,14 +28,9 @@ const active = new Map<string, Job>()
 
 export function tick(): void {
   const max = getSettings().maxConcurrentDownloads
-  if (active.size >= max) return
+  const toStart = selectTapesToStart(session.getTapes(), new Set(active.keys()), max)
 
-  const candidates = session
-    .getTapes()
-    .filter((i) => i.state === 'queued' && !active.has(i.id))
-
-  for (const tape of candidates) {
-    if (active.size >= max) break
+  for (const tape of toStart) {
     const job = new Job(tape)
     active.set(tape.id, job)
     log.info('job start', { tapeId: tape.id, url: stripUrlCredentials(tape.sourceUrl) })
@@ -96,15 +92,7 @@ export function activeCount(): number {
  */
 export function start(): void {
   const autostart = getSettings().autoStartDownloads
-  const orphaned = session
-    .getTapes()
-    .filter((i) => i.state === 'probing' || i.state === 'downloading')
-
-  const now = nowUtcIso()
-  for (const tape of orphaned) {
-    const next = autostart
-      ? { ...tape, state: 'queued' as const }
-      : { ...tape, state: 'paused' as const, pausedAtUtc: now }
+  for (const next of planOrphanResets(session.getTapes(), autostart, nowUtcIso())) {
     session.upsertTape(next)
     emit('tapes:updated', next)
   }

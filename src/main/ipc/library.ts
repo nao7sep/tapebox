@@ -10,7 +10,8 @@ import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError, errorMessage } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
-import { sanitizeFilename } from '@main/core/filename'
+import { planRename } from '@main/core/rename-plan'
+import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import * as queue from '@main/queue/manager'
 import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
@@ -151,44 +152,34 @@ export function registerLibraryHandlers(): void {
     if (!tape.filename || !tape.sidecarFilename) {
       throw new Error('Tape has no files on disk yet')
     }
-    // Any filesystem-safe name, not just a slug — sanitizeFilename preserves
-    // Unicode and strips only reserved characters. Empty after that = no real name.
-    const cleanName = sanitizeFilename(name)
-    if (!cleanName) {
-      throw new Error('Name is empty after removing characters the filesystem rejects.')
-    }
+    const plan = planRename(
+      {
+        filename: tape.filename,
+        sidecarFilename: tape.sidecarFilename,
+        thumbnailFilename: tape.thumbnailFilename,
+      },
+      name,
+    )
+    if (plan.status === 'error') throw new Error(plan.message)
+    if (plan.status === 'noop') return tape
 
+    const { cleanName, newMediaName, newSidecarName, newThumbName } = plan
     const libraryDir = getLibraryDir()
     const p = (rel: string) => join(libraryDir, rel)
-
-    const newMediaName = `${cleanName}${extname(tape.filename)}`
-    const newSidecarName = `${cleanName}.json`
-    const newThumbName = tape.thumbnailFilename ? `${cleanName}${extname(tape.thumbnailFilename)}` : null
-
-    if (
-      newMediaName === tape.filename &&
-      newSidecarName === tape.sidecarFilename &&
-      newThumbName === tape.thumbnailFilename
-    ) {
-      return tape
-    }
-
     const nowUtc = nowUtcIso()
-    const sidecarFresh = p(newSidecarName)
 
-    // Re-stem a tape's files to the chosen name as one unit: the media and
-    // (optional) thumbnail are plain copies, the sidecar is rewritten with the new
-    // name, timestamp, and thumbnail name. Stage every file under a .staging suffix,
-    // then rename them all into place; the originals are untouched until the very
-    // end, so a failure mid-swap is undone by deleting just the new files we
-    // created — the session record still points at the intact originals.
-    const items = [
-      { old: p(tape.filename), fresh: p(newMediaName) },
-      { old: p(tape.sidecarFilename), fresh: sidecarFresh },
-      ...(tape.thumbnailFilename && newThumbName
-        ? [{ old: p(tape.thumbnailFilename), fresh: p(newThumbName) }]
-        : []),
-    ].map((it) => ({ ...it, stage: `${it.fresh}.staging` }))
+    // Resolve the planned file ops to absolute paths. Re-stem a tape's files to the
+    // chosen name as one unit: media and (optional) thumbnail are plain copies, the
+    // sidecar is rewritten with the new name, timestamp, and thumbnail name. Stage
+    // every file under a .staging suffix, then rename them all into place; the
+    // originals are untouched until the very end, so a failure mid-swap is undone by
+    // deleting just the new files — the session record still points at the intacts.
+    const items = plan.items.map((it) => ({
+      artifact: it.artifact,
+      old: p(it.old),
+      fresh: p(it.fresh),
+      stage: p(it.stage),
+    }))
 
     for (const it of items) {
       if (it.fresh !== it.old) await assertMissing(it.fresh)
@@ -202,7 +193,7 @@ export function registerLibraryHandlers(): void {
     const done: typeof items = []
     try {
       for (const it of items) {
-        if (it.fresh === sidecarFresh) {
+        if (it.artifact === 'sidecar') {
           const sidecar = JSON.parse(await readFile(it.old, 'utf8')) as Record<string, unknown>
           const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
           tb['name'] = cleanName
@@ -344,20 +335,12 @@ export function registerLibraryHandlers(): void {
         continue
       }
 
-      const tb = sidecar['tapebox'] as Record<string, unknown> | undefined
-      if (!tb || typeof tb['sourceUrl'] !== 'string') {
-        rejected.push({ path: sidecarPath, reason: 'not a TapeBox sidecar (missing tapebox.sourceUrl)' })
+      const classification = classifyImport(sidecar)
+      if (classification.status === 'reject') {
+        rejected.push({ path: sidecarPath, reason: classification.reason })
         continue
       }
-      const sourceUrl = tb['sourceUrl']
-
-      // The sidecar names its media file — the whole point of importing by sidecar.
-      const mediaFilename = typeof tb['mediaFilename'] === 'string' ? tb['mediaFilename'] : null
-      if (!mediaFilename) {
-        rejected.push({ path: sidecarPath, reason: 'sidecar doesn’t name its media file — re-export it from a current build' })
-        continue
-      }
-      const tbThumb = typeof tb['thumbnailFilename'] === 'string' ? tb['thumbnailFilename'] : null
+      const { sourceUrl, mediaFilename, thumbnailFilename: tbThumb } = classification
 
       const existing = session.getTapes().find((i) => i.sourceUrl === sourceUrl)
       if (existing) {
@@ -410,32 +393,15 @@ export function registerLibraryHandlers(): void {
         }
       }
 
-      const tape: Tape = {
+      const tape = tapeFromSidecar(sidecar, {
         id: nanoid(10),
         sourceUrl,
-        state: 'downloaded',
-        addedAtUtc: (typeof tb['addedAtUtc'] === 'string' ? tb['addedAtUtc'] : null) ?? nowUtcIso(),
-        sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
-        extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
-        title: typeof sidecar['title'] === 'string' ? sidecar['title'] : null,
-        uploader: typeof sidecar['uploader'] === 'string' ? sidecar['uploader'] : null,
-        durationSeconds: typeof sidecar['duration'] === 'number' ? sidecar['duration'] : null,
-        chapterCount: Array.isArray(sidecar['chapters']) ? (sidecar['chapters'] as unknown[]).length : 0,
-        probedAtUtc: nowUtcIso(),
-        filename: mediaFilename,
+        mediaFilename,
         sidecarFilename: `${mediaStem}.json`,
         thumbnailFilename,
-        downloadStartedAtUtc: null,
-        downloadedAtUtc: typeof tb['downloadedAtUtc'] === 'string' ? tb['downloadedAtUtc'] : nowUtcIso(),
-        name: typeof tb['name'] === 'string' ? tb['name'] : null,
-        renamedAtUtc: typeof tb['renamedAtUtc'] === 'string' ? tb['renamedAtUtc'] : null,
-        archivedAtUtc: null,
-        boxId: null,
         order: orderWindow[orderCursor++],
-        pausedAtUtc: null,
-        failedAtUtc: null,
-        lastError: null,
-      }
+        nowUtc: nowUtcIso(),
+      })
       session.upsertTape(tape)
       imported.push(tape)
     }

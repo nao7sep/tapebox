@@ -14,3 +14,6 @@ dist
 # Local environment overrides
 .env
 .env.local
+
+# Coverage reports (generated)
+coverage/

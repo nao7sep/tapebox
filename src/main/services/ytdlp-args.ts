@@ -18,7 +18,7 @@ import type { SiteProfile } from '@shared/settings'
  * yt-dlp. Tokens go to the child via spawn (no shell), so globs, $vars and
  * operators are never expanded.
  */
-function tokenizeArgs(line: string): string[] {
+export function tokenizeArgs(line: string): string[] {
   const tokens: string[] = []
   let cur = ''
   let inToken = false
@@ -45,7 +45,7 @@ function tokenizeArgs(line: string): string[] {
   return tokens
 }
 
-function matches(profile: SiteProfile, url: string): boolean {
+export function matches(profile: SiteProfile, url: string): boolean {
   if (!profile.urlPattern) return false
   if (profile.isRegex) {
     try {

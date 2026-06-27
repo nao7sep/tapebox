@@ -19,4 +19,13 @@ describe('globals.css window-chrome compliance', () => {
   it('still styles the scroll-bar thumb (the other half of the rule)', () => {
     expect(css).toContain('::-webkit-scrollbar-thumb')
   })
+
+  // app-chrome-conventions: every app sets its fonts explicitly rather than
+  // inheriting the toolkit default. The UI font (--font-sans) must be an explicit
+  // stack — it is also the variable the Settings "UI font" field overrides at
+  // runtime — and the read-only log/args face (--font-mono) must be explicit too.
+  it('sets explicit --font-sans (UI) and --font-mono (logs) in @theme', () => {
+    expect(css).toMatch(/--font-sans:\s*system-ui/)
+    expect(css).toMatch(/--font-mono:\s*[^;]+monospace/)
+  })
 })

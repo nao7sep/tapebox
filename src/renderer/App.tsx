@@ -16,6 +16,7 @@ import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useTapeRemoval } from '@renderer/lib/useTapeRemoval'
 import { useAppShortcuts } from '@renderer/lib/useAppShortcuts'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
+import { useUiFont } from '@renderer/lib/useUiFont'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
@@ -63,6 +64,8 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { requestRemove, confirmModal } = useTapeRemoval(videoRef)
   useAppShortcuts(() => setShowShortcuts(true))
+  // Apply the configured UI font; reverts to the @theme default when cleared.
+  useUiFont()
   // The persisted leftPaneWidth is the drag-set INTENT; the displayed width is
   // derived from it and the live content row, narrowing toward the pane min when
   // the window shrinks and returning to the intent when it grows (display-only,

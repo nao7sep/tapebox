@@ -156,6 +156,13 @@ export const SettingsSchema = z.object({
   // becomes a "move out"). Shown in the export modal as the default, overridable
   // per export. On by default — exporting is usually how a finished tape leaves.
   deleteAfterExport: z.boolean(),
+
+  // UI font family. Empty = use the built-in default stack (globals.css @theme
+  // --font-sans); a non-empty value overrides --font-sans at runtime and is handed
+  // to CSS verbatim, so the browser resolves the comma-separated stack and falls
+  // back on its own (app-chrome-conventions: web fonts are engine-resolved, never
+  // parsed here). Family only — there is deliberately no UI font-size knob.
+  uiFontFamily: z.string(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
@@ -195,6 +202,7 @@ export function defaultSettings(): Settings {
     externalPlayer: '',
     defaultExportDir: '',
     deleteAfterExport: true,
+    uiFontFamily: '',
   }
 }
 
@@ -242,5 +250,6 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     promptsCustomized: s.prompts.slug !== DEFAULT_SLUG_PROMPT,
     ytdlpArgsSet: s.ytdlpArgs.trim().length > 0,
     siteProfileCount: s.siteProfiles.length,
+    uiFontFamily: s.uiFontFamily,
   }
 }

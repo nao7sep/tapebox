@@ -4,7 +4,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useSettingsStore } from '@renderer/store/settings'
 import { releaseVideo } from '@renderer/lib/video'
 import { advanceSelection } from '@renderer/lib/tapeActions'
-import { ConfirmModal } from '@renderer/components/ConfirmModal'
+import { RemoveTapeConfirmModal } from '@renderer/components/RemoveTapeConfirmModal'
 
 /**
  * The single removal flow, shared by the Remove button and the keyboard
@@ -37,17 +37,9 @@ export function useTapeRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
   }
 
   const confirmModal: ReactNode = pending ? (
-    <ConfirmModal
-      title="Remove tape"
-      message={
-        !pending.filename
-          ? "Remove this tape from the library? It hasn't finished downloading, so there's no file to remove."
-          : trashEnabled
-            ? 'Move this tape to the Trash? You can restore it from there.'
-            : "Permanently delete this tape's files? This can't be undone."
-      }
-      confirmLabel={!pending.filename ? 'Remove' : trashEnabled ? 'Move to Trash' : 'Delete'}
-      danger
+    <RemoveTapeConfirmModal
+      tape={pending}
+      trashEnabled={trashEnabled}
       onCancel={() => setPending(null)}
       onConfirm={() => {
         const tape = pending

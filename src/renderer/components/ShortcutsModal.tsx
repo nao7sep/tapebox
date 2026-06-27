@@ -1,4 +1,5 @@
 import { Modal } from '@renderer/components/Modal'
+import { Button } from '@renderer/components/ui'
 import { useRuntimeStore } from '@renderer/store/runtime'
 
 type Shortcut = { label: string; keys: string }
@@ -17,8 +18,8 @@ function groups(mod: string): Group[] {
       note: 'arrows act on the list you tabbed into or last clicked — videos, chapters, or boxes',
       shortcuts: [
         { label: 'Move selection up / down', keys: 'Up / Down' },
-        { label: 'Inbox', keys: `${mod} 1` },
-        { label: 'Archived', keys: `${mod} 2` },
+        { label: 'Inbox', keys: `${mod}+1` },
+        { label: 'Archived', keys: `${mod}+2` },
         { label: 'Search the archive', keys: 'Slash' },
       ],
     },
@@ -47,8 +48,8 @@ function groups(mod: string): Group[] {
       title: 'General',
       shortcuts: [
         { label: 'Add the URL in the input', keys: 'Enter' },
-        { label: 'Show this list', keys: 'Question mark' },
-        { label: 'Close a dialog', keys: 'Esc' },
+        { label: 'Show this list', keys: 'Question' },
+        { label: 'Close a dialog', keys: 'Escape' },
       ],
     },
   ]
@@ -62,7 +63,16 @@ export function ShortcutsModal({ onClose }: { onClose: () => void }) {
   const mod = platform === 'darwin' ? 'Cmd' : 'Ctrl'
 
   return (
-    <Modal title="Keyboard shortcuts" onClose={onClose} size="md">
+    <Modal
+      title="Keyboard shortcuts"
+      onClose={onClose}
+      size="md"
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
       <div className="space-y-5">
         {groups(mod).map((group) => (
           <section key={group.title}>

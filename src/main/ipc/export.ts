@@ -1,11 +1,11 @@
 import { copyFile, readFile, stat } from 'node:fs/promises'
-import { extname, isAbsolute, join } from 'node:path'
+import { join } from 'node:path'
 import { handle } from './handle'
 import { removeTapes } from './library'
 import * as session from '@main/store/session'
 import { getLibraryDir } from '@main/store/config'
 import { writeJsonAtomic } from '@main/io/atomic-json'
-import { sanitizeFilename } from '@main/core/filename'
+import { planExport } from '@main/core/export-plan'
 import { SidecarTapeBoxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
 
@@ -28,21 +28,17 @@ export function registerExportHandlers(): void {
     if (!tape.filename || !tape.sidecarFilename) {
       throw new Error('Tape has no files on disk to export.')
     }
-    const cleanName = sanitizeFilename(name)
-    if (!cleanName) {
-      throw new Error('Name is empty after removing characters the filesystem rejects.')
-    }
-    // The destination is a GUI-supplied folder; require it absolute so a relative
-    // value can never join against the working directory (storage-path-conventions).
-    if (!isAbsolute(destinationDir)) {
-      throw new Error(`Export destination must be an absolute folder path: ${destinationDir}`)
-    }
+    const plan = planExport(
+      { filename: tape.filename, thumbnailFilename: tape.thumbnailFilename },
+      destinationDir,
+      name,
+    )
+    if (plan.status === 'error') throw new Error(plan.message)
+    const { cleanName, mediaName, sidecarName, thumbName: newThumbName } = plan
 
     const libDir = getLibraryDir()
-    const newThumbName = tape.thumbnailFilename ? `${cleanName}${extname(tape.thumbnailFilename)}` : null
-
-    const mediaDst = join(destinationDir, `${cleanName}${extname(tape.filename)}`)
-    const sidecarDst = join(destinationDir, `${cleanName}.json`)
+    const mediaDst = join(destinationDir, mediaName)
+    const sidecarDst = join(destinationDir, sidecarName)
     const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null
 
     const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
@@ -57,7 +53,7 @@ export function registerExportHandlers(): void {
     const sidecar = JSON.parse(await readFile(join(libDir, tape.sidecarFilename), 'utf8')) as Record<string, unknown>
     const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
     tb['name'] = cleanName
-    tb['mediaFilename'] = `${cleanName}${extname(tape.filename)}`
+    tb['mediaFilename'] = mediaName
     tb['thumbnailFilename'] = newThumbName
     sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
 

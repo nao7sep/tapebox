@@ -257,6 +257,7 @@ function pickEditable(s: Settings) {
     externalPlayer: s.externalPlayer,
     defaultExportDir: s.defaultExportDir,
     deleteAfterExport: s.deleteAfterExport,
+    uiFontFamily: s.uiFontFamily,
     ai: s.ai,
     prompts: s.prompts,
     ytdlpArgs: s.ytdlpArgs,
@@ -354,6 +355,18 @@ function GeneralTab({
   }
   return (
     <div className="space-y-4">
+      <div>
+        <TextField
+          label="UI font"
+          value={draft.uiFontFamily}
+          placeholder="Blank = default system font"
+          disabled={busy}
+          onChange={(v) => onPatch({ uiFontFamily: v })}
+        />
+        <p className="mt-1 text-xs text-zinc-400">
+          Comma-separated font families; the first one your system has is used. Blank uses the built-in default.
+        </p>
+      </div>
       <Toggle
         label="Check for tool updates on startup"
         description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
