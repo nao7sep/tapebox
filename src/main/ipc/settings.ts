@@ -132,10 +132,10 @@ export function registerSettingsHandlers(): void {
     return next
   })
   handle('settings:setApiKey', async ({ apiKey }) => {
-    await apiKeys.writeAiKey(apiKey)
+    await apiKeys.writeApiKey(['openai'], apiKey)
   })
   handle('settings:clearApiKey', async () => {
-    await apiKeys.clearAiKey()
+    await apiKeys.clearApiKey(['openai'])
   })
-  handle('settings:hasApiKey', async () => apiKeys.hasAiKey())
+  handle('settings:hasApiKey', async () => apiKeys.hasApiKey(['openai']))
 }

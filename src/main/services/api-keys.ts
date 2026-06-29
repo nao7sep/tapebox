@@ -1,51 +1,92 @@
-import { chmod, stat } from 'node:fs/promises'
+import { chmod, rename, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { paths } from '@main/paths'
 import { readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
+import { utcTimestampForFilename } from '@shared/utc'
 
 /**
- * Obfuscated API key storage with environment-first resolution.
+ * API key storage and resolution — the secret store at ~/.tapebox/api-keys.json,
+ * separate from settings. This is the fleet api-key-storage-conventions realized
+ * for tapebox.
  *
- * One file at ~/.tapebox/api-keys.json with a fixed 'ai' slot. Values use the
- * same lightweight local format as the other personal AI tools: "obf:" +
- * base64(reverse(key)). This is not encryption; it only avoids plain-text keys
- * during casual file browsing.
+ * tapebox uses a single key today (`['openai']` → OPENAI_API_KEY, the
+ * OpenAI-compatible endpoint), but the module is the generic, segment-addressed
+ * form so its contract matches every other app in the fleet.
  *
- * Per the storage-path-conventions' secrets rule:
- *   - Resolution prefers the environment: OPENAI_API_KEY, when set and non-empty,
- *     wins over the stored value, so a user can supply a key without persisting
- *     it. The 'ai' slot speaks to an OpenAI-compatible endpoint, hence the name.
- *   - The file is written 0600 on POSIX (owner read/write only). On read, a file
- *     that is group/world-readable is warned about once and tightened back to
- *     0600 rather than refused, so an existing key never becomes unusable.
+ * Contract (api-key-storage-conventions):
+ *   - A key id is its segments joined by '.', lowercase; its environment variable
+ *     is the segments uppercased, joined by '_', suffixed '_API_KEY'. Stored ids
+ *     are matched case-insensitively; non-conforming ids are ignored.
+ *   - Resolution is source-first: every environment candidate (most→least
+ *     specific) then every stored candidate. Environment wins; the more specific
+ *     key wins within each source. `fallback: false` consults only the exact key.
+ *     Every value is trimmed; blank counts as absent; an environment value is
+ *     never written back.
+ *   - The stored value is `obf:` + base64 of the reversed UTF-8 bytes; an untagged
+ *     value is treated as plaintext. This is NOT encryption — the 0600 mode is the
+ *     real protection.
+ *   - On read: a group/world-readable file is warned about once and tightened to
+ *     0600 (POSIX only); a corrupt/unreadable file is moved aside to a timestamped
+ *     neighbour, warned, and treated as empty rather than throwing.
  */
 
-const AI_SLOT = 'ai'
-const API_KEY_MARKER = 'obf:'
-
-// The environment variable that takes precedence over the stored 'ai' key.
-const AI_ENV_VAR = 'OPENAI_API_KEY'
-
-// Secrets file mode on POSIX; the permission model differs on Windows, where the
-// check is skipped (storage-path-conventions).
+const MARKER = 'obf:'
 const SECRETS_FILE_MODE = 0o600
 const ENFORCE_FILE_MODE = process.platform !== 'win32'
 
-let modeWarned = false
+const SEGMENT_RE = /^[a-z0-9]+$/
+const KEY_ID_RE = /^[a-z0-9]+(\.[a-z0-9]+)*$/
 
-const SCHEMA = z.object({
-  keys: z.record(z.string(), z.string()),
-})
+const SCHEMA = z.object({ keys: z.record(z.string(), z.string()) })
 type ApiKeysFile = z.infer<typeof SCHEMA>
 
-function envAiKey(): string | null {
-  const value = process.env[AI_ENV_VAR]
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+interface ResolveOptions {
+  fallback?: boolean
 }
 
-// POSIX-only: warn once if the secrets file is readable beyond the owner, and
-// repair the mode opportunistically. The next write re-applies 0600 regardless.
+// --- key id / env var derivation ---------------------------------------------
+
+function assertSegments(segments: string[]): void {
+  if (segments.length === 0 || !segments.every((s) => SEGMENT_RE.test(s))) {
+    throw new Error(`Invalid api-key segments [${segments.join(', ')}]: each must match [a-z0-9]+`)
+  }
+}
+
+// The prefixes of a segment list, most specific first: [a,b,c] → [[a,b,c],[a,b],[a]].
+function prefixes(segments: string[]): string[][] {
+  const out: string[][] = []
+  for (let n = segments.length; n >= 1; n--) out.push(segments.slice(0, n))
+  return out
+}
+
+function keyId(segments: string[]): string {
+  return segments.join('.')
+}
+
+export function apiKeyEnvVar(segments: string[]): string {
+  return `${segments.map((s) => s.toUpperCase()).join('_')}_API_KEY`
+}
+
+// --- obfuscation (NOT encryption) --------------------------------------------
+
+function encodeApiKey(plain: string): string {
+  return MARKER + Buffer.from(Buffer.from(plain, 'utf8')).reverse().toString('base64')
+}
+
+// Convention: an untagged value is plaintext, used as-is; a tagged value is the
+// reversed-UTF-8-bytes form. Never throws — the caller's trim/non-empty check
+// drops anything that does not decode to a usable key.
+function decodeApiKey(stored: string): string {
+  if (!stored.startsWith(MARKER)) return stored
+  return Buffer.from(Buffer.from(stored.slice(MARKER.length), 'base64')).reverse().toString('utf8')
+}
+
+// --- file read/write ---------------------------------------------------------
+
+let modeWarned = false
+
 async function warnIfInsecureMode(): Promise<void> {
   if (!ENFORCE_FILE_MODE || modeWarned) return
   try {
@@ -59,54 +100,107 @@ async function warnIfInsecureMode(): Promise<void> {
       await chmod(paths.apiKeys, SECRETS_FILE_MODE).catch(() => {})
     }
   } catch {
-    // No file yet, or stat failed — nothing to warn about.
+    // No file yet, or stat failed — nothing to tighten.
   }
+}
+
+// Validate and canonicalize the on-disk shape: `{ keys: { id: value } }`, ids
+// lowercased and matched against the id grammar, values kept only when strings.
+function normalize(raw: unknown): ApiKeysFile {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { keys: {} }
+  const rawKeys = (raw as { keys?: unknown }).keys
+  if (!rawKeys || typeof rawKeys !== 'object' || Array.isArray(rawKeys)) return { keys: {} }
+  const keys: Record<string, string> = {}
+  for (const [id, value] of Object.entries(rawKeys as Record<string, unknown>)) {
+    const canonical = id.toLowerCase()
+    if (typeof value === 'string' && KEY_ID_RE.test(canonical)) keys[canonical] = value
+  }
+  return { keys }
 }
 
 async function readAll(): Promise<ApiKeysFile> {
   await warnIfInsecureMode()
-  return (await readJsonOptional(paths.apiKeys, SCHEMA)) ?? { keys: {} }
-}
-
-function encodeApiKey(apiKey: string): string {
-  if (!apiKey) return ''
-  const reversed = Array.from(apiKey).reverse().join('')
-  return `${API_KEY_MARKER}${Buffer.from(reversed, 'utf8').toString('base64')}`
-}
-
-function decodeApiKey(stored: string): string {
-  if (!stored.startsWith(API_KEY_MARKER)) return ''
+  let raw: unknown
   try {
-    const reversed = Buffer.from(stored.slice(API_KEY_MARKER.length), 'base64').toString('utf8')
-    return Array.from(reversed).reverse().join('')
-  } catch {
-    return ''
+    raw = await readJsonOptional(paths.apiKeys, z.unknown())
+  } catch (err) {
+    // Corrupt/unreadable: never fail key resolution over it. Move the bad file
+    // aside (timestamped) so its bytes are preserved and it is handled once,
+    // then degrade to "no key" — it is rebuilt on the next write.
+    const quarantine = join(dirname(paths.apiKeys), `api-keys.corrupt-${utcTimestampForFilename()}.json`)
+    try {
+      await rename(paths.apiKeys, quarantine)
+      log.warn('api-keys.json was unreadable; set aside and treating as empty', { path: paths.apiKeys, quarantine })
+    } catch (asideErr) {
+      log.warn('api-keys.json was unreadable and could not be set aside; treating as empty', {
+        path: paths.apiKeys,
+        error: (asideErr as Error)?.message ?? String(asideErr),
+      })
+    }
+    return { keys: {} }
   }
+  if (raw == null) return { keys: {} }
+  return normalize(raw)
 }
 
-export async function readAiKey(): Promise<string | null> {
-  // The environment value wins over the stored value.
-  const fromEnv = envAiKey()
-  if (fromEnv) return fromEnv
-  const all = await readAll()
-  const apiKey = decodeApiKey(all.keys[AI_SLOT] ?? '')
-  return apiKey.length > 0 ? apiKey : null
+async function writeAll(data: ApiKeysFile): Promise<void> {
+  await writeJsonAtomic(paths.apiKeys, data, SCHEMA, ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined)
 }
 
-export async function writeAiKey(apiKey: string): Promise<void> {
-  const all = await readAll()
-  all.keys[AI_SLOT] = encodeApiKey(apiKey)
-  await writeJsonAtomic(paths.apiKeys, all, SCHEMA, SECRETS_FILE_MODE)
+function envValue(segments: string[]): string | null {
+  const value = process.env[apiKeyEnvVar(segments)]?.trim()
+  return value ? value : null
 }
 
-export async function clearAiKey(): Promise<void> {
+// --- public API --------------------------------------------------------------
+
+/**
+ * Resolve a key's plaintext value, source-first (environment then stored,
+ * most→least specific), or null. `fallback: false` consults only the exact key.
+ */
+export async function resolveApiKey(segments: string[], options: ResolveOptions = {}): Promise<string | null> {
+  assertSegments(segments)
+  const levels = options.fallback === false ? [segments] : prefixes(segments)
+
+  for (const level of levels) {
+    const fromEnv = envValue(level)
+    if (fromEnv) return fromEnv
+  }
   const all = await readAll()
-  delete all.keys[AI_SLOT]
-  await writeJsonAtomic(paths.apiKeys, all, SCHEMA, SECRETS_FILE_MODE)
+  for (const level of levels) {
+    const stored = all.keys[keyId(level)]
+    if (typeof stored === 'string') {
+      const key = decodeApiKey(stored).trim()
+      if (key) return key
+    }
+  }
+  return null
 }
 
-export async function hasAiKey(): Promise<boolean> {
-  if (envAiKey()) return true
+/** Whether a key resolves from either the environment or the stored file. */
+export async function hasApiKey(segments: string[], options: ResolveOptions = {}): Promise<boolean> {
+  return (await resolveApiKey(segments, options)) !== null
+}
+
+/** Persist a key (trimmed, obfuscated). A blank key clears it instead. */
+export async function writeApiKey(segments: string[], apiKey: string): Promise<void> {
+  assertSegments(segments)
+  const trimmed = apiKey.trim()
   const all = await readAll()
-  return decodeApiKey(all.keys[AI_SLOT] ?? '').length > 0
+  if (trimmed.length === 0) {
+    delete all.keys[keyId(segments)]
+  } else {
+    all.keys[keyId(segments)] = encodeApiKey(trimmed)
+  }
+  await writeAll(all)
+}
+
+/** Remove the stored key. Any environment value is unaffected. */
+export async function clearApiKey(segments: string[]): Promise<void> {
+  assertSegments(segments)
+  const all = await readAll()
+  if (keyId(segments) in all.keys) {
+    delete all.keys[keyId(segments)]
+    await writeAll(all)
+  }
 }

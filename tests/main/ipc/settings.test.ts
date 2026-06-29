@@ -47,9 +47,9 @@ vi.mock('@main/store/library-move', () => ({ relocateLibrary }))
 
 vi.mock('@main/store/session', () => ({ getTapes: vi.fn(() => []) }))
 vi.mock('@main/services/api-keys', () => ({
-  writeAiKey: vi.fn(),
-  clearAiKey: vi.fn(),
-  hasAiKey: vi.fn(() => false),
+  writeApiKey: vi.fn(),
+  clearApiKey: vi.fn(),
+  hasApiKey: vi.fn(() => false),
 }))
 vi.mock('@main/power-blocker', () => ({ reconcileWakeLock: vi.fn() }))
 vi.mock('@main/paths', () => ({

@@ -3,7 +3,7 @@ import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { withRetry } from '@main/io/retry'
 import { AI_REQUEST_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
-import { readAiKey } from './api-keys'
+import { resolveApiKey } from './api-keys'
 
 /**
  * Slug generation against the single OpenAI-compatible endpoint configured in
@@ -17,7 +17,7 @@ export async function generateSlug(opts: {
   description?: string | null
 }): Promise<string> {
   const { ai, prompts } = getSettings()
-  const apiKey = await readAiKey()
+  const apiKey = await resolveApiKey(['openai'])
   if (!apiKey) throw new Error('No AI API key configured')
 
   const client = new OpenAI({
