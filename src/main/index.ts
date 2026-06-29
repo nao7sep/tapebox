@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs } from './paths.js'
+import { notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
 import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
 import { describeError } from '@shared/error'
 import { loadSettings } from './store/config.js'
@@ -85,20 +86,6 @@ async function startup(): Promise<void> {
 }
 
 /**
- * Native error box (works before the renderer is ready) telling the user their
- * library file was corrupt and has been preserved, so an empty window is never a
- * silent surprise.
- */
-function notifyCorruptSession(quarantinePath: string): void {
-  dialog.showErrorBox(
-    'Library could not be opened',
-    'Your tapebox library file was unreadable and has been set aside so nothing is lost:\n\n' +
-      `${quarantinePath}\n\n` +
-      'tapebox has started with an empty library. Your downloaded media files are untouched.',
-  )
-}
-
-/**
  * Idempotent teardown, run once on before-quit: flush session, stop the media
  * server, close the logger. The media server is in-process, so it dies with this
  * process — there is no separate server to leave stale.
@@ -147,11 +134,8 @@ void app.whenReady().then(() => {
     log.error('startup failed', { error: describeError(err) })
     // Report before stopping so a failed launch — most visibly an unusable
     // TAPEBOX_HOME that cannot be resolved or created — is never a silent
-    // no-window quit. dialog is safe here: app is ready.
-    dialog.showErrorBox(
-      'tapebox could not start',
-      `${err instanceof Error ? err.message : String(err)}\n\ntapebox will now quit.`,
-    )
+    // no-window quit. The app is ready, so the native box is safe.
+    notifyStartupFailure(err)
     app.quit()
   })
 
