@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
-import type { DerivedStatus, Operation } from '@shared/binary-status'
+import type { DerivedStatus } from '@shared/binary-status'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useBinariesStore, derivedOf } from '@renderer/store/binaries'
+import { useSettingsStore } from '@renderer/store/settings'
 import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { Modal } from '@renderer/components/Modal'
-import { Button, Spinner } from '@renderer/components/ui'
+import { Button, Spinner, Toggle } from '@renderer/components/ui'
 
 /**
  * The management surface for yt-dlp / ffmpeg / Deno (managed-dependency-status-
@@ -27,8 +28,24 @@ export function BinariesModal() {
   const setStatuses = useBinariesStore((s) => s.setStatuses)
   const setChecking = useBinariesStore((s) => s.setChecking)
   const closeModal = useBinariesStore((s) => s.closeModal)
+  const settings = useSettingsStore((s) => s.settings)
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState<BinaryName[]>([])
+
+  const checkOnLaunch = settings?.checkToolUpdates ?? true
+  const autoDownload = settings?.autoDownloadTools ?? false
+
+  // Persist the two gates. Auto-download implies the check (the main process also
+  // normalizes this, and the check toggle is disabled while auto-download is on).
+  async function saveGates(check: boolean, autoDl: boolean) {
+    setError(null)
+    try {
+      const next = await ipcInvoke('settings:update', { checkToolUpdates: check, autoDownloadTools: autoDl })
+      useSettingsStore.getState().setSettings(next)
+    } catch (err) {
+      setError(String(err))
+    }
+  }
 
   // A binary is busy from the moment we launch an operation until it resolves (it
   // reports live progress in between). Other binaries stay free to act.
@@ -92,6 +109,26 @@ export function BinariesModal() {
         yt-dlp uses for sites that need it.
       </p>
 
+      <div className="mt-5 space-y-3">
+        <Toggle
+          label="Check for tool updates on launch"
+          description={
+            autoDownload
+              ? 'Required while auto-download is on.'
+              : 'Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches.'
+          }
+          checked={checkOnLaunch || autoDownload}
+          disabled={autoDownload}
+          onChange={(v) => void saveGates(v, autoDownload)}
+        />
+        <Toggle
+          label="Download missing tools automatically"
+          description="When a required tool is missing at launch, download it without asking (shown in this window)."
+          checked={autoDownload}
+          onChange={(v) => void saveGates(checkOnLaunch, v)}
+        />
+      </div>
+
       <div className="mt-5 flex items-center justify-between text-xs text-zinc-300">
         <span>{lastCheckedHint(statuses, checking)}</span>
         <Button variant="secondary" size="sm" onClick={() => void refresh()} loading={checking}>
@@ -148,15 +185,12 @@ function BinaryRow({
   onVerify: () => void
 }) {
   const d = derivedOf(status)
-  // Provision / Update / Repair share the install action; Check is the top-level
-  // button (it resolves all tools at once), so it is not a per-row primary.
-  const installOp: Operation | null =
-    d.operation === 'provision' || d.operation === 'update' || d.operation === 'repair'
-      ? d.operation
-      : null
-  // Verify re-confirms something we provisioned; it's meaningless for an Absent tool
-  // (nothing there) or an Unmanaged user-copy (no install record to re-hash against).
+  // The force-(re)install button is always available — it (re)downloads and reinstalls
+  // regardless of state; only its label is contextual. Verify re-confirms an installed
+  // copy against its recorded hash, so it's meaningless for an Absent tool or an
+  // Unmanaged user-copy (no install record to compare against).
   const canVerify = d.lifecycle === 'provisioned' || d.lifecycle === 'faulted'
+  const installVariant = d.role === 'warning' || d.role === 'error' ? 'warm' : 'secondary'
 
   return (
     <>
@@ -177,16 +211,14 @@ function BinaryRow({
             </span>
           ) : (
             <span className="inline-flex gap-2">
-              {installOp && (
-                <Button variant="warm" size="sm" onClick={onInstall}>
-                  {installLabel(installOp, d)}
-                </Button>
-              )}
               {canVerify && (
                 <Button variant="secondary" size="sm" onClick={onVerify}>
                   Verify
                 </Button>
               )}
+              <Button variant={installVariant} size="sm" onClick={onInstall}>
+                {forceInstallLabel(d)}
+              </Button>
             </span>
           )}
         </td>
@@ -224,10 +256,12 @@ function latestText(status: BinaryStatus, d: DerivedStatus, checking: boolean): 
   return status.latestKnownVersion ?? '—'
 }
 
-function installLabel(op: Operation, d: DerivedStatus): string {
-  if (op === 'update') return 'Update'
-  if (op === 'repair') return 'Repair'
-  return d.lifecycle === 'unmanaged' ? 'Replace' : 'Install'
+/** Contextual label for the always-present force-(re)install button. */
+function forceInstallLabel(d: DerivedStatus): string {
+  if (d.lifecycle === 'absent') return 'Install'
+  if (d.lifecycle === 'unmanaged') return 'Replace'
+  if (d.currency === 'stale') return 'Update'
+  return 'Reinstall'
 }
 
 function lastCheckedHint(statuses: BinaryStatus[], checking: boolean): string {

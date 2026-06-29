@@ -49,17 +49,6 @@ export type DependencyFacts = {
   faultError: string | null
 }
 
-/**
- * Transient operation status, layered OVER the persisted state, never INTO it
- * (invariant I6). A running operation shows progress; a just-failed one shows the
- * error — but the lifecycle/currency underneath is unchanged (a failed Provision
- * leaves the dependency Absent, not in some "install-failed" state).
- */
-export type Transient =
-  | { kind: 'idle' }
-  | { kind: 'running'; operation: Operation; percent: number; phase: string }
-  | { kind: 'failed'; operation: Operation; error: string }
-
 export type DerivedStatus = {
   lifecycle: Lifecycle
   /** null unless lifecycle is 'provisioned' (invariant I2). */
@@ -67,13 +56,9 @@ export type DerivedStatus = {
   role: Role
   /** The primary operation the surface offers, or null when there's nothing to do. */
   operation: Operation | null
-  /** The message for an error/warning surface (fault, failed check, failed op), or null. */
+  /** The message for an error/warning surface (a fault or a failed check), or null. */
   detail: string | null
-  /** A live operation in flight, for the surface to render progress. */
-  running: { operation: Operation; percent: number; phase: string } | null
 }
-
-const IDLE: Transient = { kind: 'idle' }
 
 function deriveLifecycle(f: DependencyFacts): Lifecycle {
   if (!f.present) return 'absent'
@@ -121,45 +106,34 @@ function operationOf(lifecycle: Lifecycle, currency: Currency | null): Operation
 }
 
 /**
- * Compute the displayed state of one managed dependency from its recorded facts
- * and the transient status of any operation in flight. Pure and total.
+ * Compute the displayed state of one managed dependency from its recorded facts.
+ * Pure and total — a function of the persisted facts alone. Transient operation
+ * status (a running install's progress, a just-failed action) is layered over this
+ * by the surface, never folded into the persisted state, so it stays a separate
+ * concern the renderer owns.
  */
-export function deriveStatus(facts: DependencyFacts, transient: Transient = IDLE): DerivedStatus {
+export function deriveStatus(facts: DependencyFacts): DerivedStatus {
   const lifecycle = deriveLifecycle(facts)
   const currency = lifecycle === 'provisioned' ? deriveCurrency(facts) : null
-
-  let role = roleOf(lifecycle, currency)
-  let detail =
+  const detail =
     lifecycle === 'faulted' ? facts.faultError
     : currency === 'check-failed' ? facts.checkError
-    : null
-
-  // A just-failed operation overlays an error with its message; the persisted
-  // lifecycle/currency beneath are unchanged.
-  if (transient.kind === 'failed') {
-    role = 'error'
-    detail = transient.error
-  }
-
-  const running = transient.kind === 'running'
-    ? { operation: transient.operation, percent: transient.percent, phase: transient.phase }
     : null
 
   return {
     lifecycle,
     currency,
-    role,
+    role: roleOf(lifecycle, currency),
     operation: operationOf(lifecycle, currency),
     detail,
-    running,
   }
 }
 
 /**
  * The persisted-fact transitions an operation applies to a binary's settings entry.
  * Pure (no I/O) so the honest-state rules — a failed check never rewrites the
- * version, a version-undeterminable install is Faulted — are unit-tested directly,
- * with the manager reduced to gathering the outcome and persisting the result.
+ * version, a Verify hash-mismatch is the sole entry into Faulted — are unit-tested
+ * directly, with the manager reduced to gathering the outcome and persisting it.
  *
  * Typed against the persisted subset rather than importing the full settings
  * schema, so this stays node-/zod-free for the renderer bundle. The manager spreads
@@ -190,28 +164,17 @@ export function applyCheckOutcome<T extends BinaryEntryFacts>(entry: T, outcome:
 export type InstallOutcome = {
   version: string
   integrityVerified: boolean
-  determinable: boolean
   sha256: string
   nowIso: string
 }
 
-/** Apply a successful Provision/Update. A binary that won't report a usable version
- *  is Faulted (I4); otherwise Provisioned, recording the verified hash so a later
- *  Verify can detect corruption. Install also establishes currency (installed ===
- *  latest at install time → Current), clearing any prior error. */
+/** Apply a successful Provision/Update. A download that passed integrity and
+ *  installed is Provisioned, recording the verified hash so a later Verify can
+ *  detect corruption. Acquiring resolves the latest, so it also establishes
+ *  currency (installed === latest → Current), clearing any prior error. Runnability
+ *  is deliberately not probed here — the status model scopes faults to integrity
+ *  (the recorded hash), and Faulted is reached only by a later Verify mismatch. */
 export function nextEntryAfterInstall<T extends BinaryEntryFacts>(entry: T, o: InstallOutcome): T {
-  if (!o.determinable) {
-    return {
-      ...entry,
-      installedVersion: o.version,
-      latestKnownVersion: o.version,
-      lastCheckedAtUtc: o.nowIso,
-      integrity: 'failed',
-      verifiedSha256: null,
-      checkError: null,
-      faultError: 'the installed binary did not report a usable version',
-    }
-  }
   return {
     ...entry,
     installedVersion: o.version,
@@ -224,15 +187,13 @@ export function nextEntryAfterInstall<T extends BinaryEntryFacts>(entry: T, o: I
   }
 }
 
-export type VerifyOutcome = { currentSha: string; determinable: boolean }
+export type VerifyOutcome = { currentSha: string }
 
-/** Apply an on-demand Verify. A changed file (hash no longer matches the one recorded
- *  at install) or an undeterminable version is Faulted; otherwise it re-affirms
+/** Apply an on-demand Verify — a pure integrity re-check of the installed file
+ *  against the checksum recorded at install (never a re-download, never a runnability
+ *  probe). A hash mismatch is the sole entry into Faulted; a match re-affirms
  *  Verified, baselining the hash if none was recorded (legacy/trust-on-first-verify). */
 export function nextEntryAfterVerify<T extends BinaryEntryFacts>(entry: T, o: VerifyOutcome): T {
-  if (!o.determinable) {
-    return { ...entry, integrity: 'failed', faultError: 'the installed binary did not report a usable version' }
-  }
   if (entry.verifiedSha256 !== null && o.currentSha !== entry.verifiedSha256) {
     return { ...entry, integrity: 'failed', faultError: 'integrity check failed: the installed file changed since it was verified' }
   }

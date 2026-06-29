@@ -9,7 +9,7 @@ TapeBox is a local media library: download videos with `yt-dlp`, keep them as **
 - **Inbox & Archive** — new tapes land in the Inbox; archive keepers into named boxes, reorder by drag, and search the whole library
 - **Built-in player** — seeking, chapter navigation, and a wake lock so the screen won't sleep mid-watch
 - **Rename / refresh / export / re-import** — rename a tape and its files together, re-probe metadata with a before/after review, export the bundle to any folder, and bring it back later from its sidecar
-- **Managed binaries** — `yt-dlp`, `ffmpeg`, and `deno` are downloaded and updated automatically (except `ffmpeg` on Linux, which you install yourself)
+- **Managed binaries** — `yt-dlp`, `ffmpeg`, and `deno` are downloaded and version-checked for you; you approve each update, so a binary is never swapped silently, and you can re-verify one any time (except `ffmpeg` on Linux, which you install yourself)
 - **Custom `yt-dlp` args** — pass your own flags globally or per site profile
 
 ## Requirements

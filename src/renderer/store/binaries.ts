@@ -79,6 +79,23 @@ export function allBinariesUsable(statuses: BinaryStatus[]): boolean {
   )
 }
 
+/**
+ * Tools that warrant the surface auto-opening at startup: Absent, Faulted, or Stale
+ * (an available update) — full mumbler parity. Unchecked/Unmanaged are benign and
+ * never auto-open. Gated by the check-updates setting at the call site.
+ */
+export function binariesNeedAttention(statuses: BinaryStatus[]): boolean {
+  return statuses.some((s) => {
+    const { lifecycle, currency } = derivedOf(s)
+    return lifecycle === 'absent' || lifecycle === 'faulted' || currency === 'stale'
+  })
+}
+
+/** Names of the Absent tools — the set auto-download provisions (missing only). */
+export function absentBinaries(statuses: BinaryStatus[]): BinaryName[] {
+  return statuses.filter((s) => derivedOf(s).lifecycle === 'absent').map((s) => s.name)
+}
+
 export type ToolsSummary = { role: Role; text: string; actionable: boolean }
 
 /**

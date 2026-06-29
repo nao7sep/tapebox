@@ -89,25 +89,6 @@ describe('deriveStatus — currency (provisioned only)', () => {
   })
 })
 
-describe('deriveStatus — transient overlay (I6)', () => {
-  it('running shows progress without changing persisted lifecycle', () => {
-    const s = deriveStatus(facts({ present: false }), {
-      kind: 'running', operation: 'provision', percent: 42, phase: 'download',
-    })
-    expect(s.lifecycle).toBe('absent')
-    expect(s.running).toEqual({ operation: 'provision', percent: 42, phase: 'download' })
-  })
-
-  it('failed overlays an error but leaves lifecycle intact (absent after a failed provision)', () => {
-    const s = deriveStatus(facts({ present: false }), {
-      kind: 'failed', operation: 'provision', error: 'download failed',
-    })
-    expect(s.lifecycle).toBe('absent') // not some "install-failed" state
-    expect(s.role).toBe('error')
-    expect(s.detail).toBe('download failed')
-  })
-})
-
 describe('honest-state invariants', () => {
   it('I2 — currency is null unless provisioned', () => {
     const notProvisioned: DependencyFacts[] = [
@@ -173,9 +154,9 @@ describe('applyCheckOutcome', () => {
 })
 
 describe('nextEntryAfterInstall', () => {
-  const o = { version: '3.0.0', integrityVerified: true, determinable: true, sha256: 'deadbeef', nowIso: 'NOW' }
+  const o = { version: '3.0.0', integrityVerified: true, sha256: 'deadbeef', nowIso: 'NOW' }
 
-  it('verified + determinable → provisioned, records hash, clears errors, current', () => {
+  it('verified → provisioned·current, records hash, clears errors (no runnability probe)', () => {
     const next = nextEntryAfterInstall(entry({ checkError: 'x', faultError: 'y' }), o)
     expect(next).toMatchObject({
       installedVersion: '3.0.0', latestKnownVersion: '3.0.0', integrity: 'verified',
@@ -183,39 +164,32 @@ describe('nextEntryAfterInstall', () => {
     })
   })
 
-  it('undeterminable version → faulted (I4), no hash recorded', () => {
-    const next = nextEntryAfterInstall(entry(), { ...o, determinable: false })
-    expect(next.integrity).toBe('failed')
-    expect(next.verifiedSha256).toBeNull()
-    expect(next.faultError).toMatch(/did not report a usable version/)
-  })
-
-  it('unverified integrity (source published no sums) → integrity left unestablished', () => {
+  it('unverified integrity (source published no sums) → integrity left unestablished, no hash', () => {
     const next = nextEntryAfterInstall(entry(), { ...o, integrityVerified: false })
     expect(next.integrity).toBeNull()
     expect(next.verifiedSha256).toBeNull()
   })
+
+  it('never produces Faulted — a fresh acquire is never a fault (Verify is the sole entry)', () => {
+    expect(nextEntryAfterInstall(entry(), o).integrity).not.toBe('failed')
+    expect(nextEntryAfterInstall(entry(), { ...o, integrityVerified: false }).integrity).not.toBe('failed')
+  })
 })
 
-describe('nextEntryAfterVerify', () => {
-  it('matching hash + determinable → re-affirms verified, clears fault', () => {
-    const next = nextEntryAfterVerify(entry({ verifiedSha256: 'h1', faultError: 'old' }), { currentSha: 'h1', determinable: true })
+describe('nextEntryAfterVerify — pure integrity re-check (hash only)', () => {
+  it('matching hash → re-affirms verified, clears fault', () => {
+    const next = nextEntryAfterVerify(entry({ verifiedSha256: 'h1', faultError: 'old' }), { currentSha: 'h1' })
     expect(next).toMatchObject({ integrity: 'verified', faultError: null })
   })
 
-  it('changed file → faulted', () => {
-    const next = nextEntryAfterVerify(entry({ verifiedSha256: 'h1' }), { currentSha: 'h2', determinable: true })
+  it('changed file (hash mismatch) → faulted — the sole entry into Faulted', () => {
+    const next = nextEntryAfterVerify(entry({ verifiedSha256: 'h1' }), { currentSha: 'h2' })
     expect(next.integrity).toBe('failed')
     expect(next.faultError).toMatch(/changed since it was verified/)
   })
 
-  it('undeterminable version → faulted', () => {
-    const next = nextEntryAfterVerify(entry(), { currentSha: 'h1', determinable: false })
-    expect(next.integrity).toBe('failed')
-  })
-
   it('no baseline hash → trust-on-first-verify records the current hash', () => {
-    const next = nextEntryAfterVerify(entry({ verifiedSha256: null }), { currentSha: 'fresh', determinable: true })
+    const next = nextEntryAfterVerify(entry({ verifiedSha256: null }), { currentSha: 'fresh' })
     expect(next).toMatchObject({ integrity: 'verified', verifiedSha256: 'fresh' })
   })
 })

@@ -158,8 +158,14 @@ export const SettingsSchema = z.object({
   trashOnRemove: z.boolean(),
   confirmRemove: z.boolean(),
 
-  // Check GitHub/upstream for newer yt-dlp/ffmpeg/deno releases once at startup.
-  autoCheckBinaryUpdates: z.boolean(),
+  // Managed-tool gates (version-and-update settings grammar). checkToolUpdates:
+  // check GitHub/upstream for newer yt-dlp/ffmpeg/deno once at startup and surface
+  // anything needing attention. autoDownloadTools: additionally acquire MISSING
+  // (Absent) tools automatically at startup. Auto-download implies the check, so it
+  // is normalized to force checkToolUpdates on (normalizeToolGates) — the UI also
+  // disables the check toggle while auto-download is on.
+  checkToolUpdates: z.boolean(),
+  autoDownloadTools: z.boolean(),
 
   ai: AiSettingsSchema,
 
@@ -202,6 +208,17 @@ export const SettingsSchema = z.object({
 export type Settings = z.infer<typeof SettingsSchema>
 
 /**
+ * Enforce the managed-tool gate coupling: auto-downloading missing tools implies
+ * checking for them, so autoDownloadTools forces checkToolUpdates on. Applied on
+ * every settings read and write (config.ts), so even a hand-edited config with
+ * auto-download on and check off resolves to a consistent state. The UI separately
+ * disables the check toggle while auto-download is on; this is the load-time guard.
+ */
+export function normalizeToolGates(s: Settings): Settings {
+  return s.autoDownloadTools && !s.checkToolUpdates ? { ...s, checkToolUpdates: true } : s
+}
+
+/**
  * Default settings used when config.json is missing on first launch.
  * libraryDir defaults to '' — an empty value means "use the default library
  * folder", which main/ resolves to paths.library via getLibraryDir(). The actual
@@ -219,7 +236,8 @@ export function defaultSettings(): Settings {
     volume: 1,
     trashOnRemove: true,
     confirmRemove: true,
-    autoCheckBinaryUpdates: true,
+    checkToolUpdates: true,
+    autoDownloadTools: false,
     ai: {
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-5.4-mini',
@@ -276,7 +294,8 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     volume: s.volume,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
-    autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
+    checkToolUpdates: s.checkToolUpdates,
+    autoDownloadTools: s.autoDownloadTools,
     aiBaseUrl: stripUrlCredentials(s.ai.baseUrl),
     aiModel: s.ai.model,
     externalPlayer: s.externalPlayer,

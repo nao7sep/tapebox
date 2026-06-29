@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { defaultSettings, SettingsSchema, summarizeSettings } from '@shared/settings'
+import { defaultSettings, normalizeToolGates, SettingsSchema, summarizeSettings } from '@shared/settings'
+
+describe('normalizeToolGates', () => {
+  it('forces checkToolUpdates on when autoDownloadTools is on', () => {
+    const s = { ...defaultSettings(), checkToolUpdates: false, autoDownloadTools: true }
+    expect(normalizeToolGates(s).checkToolUpdates).toBe(true)
+  })
+
+  it('leaves a consistent config untouched (same reference)', () => {
+    const off = { ...defaultSettings(), checkToolUpdates: false, autoDownloadTools: false }
+    expect(normalizeToolGates(off)).toBe(off)
+    const on = { ...defaultSettings(), checkToolUpdates: true, autoDownloadTools: true }
+    expect(normalizeToolGates(on)).toBe(on)
+  })
+
+  it('default config: check on, auto-download off', () => {
+    const d = defaultSettings()
+    expect(d.checkToolUpdates).toBe(true)
+    expect(d.autoDownloadTools).toBe(false)
+  })
+})
 
 describe('SettingsSchema', () => {
   it('parses a complete config', () => {

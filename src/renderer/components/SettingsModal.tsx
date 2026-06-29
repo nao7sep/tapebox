@@ -253,7 +253,6 @@ function pickEditable(s: Settings) {
     keepAwakeWhilePlaying: s.keepAwakeWhilePlaying,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
-    autoCheckBinaryUpdates: s.autoCheckBinaryUpdates,
     externalPlayer: s.externalPlayer,
     defaultExportDir: s.defaultExportDir,
     deleteAfterExport: s.deleteAfterExport,
@@ -367,13 +366,6 @@ function GeneralTab({
           Comma-separated font families; the first one your system has is used. Blank uses the built-in default.
         </p>
       </div>
-      <Toggle
-        label="Check for tool updates on startup"
-        description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
-        checked={draft.autoCheckBinaryUpdates}
-        disabled={busy}
-        onChange={(v) => onPatch({ autoCheckBinaryUpdates: v })}
-      />
       <Toggle
         label="Autostart downloads"
         description="Newly added tapes start downloading immediately. Off = added as paused."

@@ -8,7 +8,7 @@ import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
-import { useBinariesStore, allBinariesUsable } from '@renderer/store/binaries'
+import { useBinariesStore, binariesNeedAttention, absentBinaries } from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
@@ -55,6 +55,7 @@ export default function App() {
   const binaryStatuses = useBinariesStore((s) => s.statuses)
   const binariesModalOpen = useBinariesStore((s) => s.modalOpen)
   const openBinariesModal = useBinariesStore((s) => s.openModal)
+  const settings = useSettingsStore((s) => s.settings)
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -115,7 +116,7 @@ export default function App() {
     void ipcInvoke('settings:get')
       .then((s) => {
         useSettingsStore.getState().setSettings(s)
-        if (!s.autoCheckBinaryUpdates) return
+        if (!s.checkToolUpdates) return
         if (!lastCheckedStale(s.binaries)) return
         // Best-effort background check the user didn't trigger: main logs the
         // authoritative per-binary + summary outcome, so here we only note at debug
@@ -131,14 +132,24 @@ export default function App() {
     return stop
   }, [])
 
-  // Once the first status snapshot arrives, present the tools surface blockingly if
-  // any required tool is Absent or Faulted (not usable). Decided once so it doesn't
-  // reopen after the user closes it.
+  // Once both settings and the first status snapshot are in, do the one-shot startup
+  // tool housekeeping (decided once so it doesn't repeat after the user closes the
+  // modal). Gated on checkToolUpdates: open the surface when any tool needs attention
+  // (Absent / Faulted / an available update). If autoDownloadTools is on (which forces
+  // checkToolUpdates on), additionally provision the MISSING (Absent) tools — each
+  // install reports progress in the now-open modal; a failure is logged, never silent.
   useEffect(() => {
-    if (decidedFirstRun.current || binaryStatuses.length === 0) return
+    if (decidedFirstRun.current || !settings || binaryStatuses.length === 0) return
     decidedFirstRun.current = true
-    if (!allBinariesUsable(binaryStatuses)) openBinariesModal()
-  }, [binaryStatuses, openBinariesModal])
+    if (settings.checkToolUpdates && binariesNeedAttention(binaryStatuses)) openBinariesModal()
+    if (settings.autoDownloadTools) {
+      for (const name of absentBinaries(binaryStatuses)) {
+        void ipcInvoke('binaries:update', { name }).catch((err) =>
+          log.debug('auto-download failed', { name, error: describeError(err) }),
+        )
+      }
+    }
+  }, [settings, binaryStatuses, openBinariesModal])
 
   useEffect(() => {
     if (selectedId && !tapes.some((i) => i.id === selectedId)) select(null)

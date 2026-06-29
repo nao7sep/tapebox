@@ -23,10 +23,6 @@ export type ResolvedAsset = {
 
 export type BinarySpec = {
   name: BinaryName
-  versionFlag: string
-  // Returns null when the binary's version can't be determined from its output —
-  // the state model reads that as a Faulted signal, never a guessed string.
-  parseVersion: (stdout: string) => string | null
   resolveLatest: () => Promise<ResolvedAsset>
 }
 
@@ -40,8 +36,6 @@ function ytDlpAssetName(): string {
 
 const ytDlpSpec: BinarySpec = {
   name: 'yt-dlp',
-  versionFlag: '--version',
-  parseVersion: (stdout) => stdout.trim().split('\n')[0] || null,
   resolveLatest: async () => {
     const release = await fetchLatestRelease('yt-dlp', 'yt-dlp')
     const assetName = ytDlpAssetName()
@@ -79,11 +73,6 @@ function denoAssetName(): string {
 
 const denoSpec: BinarySpec = {
   name: 'deno',
-  versionFlag: '--version',
-  parseVersion: (stdout) => {
-    const m = stdout.match(/deno ([\d.]+)/)
-    return m?.[1] ?? stdout.trim().split('\n')[0] ?? null
-  },
   resolveLatest: async () => {
     const release = await fetchLatestRelease('denoland', 'deno')
     const assetName = denoAssetName()
@@ -162,11 +151,6 @@ async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
 
 const ffmpegSpec: BinarySpec = {
   name: 'ffmpeg',
-  versionFlag: '-version',
-  parseVersion: (stdout) => {
-    const m = stdout.match(/ffmpeg version ([^\s]+)/)
-    return m?.[1] ?? null
-  },
   resolveLatest: async () => {
     if (process.platform === 'darwin') return resolveFfmpegMacOS()
     if (process.platform === 'win32')  return resolveFfmpegWindows()

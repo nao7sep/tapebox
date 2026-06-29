@@ -3,7 +3,7 @@ import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } from '@shared/settings'
+import { SettingsSchema, defaultSettings, normalizeToolGates, summarizeSettings, type Settings } from '@shared/settings'
 
 /**
  * Config cache + atomic persistence for ~/.tapebox/config.json.
@@ -48,7 +48,7 @@ async function readConfig(): Promise<Settings | null> {
     return null
   }
   const parsed = SettingsSchema.safeParse(raw)
-  if (parsed.success) return parsed.data
+  if (parsed.success) return normalizeToolGates(parsed.data)
   log.warn('config invalid; falling back to defaults', { error: describeError(parsed.error) })
   return null
 }
@@ -90,7 +90,7 @@ export function mutateSettings(
   const run = writeChain.then(async () => {
     if (!cache) throw new Error('config.ts: loadSettings() must be awaited first')
     const patch = mutator(cache)
-    const merged = SettingsSchema.parse({ ...cache, ...patch })
+    const merged = normalizeToolGates(SettingsSchema.parse({ ...cache, ...patch }))
     cache = merged
     await writeJsonAtomic(paths.config, merged, SettingsSchema)
     log.info('settings updated', { keys: Object.keys(patch) })
