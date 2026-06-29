@@ -105,6 +105,7 @@ export type IpcCalls = {
   'binaries:status':       { req: undefined;                         res: BinaryStatus[] }
   'binaries:update':       { req: { name: BinaryName };              res: void }
   'binaries:checkUpdates': { req: undefined;                         res: BinaryStatus[] }
+  'binaries:verify':       { req: { name: BinaryName };              res: BinaryStatus[] }
 
   // ── Scan (page scan) ──────────────────────────────────────────────
   // The Scan-a-page modal subscribes to scan:* events, then calls scan:start.
@@ -145,12 +146,24 @@ export type SidecarRaw = Record<string, unknown> & {
   tapebox?: Record<string, unknown>
 }
 
+/**
+ * One managed binary's recorded facts on the wire — the input to deriveStatus
+ * (@shared/binary-status), which the renderer calls to compute the displayed
+ * lifecycle/currency/role. This carries facts, not a pre-derived state, so every
+ * surface derives through the one shared rule. `present` is re-probed by main per
+ * snapshot; the rest mirror the persisted BinaryEntry. Transient operation status
+ * (in-flight progress, a just-failed action) is NOT here — it lives in the renderer
+ * store and is layered over the derived state.
+ */
 export type BinaryStatus = {
   name: BinaryName
+  present: boolean
+  integrity: 'verified' | 'failed' | null
   installedVersion: string | null
   latestKnownVersion: string | null
   lastCheckedAtUtc: string | null
-  isUpdating: boolean
+  checkError: string | null
+  faultError: string | null
 }
 
 export type ImportResult = {

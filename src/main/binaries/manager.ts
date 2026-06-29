@@ -6,15 +6,21 @@ import { emit } from '@main/ipc/events'
 import { getSettings, mutateSettings } from '@main/store/config'
 import { execCapture } from '@main/io/spawn'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
-import { describeError } from '@shared/error'
+import { describeError, errorMessage } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
+import {
+  applyCheckOutcome,
+  nextEntryAfterInstall,
+  nextEntryAfterVerify,
+  type CheckOutcome,
+} from '@shared/binary-status'
 import { withRetry } from '@main/io/retry'
 import { BINARY_DOWNLOAD_IDLE_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import { downloadWithProgress } from './http'
 import { extractFileFromZip } from './archive'
-import { verifyBinaryIntegrity } from './integrity'
+import { sha256OfFile, verifyBinaryIntegrity } from './integrity'
 
 /**
  * Per-binary install / update orchestration.
@@ -52,7 +58,10 @@ async function isInstalled(name: BinaryName): Promise<boolean> {
 // check forever — an idle watchdog turns that into a prompt failure instead.
 const VERSION_CHECK_IDLE_TIMEOUT_MS = 15_000
 
-async function verifyVersion(name: BinaryName): Promise<string> {
+// The installed binary's self-reported version, or null when it can't be
+// determined (the binary won't run, or its output doesn't parse) — which the
+// state model treats as a Faulted signal, never a guessed string.
+async function verifyVersion(name: BinaryName): Promise<string | null> {
   const spec = binarySpecs[name]
   const { stdout } = await execCapture(binaryPath(name), [spec.versionFlag], {
     reject: false,
@@ -61,16 +70,22 @@ async function verifyVersion(name: BinaryName): Promise<string> {
   return spec.parseVersion(stdout)
 }
 
+// Assemble the recorded facts for one binary: the persisted entry plus a freshly
+// re-probed `present` (cheap filesystem check, not persisted, so it can't drift
+// from disk). The renderer derives lifecycle/currency/role from these via the
+// shared deriveStatus — main records facts, it does not pre-derive state.
 async function getStatus(name: BinaryName): Promise<BinaryStatus> {
-  const settings = getSettings()
-  const entry = settings.binaries[name]
-  const installed = await isInstalled(name)
+  const entry = getSettings().binaries[name]
+  const present = await isInstalled(name)
   return {
     name,
-    installedVersion: installed ? entry.installedVersion : null,
+    present,
+    integrity: entry.integrity,
+    installedVersion: entry.installedVersion,
     latestKnownVersion: entry.latestKnownVersion,
     lastCheckedAtUtc: entry.lastCheckedAtUtc,
-    isUpdating: installing.has(name),
+    checkError: entry.checkError,
+    faultError: entry.faultError,
   }
 }
 
@@ -79,48 +94,46 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
 }
 
 /**
- * Resolve the latest upstream version of every binary and persist them.
- *
- * Resilient: a binary whose resolveLatest throws (e.g. ffmpeg on Linux) is
- * logged and skipped — the others still update. lastCheckedAtUtc and
- * latestKnownVersion are persisted only for binaries that resolved successfully.
+ * Resolve the latest upstream version of every binary and record the outcome of
+ * each check honestly. Every binary's lastCheckedAtUtc advances on the attempt; a
+ * success records latestKnownVersion and clears any prior error, while a failure
+ * (network down, a version string we couldn't parse, ffmpeg on Linux) records the
+ * error — deriving to Check-failed — and leaves the version untouched. A failed
+ * check is never silently dropped to "unchecked" or left showing a stale Current.
  */
 export async function checkForUpdates(): Promise<BinaryStatus[]> {
   const now = nowUtcIso()
-  const resolvedVersions = new Map<BinaryName, string>()
-  let failed = 0
+  const outcomes = new Map<BinaryName, CheckOutcome>()
 
   await Promise.all(
     binaryNames.map(async (name) => {
       try {
         const asset = await binarySpecs[name].resolveLatest()
-        resolvedVersions.set(name, asset.version)
+        outcomes.set(name, { ok: true, version: asset.version })
       } catch (err) {
-        failed++
+        outcomes.set(name, { ok: false, error: errorMessage(err) })
         log.warn('binary update check failed', { name, error: describeError(err) })
       }
     }),
   )
 
-  log.info('binary update check complete', { resolved: resolvedVersions.size, failed })
-  if (resolvedVersions.size > 0) {
-    // Apply inside the settings critical section: read the *current* binaries (so a
-    // concurrent install's installedVersion is preserved) and override only the
-    // resolved fields.
-    await mutateSettings((s) => {
-      const nextBinaries = { ...s.binaries }
-      for (const [name, version] of resolvedVersions) {
-        nextBinaries[name] = { ...s.binaries[name], latestKnownVersion: version, lastCheckedAtUtc: now }
-      }
-      return { binaries: nextBinaries }
-    })
-  }
+  const failed = [...outcomes.values()].filter((o) => !o.ok).length
+  log.info('binary update check complete', { resolved: outcomes.size - failed, failed })
+  // Apply inside the settings critical section: read the *current* entry (so a
+  // concurrent install's fields are preserved) and fold in each check outcome.
+  await mutateSettings((s) => {
+    const nextBinaries = { ...s.binaries }
+    for (const [name, outcome] of outcomes) {
+      nextBinaries[name] = applyCheckOutcome(s.binaries[name], outcome, now)
+    }
+    return { binaries: nextBinaries }
+  })
   return getAllStatuses()
 }
 
 export async function installOrUpdate(name: BinaryName): Promise<void> {
   if (installing.has(name)) {
-    throw new Error(`${name} install already in progress`)
+    throw new Error(`${name} operation already in progress`)
   }
   installing.add(name)
   try {
@@ -128,6 +141,47 @@ export async function installOrUpdate(name: BinaryName): Promise<void> {
   } finally {
     installing.delete(name)
   }
+}
+
+/**
+ * Re-confirm a provisioned binary on demand: re-hash it against the value recorded
+ * at install and confirm it still reports a usable version. A changed file or an
+ * undeterminable version moves it to Faulted; otherwise it re-affirms Provisioned.
+ * A binary we never provisioned (Absent, or a user-placed Unmanaged copy) has
+ * nothing for us to verify and is left untouched. Serialized against install via
+ * the same per-binary lock. Returns the refreshed statuses.
+ */
+export async function verify(name: BinaryName): Promise<BinaryStatus[]> {
+  if (installing.has(name)) {
+    throw new Error(`${name} operation already in progress`)
+  }
+  installing.add(name)
+  try {
+    await performVerify(name)
+  } finally {
+    installing.delete(name)
+  }
+  return getAllStatuses()
+}
+
+async function performVerify(name: BinaryName): Promise<void> {
+  const entry = getSettings().binaries[name]
+  // Only re-verify something this app provisioned (a recorded installedVersion).
+  if (entry.installedVersion === null || !(await isInstalled(name))) return
+
+  const currentSha = await sha256OfFile(binaryPath(name))
+  const selfReported = await verifyVersion(name)
+  log.info('binary verify', { name, determinable: selfReported !== null })
+
+  await mutateSettings((s) => ({
+    binaries: {
+      ...s.binaries,
+      [name]: nextEntryAfterVerify(s.binaries[name], {
+        currentSha,
+        determinable: selfReported !== null,
+      }),
+    },
+  }))
 }
 
 async function performInstall(name: BinaryName): Promise<void> {
@@ -158,13 +212,15 @@ async function performInstall(name: BinaryName): Promise<void> {
   )
 
   const finalPath = binaryPath(name)
+  let integrityVerified = false
   try {
     // Integrity gate: verify the downloaded bytes against the vendor's published
-    // integrity material (a SHA-256 sums file or a pinned-key OpenPGP signature)
-    // before making them executable. A failure throws and aborts the install (the
-    // temp is cleaned in the finally below); a vendor that publishes nothing is
-    // logged and installed unverified (https-only transport still applies).
+    // SHA-256 sums file before making them executable. A failure throws and aborts
+    // the install (the temp is cleaned in the finally below); a source that
+    // publishes nothing is logged and installed unverified (https-only transport
+    // still applies), and its integrity is recorded as unestablished, not verified.
     const integrity = await verifyBinaryIntegrity(downloadTemp, resolved.integrity)
+    integrityVerified = integrity.verified
     if (integrity.verified) {
       log.info('binary integrity verified', { name, method: integrity.method })
     } else {
@@ -197,22 +253,25 @@ async function performInstall(name: BinaryName): Promise<void> {
   }
 
   emit('binaries:progress', { name, percent: 100, phase: 'verify' })
-  // Confirm the binary executes, but record resolved.version rather than the
-  // self-reported one: ffmpeg reports a builder suffix ("8.1.1-tessus") and deno a
-  // "v" prefix, which would otherwise never equal the upstream version the update
-  // check compares against, flagging a phantom update on install.
+  // Hash the published binary so a later Verify can detect corruption, and confirm
+  // it executes. We record resolved.version (the upstream string), not the
+  // self-reported one — ffmpeg reports a builder suffix and deno a "v" prefix, which
+  // would never equal the upstream version the check compares against — but a binary
+  // that reports NO usable version is recorded as Faulted rather than trusted.
+  const installedSha = await sha256OfFile(finalPath)
   const selfReported = await verifyVersion(name)
-  log.info('binary installed', { name, version: resolved.version, selfReported })
+  log.info('binary installed', { name, version: resolved.version, selfReported, integrityVerified })
 
   await mutateSettings((s) => ({
     binaries: {
       ...s.binaries,
-      [name]: {
-        ...s.binaries[name],
-        installedVersion: resolved.version,
-        latestKnownVersion: resolved.version,
-        lastCheckedAtUtc: nowUtcIso(),
-      },
+      [name]: nextEntryAfterInstall(s.binaries[name], {
+        version: resolved.version,
+        integrityVerified,
+        determinable: selfReported !== null,
+        sha256: installedSha,
+        nowIso: nowUtcIso(),
+      }),
     },
   }))
 

@@ -3,7 +3,7 @@ import { HTTP_RETRY, VERSION_CHECK_TIMEOUT_MS } from './network'
 
 /**
  * GET + parse JSON with a per-attempt request timeout plus retries with backoff.
- * Used for the small upstream lookups (GitHub releases, evermeet ffmpeg info) —
+ * Used for the small upstream lookups (GitHub release metadata) —
  * safe to retry, no block risk.
  */
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -31,15 +31,20 @@ export async function fetchText(url: string, init?: RequestInit): Promise<string
 }
 
 /**
- * GET + return the response body as raw bytes, same retry/timeout policy as
- * fetchJson. Used for small binary lookups such as a detached OpenPGP `.sig`.
+ * GET a URL WITHOUT following redirects and return its Location header verbatim
+ * (which may be a relative path — the caller resolves it). Same retry/timeout policy
+ * as fetchJson. Used to resolve a vendor's stable "latest" redirect to a concrete
+ * versioned URL (martin-riedl's ffmpeg, which exposes no JSON API).
  */
-export async function fetchBytes(url: string, init?: RequestInit): Promise<Uint8Array> {
+export async function fetchRedirectLocation(url: string, init?: RequestInit): Promise<string> {
   return withRetry(HTTP_RETRY, () =>
     withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, undefined, async (signal) => {
-      const res = await fetch(url, { ...init, signal })
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
-      return new Uint8Array(await res.arrayBuffer())
+      const res = await fetch(url, { ...init, redirect: 'manual', signal })
+      const location = res.headers.get('location')
+      if (!location) {
+        throw new Error(`expected a redirect with a Location header from ${url} (got HTTP ${res.status})`)
+      }
+      return location
     }),
   )
 }

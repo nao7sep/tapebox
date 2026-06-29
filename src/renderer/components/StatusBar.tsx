@@ -2,11 +2,8 @@ import type { ReactNode } from 'react'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useToastStore } from '@renderer/store/toast'
-import {
-  useBinariesStore,
-  binariesWithUpdate,
-  updatesChecked,
-} from '@renderer/store/binaries'
+import { useBinariesStore, summarizeBinaries } from '@renderer/store/binaries'
+import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { summarizeActivity } from '@renderer/lib/activity'
 import { formatSpeed, formatTime } from '@renderer/lib/format'
 import { Spinner } from '@renderer/components/ui'
@@ -96,37 +93,28 @@ function NoticeZone() {
 }
 
 /**
- * Managed-binary state. Actionable states (something missing, an update waiting)
- * open the tools modal on click; purely informational states stay plain text.
- * "Updates not checked" covers both auto-check being off and a check that failed.
+ * Managed-binary roll-up: the worst role across all tools, with the message and
+ * click-through the shared summary decides. A genuine fault or a failed check shows
+ * in the error role (red), distinct from a benign "Updates not checked"; a quiet
+ * (all Provisioned + Current) set reads "Tools ready". An operation in flight shows
+ * its transient progress, which sits above the persisted roll-up.
  */
 function ToolsZone() {
   const statuses = useBinariesStore((s) => s.statuses)
   const checking = useBinariesStore((s) => s.checking)
+  const progress = useBinariesStore((s) => s.progress)
   const openModal = useBinariesStore((s) => s.openModal)
 
-  const loaded = statuses.length > 0
-  const missing = statuses.filter((s) => s.installedVersion === null).length
-  const updates = binariesWithUpdate(statuses).length
-
-  if (!loaded) return <Busy>Loading…</Busy>
-  if (missing > 0) {
-    return (
-      <Action onClick={openModal} className="text-amber-300">
-        {missing} {missing === 1 ? 'tool isn’t' : 'tools aren’t'} installed
-      </Action>
-    )
-  }
+  if (statuses.length === 0) return <Busy>Loading…</Busy>
   if (checking) return <Busy>Checking for updates…</Busy>
-  if (updates > 0) {
-    return (
-      <Action onClick={openModal} className="text-sky-300">
-        {updates} {updates === 1 ? 'update' : 'updates'} available
-      </Action>
-    )
-  }
-  if (updatesChecked(statuses)) return <Plain>Tools up to date</Plain>
-  return <Plain>Updates not checked</Plain>
+  if (Object.keys(progress).length > 0) return <Busy>Working on tools…</Busy>
+
+  const { role, text, actionable } = summarizeBinaries(statuses)
+  if (role === 'none') return <Plain>{text}</Plain>
+
+  const cls = ROLE_TEXT_CLASS[role]
+  if (actionable) return <Action onClick={openModal} className={cls}>{text}</Action>
+  return <span className={`block truncate ${cls}`}>{text}</span>
 }
 
 function Plain({ children }: { children: ReactNode }) {

@@ -20,7 +20,7 @@ import type { RetryPolicy } from './retry'
  */
 export const YTDLP_PROBE_IDLE_TIMEOUT_MS = 30_000
 
-/** Per-attempt request deadline for the small upstream JSON lookups (GitHub releases, evermeet ffmpeg info). */
+/** Per-attempt request deadline for the small upstream lookups (GitHub releases, the martin-riedl ffmpeg redirect, sums files). */
 export const VERSION_CHECK_TIMEOUT_MS = 30_000
 
 /** Idle watchdog for binary downloads from GitHub — guards against a stalled transfer. */
@@ -31,7 +31,7 @@ export const AI_REQUEST_TIMEOUT_MS = 120_000
 
 /**
  * Retry schedule for transient failures against well-behaved HTTP endpoints
- * (GitHub, evermeet, the AI provider) — 429/5xx and connection blips, safe to
+ * (GitHub, the ffmpeg build hosts, the AI provider) — 429/5xx and connection blips, safe to
  * retry. No jitter: jitter decorrelates many clients hitting one server, and
  * there is only ever one client here.
  */

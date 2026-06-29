@@ -47,9 +47,12 @@ export function startIpcSync(): () => void {
     ipcOn('binaries:progress', ({ name, percent, phase }) =>
       useBinariesStore.getState().setProgress(name, percent, phase),
     ),
-    ipcOn('binaries:ready', ({ name, version }) =>
-      useBinariesStore.getState().markReady(name, version),
-    ),
+    // An install finished: clear its progress and re-pull the authoritative facts
+    // (present, integrity, versions) rather than patching a guess locally.
+    ipcOn('binaries:ready', ({ name }) => {
+      useBinariesStore.getState().clearProgress(name)
+      void ipcInvoke('binaries:status').then((s) => useBinariesStore.getState().setStatuses(s))
+    }),
   ]
   return () => offs.forEach((off) => off())
 }

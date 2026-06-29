@@ -8,7 +8,7 @@ import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
-import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
+import { useBinariesStore, allBinariesUsable } from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
@@ -131,12 +131,13 @@ export default function App() {
     return stop
   }, [])
 
-  // Once the first status snapshot arrives, open the tools modal if anything is
-  // missing. Decided once so it doesn't reopen after the user closes it.
+  // Once the first status snapshot arrives, present the tools surface blockingly if
+  // any required tool is Absent or Faulted (not usable). Decided once so it doesn't
+  // reopen after the user closes it.
   useEffect(() => {
     if (decidedFirstRun.current || binaryStatuses.length === 0) return
     decidedFirstRun.current = true
-    if (!allBinariesInstalled(binaryStatuses)) openBinariesModal()
+    if (!allBinariesUsable(binaryStatuses)) openBinariesModal()
   }, [binaryStatuses, openBinariesModal])
 
   useEffect(() => {

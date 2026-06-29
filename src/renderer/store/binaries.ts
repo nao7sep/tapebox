@@ -1,5 +1,12 @@
 import { create } from 'zustand'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
+import {
+  deriveStatus,
+  rollupRole,
+  type DependencyFacts,
+  type DerivedStatus,
+  type Role,
+} from '@shared/binary-status'
 
 type Phase = 'download' | 'verify' | 'install'
 
@@ -12,7 +19,7 @@ type BinariesState = {
   checking: boolean
   setStatuses: (s: BinaryStatus[]) => void
   setProgress: (name: BinaryName, percent: number, phase: Phase) => void
-  markReady: (name: BinaryName, version: string) => void
+  clearProgress: (name: BinaryName) => void
   setChecking: (checking: boolean) => void
   openModal: () => void
   closeModal: () => void
@@ -27,42 +34,78 @@ export const useBinariesStore = create<BinariesState>((set) => ({
   setChecking: (checking) => set({ checking }),
   setProgress: (name, percent, phase) =>
     set((state) => ({ progress: { ...state.progress, [name]: { percent, phase } } })),
-  markReady: (name, version) =>
+  clearProgress: (name) =>
     set((state) => {
-      const nextProgress = { ...state.progress }
-      delete nextProgress[name]
-      return {
-        progress: nextProgress,
-        statuses: state.statuses.map((s) =>
-          s.name === name ? { ...s, installedVersion: version, isUpdating: false } : s,
-        ),
-      }
+      const next = { ...state.progress }
+      delete next[name]
+      return { progress: next }
     }),
   openModal: () => set({ modalOpen: true }),
   closeModal: () => set({ modalOpen: false }),
 }))
 
-/** True once every managed binary is installed. Empty status list = not yet known. */
-export function allBinariesInstalled(statuses: BinaryStatus[]): boolean {
-  return statuses.length > 0 && statuses.every((s) => s.installedVersion !== null)
+// ── Derivation: one shared rule both surfaces (status bar + modal) call ──────
+
+/** Adapt the wire status to the derivation's fact shape (latestKnownVersion is the
+ *  "desired" version in the model's vocabulary). */
+export function factsOf(s: BinaryStatus): DependencyFacts {
+  return {
+    present: s.present,
+    integrity: s.integrity,
+    installedVersion: s.installedVersion,
+    desiredVersion: s.latestKnownVersion,
+    lastCheckedAtUtc: s.lastCheckedAtUtc,
+    checkError: s.checkError,
+    faultError: s.faultError,
+  }
 }
 
-/** Installed binaries whose latest known upstream version differs from the installed one. */
-export function binariesWithUpdate(statuses: BinaryStatus[]): BinaryStatus[] {
-  return statuses.filter(
-    (s) =>
-      s.installedVersion !== null &&
-      s.latestKnownVersion !== null &&
-      s.latestKnownVersion !== s.installedVersion,
-  )
+export function derivedOf(s: BinaryStatus): DerivedStatus {
+  return deriveStatus(factsOf(s))
 }
 
 /**
- * True when every installed binary has a known latest version — i.e. a check
- * actually resolved. False covers both "auto-check off / never ran" and "the
- * check failed", since a failed lookup leaves latestKnownVersion null.
+ * True once every managed binary is present and usable — Provisioned or a
+ * user-supplied Unmanaged copy. Drives the blocking gate: anything Absent or
+ * Faulted means the tools surface should be presented.
  */
-export function updatesChecked(statuses: BinaryStatus[]): boolean {
-  const installed = statuses.filter((s) => s.installedVersion !== null)
-  return installed.length > 0 && installed.every((s) => s.latestKnownVersion !== null)
+export function allBinariesUsable(statuses: BinaryStatus[]): boolean {
+  return (
+    statuses.length > 0 &&
+    statuses.every((s) => {
+      const { lifecycle } = derivedOf(s)
+      return lifecycle === 'provisioned' || lifecycle === 'unmanaged'
+    })
+  )
+}
+
+export type ToolsSummary = { role: Role; text: string; actionable: boolean }
+
+/**
+ * The single roll-up for the status bar: the worst role across all binaries
+ * (error > warning > info > none) with a representative message. Pure, so the
+ * status bar renders only what this returns. Quiet (role 'none') when every binary
+ * is Provisioned + Current — the convention's default silence.
+ */
+export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
+  const derived = statuses.map(derivedOf)
+  const role = rollupRole(derived.map((d) => d.role))
+
+  const count = (pred: (d: DerivedStatus) => boolean) => derived.filter(pred).length
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+  if (role === 'error') {
+    return { role, text: `${plural(count((d) => d.role === 'error'), 'tool needs', 'tools need')} attention`, actionable: true }
+  }
+  if (role === 'warning') {
+    const absent = count((d) => d.lifecycle === 'absent')
+    if (absent > 0) return { role, text: `${plural(absent, "tool isn’t", "tools aren’t")} installed`, actionable: true }
+    return { role, text: `${plural(count((d) => d.currency === 'stale'), 'update', 'updates')} available`, actionable: true }
+  }
+  if (role === 'info') {
+    const unchecked = count((d) => d.currency === 'unchecked')
+    if (unchecked > 0) return { role, text: 'Updates not checked', actionable: false }
+    return { role, text: 'Using your own copy', actionable: false }
+  }
+  return { role: 'none', text: 'Tools ready', actionable: false }
 }

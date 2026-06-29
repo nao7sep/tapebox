@@ -1,12 +1,47 @@
 import { z } from 'zod'
 import { stripUrlCredentials } from './url'
 
+/**
+ * The persisted, per-binary facts that are the single source of truth for its
+ * managed-dependency status (managed-dependency-status-conventions). These are the
+ * recorded facts deriveStatus reads — never a parallel value that can drift:
+ *
+ *   - integrity        — the last integrity result; separates Provisioned from
+ *                        Faulted. null on a config written before this field existed
+ *                        (a recorded installedVersion then still reads as Provisioned).
+ *   - verifiedSha256   — the installed binary's hash at successful provision, so an
+ *                        on-demand Verify can detect later corruption.
+ *   - checkError       — the last currency-check failure; its presence is Check-failed,
+ *                        kept apart from latestKnownVersion so a failed check can never
+ *                        masquerade as Current.
+ *   - faultError       — the detail shown when Faulted.
+ *
+ * The four added fields default so a config written before they existed still
+ * validates (the app is pre-release; this is a schema default, not migration code).
+ */
 export const BinaryEntrySchema = z.object({
   installedVersion: z.string().nullable(),
   latestKnownVersion: z.string().nullable(),
   lastCheckedAtUtc: z.string().nullable(),
+  integrity: z.enum(['verified', 'failed']).nullable().default(null),
+  verifiedSha256: z.string().nullable().default(null),
+  checkError: z.string().nullable().default(null),
+  faultError: z.string().nullable().default(null),
 })
 export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
+
+/** A never-provisioned, never-checked binary entry — the fresh-install default. */
+export function freshBinaryEntry(): BinaryEntry {
+  return {
+    installedVersion: null,
+    latestKnownVersion: null,
+    lastCheckedAtUtc: null,
+    integrity: null,
+    verifiedSha256: null,
+    checkError: null,
+    faultError: null,
+  }
+}
 
 /**
  * Single OpenAI-compatible provider configuration. The API key is stored
@@ -193,9 +228,9 @@ export function defaultSettings(): Settings {
       slug: DEFAULT_SLUG_PROMPT,
     },
     binaries: {
-      'yt-dlp': { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
-      ffmpeg:   { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
-      deno:     { installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null },
+      'yt-dlp': freshBinaryEntry(),
+      ffmpeg:   freshBinaryEntry(),
+      deno:     freshBinaryEntry(),
     },
     ytdlpArgs: '',
     siteProfiles: [],

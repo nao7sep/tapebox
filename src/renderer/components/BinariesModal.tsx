@@ -1,32 +1,25 @@
 import { useState } from 'react'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
+import type { DerivedStatus, Operation } from '@shared/binary-status'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useBinariesStore } from '@renderer/store/binaries'
+import { useBinariesStore, derivedOf } from '@renderer/store/binaries'
+import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { Modal } from '@renderer/components/Modal'
 import { Button, Spinner } from '@renderer/components/ui'
 
 /**
- * Tools modal for installing and updating yt-dlp / ffmpeg / Deno. Each row's
- * action is derived from its state (missing / outdated / current); installs run
- * concurrently so other rows stay interactive while one is in flight. The footer
- * carries only a Close button — the per-row Install/Update actions are the work,
- * and there's no bulk button: with only three rows, per-row actions are clearer
- * than a "do everything" CTA.
+ * The management surface for yt-dlp / ffmpeg / Deno (managed-dependency-status-
+ * conventions): the one place the full per-tool state lives and the only place
+ * operations start. Each row derives its state through the shared deriveStatus and
+ * shows both axes (lifecycle + currency), the version facts, the offered operation,
+ * live progress, and — when Faulted or its last check failed — the specific error.
+ * Operations run concurrently so other rows stay interactive while one is in flight.
  *
- * The modal does NOT auto-check on open. Update checks happen at startup
- * (gated by autoCheckBinaryUpdates and skipped if checked within 24h) or when
- * the user clicks Refresh below the intro. Keeps GitHub API hits well under
- * the unauthenticated rate limit.
+ * The footer carries only a Close button; per-row actions are the work. The modal
+ * does NOT auto-check on open — checks happen at startup (gated, skipped within 24h)
+ * or via the Check button below — so a user inspecting state never triggers a
+ * rate-limited network call.
  */
-type RowKind = 'missing' | 'update' | 'current' | 'installed-unknown'
-
-function rowKind(s: BinaryStatus): RowKind {
-  if (s.installedVersion === null) return 'missing'
-  if (s.latestKnownVersion === null) return 'installed-unknown'
-  if (s.latestKnownVersion !== s.installedVersion) return 'update'
-  return 'current'
-}
-
 export function BinariesModal() {
   const statuses = useBinariesStore((s) => s.statuses)
   const progress = useBinariesStore((s) => s.progress)
@@ -37,16 +30,31 @@ export function BinariesModal() {
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState<BinaryName[]>([])
 
-  // A binary is busy from the moment we launch it until install resolves (it
-  // reports live progress in between). Other binaries stay free to start.
+  // A binary is busy from the moment we launch an operation until it resolves (it
+  // reports live progress in between). Other binaries stay free to act.
   const isWorking = (name: BinaryName) => launching.includes(name) || progress[name] !== undefined
 
+  // Provision / Update / Repair all re-run the install (download + verify + publish);
+  // the lifecycle they start from differs, the action is the same.
   async function install(name: BinaryName) {
     if (isWorking(name)) return
     setError(null)
     setLaunching((prev) => [...prev, name])
     try {
       await ipcInvoke('binaries:update', { name })
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLaunching((prev) => prev.filter((n) => n !== name))
+    }
+  }
+
+  async function verify(name: BinaryName) {
+    if (isWorking(name)) return
+    setError(null)
+    setLaunching((prev) => [...prev, name])
+    try {
+      setStatuses(await ipcInvoke('binaries:verify', { name }))
     } catch (err) {
       setError(String(err))
     } finally {
@@ -110,7 +118,8 @@ export function BinariesModal() {
               progress={progress[s.name]}
               pending={launching.includes(s.name)}
               checking={checking}
-              onAction={() => void install(s.name)}
+              onInstall={() => void install(s.name)}
+              onVerify={() => void verify(s.name)}
             />
           ))}
         </tbody>
@@ -128,54 +137,97 @@ function BinaryRow({
   progress,
   pending,
   checking,
-  onAction,
+  onInstall,
+  onVerify,
 }: {
   status: BinaryStatus
   progress: { percent: number; phase: string } | undefined
   pending: boolean
   checking: boolean
-  onAction: () => void
+  onInstall: () => void
+  onVerify: () => void
 }) {
-  const kind = rowKind(status)
-  const warm = kind === 'missing' || kind === 'update'
+  const d = derivedOf(status)
+  // Provision / Update / Repair share the install action; Check is the top-level
+  // button (it resolves all tools at once), so it is not a per-row primary.
+  const installOp: Operation | null =
+    d.operation === 'provision' || d.operation === 'update' || d.operation === 'repair'
+      ? d.operation
+      : null
+  // Verify re-confirms something we provisioned; it's meaningless for an Absent tool
+  // (nothing there) or an Unmanaged user-copy (no install record to re-hash against).
+  const canVerify = d.lifecycle === 'provisioned' || d.lifecycle === 'faulted'
 
   return (
-    <tr className="border-t border-zinc-700">
-      <td className="py-3 font-medium">{status.name}</td>
-      <td className={`py-3 ${warm ? 'text-amber-300' : 'text-zinc-300'}`}>
-        {status.installedVersion ?? 'not installed'}
-      </td>
-      <td className="py-3 text-zinc-300">{latestText(status, checking)}</td>
-      <td className="py-3 text-right">
-        {progress ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
-            <Spinner />
-            {progress.phase} {progress.percent}%
-          </span>
-        ) : pending ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
-            <Spinner />
-            starting…
-          </span>
-        ) : (
-          <Button variant={warm ? 'warm' : 'secondary'} size="sm" onClick={onAction}>
-            {actionLabel(kind)}
-          </Button>
-        )}
-      </td>
-    </tr>
+    <>
+      <tr className="border-t border-zinc-700">
+        <td className="py-3 font-medium">{status.name}</td>
+        <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d)}</td>
+        <td className="py-3 text-zinc-300">{latestText(status, d, checking)}</td>
+        <td className="py-3 text-right">
+          {progress ? (
+            <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+              <Spinner />
+              {progress.phase} {progress.percent}%
+            </span>
+          ) : pending ? (
+            <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+              <Spinner />
+              working…
+            </span>
+          ) : (
+            <span className="inline-flex gap-2">
+              {installOp && (
+                <Button variant="warm" size="sm" onClick={onInstall}>
+                  {installLabel(installOp, d)}
+                </Button>
+              )}
+              {canVerify && (
+                <Button variant="secondary" size="sm" onClick={onVerify}>
+                  Verify
+                </Button>
+              )}
+            </span>
+          )}
+        </td>
+      </tr>
+      {d.detail && (
+        <tr>
+          <td />
+          <td colSpan={3} className={`pb-3 text-xs ${ROLE_TEXT_CLASS.error}`}>{d.detail}</td>
+        </tr>
+      )}
+    </>
   )
 }
 
-function latestText(status: BinaryStatus, checking: boolean): string {
-  if (status.latestKnownVersion !== null) return status.latestKnownVersion
-  return checking ? 'checking…' : 'unknown'
+/** The installed-version cell text, honest about lifecycle. */
+function installedText(status: BinaryStatus, d: DerivedStatus): string {
+  if (d.lifecycle === 'absent') return 'not installed'
+  if (d.lifecycle === 'unmanaged') return 'your own copy'
+  if (d.lifecycle === 'faulted') return status.installedVersion ?? 'faulted'
+  return status.installedVersion ?? 'installed'
 }
 
-function actionLabel(kind: RowKind): string {
-  if (kind === 'missing') return 'Install'
-  if (kind === 'update') return 'Update'
-  return 'Reinstall'
+/** Colour the installed cell by role so a Faulted tool reads as an error at a glance. */
+function installedClass(d: DerivedStatus): string {
+  if (d.lifecycle === 'faulted') return ROLE_TEXT_CLASS.error
+  if (d.lifecycle === 'absent' || d.currency === 'stale') return ROLE_TEXT_CLASS.warning
+  return 'text-zinc-300'
+}
+
+/** The latest/desired-version cell text, distinguishing not-checked from check-failed. */
+function latestText(status: BinaryStatus, d: DerivedStatus, checking: boolean): string {
+  if (checking) return 'checking…'
+  if (d.currency === 'check-failed') return 'check failed'
+  if (d.currency === 'unchecked') return 'not checked'
+  return status.latestKnownVersion ?? '—'
+}
+
+function installLabel(op: Operation, d: DerivedStatus): string {
+  if (op === 'update') return 'Update'
+  if (op === 'repair') return 'Repair'
+  return d.lifecycle === 'unmanaged' ? 'Replace' : 'Install'
 }
 
 function lastCheckedHint(statuses: BinaryStatus[], checking: boolean): string {

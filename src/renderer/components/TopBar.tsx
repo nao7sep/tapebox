@@ -1,5 +1,5 @@
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useBinariesStore, allBinariesInstalled } from '@renderer/store/binaries'
+import { useBinariesStore, allBinariesUsable } from '@renderer/store/binaries'
 import { useToastStore } from '@renderer/store/toast'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
@@ -19,7 +19,7 @@ type Props = {
 export function TopBar({ clipboardEnabled }: Props) {
   const { url, setUrl, onPaste, consume } = useClipboardUrl(clipboardEnabled)
   const { composingRef, handlers: composing } = useComposing()
-  const toolsReady = useBinariesStore((s) => allBinariesInstalled(s.statuses))
+  const toolsReady = useBinariesStore((s) => allBinariesUsable(s.statuses))
   const openBinariesModal = useBinariesStore((s) => s.openModal)
   const notify = useToastStore((s) => s.notify)
 

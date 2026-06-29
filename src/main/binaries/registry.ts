@@ -1,5 +1,5 @@
 import { fetchLatestRelease } from './github'
-import { fetchJson } from '@main/io/fetch-json'
+import { fetchRedirectLocation } from '@main/io/fetch-json'
 import type { BinaryName } from '@shared/ipc-contract'
 import type { AssetIntegrity } from './integrity'
 
@@ -24,7 +24,9 @@ export type ResolvedAsset = {
 export type BinarySpec = {
   name: BinaryName
   versionFlag: string
-  parseVersion: (stdout: string) => string
+  // Returns null when the binary's version can't be determined from its output —
+  // the state model reads that as a Faulted signal, never a guessed string.
+  parseVersion: (stdout: string) => string | null
   resolveLatest: () => Promise<ResolvedAsset>
 }
 
@@ -39,7 +41,7 @@ function ytDlpAssetName(): string {
 const ytDlpSpec: BinarySpec = {
   name: 'yt-dlp',
   versionFlag: '--version',
-  parseVersion: (stdout) => stdout.trim().split('\n')[0] ?? 'unknown',
+  parseVersion: (stdout) => stdout.trim().split('\n')[0] || null,
   resolveLatest: async () => {
     const release = await fetchLatestRelease('yt-dlp', 'yt-dlp')
     const assetName = ytDlpAssetName()
@@ -80,7 +82,7 @@ const denoSpec: BinarySpec = {
   versionFlag: '--version',
   parseVersion: (stdout) => {
     const m = stdout.match(/deno ([\d.]+)/)
-    return m?.[1] ?? stdout.trim().split('\n')[0] ?? 'unknown'
+    return m?.[1] ?? stdout.trim().split('\n')[0] ?? null
   },
   resolveLatest: async () => {
     const release = await fetchLatestRelease('denoland', 'deno')
@@ -103,36 +105,58 @@ const denoSpec: BinarySpec = {
 }
 
 // ── ffmpeg ──────────────────────────────────────────────────────────────────
-type EvermeetInfo = {
-  version: string
-  download: { zip: { url: string } }
+// macOS: martin-riedl.de publishes native arm64 (and amd64) static builds, each
+// with a per-file SHA-256 sidecar. It exposes no JSON API; the stable "latest
+// release" is a redirect whose Location carries the build id (`<epoch>_<version>`),
+// from which the version and the sibling `.sha256` URL are derived. A third-party
+// source accepted deliberately under the native-binary conventions' warn-and-
+// escalate rule — the former source (evermeet) ships Intel-only and cannot satisfy
+// the arm64 requirement.
+const MARTIN_BASE = 'https://ffmpeg.martin-riedl.de'
+
+/**
+ * Extract the ffmpeg version from a martin-riedl download path. The build id is the
+ * path segment before the file, shaped `<epoch>_<version>` (e.g. `1778761665_8.1.1`);
+ * the version is the part after the underscore. Throws on an unrecognized path, so a
+ * changed redirect surfaces as a failed check, never a silently wrong version.
+ */
+export function parseMartinBuildVersion(downloadPath: string): string {
+  const m = downloadPath.match(/\/\d+_([^/]+)\/ffmpeg\.zip$/)
+  if (!m) throw new Error(`unrecognized martin-riedl ffmpeg path: ${downloadPath}`)
+  return m[1]
 }
 
 async function resolveFfmpegMacOS(): Promise<ResolvedAsset> {
-  const info = await fetchJson<EvermeetInfo>('https://evermeet.cx/ffmpeg/info/ffmpeg/release')
-  const downloadUrl = info.download.zip.url
+  // macOS is arm64-only by design: the fleet ships Apple Silicon builds and a primary
+  // goal is surviving Rosetta removal, so tapebox never fetches an x86_64 ffmpeg on
+  // macOS. (Windows x64 is native on Windows and is unaffected by this.)
+  const location = await fetchRedirectLocation(`${MARTIN_BASE}/redirect/latest/macos/arm64/release/ffmpeg.zip`)
+  const downloadUrl = new URL(location, MARTIN_BASE).toString()
   return {
-    version: info.version,
+    version: parseMartinBuildVersion(new URL(downloadUrl).pathname),
     downloadUrl,
     archive: { kind: 'zip', innerName: 'ffmpeg' },
-    // evermeet publishes no checksum but signs every build with its PGP key; the
-    // detached signature sits beside the zip as `<zip>.sig` and is verified against
-    // the pinned evermeet key (see integrity.ts / evermeet-key.ts).
-    integrity: { kind: 'openpgp', signatureUrl: `${downloadUrl}.sig` },
+    // The sibling `<file>.sha256` holds a single `<hash>  ffmpeg.zip` line, verified
+    // against the downloaded bytes at install (see integrity.ts).
+    integrity: { kind: 'sums', url: `${downloadUrl}.sha256`, assetName: 'ffmpeg.zip' },
   }
 }
 
 async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
   const release = await fetchLatestRelease('BtbN', 'FFmpeg-Builds')
-  const asset = release.assets.find((a) => a.name === 'ffmpeg-master-latest-win64-gpl.zip')
+  const assetName = 'ffmpeg-master-latest-win64-gpl.zip'
+  const asset = release.assets.find((a) => a.name === assetName)
   if (!asset) throw new Error('ffmpeg Windows asset not found')
-  // BtbN's nightly builds publish neither a checksum nor a signature, so this installs
-  // unverified (logged); https-only transport is still enforced.
+  // BtbN publishes a combined `checksums.sha256` (`<hash>  <file>` per line); the
+  // GPL build's line is verified at install — closing the former integrity:none gap.
+  const sums = release.assets.find((a) => a.name === 'checksums.sha256')
   return {
     version: release.tag_name,
     downloadUrl: asset.browser_download_url,
     archive: { kind: 'zip', innerName: 'ffmpeg.exe' },
-    integrity: { kind: 'none' },
+    integrity: sums
+      ? { kind: 'sums', url: sums.browser_download_url, assetName }
+      : { kind: 'none' },
   }
 }
 
@@ -141,7 +165,7 @@ const ffmpegSpec: BinarySpec = {
   versionFlag: '-version',
   parseVersion: (stdout) => {
     const m = stdout.match(/ffmpeg version ([^\s]+)/)
-    return m?.[1] ?? 'unknown'
+    return m?.[1] ?? null
   },
   resolveLatest: async () => {
     if (process.platform === 'darwin') return resolveFfmpegMacOS()
