@@ -6,30 +6,26 @@ import { emit } from '@main/ipc/events'
 import { getSettings, mutateSettings } from '@main/store/config'
 import { execCapture } from '@main/io/spawn'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
-import { describeError, errorMessage } from '@shared/error'
+import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
-import {
-  applyCheckOutcome,
-  nextEntryAfterInstall,
-  nextEntryAfterVerify,
-  type CheckOutcome,
-} from '@shared/binary-status'
+import { applyCheckSuccess, nextEntryAfterInstall } from '@shared/binary-status'
 import { withRetry } from '@main/io/retry'
 import { BINARY_DOWNLOAD_IDLE_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import { downloadWithProgress } from './http'
 import { extractFileFromZip } from './archive'
-import { sha256OfFile, verifyBinaryIntegrity } from './integrity'
+import { verifyBinaryIntegrity } from './integrity'
+import { assertArm64Slice } from './arch'
 
 /**
  * Per-binary install / update orchestration.
  *
  * Layout on disk:
  *   ~/.tapebox/bin/{name}{ext}              -- the installed executable
- *   ~/.tapebox/work/downloads/{tmp}         -- in-progress downloads
+ *   ~/.tapebox/temp/{tmp}                   -- disposable download staging (cleared on launch)
  *
- * Install is atomic and crash-durable: download to a work temp, then prepare the
+ * Install is atomic and crash-durable: download to a temp file, then prepare the
  * executable at a staging file (extract or move, then chmod) and publish it with
  * one fsync'd rename (writeFileAtomicVia) — so the file at bin/ only ever appears
  * complete, executable, and flushed, never mid-extract or pre-chmod.
@@ -38,7 +34,7 @@ import { sha256OfFile, verifyBinaryIntegrity } from './integrity'
  * Update-check policy: settings.binaries.<name>.{latestKnownVersion,
  * lastCheckedAtUtc} are the single source of truth — there's no in-memory
  * cache. The modal renders what's persisted; a fresh upstream lookup happens
- * only on startup (gated by checkToolUpdates) or via an explicit user
+ * only on startup (gated by checkUpdatesAtLaunch) or via an explicit user
  * action. This keeps GitHub API hits well under the unauthenticated rate
  * limit.
  */
@@ -47,8 +43,7 @@ const inFlight = new Set<BinaryName>()
 
 /**
  * Serialize operations per binary (the convention's per-dependency rule): a second
- * action on the same binary is rejected rather than racing the first. One lock
- * covers install/update, repair, and verify alike.
+ * install/update on the same binary is rejected rather than racing the first.
  */
 async function withBinaryLock<T>(name: BinaryName, run: () => Promise<T>): Promise<T> {
   if (inFlight.has(name)) {
@@ -81,12 +76,9 @@ async function getStatus(name: BinaryName): Promise<BinaryStatus> {
   return {
     name,
     present,
-    integrity: entry.integrity,
     installedVersion: entry.installedVersion,
     latestKnownVersion: entry.latestKnownVersion,
     lastCheckedAtUtc: entry.lastCheckedAtUtc,
-    checkError: entry.checkError,
-    faultError: entry.faultError,
   }
 }
 
@@ -104,28 +96,31 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
  */
 export async function checkForUpdates(): Promise<BinaryStatus[]> {
   const now = nowUtcIso()
-  const outcomes = new Map<BinaryName, CheckOutcome>()
+  const resolved = new Map<BinaryName, string>()
+  let failed = 0
 
   await Promise.all(
     binaryNames.map(async (name) => {
       try {
         const asset = await binarySpecs[name].resolveLatest()
-        outcomes.set(name, { ok: true, version: asset.version })
+        resolved.set(name, asset.version)
       } catch (err) {
-        outcomes.set(name, { ok: false, error: errorMessage(err) })
+        // A failed check writes NOTHING (managed-runtime-dependencies-conventions):
+        // no version, no timestamp, no error state — the displayed wording stays at
+        // the last successful knowledge. Log it and move on.
+        failed += 1
         log.warn('binary update check failed', { name, error: describeError(err) })
       }
     }),
   )
 
-  const failed = [...outcomes.values()].filter((o) => !o.ok).length
-  log.info('binary update check complete', { resolved: outcomes.size - failed, failed })
+  log.info('binary update check complete', { resolved: resolved.size, failed })
   // Apply inside the settings critical section: read the *current* entry (so a
-  // concurrent install's fields are preserved) and fold in each check outcome.
+  // concurrent install's fields are preserved) and fold in each successful check.
   await mutateSettings((s) => {
     const nextBinaries = { ...s.binaries }
-    for (const [name, outcome] of outcomes) {
-      nextBinaries[name] = applyCheckOutcome(s.binaries[name], outcome, now)
+    for (const [name, version] of resolved) {
+      nextBinaries[name] = applyCheckSuccess(s.binaries[name], version, now)
     }
     return { binaries: nextBinaries }
   })
@@ -134,40 +129,6 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
 
 export async function installOrUpdate(name: BinaryName): Promise<void> {
   await withBinaryLock(name, () => performInstall(name))
-}
-
-/**
- * Re-confirm a provisioned binary on demand: a pure integrity re-check that re-hashes
- * the installed file against the checksum recorded at install. A hash mismatch moves
- * it to Faulted; a match re-affirms Provisioned. Runnability is not probed — integrity
- * is the recorded checksum. A binary we never provisioned (Absent, or a user-placed
- * Unmanaged copy) has nothing for us to verify and is left untouched. Serialized
- * against install via the same per-binary lock. Returns the refreshed statuses.
- */
-export async function verify(name: BinaryName): Promise<BinaryStatus[]> {
-  return withBinaryLock(name, async () => {
-    await performVerify(name)
-    return getAllStatuses()
-  })
-}
-
-async function performVerify(name: BinaryName): Promise<void> {
-  const entry = getSettings().binaries[name]
-  // Only re-verify something this app provisioned (a recorded installedVersion).
-  if (entry.installedVersion === null || !(await isInstalled(name))) return
-
-  // A pure integrity re-check: re-hash the on-disk file against the checksum
-  // recorded at install. A mismatch is the sole entry into Faulted; runnability is
-  // not probed (the status model scopes faults to integrity, not execution).
-  const currentSha = await sha256OfFile(binaryPath(name))
-  log.info('binary verify', { name })
-
-  await mutateSettings((s) => ({
-    binaries: {
-      ...s.binaries,
-      [name]: nextEntryAfterVerify(s.binaries[name], { currentSha }),
-    },
-  }))
 }
 
 async function performInstall(name: BinaryName): Promise<void> {
@@ -179,7 +140,7 @@ async function performInstall(name: BinaryName): Promise<void> {
   log.info('binary resolved', { name, version: resolved.version, url: resolved.downloadUrl })
 
   await ensureDirs()
-  const downloadTemp = join(paths.workDownloads, `${name}-${Date.now()}.partial`)
+  const downloadTemp = join(paths.temp, `${name}-${Date.now()}.partial`)
 
   let lastEmittedPct = -1
   await withRetry(HTTP_RETRY, () =>
@@ -200,6 +161,7 @@ async function performInstall(name: BinaryName): Promise<void> {
   const finalPath = binaryPath(name)
   let integrityVerified = false
   try {
+    emit('binaries:progress', { name, percent: 0, phase: 'verify' })
     // Integrity gate: verify the downloaded bytes against the vendor's published
     // SHA-256 sums file before making them executable. A failure throws and aborts
     // the install (the temp is cleaned in the finally below); a source that
@@ -233,17 +195,17 @@ async function performInstall(name: BinaryName): Promise<void> {
             .catch(() => {})
         }
       }
+      // Architecture gate (macOS): reject an x86_64-only build before it is
+      // published, so a wrong-arch download fails clean here rather than at exec
+      // time on Apple Silicon (no Rosetta). A universal binary passes.
+      if (process.platform === 'darwin') {
+        await assertArm64Slice(stage)
+      }
     })
   } finally {
     await unlink(downloadTemp).catch(() => {})
   }
 
-  emit('binaries:progress', { name, percent: 100, phase: 'verify' })
-  // Hash the published binary so a later Verify can re-check it against this value.
-  // We record resolved.version (the upstream string), not a self-reported one;
-  // runnability is not probed — integrity is the recorded checksum, and a later
-  // Verify mismatch is the only thing that faults a tool.
-  const installedSha = await sha256OfFile(finalPath)
   log.info('binary installed', { name, version: resolved.version, integrityVerified })
 
   await mutateSettings((s) => ({
@@ -251,8 +213,6 @@ async function performInstall(name: BinaryName): Promise<void> {
       ...s.binaries,
       [name]: nextEntryAfterInstall(s.binaries[name], {
         version: resolved.version,
-        integrityVerified,
-        sha256: installedSha,
         nowIso: nowUtcIso(),
       }),
     },

@@ -132,7 +132,7 @@ export const BoxSchema = z.object({
 export type Box = z.infer<typeof BoxSchema>
 
 /**
- * Session file shape — persisted in ~/.tapebox/session.json.
+ * Session file shape — persisted in ~/.tapebox/catalog.json.
  * Live progress data (percent, speed, ETA) is intentionally absent;
  * it's rebuilt by the queue at runtime.
  */

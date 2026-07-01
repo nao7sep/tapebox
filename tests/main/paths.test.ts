@@ -1,6 +1,6 @@
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { resolveStorageRoot } from '@main/paths'
+import { paths, resolveStorageRoot } from '@main/paths'
 
 // The TAPEBOX_HOME storage-root resolution (storage-path-conventions). The home
 // directory is injected so these are pure, working-directory-independent
@@ -60,5 +60,23 @@ describe('resolveStorageRoot', () => {
       if (previous === undefined) delete process.env.TAPEBOX_UNSET_VAR
       else process.env.TAPEBOX_UNSET_VAR = previous
     }
+  })
+})
+
+// The durable tape-library catalog is catalog.json, not session.json — the name
+// must not imply throwaway state. It is a distinct file from the user-editable
+// config and the window layout; all three sit side by side under the storage root.
+describe('paths catalog file', () => {
+  it('resolves the catalog to catalog.json under the storage root', () => {
+    expect(basename(paths.catalog)).toBe('catalog.json')
+    expect(dirname(paths.catalog)).toBe(paths.root)
+  })
+
+  it('keeps the catalog separate from config and layout', () => {
+    expect(basename(paths.config)).toBe('config.json')
+    expect(basename(paths.layout)).toBe('layout.json')
+    expect(paths.catalog).not.toBe(paths.config)
+    expect(paths.catalog).not.toBe(paths.layout)
+    expect(paths.catalog).not.toBe(paths.apiKeys)
   })
 })

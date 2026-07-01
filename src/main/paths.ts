@@ -1,13 +1,16 @@
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 
 /**
  * All TapeBox app state lives under ~/.tapebox by convention — this is our own
  * data only. Electron/Chromium state (cache, cookies, GPU cache, etc.) is left
  * in the OS-default userData location and never mixed in here.
  *
- * 'work' is our own scratch space for in-progress downloads.
+ * 'temp' is our own disposable staging for in-progress downloads — it holds
+ * nothing precious and is cleared on launch (a crash-interrupted download leaves no
+ * stale partial). It is deliberately named 'temp', not 'downloads' (which would read
+ * as retained user data), per the managed-runtime-dependencies-conventions.
  *
  * The storage root is relocatable wholesale via TAPEBOX_HOME (storage-path-
  * conventions). When that variable is set and non-empty, its value — with a
@@ -83,10 +86,9 @@ export const paths = {
   get bin()           { return join(storageRoot(), 'bin') },
   get library()       { return join(storageRoot(), 'library') },
   get logs()          { return join(storageRoot(), 'logs') },
-  get work()          { return join(storageRoot(), 'work') },
-  get workDownloads() { return join(storageRoot(), 'work', 'downloads') },
+  get temp()          { return join(storageRoot(), 'temp') },
   get config()        { return join(storageRoot(), 'config.json') },
-  get session()       { return join(storageRoot(), 'session.json') },
+  get catalog()       { return join(storageRoot(), 'catalog.json') },
   get layout()        { return join(storageRoot(), 'layout.json') },
   get apiKeys()       { return join(storageRoot(), 'api-keys.json') },
 }
@@ -113,10 +115,20 @@ export async function ensureDirs(): Promise<void> {
     paths.bin,
     paths.library,
     paths.logs,
-    paths.work,
-    paths.workDownloads,
+    paths.temp,
   ]
   for (const dir of requiredDirs) {
     await mkdir(dir, { recursive: true })
   }
+}
+
+/**
+ * Clear the disposable staging dir once at startup, so a download interrupted by a
+ * crash leaves no stale partial behind, then recreate it empty. Call this ONCE from
+ * the bootstrap — never from the defensive ensureDirs(), which runs mid-operation
+ * and would delete an in-flight download.
+ */
+export async function resetTempDir(): Promise<void> {
+  await rm(paths.temp, { recursive: true, force: true })
+  await mkdir(paths.temp, { recursive: true })
 }

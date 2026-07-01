@@ -24,7 +24,7 @@ export function registerAiHandlers(): void {
 
 /**
  * The source description, pulled from the sidecar's yt-dlp info.json (it isn't
- * kept on the Tape — descriptions are large and would bloat session.json). Only
+ * kept on the Tape — descriptions are large and would bloat catalog.json). Only
  * downloaded tapes have a sidecar; best-effort, so a missing field or file just
  * yields null and the {description} token substitutes to empty.
  */

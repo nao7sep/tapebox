@@ -1,7 +1,7 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ensureDirs } from './paths.js'
+import { ensureDirs, resetTempDir } from './paths.js'
 import { notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
 import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
 import { describeError } from '@shared/error'
@@ -56,6 +56,9 @@ function createMainWindow(): BrowserWindow {
 
 async function startup(): Promise<void> {
   await ensureDirs()
+  // Clear disposable download staging once at launch (a crash-interrupted download
+  // must not leave a stale partial). Best-effort — never blocks startup.
+  await resetTempDir().catch(() => {})
   const logPath = initLogger({ debug: isDebugEnabled(app.isPackaged, process.env) })
   log.info('startup', {
     version: app.getVersion(),

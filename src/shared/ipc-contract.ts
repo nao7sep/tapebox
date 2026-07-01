@@ -105,7 +105,6 @@ export type IpcCalls = {
   'binaries:status':       { req: undefined;                         res: BinaryStatus[] }
   'binaries:update':       { req: { name: BinaryName };              res: void }
   'binaries:checkUpdates': { req: undefined;                         res: BinaryStatus[] }
-  'binaries:verify':       { req: { name: BinaryName };              res: BinaryStatus[] }
 
   // ── Scan (page scan) ──────────────────────────────────────────────
   // The Scan-a-page modal subscribes to scan:* events, then calls scan:start.
@@ -158,12 +157,9 @@ export type SidecarRaw = Record<string, unknown> & {
 export type BinaryStatus = {
   name: BinaryName
   present: boolean
-  integrity: 'verified' | 'failed' | null
   installedVersion: string | null
   latestKnownVersion: string | null
   lastCheckedAtUtc: string | null
-  checkError: string | null
-  faultError: string | null
 }
 
 export type ImportResult = {

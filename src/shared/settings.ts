@@ -3,43 +3,31 @@ import { stripUrlCredentials } from './url'
 
 /**
  * The persisted, per-binary facts that are the single source of truth for its
- * managed-dependency status (managed-dependency-status-conventions). These are the
- * recorded facts deriveStatus reads — never a parallel value that can drift:
+ * managed-dependency status (managed-runtime-dependencies-conventions). Only what
+ * cannot be re-derived is stored — the installed version, the last-known latest, and
+ * the last *successful* check time. Presence is scanned from disk, not persisted. No
+ * integrity flag, checksum, or check/fault error is kept: a failed check writes
+ * nothing, and a damaged file fails when used and is fixed by installing again.
  *
- *   - integrity        — the last integrity result; separates Provisioned from
- *                        Faulted. null on a config written before this field existed
- *                        (a recorded installedVersion then still reads as Provisioned).
- *   - verifiedSha256   — the installed binary's hash at successful provision, so an
- *                        on-demand Verify can detect later corruption.
- *   - checkError       — the last currency-check failure; its presence is Check-failed,
- *                        kept apart from latestKnownVersion so a failed check can never
- *                        masquerade as Current.
- *   - faultError       — the detail shown when Faulted.
- *
- * The four added fields default so a config written before they existed still
- * validates (the app is pre-release; this is a schema default, not migration code).
+ * `.strip()` drops any legacy fields from the old model (integrity, verifiedSha256,
+ * checkError, faultError) on the next write, since the schema no longer lists them
+ * (the app is pre-release; no migration code needed).
  */
-export const BinaryEntrySchema = z.object({
-  installedVersion: z.string().nullable(),
-  latestKnownVersion: z.string().nullable(),
-  lastCheckedAtUtc: z.string().nullable(),
-  integrity: z.enum(['verified', 'failed']).nullable().default(null),
-  verifiedSha256: z.string().nullable().default(null),
-  checkError: z.string().nullable().default(null),
-  faultError: z.string().nullable().default(null),
-})
+export const BinaryEntrySchema = z
+  .object({
+    installedVersion: z.string().nullable(),
+    latestKnownVersion: z.string().nullable(),
+    lastCheckedAtUtc: z.string().nullable(),
+  })
+  .strip()
 export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
 
-/** A never-provisioned, never-checked binary entry — the fresh-install default. */
+/** A never-installed, never-checked binary entry — the fresh-install default. */
 export function freshBinaryEntry(): BinaryEntry {
   return {
     installedVersion: null,
     latestKnownVersion: null,
     lastCheckedAtUtc: null,
-    integrity: null,
-    verifiedSha256: null,
-    checkError: null,
-    faultError: null,
   }
 }
 
@@ -158,14 +146,11 @@ export const SettingsSchema = z.object({
   trashOnRemove: z.boolean(),
   confirmRemove: z.boolean(),
 
-  // Managed-tool gates (version-and-update settings grammar). checkToolUpdates:
-  // check GitHub/upstream for newer yt-dlp/ffmpeg/deno once at startup and surface
-  // anything needing attention. autoDownloadTools: additionally acquire MISSING
-  // (Absent) tools automatically at startup. Auto-download implies the check, so it
-  // is normalized to force checkToolUpdates on (normalizeToolGates) — the UI also
-  // disables the check toggle while auto-download is on.
-  checkToolUpdates: z.boolean(),
-  autoDownloadTools: z.boolean(),
+  // The one managed-tool toggle (managed-runtime-dependencies-conventions): whether
+  // to check GitHub/upstream for newer yt-dlp/ffmpeg/deno once at launch and surface
+  // anything needing attention. Nothing auto-downloads or auto-installs; every
+  // install and update is user-triggered in the tools modal.
+  checkUpdatesAtLaunch: z.boolean(),
 
   ai: AiSettingsSchema,
 
@@ -208,17 +193,6 @@ export const SettingsSchema = z.object({
 export type Settings = z.infer<typeof SettingsSchema>
 
 /**
- * Enforce the managed-tool gate coupling: auto-downloading missing tools implies
- * checking for them, so autoDownloadTools forces checkToolUpdates on. Applied on
- * every settings read and write (config.ts), so even a hand-edited config with
- * auto-download on and check off resolves to a consistent state. The UI separately
- * disables the check toggle while auto-download is on; this is the load-time guard.
- */
-export function normalizeToolGates(s: Settings): Settings {
-  return s.autoDownloadTools && !s.checkToolUpdates ? { ...s, checkToolUpdates: true } : s
-}
-
-/**
  * Default settings used when config.json is missing on first launch.
  * libraryDir defaults to '' — an empty value means "use the default library
  * folder", which main/ resolves to paths.library via getLibraryDir(). The actual
@@ -236,8 +210,7 @@ export function defaultSettings(): Settings {
     volume: 1,
     trashOnRemove: true,
     confirmRemove: true,
-    checkToolUpdates: true,
-    autoDownloadTools: false,
+    checkUpdatesAtLaunch: true,
     ai: {
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-5.4-mini',
@@ -294,8 +267,7 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     volume: s.volume,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
-    checkToolUpdates: s.checkToolUpdates,
-    autoDownloadTools: s.autoDownloadTools,
+    checkUpdatesAtLaunch: s.checkUpdatesAtLaunch,
     aiBaseUrl: stripUrlCredentials(s.ai.baseUrl),
     aiModel: s.ai.model,
     externalPlayer: s.externalPlayer,

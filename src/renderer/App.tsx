@@ -8,7 +8,7 @@ import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
-import { useBinariesStore, binariesNeedAttention, absentBinaries } from '@renderer/store/binaries'
+import { useBinariesStore, binariesNeedAttention } from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
@@ -116,7 +116,7 @@ export default function App() {
     void ipcInvoke('settings:get')
       .then((s) => {
         useSettingsStore.getState().setSettings(s)
-        if (!s.checkToolUpdates) return
+        if (!s.checkUpdatesAtLaunch) return
         if (!lastCheckedStale(s.binaries)) return
         // Best-effort background check the user didn't trigger: main logs the
         // authoritative per-binary + summary outcome, so here we only note at debug
@@ -133,22 +133,16 @@ export default function App() {
   }, [])
 
   // Once both settings and the first status snapshot are in, do the one-shot startup
-  // tool housekeeping (decided once so it doesn't repeat after the user closes the
-  // modal). Gated on checkToolUpdates: open the surface when any tool needs attention
-  // (Absent / Faulted / an available update). If autoDownloadTools is on (which forces
-  // checkToolUpdates on), additionally provision the MISSING (Absent) tools — each
-  // install reports progress in the now-open modal; a failure is logged, never silent.
+  // decision (decided once so it doesn't repeat after the user closes the modal).
+  // Blocking-first-run (managed-runtime-dependencies-conventions): a required tool
+  // that is not installed opens the tools surface as an instruction — regardless of
+  // the check toggle, since downloads are blocked without it. An available update is
+  // NOT a reason to interrupt; it surfaces passively in the status bar. Nothing
+  // auto-downloads.
   useEffect(() => {
     if (decidedFirstRun.current || !settings || binaryStatuses.length === 0) return
     decidedFirstRun.current = true
-    if (settings.checkToolUpdates && binariesNeedAttention(binaryStatuses)) openBinariesModal()
-    if (settings.autoDownloadTools) {
-      for (const name of absentBinaries(binaryStatuses)) {
-        void ipcInvoke('binaries:update', { name }).catch((err) =>
-          log.debug('auto-download failed', { name, error: describeError(err) }),
-        )
-      }
-    }
+    if (binariesNeedAttention(binaryStatuses)) openBinariesModal()
   }, [settings, binaryStatuses, openBinariesModal])
 
   useEffect(() => {

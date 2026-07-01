@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
-import type { DerivedStatus } from '@shared/binary-status'
+import type { DependencyState, DerivedStatus } from '@shared/binary-status'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useBinariesStore, derivedOf } from '@renderer/store/binaries'
 import { useSettingsStore } from '@renderer/store/settings'
@@ -9,17 +9,17 @@ import { Modal } from '@renderer/components/Modal'
 import { Button, Spinner, Toggle } from '@renderer/components/ui'
 
 /**
- * The management surface for yt-dlp / ffmpeg / Deno (managed-dependency-status-
+ * The management surface for yt-dlp / ffmpeg / Deno (managed-runtime-dependencies-
  * conventions): the one place the full per-tool state lives and the only place
- * operations start. Each row derives its state through the shared deriveStatus and
- * shows both axes (lifecycle + currency), the version facts, the offered operation,
- * live progress, and — when Faulted or its last check failed — the specific error.
- * Operations run concurrently so other rows stay interactive while one is in flight.
+ * operations start. Each row derives its four-state status through the shared
+ * deriveStatus and shows the version facts, live progress, and a single
+ * context-aware action — Install when missing, Update when a newer version is
+ * known, nothing otherwise. Operations run concurrently so other rows stay
+ * interactive while one is in flight.
  *
- * The footer carries only a Close button; per-row actions are the work. The modal
- * does NOT auto-check on open — checks happen at startup (gated, skipped within 24h)
- * or via the Check button below — so a user inspecting state never triggers a
- * rate-limited network call.
+ * The footer carries only a Close button. The modal does NOT auto-check on open —
+ * checks happen at launch (gated, skipped within 24h) or via the Check button
+ * below — so a user inspecting state never triggers a rate-limited network call.
  */
 export function BinariesModal() {
   const statuses = useBinariesStore((s) => s.statuses)
@@ -32,15 +32,14 @@ export function BinariesModal() {
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState<BinaryName[]>([])
 
-  const checkOnLaunch = settings?.checkToolUpdates ?? true
-  const autoDownload = settings?.autoDownloadTools ?? false
+  const checkUpdatesAtLaunch = settings?.checkUpdatesAtLaunch ?? true
 
-  // Persist the two gates. Auto-download implies the check (the main process also
-  // normalizes this, and the check toggle is disabled while auto-download is on).
-  async function saveGates(check: boolean, autoDl: boolean) {
+  // Persist the one gate: whether to check for tool updates at launch. Nothing
+  // auto-downloads — every install/update is the per-row action below.
+  async function saveGate(check: boolean) {
     setError(null)
     try {
-      const next = await ipcInvoke('settings:update', { checkToolUpdates: check, autoDownloadTools: autoDl })
+      const next = await ipcInvoke('settings:update', { checkUpdatesAtLaunch: check })
       useSettingsStore.getState().setSettings(next)
     } catch (err) {
       setError(String(err))
@@ -51,27 +50,14 @@ export function BinariesModal() {
   // reports live progress in between). Other binaries stay free to act.
   const isWorking = (name: BinaryName) => launching.includes(name) || progress[name] !== undefined
 
-  // Provision / Update / Repair all re-run the install (download + verify + publish);
-  // the lifecycle they start from differs, the action is the same.
+  // Install / Update are the same acquire operation (download + verify + publish);
+  // the state it starts from differs, the action is the same.
   async function install(name: BinaryName) {
     if (isWorking(name)) return
     setError(null)
     setLaunching((prev) => [...prev, name])
     try {
       await ipcInvoke('binaries:update', { name })
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setLaunching((prev) => prev.filter((n) => n !== name))
-    }
-  }
-
-  async function verify(name: BinaryName) {
-    if (isWorking(name)) return
-    setError(null)
-    setLaunching((prev) => [...prev, name])
-    try {
-      setStatuses(await ipcInvoke('binaries:verify', { name }))
     } catch (err) {
       setError(String(err))
     } finally {
@@ -109,23 +95,12 @@ export function BinariesModal() {
         yt-dlp uses for sites that need it.
       </p>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-5">
         <Toggle
           label="Check for tool updates on launch"
-          description={
-            autoDownload
-              ? 'Required while auto-download is on.'
-              : 'Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches.'
-          }
-          checked={checkOnLaunch || autoDownload}
-          disabled={autoDownload}
-          onChange={(v) => void saveGates(v, autoDownload)}
-        />
-        <Toggle
-          label="Download missing tools automatically"
-          description="When a required tool is missing at launch, download it without asking (shown in this window)."
-          checked={autoDownload}
-          onChange={(v) => void saveGates(checkOnLaunch, v)}
+          description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
+          checked={checkUpdatesAtLaunch}
+          onChange={(v) => void saveGate(v)}
         />
       </div>
 
@@ -156,7 +131,6 @@ export function BinariesModal() {
               pending={launching.includes(s.name)}
               checking={checking}
               onInstall={() => void install(s.name)}
-              onVerify={() => void verify(s.name)}
             />
           ))}
         </tbody>
@@ -175,93 +149,66 @@ function BinaryRow({
   pending,
   checking,
   onInstall,
-  onVerify,
 }: {
   status: BinaryStatus
   progress: { percent: number; phase: string } | undefined
   pending: boolean
   checking: boolean
   onInstall: () => void
-  onVerify: () => void
 }) {
   const d = derivedOf(status)
-  // The force-(re)install button is always available — it (re)downloads and reinstalls
-  // regardless of state; only its label is contextual. Verify re-confirms an installed
-  // copy against its recorded hash, so it's meaningless for an Absent tool or an
-  // Unmanaged user-copy (no install record to compare against).
-  const canVerify = d.lifecycle === 'provisioned' || d.lifecycle === 'faulted'
-  const installVariant = d.role === 'warning' || d.role === 'error' ? 'warm' : 'secondary'
+  const label = acquireLabel(d.state)
 
   return (
-    <>
-      <tr className="border-t border-zinc-700">
-        <td className="py-3 font-medium">{status.name}</td>
-        <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d)}</td>
-        <td className="py-3 text-zinc-300">{latestText(status, d, checking)}</td>
-        <td className="py-3 text-right">
-          {progress ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
-              <Spinner />
-              {progress.phase} {progress.percent}%
-            </span>
-          ) : pending ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
-              <Spinner />
-              working…
-            </span>
-          ) : (
-            <span className="inline-flex gap-2">
-              {canVerify && (
-                <Button variant="secondary" size="sm" onClick={onVerify}>
-                  Verify
-                </Button>
-              )}
-              <Button variant={installVariant} size="sm" onClick={onInstall}>
-                {forceInstallLabel(d)}
-              </Button>
-            </span>
-          )}
-        </td>
-      </tr>
-      {d.detail && (
-        <tr>
-          <td />
-          <td colSpan={3} className={`pb-3 text-xs ${ROLE_TEXT_CLASS.error}`}>{d.detail}</td>
-        </tr>
-      )}
-    </>
+    <tr className="border-t border-zinc-700">
+      <td className="py-3 font-medium">{status.name}</td>
+      <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d)}</td>
+      <td className="py-3 text-zinc-300">{latestText(status, d, checking)}</td>
+      <td className="py-3 text-right">
+        {progress ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+            <Spinner />
+            {progress.phase} {progress.percent}%
+          </span>
+        ) : pending ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+            <Spinner />
+            working…
+          </span>
+        ) : label ? (
+          <Button variant="warm" size="sm" onClick={onInstall}>
+            {label}
+          </Button>
+        ) : null}
+      </td>
+    </tr>
   )
 }
 
-/** The installed-version cell text, honest about lifecycle. */
+/** The installed-version cell text. */
 function installedText(status: BinaryStatus, d: DerivedStatus): string {
-  if (d.lifecycle === 'absent') return 'not installed'
-  if (d.lifecycle === 'unmanaged') return 'your own copy'
-  if (d.lifecycle === 'faulted') return status.installedVersion ?? 'faulted'
+  if (d.state === 'not-installed') return 'not installed'
   return status.installedVersion ?? 'installed'
 }
 
-/** Colour the installed cell by role so a Faulted tool reads as an error at a glance. */
+/** Colour the installed cell by role so a to-do reads as amber at a glance. */
 function installedClass(d: DerivedStatus): string {
-  if (d.lifecycle === 'faulted') return ROLE_TEXT_CLASS.error
-  if (d.lifecycle === 'absent' || d.currency === 'stale') return ROLE_TEXT_CLASS.warning
-  return 'text-zinc-300'
+  return d.role === 'warning' ? ROLE_TEXT_CLASS.warning : 'text-zinc-300'
 }
 
-/** The latest/desired-version cell text, distinguishing not-checked from check-failed. */
+/** The latest-version cell text; distinguishes an unchecked tool from a known latest. */
 function latestText(status: BinaryStatus, d: DerivedStatus, checking: boolean): string {
   if (checking) return 'checking…'
-  if (d.currency === 'check-failed') return 'check failed'
-  if (d.currency === 'unchecked') return 'not checked'
+  if (d.state === 'installed-unchecked') return 'not checked'
   return status.latestKnownVersion ?? '—'
 }
 
-/** Contextual label for the always-present force-(re)install button. */
-function forceInstallLabel(d: DerivedStatus): string {
-  if (d.lifecycle === 'absent') return 'Install'
-  if (d.lifecycle === 'unmanaged') return 'Replace'
-  if (d.currency === 'stale') return 'Update'
-  return 'Reinstall'
+/** The one per-row action, or null when there is nothing to do (up to date, or a
+ *  present copy with no known update). */
+function acquireLabel(state: DependencyState): string | null {
+  if (state === 'not-installed') return 'Install'
+  if (state === 'update-available') return 'Update'
+  return null
 }
 
 function lastCheckedHint(statuses: BinaryStatus[], checking: boolean): string {

@@ -8,6 +8,11 @@ import {
   type Role,
 } from '@shared/binary-status'
 
+// A binary needs the tools surface's attention (drives the blocking add-URL gate
+// and the first-run auto-open) only when it is not installed — the one sanctioned
+// interruption. An available update surfaces passively in the status bar, never by
+// blocking.
+
 type Phase = 'download' | 'verify' | 'install'
 
 type BinariesState = {
@@ -51,12 +56,9 @@ export const useBinariesStore = create<BinariesState>((set) => ({
 export function factsOf(s: BinaryStatus): DependencyFacts {
   return {
     present: s.present,
-    integrity: s.integrity,
     installedVersion: s.installedVersion,
     desiredVersion: s.latestKnownVersion,
     lastCheckedAtUtc: s.lastCheckedAtUtc,
-    checkError: s.checkError,
-    faultError: s.faultError,
   }
 }
 
@@ -65,44 +67,35 @@ export function derivedOf(s: BinaryStatus): DerivedStatus {
 }
 
 /**
- * True once every managed binary is present and usable — Provisioned or a
- * user-supplied Unmanaged copy. Drives the blocking gate: anything Absent or
- * Faulted means the tools surface should be presented.
+ * True once every managed binary is present — the blocking add-URL gate. A binary
+ * that is not installed blocks downloads until the user provisions it.
  */
 export function allBinariesUsable(statuses: BinaryStatus[]): boolean {
-  return (
-    statuses.length > 0 &&
-    statuses.every((s) => {
-      const { lifecycle } = derivedOf(s)
-      return lifecycle === 'provisioned' || lifecycle === 'unmanaged'
-    })
-  )
+  return statuses.length > 0 && statuses.every((s) => s.present)
 }
 
 /**
- * Tools that warrant the surface auto-opening at startup: Absent, Faulted, or Stale
- * (an available update) — full mumbler parity. Unchecked/Unmanaged are benign and
- * never auto-open. Gated by the check-updates setting at the call site.
+ * A required tool is missing — the one condition that auto-opens the tools surface
+ * at first run (regardless of the check toggle). An available update never blocks;
+ * it surfaces passively in the status bar.
  */
 export function binariesNeedAttention(statuses: BinaryStatus[]): boolean {
-  return statuses.some((s) => {
-    const { lifecycle, currency } = derivedOf(s)
-    return lifecycle === 'absent' || lifecycle === 'faulted' || currency === 'stale'
-  })
+  return statuses.some((s) => derivedOf(s).state === 'not-installed')
 }
 
-/** Names of the Absent tools — the set auto-download provisions (missing only). */
+/** Names of the not-installed tools. */
 export function absentBinaries(statuses: BinaryStatus[]): BinaryName[] {
-  return statuses.filter((s) => derivedOf(s).lifecycle === 'absent').map((s) => s.name)
+  return statuses.filter((s) => derivedOf(s).state === 'not-installed').map((s) => s.name)
 }
 
 export type ToolsSummary = { role: Role; text: string; actionable: boolean }
 
 /**
  * The single roll-up for the status bar: the worst role across all binaries
- * (error > warning > info > none) with a representative message. Pure, so the
- * status bar renders only what this returns. Quiet (role 'none') when every binary
- * is Provisioned + Current — the convention's default silence.
+ * (warning > info > none) with a representative message. Pure, so the status bar
+ * renders only what this returns. Quiet (role 'none') when every binary is Up to
+ * date — the convention's default silence. Persisted states carry no error role
+ * (there is no faulted/check-failed state), so 'error' never arises here.
  */
 export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
   const derived = statuses.map(derivedOf)
@@ -111,18 +104,13 @@ export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
   const count = (pred: (d: DerivedStatus) => boolean) => derived.filter(pred).length
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
-  if (role === 'error') {
-    return { role, text: `${plural(count((d) => d.role === 'error'), 'tool needs', 'tools need')} attention`, actionable: true }
-  }
   if (role === 'warning') {
-    const absent = count((d) => d.lifecycle === 'absent')
+    const absent = count((d) => d.state === 'not-installed')
     if (absent > 0) return { role, text: `${plural(absent, "tool isn’t", "tools aren’t")} installed`, actionable: true }
-    return { role, text: `${plural(count((d) => d.currency === 'stale'), 'update', 'updates')} available`, actionable: true }
+    return { role, text: `${plural(count((d) => d.state === 'update-available'), 'update', 'updates')} available`, actionable: true }
   }
   if (role === 'info') {
-    const unchecked = count((d) => d.currency === 'unchecked')
-    if (unchecked > 0) return { role, text: 'Updates not checked', actionable: false }
-    return { role, text: 'Using your own copy', actionable: false }
+    return { role, text: 'Updates not checked', actionable: false }
   }
   return { role: 'none', text: 'Tools ready', actionable: false }
 }

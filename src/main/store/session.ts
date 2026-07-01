@@ -9,7 +9,7 @@ import { utcTimestampForFilename } from '@shared/utc'
 import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
 
 /**
- * In-memory session cache, debounced atomic persistence to session.json.
+ * In-memory session cache, debounced atomic persistence to catalog.json.
  * Single instance per main process. Live progress fields are NOT persisted —
  * they're rebuilt by the queue at runtime.
  */
@@ -39,7 +39,7 @@ export type SessionLoadResult =
  * against a real temp dir, the way the rest of the I/O layer is.
  *
  * A corrupt or schema-invalid file is **never discarded**: it is renamed to a
- * timestamped `session.corrupt-*.json` sibling so the user's library stays
+ * timestamped `catalog.corrupt-*.json` sibling so the user's library stays
  * recoverable, and an empty session is returned. If it cannot even be set aside,
  * this throws (leaving the file intact) rather than risk a later write overwriting
  * the only copy.
@@ -65,7 +65,7 @@ export async function loadSessionFile(
   } catch (parseErr) {
     const quarantinePath = join(
       dirname(sessionPath),
-      `session.corrupt-${utcTimestampForFilename()}.json`,
+      `catalog.corrupt-${utcTimestampForFilename()}.json`,
     )
     try {
       await rename(sessionPath, quarantinePath)
@@ -85,7 +85,7 @@ export async function loadSessionFile(
  * called once during startup before any getter/mutator.
  */
 export async function loadSession(): Promise<SessionLoadResult> {
-  const { result, session } = await loadSessionFile(paths.session)
+  const { result, session } = await loadSessionFile(paths.catalog)
   cache = session
   loaded = true
   switch (result.status) {
@@ -170,7 +170,7 @@ export async function persistNow(): Promise<void> {
     saveTimer = null
   }
   try {
-    await writeJsonAtomic(paths.session, cache, SessionSchema)
+    await writeJsonAtomic(paths.catalog, cache, SessionSchema)
   } catch (err) {
     log.error('session persist failed', { error: describeError(err) })
     throw err
@@ -188,9 +188,9 @@ export function persistNowSync(): void {
   saveTimer = null
   try {
     const text = JSON.stringify(SessionSchema.parse(cache), null, 2) + '\n'
-    const tmp = `${paths.session}.tmp`
+    const tmp = `${paths.catalog}.tmp`
     writeFileSync(tmp, text, 'utf8')
-    renameSync(tmp, paths.session)
+    renameSync(tmp, paths.catalog)
   } catch (err) {
     log.error('session sync persist failed', { error: describeError(err) })
   }

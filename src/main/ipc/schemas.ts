@@ -95,7 +95,6 @@ export const ipcRequestSchemas = {
   'binaries:status':       z.undefined(),
   'binaries:update':       z.object({ name: BinaryNameSchema }),
   'binaries:checkUpdates': z.undefined(),
-  'binaries:verify':       z.object({ name: BinaryNameSchema }),
 
   // ── Scan ──────────────────────────────────────────────────────────────────
   'scan:start':            z.object({ url: z.string() }),
