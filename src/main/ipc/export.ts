@@ -1,7 +1,7 @@
-import { copyFile, readFile, stat } from 'node:fs/promises'
+import { copyFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { handle } from './handle'
-import { removeTapes } from './library'
+import { caseInsensitiveSiblingExists, removeTapes } from './library'
 import * as session from '@main/store/session'
 import { getLibraryDir } from '@main/store/config'
 import { writeJsonAtomic } from '@main/io/atomic-json'
@@ -41,9 +41,13 @@ export function registerExportHandlers(): void {
     const sidecarDst = join(destinationDir, sidecarName)
     const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null
 
+    // Case-insensitive so a sibling differing only in case (which macOS/Windows would
+    // silently clobber) is refused too, per storage-path-conventions' invariant.
     const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
     for (const dst of writtenPaths) {
-      if (await exists(dst)) throw new Error(`A file already exists at the destination: ${dst}`)
+      if (await caseInsensitiveSiblingExists(dst)) {
+        throw new Error(`A file already exists at the destination: ${dst}`)
+      }
     }
 
     // Read + rewrite + validate the sidecar's tapebox namespace UP FRONT — before any
@@ -78,13 +82,4 @@ export function registerExportHandlers(): void {
 
     return { writtenPaths }
   })
-}
-
-async function exists(p: string): Promise<boolean> {
-  try {
-    await stat(p)
-    return true
-  } catch {
-    return false
-  }
 }

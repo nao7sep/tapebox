@@ -1,5 +1,5 @@
-import { access, constants, copyFile, readFile, rename, stat, unlink } from 'node:fs/promises'
-import { dirname, extname, join } from 'node:path'
+import { access, constants, copyFile, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { basename, dirname, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
@@ -181,9 +181,13 @@ export function registerLibraryHandlers(): void {
       stage: p(it.stage),
     }))
 
+    // The tape's own current files are the ones about to be renamed, so they must not
+    // count as collisions — including when the change is only case ("Take.mp4" ->
+    // "take.mp4"), which the case-insensitive scan would otherwise flag against itself.
+    const ownNames = items.map((it) => it.old)
     for (const it of items) {
-      if (it.fresh !== it.old) await assertMissing(it.fresh)
-      await assertMissing(it.stage)
+      if (it.fresh.toLowerCase() !== it.old.toLowerCase()) await assertMissing(it.fresh, ownNames)
+      await assertMissing(it.stage, ownNames)
     }
 
     // Build every staging file, then atomically swap them into place. Both phases
@@ -490,14 +494,31 @@ async function discardFile(path: string, toTrash: boolean): Promise<void> {
   await shell.trashItem(path)
 }
 
-async function assertMissing(path: string): Promise<void> {
+/**
+ * True if `path`'s directory already holds a sibling whose name matches the target
+ * basename case-insensitively — the collision macOS/Windows would silently clobber
+ * even though a case-sensitive `stat(path)` reports the exact name as missing
+ * (storage-path-conventions' case-insensitive-uniqueness invariant). `ignore` names
+ * (compared case-insensitively) are excluded so a file is never treated as its own
+ * collision when it is being re-cased in place. A missing directory = no sibling.
+ */
+export async function caseInsensitiveSiblingExists(path: string, ignore: string[] = []): Promise<boolean> {
+  const target = basename(path).toLowerCase()
+  const skip = new Set(ignore.map((n) => n.toLowerCase()))
+  let entries: string[]
   try {
-    await stat(path)
+    entries = await readdir(dirname(path))
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw err
   }
-  throw new Error(`Target already exists: ${path}`)
+  return entries.some((name) => name.toLowerCase() === target && !skip.has(name.toLowerCase()))
+}
+
+async function assertMissing(path: string, ignore: string[] = []): Promise<void> {
+  if (await caseInsensitiveSiblingExists(path, ignore)) {
+    throw new Error(`Target already exists (case-insensitive): ${path}`)
+  }
 }
 
 async function fileExists(p: string): Promise<boolean> {
