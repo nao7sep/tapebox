@@ -53,9 +53,8 @@ async function runCore(now: Date): Promise<BackupReport> {
       lastWriteUtc: toIsoSeconds(item.mtimeMs),
     })
   }
-  // Index second: the archive is already in place, so a crash here just re-captures next run. The index
-  // is written 0600 (it lives in the 0700 backups dir, but owner-only on the file too costs nothing).
-  await writeJsonAtomic(paths.backupIndex, index, undefined, 0o600)
+  // Index second: the archive is already in place, so a crash here just re-captures next run.
+  await writeJsonAtomic(paths.backupIndex, index)
 
   return { nothingChanged: false, archiveFileName, filesArchived: archived.length, skips, indexWasReset }
 }
@@ -112,10 +111,10 @@ async function writeArchive(
 
   zip.end()
   // Write-temp → fsync → rename → fsync-dir, with the temp a sibling in the backups dir so the rename is
-  // atomic (same filesystem). The temp is created 0600: a backup may hold api-keys.json.
+  // atomic (same filesystem).
   await writeFileAtomicVia(
     finalPath,
-    (tempPath) => pipeline(zip.outputStream, createWriteStream(tempPath, { mode: 0o600 })),
+    (tempPath) => pipeline(zip.outputStream, createWriteStream(tempPath)),
     path.join(dir, `.${process.pid}-${archiveFileName}.tmp`),
   )
   return archived
@@ -124,11 +123,6 @@ async function writeArchive(
 async function ensureBackupsDir(): Promise<string> {
   const dir = paths.backups
   await fs.promises.mkdir(dir, { recursive: true })
-  // Owner-only: a backup may contain a secrets file (api-keys.json), so the archives must not be readable
-  // by other users even though the zip itself carries the umask default (data-backup conventions).
-  if (process.platform !== 'win32') {
-    await fs.promises.chmod(dir, 0o700)
-  }
   return dir
 }
 

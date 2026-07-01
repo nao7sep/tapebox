@@ -1,8 +1,7 @@
 // End-to-end backup runs over a throwaway TAPEBOX_HOME: a first run captures the durable home-root files
-// (config.json, catalog.json, api-keys.json) at their mirror paths and NEVER the excluded library/ tree;
-// an unchanged run writes nothing; an edit captures only what changed; a corrupt index resets to a full
-// backup; an unreadable subdirectory is skipped without failing the run. The backups directory is
-// owner-only (0700) so a secret it may contain (api-keys.json) is not downgraded.
+// (config.json, catalog.json) at their mirror paths and NEVER the excluded library/ tree or the excluded
+// secrets file (api-keys.json); an unchanged run writes nothing; an edit captures only what changed; a
+// corrupt index resets to a full backup; an unreadable subdirectory is skipped without failing the run.
 //
 // TAPEBOX_HOME is redirected to a scratch dir BEFORE @main/paths is first imported (storageRoot() caches
 // on first access), so the modules under test are loaded dynamically after the env is set.
@@ -58,7 +57,7 @@ async function zipEntries(zipFile: string): Promise<string[]> {
 }
 
 describe('runBackup', () => {
-  it('captures the durable home-root files and excludes library/ + layout.json', async () => {
+  it('captures the durable home-root files and excludes library/ + layout.json + api-keys.json', async () => {
     const report = await runBackup(RUN1)
 
     expect(report.fatal).toBeUndefined()
@@ -66,16 +65,17 @@ describe('runBackup', () => {
     expect(report.archiveFileName).toBe('backup-20260701-000000-utc.zip')
 
     const entries = await zipEntries(archiveAbsPath(report.archiveFileName!))
-    expect(entries).toEqual(['api-keys.json', 'catalog.json', 'config.json'])
+    expect(entries).toEqual(['catalog.json', 'config.json'])
     // Explicitly assert the excluded trees/files never leaked into the archive.
     expect(entries).not.toContain('layout.json')
+    expect(entries).not.toContain('api-keys.json') // secrets are not backed up
     expect(entries.some((e) => e.startsWith('library/'))).toBe(false)
 
     // The index is the { entries: [...] } OBJECT shape, one entry per file, with the four fields.
     const index = JSON.parse(fs.readFileSync(paths.backupIndex, 'utf8'))
     expect(Array.isArray(index)).toBe(false)
     expect(Array.isArray(index.entries)).toBe(true)
-    expect(index.entries).toHaveLength(3)
+    expect(index.entries).toHaveLength(2)
     expect(Object.keys(index.entries[0])).toEqual([
       'archivedAt',
       'archivePath',
@@ -84,10 +84,6 @@ describe('runBackup', () => {
     ])
     expect(index.entries[0].archivedAt).toBe('20260701-000000-utc')
     expect(index.entries[0].lastWriteUtc).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
-
-    if (process.platform !== 'win32') {
-      expect(fs.statSync(paths.backups).mode & 0o777).toBe(0o700)
-    }
   })
 
   it('writes nothing on a second run with no changes', async () => {
@@ -118,7 +114,7 @@ describe('runBackup', () => {
     const report = await runBackup(RUN2)
 
     expect(report.indexWasReset).toBe(true)
-    expect(report.filesArchived).toBe(3) // config.json + catalog.json + api-keys.json
+    expect(report.filesArchived).toBe(2) // config.json + catalog.json
   })
 
   it('skips an unreadable subdirectory and continues', async () => {

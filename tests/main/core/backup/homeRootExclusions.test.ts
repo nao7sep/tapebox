@@ -1,12 +1,12 @@
-// The home-root exclude list: durable data (config, catalog, api-keys) is kept; logs/, backups/, the
-// re-fetchable library/ + bin/ trees, disposable temp/, volatile layout.json, atomic-write temporaries,
-// and the case-insensitive OS-noise floor are dropped.
+// The home-root exclude list: durable data (config, catalog) is kept; the secrets file (api-keys.json),
+// logs/, backups/, the re-fetchable library/ + bin/ trees, disposable temp/, volatile layout.json,
+// atomic-write temporaries, and the case-insensitive OS-noise floor are dropped.
 
 import { describe, it, expect } from 'vitest'
 import { isExcludedFile, isExcludedDir } from '@main/core/backup/homeRootExclusions'
 
 describe('isExcludedFile', () => {
-  it.each(['config.json', 'catalog.json', 'api-keys.json', 'some/durable.json'])(
+  it.each(['config.json', 'catalog.json', 'some/durable.json'])(
     'includes %s',
     (relativePath) => {
       expect(isExcludedFile(relativePath)).toBe(false)
@@ -21,6 +21,7 @@ describe('isExcludedFile', () => {
     'bin/yt-dlp',
     'temp/download.part',
     'layout.json',
+    'api-keys.json', // secrets are not backed up
     '.config.json.1234.tmp',
     '.DS_Store',
     'Thumbs.db',
