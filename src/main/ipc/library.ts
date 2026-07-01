@@ -184,7 +184,9 @@ export function registerLibraryHandlers(): void {
     // The tape's own current files are the ones about to be renamed, so they must not
     // count as collisions — including when the change is only case ("Take.mp4" ->
     // "take.mp4"), which the case-insensitive scan would otherwise flag against itself.
-    const ownNames = items.map((it) => it.old)
+    // caseInsensitiveSiblingExists compares against bare readdir basenames, so the
+    // ignore list must be basenames too — not the absolute paths `it.old` holds.
+    const ownNames = items.map((it) => basename(it.old))
     for (const it of items) {
       if (it.fresh.toLowerCase() !== it.old.toLowerCase()) await assertMissing(it.fresh, ownNames)
       await assertMissing(it.stage, ownNames)
