@@ -87,10 +87,12 @@ export const paths = {
   get library()       { return join(storageRoot(), 'library') },
   get logs()          { return join(storageRoot(), 'logs') },
   get temp()          { return join(storageRoot(), 'temp') },
+  get backups()       { return join(storageRoot(), 'backups') },
   get config()        { return join(storageRoot(), 'config.json') },
   get catalog()       { return join(storageRoot(), 'catalog.json') },
   get layout()        { return join(storageRoot(), 'layout.json') },
   get apiKeys()       { return join(storageRoot(), 'api-keys.json') },
+  get backupIndex()   { return join(storageRoot(), 'backups', 'index.json') },
 }
 
 export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
