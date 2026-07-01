@@ -1,8 +1,10 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, rename } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
+import { utcTimestampForFilename } from '@shared/utc'
 import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } from '@shared/settings'
 
 /**
@@ -12,10 +14,13 @@ import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } fro
  * to inspect. Subsequent updates always re-validate via SettingsSchema before
  * persisting; an invalid update never reaches disk.
  *
- * Load is self-healing: a missing OR unreadable/invalid config falls back to
- * defaults (and rewrites them). This holds only preferences — losing a corrupt
- * config file costs the user nothing, whereas crashing on boot costs everything.
- * Stores that hold real data (session, sidecars) fail loud instead.
+ * Load is self-healing but never destructive: a missing config falls back to
+ * defaults (written out); a present-but-corrupt config (unreadable or schema-
+ * invalid) is quarantined aside to `config.corrupt-<stamp>.json` before defaults
+ * are written, so the user's bytes are preserved rather than silently discarded —
+ * the storage-path conventions' quarantine-then-reset rule (mirrors the session
+ * store's catalog quarantine). These are only preferences, so recovering with
+ * defaults beats crashing on boot; stores that hold real data still fail loud.
  *
  * NOTE: updateSettings/mutateSettings do a SHALLOW merge of the returned patch.
  * A caller patching a nested object (e.g. binaries) must build the full sub-object
@@ -26,7 +31,7 @@ import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } fro
 let cache: Settings | null = null
 
 export async function loadSettings(): Promise<void> {
-  const found = await readConfig()
+  const found = await readSettingsFile(paths.config)
   if (found) {
     cache = found
     log.info('settings loaded', { config: summarizeSettings(found) })
@@ -37,20 +42,39 @@ export async function loadSettings(): Promise<void> {
   }
 }
 
-async function readConfig(): Promise<Settings | null> {
+/**
+ * Load settings from an explicit path — the path-taking seam the app singleton wraps (mirrors
+ * loadSessionFile). Returns the parsed settings, or null when the file is missing OR was corrupt. A
+ * present-but-corrupt file is quarantined aside before null is returned, so the caller's reseed never
+ * discards the user's bytes; a missing file returns null with nothing to preserve.
+ */
+export async function readSettingsFile(configPath: string): Promise<Settings | null> {
   let raw: unknown
   try {
-    raw = JSON.parse(await readFile(paths.config, 'utf8'))
+    raw = JSON.parse(await readFile(configPath, 'utf8'))
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      log.warn('config unreadable; falling back to defaults', { error: describeError(err) })
-    }
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(err) })
+    await quarantineCorruptConfig(configPath)
     return null
   }
   const parsed = SettingsSchema.safeParse(raw)
   if (parsed.success) return parsed.data
-  log.warn('config invalid; falling back to defaults', { error: describeError(parsed.error) })
+  log.warn('config invalid; quarantining and falling back to defaults', { error: describeError(parsed.error) })
+  await quarantineCorruptConfig(configPath)
   return null
+}
+
+// Rename a corrupt config aside to a timestamped `config.corrupt-<stamp>.json` neighbour before the
+// caller reseeds defaults over the path — best-effort (a rename failure is logged, not fatal).
+async function quarantineCorruptConfig(configPath: string): Promise<void> {
+  const quarantinePath = join(dirname(configPath), `config.corrupt-${utcTimestampForFilename()}.json`)
+  try {
+    await rename(configPath, quarantinePath)
+    log.warn('quarantined corrupt config', { quarantinePath })
+  } catch (err) {
+    log.error('failed to quarantine corrupt config', { error: describeError(err) })
+  }
 }
 
 export function getSettings(): Settings {
