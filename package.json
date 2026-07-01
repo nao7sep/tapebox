@@ -20,7 +20,13 @@
       "icon": "build/icon.icns",
       "extendInfo": {
         "CFBundleIconName": "vhs-cassette-front-azure-rose"
-      }
+      },
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ]
     },
     "win": {
       "icon": "build/icon.ico"
