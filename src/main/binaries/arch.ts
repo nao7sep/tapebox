@@ -13,13 +13,17 @@ const execFileAsync = promisify(execFile)
  * checksum rather than published and left to fail at exec time.
  */
 
-/** Pure parse of `lipo -archs` output (e.g. 'arm64', 'x86_64 arm64', 'x86_64'). */
+// The arm64 family that runs native on Apple Silicon: `arm64` (standard) and
+// `arm64e` (Apple's pointer-authentication ABI). Both are Rosetta-free, so either
+// slice satisfies the gate; only a binary carrying neither (e.g. x86_64-only) fails.
+const ARM64_SLICES = new Set(['arm64', 'arm64e'])
+
+/** Pure parse of `lipo -archs` output (e.g. 'arm64', 'x86_64 arm64', 'arm64e'). */
 export function hasArm64Slice(lipoArchsOutput: string): boolean {
   return lipoArchsOutput
     .trim()
     .split(/\s+/)
-    .filter(Boolean)
-    .includes('arm64')
+    .some((slice) => ARM64_SLICES.has(slice))
 }
 
 export async function assertArm64Slice(filePath: string): Promise<void> {

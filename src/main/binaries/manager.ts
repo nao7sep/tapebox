@@ -87,12 +87,12 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
 }
 
 /**
- * Resolve the latest upstream version of every binary and record the outcome of
- * each check honestly. Every binary's lastCheckedAtUtc advances on the attempt; a
- * success records latestKnownVersion and clears any prior error, while a failure
- * (network down, a version string we couldn't parse, ffmpeg on Linux) records the
- * error — deriving to Check-failed — and leaves the version untouched. A failed
- * check is never silently dropped to "unchecked" or left showing a stale Current.
+ * Resolve the latest upstream version of every binary. A success records that
+ * binary's latestKnownVersion + lastCheckedAtUtc; a failure (network down, an
+ * unparseable version, ffmpeg on Linux) writes **nothing** for that binary — no
+ * version, no timestamp — so the displayed state stays at its last successful
+ * knowledge (the convention's honest-state rule). Failures are logged, never
+ * persisted, so there is no "check-failed" state to represent.
  */
 export async function checkForUpdates(): Promise<BinaryStatus[]> {
   const now = nowUtcIso()

@@ -83,11 +83,6 @@ export function binariesNeedAttention(statuses: BinaryStatus[]): boolean {
   return statuses.some((s) => derivedOf(s).state === 'not-installed')
 }
 
-/** Names of the not-installed tools. */
-export function absentBinaries(statuses: BinaryStatus[]): BinaryName[] {
-  return statuses.filter((s) => derivedOf(s).state === 'not-installed').map((s) => s.name)
-}
-
 export type ToolsSummary = { role: Role; text: string; actionable: boolean }
 
 /**

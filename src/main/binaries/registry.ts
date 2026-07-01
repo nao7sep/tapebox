@@ -1,5 +1,6 @@
 import { fetchLatestRelease } from './github'
 import { fetchRedirectLocation } from '@main/io/fetch-json'
+import { assertHttpsUrl } from '@main/io/network'
 import type { BinaryName } from '@shared/ipc-contract'
 import type { AssetIntegrity } from './integrity'
 
@@ -120,7 +121,12 @@ async function resolveFfmpegMacOS(): Promise<ResolvedAsset> {
   // goal is surviving Rosetta removal, so tapebox never fetches an x86_64 ffmpeg on
   // macOS. (Windows x64 is native on Windows and is unaffected by this.)
   const location = await fetchRedirectLocation(`${MARTIN_BASE}/redirect/latest/macos/arm64/release/ffmpeg.zip`)
+  // The redirect Location could be an absolute URL; refuse a downgrade before it
+  // becomes the download URL and (with `.sha256`) the integrity URL. The fetch
+  // helpers assert https too, but rejecting here keeps a bad Location from ever
+  // being treated as a resolved asset.
   const downloadUrl = new URL(location, MARTIN_BASE).toString()
+  assertHttpsUrl(downloadUrl, 'ffmpeg download')
   return {
     version: parseMartinBuildVersion(new URL(downloadUrl).pathname),
     downloadUrl,

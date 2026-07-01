@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import type { BinaryStatus } from '@shared/ipc-contract'
-import { absentBinaries, allBinariesUsable, binariesNeedAttention, derivedOf, summarizeBinaries } from '@renderer/store/binaries'
+import { allBinariesUsable, binariesNeedAttention, derivedOf, summarizeBinaries } from '@renderer/store/binaries'
 
 // An up-to-date tool: the quiet baseline each case deviates from.
 function status(over: Partial<BinaryStatus> = {}): BinaryStatus {
@@ -61,16 +61,6 @@ describe('binariesNeedAttention — startup auto-open trigger', () => {
 
   it('false for benign states (up-to-date / update-available / unchecked / user-placed)', () => {
     expect(binariesNeedAttention([status(), updateAvailable, unchecked, userPlaced])).toBe(false)
-  })
-})
-
-describe('absentBinaries', () => {
-  it('lists only the not-installed tools, by name', () => {
-    expect(absentBinaries([status(), absent, updateAvailable])).toEqual(['yt-dlp'])
-  })
-
-  it('empty when nothing is missing', () => {
-    expect(absentBinaries([status(), updateAvailable, userPlaced])).toEqual([])
   })
 })
 

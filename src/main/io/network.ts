@@ -39,3 +39,23 @@ export const HTTP_RETRY: RetryPolicy = {
   retries: 3,
   intervals: [2_000, 5_000, 15_000],
 }
+
+/**
+ * Refuse any non-https URL before it reaches the network. Every managed-binary
+ * request — the binary download, the GitHub release metadata, the vendor redirect,
+ * and the checksum sums file — is security-critical (the bytes end up executable, or
+ * decide whether those bytes are trusted), so the whole channel is https-only. A
+ * plain-http URL from a downgrade, a redirect Location, or a bug is rejected here,
+ * not just on the download leg. `context` names the leg for the error message.
+ */
+export function assertHttpsUrl(url: string, context: string): void {
+  let scheme = ''
+  try {
+    scheme = new URL(url).protocol
+  } catch {
+    throw new Error(`invalid ${context} URL: ${url}`)
+  }
+  if (scheme !== 'https:') {
+    throw new Error(`refusing non-https ${context} URL: ${url}`)
+  }
+}

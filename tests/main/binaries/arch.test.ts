@@ -13,6 +13,11 @@ describe('hasArm64Slice', () => {
     expect(hasArm64Slice('arm64 x86_64')).toBe(true)
   })
 
+  it('accepts arm64e (Apple pointer-auth ABI, native on Apple Silicon)', () => {
+    expect(hasArm64Slice('arm64e')).toBe(true)
+    expect(hasArm64Slice('x86_64 arm64e')).toBe(true)
+  })
+
   it('rejects an x86_64-only binary', () => {
     expect(hasArm64Slice('x86_64')).toBe(false)
   })

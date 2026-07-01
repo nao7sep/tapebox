@@ -94,10 +94,11 @@ function NoticeZone() {
 
 /**
  * Managed-binary roll-up: the worst role across all tools, with the message and
- * click-through the shared summary decides. A genuine fault or a failed check shows
- * in the error role (red), distinct from a benign "Updates not checked"; a quiet
- * (all Provisioned + Current) set reads "Tools ready". An operation in flight shows
- * its transient progress, which sits above the persisted roll-up.
+ * click-through the shared summary decides. A missing or outdated tool shows in the
+ * warning role (amber, actionable), a present-but-unchecked tool is a benign
+ * "Updates not checked" (info), and a quiet (all up-to-date) set reads "Tools
+ * ready". An operation in flight shows its transient progress, which sits above the
+ * persisted roll-up.
  */
 function ToolsZone() {
   const statuses = useBinariesStore((s) => s.statuses)
