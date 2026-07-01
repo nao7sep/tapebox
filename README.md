@@ -1,6 +1,6 @@
 # TapeBox
 
-TapeBox is a local media library: download videos with `yt-dlp`, keep them as **tapes**, and watch, rename, and organize them offline. It's a thin wrapper around `yt-dlp` — it does nothing yt-dlp can't, it just keeps each video, its poster, and its metadata together and easy to browse, all under `~/.tapebox` with no account and no cloud. It's deliberately a calm *collection* rather than a feed: no autoplay-next, no repeat. Cross-platform desktop app (macOS, Windows, Linux) built on Electron; it downloads and manages `yt-dlp`, `ffmpeg`, and `deno` for you.
+TapeBox is a local media library: download videos with `yt-dlp`, keep them as **tapes**, and watch, rename, and organize them offline. It's a thin wrapper around `yt-dlp` — it does nothing yt-dlp can't, it just keeps each video, its poster, and its metadata together and easy to browse, all under `~/.tapebox` with no account and no cloud. It's deliberately a calm *collection* rather than a feed: no autoplay-next, no repeat. A desktop app for macOS and Windows (also runnable from source on Linux), built on Electron; it downloads and manages `yt-dlp`, `ffmpeg`, and `deno` for you.
 
 ## Features
 
@@ -15,8 +15,15 @@ TapeBox is a local media library: download videos with `yt-dlp`, keep them as **
 ## Requirements
 
 - Node.js and npm
-- macOS, Windows, or Linux
+- macOS or Windows (Linux runs from source)
 - On Linux, install `ffmpeg` yourself at `~/.tapebox/bin/ffmpeg` (auto-install is macOS/Windows only)
+
+## Download
+
+Prebuilt installers and portable builds for macOS (Apple Silicon) and Windows are on the [Releases](https://github.com/nao7sep/tapebox/releases) page. These builds are **unsigned**, so the OS warns the first time you open one:
+
+- **macOS** — right-click the app and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/TapeBox.app`).
+- **Windows** — on the SmartScreen prompt, click **More info → Run anyway**.
 
 ## Getting started
 

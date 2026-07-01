@@ -25,11 +25,19 @@
         {
           "target": "dmg",
           "arch": ["arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["arm64"]
         }
       ]
     },
     "win": {
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "target": ["nsis", "zip"]
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-setup.${ext}"
     }
   },
   "engines": {
@@ -38,6 +46,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "dist": "npm run build && electron-builder --publish never",
     "preview": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
