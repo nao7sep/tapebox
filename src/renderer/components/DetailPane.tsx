@@ -696,7 +696,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       className={
-        'rounded border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ' +
+        'rounded border px-3 py-1.5 text-xs transition disabled:cursor-default disabled:opacity-50 ' +
         (danger
           ? 'border-red-900 text-red-300 hover:border-red-700 hover:bg-red-950/40'
           : 'border-zinc-700 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800/60') +

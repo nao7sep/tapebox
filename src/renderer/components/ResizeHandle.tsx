@@ -37,8 +37,9 @@ const POSITION: Record<Edge, string> = {
  * container-aware clamping itself; that lives in the consumer's derivation
  * (clampSplitter), the single place the intent meets the live geometry.
  *
- * It highlights on hover rather than swapping the mouse cursor, per the project's
- * no-cursor-change rule.
+ * It highlights on hover and shows the axis-matched resize cursor (col-resize on
+ * a left/right edge, row-resize on a top/bottom edge), per the cursor conventions'
+ * divider rule.
  */
 export function ResizeHandle({ edge, size, min, max, onResize, onCommit }: Props) {
   const alongY = edge === 'top' || edge === 'bottom'
@@ -78,7 +79,11 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit }: Props
       onMouseDown={onMouseDown}
       role="separator"
       aria-orientation={alongY ? 'horizontal' : 'vertical'}
-      className={'absolute z-10 transition-colors hover:bg-zinc-600/70 ' + POSITION[edge]}
+      className={
+        'absolute z-10 transition-colors hover:bg-zinc-600/70 ' +
+        (alongY ? 'cursor-row-resize ' : 'cursor-col-resize ') +
+        POSITION[edge]
+      }
     />
   )
 }
