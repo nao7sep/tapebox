@@ -53,10 +53,12 @@ export function TapeList() {
 
   function onDragStart({ active }: DragStartEvent) {
     setActiveId(String(active.id))
+    document.body.classList.add('dnd-dragging')
   }
 
   function onDragEnd({ active, over }: DragEndEvent) {
     setActiveId(null)
+    document.body.classList.remove('dnd-dragging')
     if (!over || active.id === over.id) return
     const from = visible.findIndex((t) => t.id === active.id)
     const to = visible.findIndex((t) => t.id === over.id)
@@ -79,7 +81,7 @@ export function TapeList() {
       collisionDetection={closestCenter}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onDragCancel={() => setActiveId(null)}
+      onDragCancel={() => { setActiveId(null); document.body.classList.remove('dnd-dragging') }}
     >
       <div ref={topRef} />
       <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>

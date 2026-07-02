@@ -85,6 +85,7 @@ export function ArchiveOrganizer() {
   const sensors = useTapeDragSensors()
 
   function onDragStart({ active }: DragStartEvent) {
+    document.body.classList.add('dnd-dragging')
     const type = active.data.current?.type
     if (type === 'tape' || type === 'box') setActiveDrag({ type, id: String(active.id) })
   }
@@ -138,8 +139,8 @@ export function ArchiveOrganizer() {
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={onDragStart}
-      onDragEnd={(e) => { onDragEnd(e); setActiveDrag(null) }}
-      onDragCancel={() => setActiveDrag(null)}
+      onDragEnd={(e) => { onDragEnd(e); setActiveDrag(null); document.body.classList.remove('dnd-dragging') }}
+      onDragCancel={() => { setActiveDrag(null); document.body.classList.remove('dnd-dragging') }}
     >
       <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 px-3 py-2">
