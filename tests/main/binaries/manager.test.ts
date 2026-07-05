@@ -31,7 +31,7 @@ vi.mock('@main/binaries/registry', async (importOriginal) => {
   }
 })
 
-import { checkForUpdates } from '@main/binaries/manager'
+import { checkForUpdates, downloadTempPath } from '@main/binaries/manager'
 import { binarySpecs } from '@main/binaries/registry'
 import { freshBinaryEntry } from '@shared/settings'
 
@@ -66,5 +66,21 @@ describe('checkForUpdates — a failed check writes nothing (I3)', () => {
     // The failed check wrote nothing — no version, no timestamp.
     expect(b.ffmpeg.latestKnownVersion).toBeNull()
     expect(b.ffmpeg.lastCheckedAtUtc).toBeNull()
+  })
+})
+
+describe('downloadTempPath', () => {
+  it('is <name>-<nanoid>.partial under temp/, per the derived-sibling-name grammar', () => {
+    const p = downloadTempPath('yt-dlp')
+    expect(p).toMatch(/[/\\]temp[/\\]yt-dlp-[A-Za-z0-9_-]{10}\.partial$/)
+  })
+
+  it('discriminates by a random nanoid, not a raw Date.now() epoch', () => {
+    // The bug this replaced: Date.now() as the discriminator, which two installs
+    // started in the same millisecond would collide on. A nanoid discriminator
+    // means back-to-back calls virtually never coincide.
+    const first = downloadTempPath('yt-dlp')
+    const second = downloadTempPath('yt-dlp')
+    expect(first).not.toBe(second)
   })
 })

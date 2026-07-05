@@ -1,11 +1,12 @@
 import { readFile, rename } from 'node:fs/promises'
 import { renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
+import { nanoid } from 'nanoid'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { utcTimestampForFilename } from '@shared/utc'
+import { utcTimestampForFilenameMs } from '@shared/utc'
 import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
 
 /**
@@ -39,7 +40,7 @@ export type SessionLoadResult =
  * against a real temp dir, the way the rest of the I/O layer is.
  *
  * A corrupt or schema-invalid file is **never discarded**: it is renamed to a
- * timestamped `catalog.corrupt-*.json` sibling so the user's library stays
+ * timestamped `catalog-*.invalid` sibling so the user's library stays
  * recoverable, and an empty session is returned. If it cannot even be set aside,
  * this throws (leaving the file intact) rather than risk a later write overwriting
  * the only copy.
@@ -65,7 +66,7 @@ export async function loadSessionFile(
   } catch (parseErr) {
     const quarantinePath = join(
       dirname(sessionPath),
-      `catalog.corrupt-${utcTimestampForFilename()}.json`,
+      `catalog-${utcTimestampForFilenameMs()}.invalid`,
     )
     try {
       await rename(sessionPath, quarantinePath)
@@ -188,7 +189,8 @@ export function persistNowSync(): void {
   saveTimer = null
   try {
     const text = JSON.stringify(SessionSchema.parse(cache), null, 2) + '\n'
-    const tmp = `${paths.catalog}.tmp`
+    const stem = paths.catalog.slice(0, -extname(paths.catalog).length)
+    const tmp = `${stem}-${nanoid(10)}.tmp`
     writeFileSync(tmp, text, 'utf8')
     renameSync(tmp, paths.catalog)
   } catch (err) {

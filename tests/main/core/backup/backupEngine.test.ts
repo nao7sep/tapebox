@@ -62,7 +62,7 @@ describe('runBackup', () => {
 
     expect(report.fatal).toBeUndefined()
     expect(report.nothingChanged).toBe(false)
-    expect(report.archiveFileName).toBe('backup-20260701-000000-utc.zip')
+    expect(report.archiveFileName).toBe('backup-20260701-000000-000-utc.zip')
 
     const entries = await zipEntries(archiveAbsPath(report.archiveFileName!))
     expect(entries).toEqual(['catalog.json', 'config.json'])
@@ -82,8 +82,13 @@ describe('runBackup', () => {
       'sizeBytes',
       'lastWriteUtc',
     ])
-    expect(index.entries[0].archivedAt).toBe('20260701-000000-utc')
+    // Millisecond-precision stamp (yyyymmdd-hhmmss-fff-utc); RUN1 has zero milliseconds.
+    expect(index.entries[0].archivedAt).toBe('20260701-000000-000-utc')
     expect(index.entries[0].lastWriteUtc).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
+
+    // The backups dir holds only the final archive + index — the <stem>-<nanoid>.tmp
+    // working file (see writeArchive) is renamed away, never left behind.
+    expect(fs.readdirSync(paths.backups).sort()).toEqual(['backup-20260701-000000-000-utc.zip', 'index.json'])
   })
 
   it('writes nothing on a second run with no changes', async () => {
@@ -91,7 +96,7 @@ describe('runBackup', () => {
     const report = await runBackup(RUN2)
 
     expect(report.nothingChanged).toBe(true)
-    expect(fs.existsSync(archiveAbsPath('backup-20260701-010000-utc.zip'))).toBe(false)
+    expect(fs.existsSync(archiveAbsPath('backup-20260701-010000-000-utc.zip'))).toBe(false)
   })
 
   it('captures only the changed file after an edit', async () => {
@@ -102,7 +107,7 @@ describe('runBackup', () => {
     const report = await runBackup(RUN2)
 
     expect(report.filesArchived).toBe(1)
-    const entries = await zipEntries(archiveAbsPath('backup-20260701-010000-utc.zip'))
+    const entries = await zipEntries(archiveAbsPath('backup-20260701-010000-000-utc.zip'))
     expect(entries).toEqual(['catalog.json'])
   })
 
@@ -115,6 +120,34 @@ describe('runBackup', () => {
 
     expect(report.indexWasReset).toBe(true)
     expect(report.filesArchived).toBe(2) // config.json + catalog.json
+  })
+
+  it('advances to the next free millisecond when the target archive name already exists', async () => {
+    // Simulate a second instance having already claimed this millisecond's name (or a stray leftover
+    // from a prior crash): pre-create the archive the run would otherwise write to.
+    fs.mkdirSync(paths.backups, { recursive: true })
+    const claimedPath = archiveAbsPath('backup-20260701-000000-000-utc.zip')
+    fs.writeFileSync(claimedPath, 'already claimed')
+
+    const report = await runBackup(RUN1)
+
+    expect(report.fatal).toBeUndefined()
+    expect(report.nothingChanged).toBe(false)
+    // The next free millisecond, not the claimed one.
+    expect(report.archiveFileName).toBe('backup-20260701-000000-001-utc.zip')
+
+    // The pre-existing archive was never touched.
+    expect(fs.readFileSync(claimedPath, 'utf8')).toBe('already claimed')
+
+    const entries = await zipEntries(archiveAbsPath(report.archiveFileName!))
+    expect(entries).toEqual(['catalog.json', 'config.json'])
+
+    // The index records carry the winning (advanced) stamp, not the originally-attempted one.
+    const index = JSON.parse(fs.readFileSync(paths.backupIndex, 'utf8'))
+    expect(index.entries).toHaveLength(2)
+    for (const entry of index.entries) {
+      expect(entry.archivedAt).toBe('20260701-000000-001-utc')
+    }
   })
 
   it('skips an unreadable subdirectory and continues', async () => {

@@ -38,9 +38,10 @@ describe('readSettingsFile', () => {
 
     expect(await readSettingsFile(path)).toBeNull()
 
-    // The corrupt bytes survive as a `config.corrupt-<stamp>.json` neighbour; the original is moved.
+    // The corrupt bytes survive as a `config-<yyyymmdd-hhmmss-fff-utc>.invalid` neighbour; the original
+    // is moved.
     const files = await readdir(dir)
-    const quarantined = files.find((f) => f.startsWith('config.corrupt-') && f.endsWith('.json'))
+    const quarantined = files.find((f) => f.startsWith('config-') && f.endsWith('.invalid'))
     expect(quarantined).toBeDefined()
     expect(await readFile(join(dir, quarantined!), 'utf8')).toBe(corrupt)
     expect(files).not.toContain('config.json')
@@ -53,7 +54,7 @@ describe('readSettingsFile', () => {
     expect(await readSettingsFile(path)).toBeNull()
 
     const quarantined = (await readdir(dir)).find(
-      (f) => f.startsWith('config.corrupt-') && f.endsWith('.json'),
+      (f) => f.startsWith('config-') && f.endsWith('.invalid'),
     )
     expect(quarantined).toBeDefined()
   })

@@ -3,12 +3,12 @@ import { join } from 'node:path'
 import { paths } from '@main/paths'
 import { describeError } from '@shared/error'
 import type { LogFields, LogLevel } from '@shared/log'
-import { nowUtcIso, utcTimestampForFilename } from '@shared/utc'
+import { nowUtcIso, utcTimestampForFilenameMs } from '@shared/utc'
 import { isDebugEnabled, serializeLogLine } from './log-format'
 
 /**
- * Per-launch session log at ~/.tapebox/logs/{yyyymmdd-hhmmss-utc}.log, one JSON
- * object per line (JSON Lines). A small, hand-rolled logger we fully control:
+ * Per-launch session log at ~/.tapebox/logs/{yyyymmdd-hhmmss-fff-utc}.log, one
+ * JSON object per line (JSON Lines). A small, hand-rolled logger we fully control:
  *
  *   - Takes a structured object (a short stable `message` plus arbitrary
  *     `fields`), never a pre-rendered string. The logger builds the envelope and
@@ -59,7 +59,7 @@ export function getDebugEnabled(): boolean {
 /** Open this launch's session file. Returns its intended absolute path. */
 export function initLogger(options: LoggerOptions): string {
   debugEnabled = options.debug
-  const path = join(paths.logs, `${utcTimestampForFilename()}.log`)
+  const path = join(paths.logs, `${utcTimestampForFilenameMs()}.log`)
   try {
     fd = openSync(path, 'a')
     currentLogPath = path

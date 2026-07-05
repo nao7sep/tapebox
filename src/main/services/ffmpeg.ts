@@ -1,5 +1,6 @@
 import { unlink } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
+import { nanoid } from 'nanoid'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
@@ -50,10 +51,12 @@ export async function saveThumbnailJpeg(
   const finalName = `${stem}.jpg`
   const finalPath = join(destDir, finalName)
   // Staging must keep a real .jpg extension: ffmpeg chooses the output muxer from
-  // the extension, and a bare `.partial` suffix leaves it "unable to choose an
-  // output format". Its stem ("{stem}.staging") differs from the final, so
-  // findThumbnail ignores it while it briefly exists.
-  const stagePath = join(destDir, `${stem}.staging.jpg`)
+  // the extension, and a bare `.tmp` suffix leaves it "unable to choose an output
+  // format". Named <stem>-<nanoid>.jpg per the atomic-write-temp-files convention
+  // (nanoid substitutes for the usual `.tmp` role-extension, which ffmpeg can't
+  // infer a format from); its own stem never equals `stem`, so findThumbnail
+  // ignores it while it briefly exists.
+  const stagePath = join(destDir, `${stem}-${nanoid(10)}.jpg`)
 
   await writeFileAtomicVia(
     finalPath,

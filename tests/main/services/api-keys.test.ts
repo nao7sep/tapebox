@@ -123,7 +123,7 @@ describe('api-keys storage', () => {
     await expect(apiKeys.resolveApiKey(['openai'])).resolves.toBeNull()
 
     const entries = await readdir(root)
-    expect(entries.some((e) => e.startsWith('api-keys.corrupt-'))).toBe(true)
+    expect(entries.some((e) => e.startsWith('api-keys-') && e.endsWith('.invalid'))).toBe(true)
     expect(entries).not.toContain('api-keys.json')
   })
 })

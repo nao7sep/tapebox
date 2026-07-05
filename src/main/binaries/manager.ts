@@ -1,5 +1,6 @@
 import { access, chmod, constants, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { nanoid } from 'nanoid'
 import { binaryPath, ensureDirs, paths } from '@main/paths'
 import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
@@ -23,7 +24,7 @@ import { assertArm64Slice } from './arch'
  *
  * Layout on disk:
  *   ~/.tapebox/bin/{name}{ext}              -- the installed executable
- *   ~/.tapebox/temp/{tmp}                   -- disposable download staging (cleared on launch)
+ *   ~/.tapebox/temp/{name}-{nanoid}.partial  -- disposable download staging (cleared on launch)
  *
  * Install is atomic and crash-durable: download to a temp file, then prepare the
  * executable at a staging file (extract or move, then chmod) and publish it with
@@ -55,6 +56,19 @@ async function withBinaryLock<T>(name: BinaryName, run: () => Promise<T>): Promi
   } finally {
     inFlight.delete(name)
   }
+}
+
+/**
+ * The `<name>-<nanoid>.partial` download-staging filename inside paths.temp —
+ * `<stem>-<discriminator>.<role-extension>` per the derived-sibling-name
+ * convention. nanoid(10) is the discriminator, matching the app's other
+ * derived-name sites (atomic-file.ts, rename-plan.ts): never a raw Date.now()
+ * epoch, which two installs started in the same millisecond could collide on.
+ * Pulled out of performInstall so the shape is assertable without driving a
+ * full install.
+ */
+export function downloadTempPath(name: BinaryName): string {
+  return join(paths.temp, `${name}-${nanoid(10)}.partial`)
 }
 
 async function isInstalled(name: BinaryName): Promise<boolean> {
@@ -140,7 +154,7 @@ async function performInstall(name: BinaryName): Promise<void> {
   log.info('binary resolved', { name, version: resolved.version, url: resolved.downloadUrl })
 
   await ensureDirs()
-  const downloadTemp = join(paths.temp, `${name}-${Date.now()}.partial`)
+  const downloadTemp = downloadTempPath(name)
 
   let lastEmittedPct = -1
   await withRetry(HTTP_RETRY, () =>

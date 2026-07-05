@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 /**
  * Electron-vite config for an ESM main process.
  *   - main: ESM output (lib.formats=['es']) so we can require nothing and
- *     consume ESM-only deps (nanoid, write-file-atomic) directly.
+ *     consume ESM-only deps (nanoid) directly.
  *   - preload: CommonJS output. Preload runs in a sandboxed context where ESM
  *     loading is not supported in Electron 42; CJS is the standard there.
  *   - renderer: standard Vite browser ESM + Tailwind v4 via its native Vite

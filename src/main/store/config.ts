@@ -4,7 +4,7 @@ import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { utcTimestampForFilename } from '@shared/utc'
+import { utcTimestampForFilenameMs } from '@shared/utc'
 import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } from '@shared/settings'
 
 /**
@@ -16,7 +16,7 @@ import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } fro
  *
  * Load is self-healing but never destructive: a missing config falls back to
  * defaults (written out); a present-but-corrupt config (unreadable or schema-
- * invalid) is quarantined aside to `config.corrupt-<stamp>.json` before defaults
+ * invalid) is quarantined aside to `config-<stamp>.invalid` before defaults
  * are written, so the user's bytes are preserved rather than silently discarded —
  * the storage-path conventions' quarantine-then-reset rule (mirrors the session
  * store's catalog quarantine). These are only preferences, so recovering with
@@ -65,10 +65,10 @@ export async function readSettingsFile(configPath: string): Promise<Settings | n
   return null
 }
 
-// Rename a corrupt config aside to a timestamped `config.corrupt-<stamp>.json` neighbour before the
+// Rename a corrupt config aside to a timestamped `config-<stamp>.invalid` neighbour before the
 // caller reseeds defaults over the path — best-effort (a rename failure is logged, not fatal).
 async function quarantineCorruptConfig(configPath: string): Promise<void> {
-  const quarantinePath = join(dirname(configPath), `config.corrupt-${utcTimestampForFilename()}.json`)
+  const quarantinePath = join(dirname(configPath), `config-${utcTimestampForFilenameMs()}.invalid`)
   try {
     await rename(configPath, quarantinePath)
     log.warn('quarantined corrupt config', { quarantinePath })

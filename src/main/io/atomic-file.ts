@@ -1,5 +1,6 @@
 import { open, rename, unlink } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, extname } from 'node:path'
+import { nanoid } from 'nanoid'
 
 /**
  * Atomically publish a file. Runs `produce(tempPath)` to write the complete,
@@ -15,11 +16,13 @@ import { dirname } from 'node:path'
  * failure the temp is removed and the original error is rethrown unchanged; an
  * existing `destPath` is left untouched (the rename is the single atomic commit).
  *
- * The temp defaults to a `${destPath}.partial` sibling so the rename is always
- * same-filesystem (atomic, never a cross-device copy). Pass `tempPath` when the
- * producer constrains the name — e.g. ffmpeg picks its output muxer from the
- * extension, so its temp must still end in `.jpg`. A supplied `tempPath` MUST be
- * a sibling of `destPath` (same directory), or the rename stops being atomic.
+ * The temp defaults to a `<stem>-<nanoid>.tmp` sibling (see {@link defaultTempPath})
+ * so the rename is always same-filesystem (atomic, never a cross-device copy), and
+ * a stranded temp from a hard kill can never collide with the next attempt. Pass
+ * `tempPath` when the producer constrains the name — e.g. ffmpeg picks its output
+ * muxer from the extension, so its temp must still end in `.jpg`. A supplied
+ * `tempPath` MUST be a sibling of `destPath` (same directory), or the rename stops
+ * being atomic.
  *
  * A hard kill (SIGKILL / power loss) between produce() and rename() can strand
  * the temp; it is inert — callers key off `destPath`, never the temp — and the
@@ -28,7 +31,7 @@ import { dirname } from 'node:path'
 export async function writeFileAtomicVia(
   destPath: string,
   produce: (tempPath: string) => Promise<void>,
-  tempPath: string = `${destPath}.partial`,
+  tempPath: string = defaultTempPath(destPath),
 ): Promise<void> {
   try {
     await produce(tempPath)
@@ -39,6 +42,18 @@ export async function writeFileAtomicVia(
     await unlink(tempPath).catch(() => {})
     throw err
   }
+}
+
+/**
+ * `<stem>-<nanoid>.tmp` alongside destPath — stem is destPath with its final
+ * extension stripped, or destPath itself when it has none (e.g. an extensionless
+ * binary like `bin/ffmpeg` on POSIX). Same directory as destPath, per the
+ * atomic-write-temp-files convention, so the later rename is always same-filesystem.
+ */
+function defaultTempPath(destPath: string): string {
+  const ext = extname(destPath)
+  const stem = ext ? destPath.slice(0, -ext.length) : destPath
+  return `${stem}-${nanoid(10)}.tmp`
 }
 
 /**

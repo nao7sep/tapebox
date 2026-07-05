@@ -1,6 +1,7 @@
 // The home-root exclude list: durable data (config, catalog) is kept; the secrets file (api-keys.json),
 // logs/, backups/, the re-fetchable library/ + bin/ trees, disposable temp/, volatile layout.json,
-// atomic-write temporaries, and the case-insensitive OS-noise floor are dropped.
+// atomic-write temporaries, quarantined-corrupt `.invalid` files, and the case-insensitive OS-noise
+// floor are dropped.
 
 import { describe, it, expect } from 'vitest'
 import { isExcludedFile, isExcludedDir } from '@main/core/backup/homeRootExclusions'
@@ -14,15 +15,19 @@ describe('isExcludedFile', () => {
   )
 
   it.each([
-    'logs/20260701-000000-utc.log',
+    'logs/20260701-000000-123-utc.log',
     'backups/index.json',
-    'backups/backup-20260701-000000-utc.zip',
+    'backups/backup-20260701-000000-123-utc.zip',
     'library/abc/video.mp4',
     'bin/yt-dlp',
     'temp/download.part',
     'layout.json',
     'api-keys.json', // secrets are not backed up
-    '.config.json.1234.tmp',
+    'config-abc123.tmp',
+    'config-20260701-000000-123-utc.invalid', // quarantined-corrupt config
+    'catalog-20260701-000000-123-utc.invalid', // quarantined-corrupt catalog
+    'api-keys-20260701-000000-123-utc.invalid', // quarantined-corrupt secrets store
+    'API-KEYS-20260701-000000-123-UTC.INVALID', // .invalid matched case-insensitively
     '.DS_Store',
     'Thumbs.db',
     'desktop.ini',

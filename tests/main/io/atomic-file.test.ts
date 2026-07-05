@@ -37,7 +37,10 @@ describe('writeFileAtomicVia', () => {
     })
 
     expect(await readFile(dest, 'utf8')).toBe('hello')
-    expect(seenTemp).toBe(`${dest}.partial`)
+    // <stem>-<nanoid>.tmp, alongside destPath (destPath has no extension here, so
+    // the stem is destPath itself).
+    expect(seenTemp.startsWith(`${dest}-`)).toBe(true)
+    expect(seenTemp.endsWith('.tmp')).toBe(true)
     expect(await exists(seenTemp)).toBe(false)
   })
 
@@ -55,35 +58,39 @@ describe('writeFileAtomicVia', () => {
   it('leaves an existing destPath untouched and removes the temp when produce throws', async () => {
     const dest = join(dir, 'binary')
     await writeFile(dest, 'original')
+    let seenTemp = ''
 
     await expect(
       writeFileAtomicVia(dest, async (tmp) => {
+        seenTemp = tmp
         await writeFile(tmp, 'half-written')
         throw new Error('produce failed')
       }),
     ).rejects.toThrow('produce failed')
 
     expect(await readFile(dest, 'utf8')).toBe('original')
-    expect(await exists(`${dest}.partial`)).toBe(false)
+    expect(await exists(seenTemp)).toBe(false)
   })
 
   it('creates no destPath when produce throws and none existed', async () => {
     const dest = join(dir, 'binary')
+    let seenTemp = ''
 
     await expect(
       writeFileAtomicVia(dest, async (tmp) => {
+        seenTemp = tmp
         await writeFile(tmp, 'x')
         throw new Error('boom')
       }),
     ).rejects.toThrow('boom')
 
     expect(await exists(dest)).toBe(false)
-    expect(await exists(`${dest}.partial`)).toBe(false)
+    expect(await exists(seenTemp)).toBe(false)
   })
 
   it('honors a caller-supplied temp path (e.g. an extension the producer needs)', async () => {
     const dest = join(dir, 'poster.jpg')
-    const customTemp = join(dir, 'poster.staging.jpg')
+    const customTemp = join(dir, 'poster-abc123XYZ9.jpg')
     let seenTemp = ''
 
     await writeFileAtomicVia(
@@ -102,7 +109,7 @@ describe('writeFileAtomicVia', () => {
 
   it('removes the caller-supplied temp when produce throws', async () => {
     const dest = join(dir, 'poster.jpg')
-    const customTemp = join(dir, 'poster.staging.jpg')
+    const customTemp = join(dir, 'poster-abc123XYZ9.jpg')
 
     await expect(
       writeFileAtomicVia(

@@ -6,9 +6,10 @@
  * Excluded are:
  *   - secrets: `api-keys.json` (per the data-backup conventions, secrets are not backed up).
  *   - the fleet floor: `logs/` (recreatable), `backups/` (the feature's own output — capturing it would
- *     recurse), `*.tmp` (atomic-write temporaries), and the OS folder-metadata litter a file manager
- *     drops into any directory the user opens (`.DS_Store`, `Thumbs.db`, `desktop.ini` — matched
- *     case-insensitively by base name at any depth).
+ *     recurse), `*.tmp` (atomic-write temporaries), `*.invalid` (quarantined-corrupt files — diagnostic
+ *     debris, not user content, per the data-backup conventions), and the OS folder-metadata litter a
+ *     file manager drops into any directory the user opens (`.DS_Store`, `Thumbs.db`, `desktop.ini` —
+ *     matched case-insensitively by base name at any depth).
  *   - app-specific: `library/` (downloaded media — large and re-downloadable via the catalog's source
  *     URLs), `bin/` (re-fetchable yt-dlp/ffmpeg/deno), `temp/` (disposable staging, cleared at startup),
  *     and `layout.json` (volatile window geometry — throwaway UI state).
@@ -36,6 +37,7 @@ function baseName(path: string): string {
 export function isExcludedFile(relativePath: string): boolean {
   const path = normalize(relativePath)
   if (path.toLowerCase().endsWith('.tmp')) return true
+  if (path.toLowerCase().endsWith('.invalid')) return true
   if (OS_NOISE_NAMES.has(baseName(path).toLowerCase())) return true
   if (EXCLUDED_FILES.has(path)) return true
   return EXCLUDED_DIRS.some((dir) => path === dir || path.startsWith(`${dir}/`))

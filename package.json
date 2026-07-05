@@ -24,17 +24,24 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ]
     },
     "win": {
       "icon": "build/icon.ico",
-      "target": ["nsis", "zip"]
+      "target": [
+        "nsis",
+        "zip"
+      ]
     },
     "nsis": {
       "artifactName": "${productName}-${version}-setup.${ext}"
@@ -68,7 +75,6 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "unzipper": "^0.12.5",
-    "write-file-atomic": "^8.0.0",
     "yazl": "^3.3.1",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
@@ -79,7 +85,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/unzipper": "^0.10.11",
-    "@types/write-file-atomic": "^4.0.3",
+    "@types/yazl": "^3.3.1",
     "@vitejs/plugin-react": "^5.2.0",
     "@vitest/coverage-v8": "^4.1.9",
     "electron": "^43.0.0",
@@ -89,7 +95,6 @@
     "tailwindcss": "^4.3.2",
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
-    "vitest": "^4.1.9",
-    "@types/yazl": "^3.3.1"
+    "vitest": "^4.1.9"
   }
 }

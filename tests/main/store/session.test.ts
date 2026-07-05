@@ -44,9 +44,9 @@ describe('loadSessionFile', () => {
     expect(result.status).toBe('recovered')
     expect(session).toEqual({ tapes: [], boxes: [] })
 
-    // The original bytes are preserved in a timestamped sibling, not deleted...
+    // The original bytes are preserved in a timestamped `catalog-<stamp>.invalid` sibling, not deleted...
     const files = await readdir(dir)
-    const quarantined = files.find((f) => f.startsWith('catalog.corrupt-'))
+    const quarantined = files.find((f) => f.startsWith('catalog-') && f.endsWith('.invalid'))
     expect(quarantined).toBeDefined()
     expect(await readFile(join(dir, quarantined!), 'utf8')).toBe(corrupt)
     // ...and catalog.json itself has been moved aside (so a later write starts fresh).
@@ -61,6 +61,6 @@ describe('loadSessionFile', () => {
 
     expect(result.status).toBe('recovered')
     const files = await readdir(dir)
-    expect(files.some((f) => f.startsWith('catalog.corrupt-'))).toBe(true)
+    expect(files.some((f) => f.startsWith('catalog-') && f.endsWith('.invalid'))).toBe(true)
   })
 })

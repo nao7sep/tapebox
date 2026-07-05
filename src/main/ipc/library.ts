@@ -171,7 +171,7 @@ export function registerLibraryHandlers(): void {
     // Resolve the planned file ops to absolute paths. Re-stem a tape's files to the
     // chosen name as one unit: media and (optional) thumbnail are plain copies, the
     // sidecar is rewritten with the new name, timestamp, and thumbnail name. Stage
-    // every file under a .staging suffix, then rename them all into place; the
+    // every file under a nanoid `.tmp` sibling, then rename them all into place; the
     // originals are untouched until the very end, so a failure mid-swap is undone by
     // deleting just the new files — the session record still points at the intacts.
     const items = plan.items.map((it) => ({

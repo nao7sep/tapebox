@@ -8,11 +8,12 @@ import fs from 'node:fs'
 import { createWriteStream } from 'node:fs'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
+import { nanoid } from 'nanoid'
 import yazl from 'yazl'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
-import { utcTimestampForFilename } from '@shared/utc'
+import { utcTimestampForFilenameMs } from '@shared/utc'
 import { collectRoots } from './backupCollector'
 import { selectChanged } from './backupPlan'
 import { toIsoSeconds } from './backupTime'
@@ -37,10 +38,8 @@ async function runCore(now: Date): Promise<BackupReport> {
     return { nothingChanged: true, filesArchived: 0, skips, indexWasReset }
   }
 
-  const archivedAt = utcTimestampForFilename(now)
-  const archiveFileName = `backup-${archivedAt}.zip`
-  const archived = await writeArchive(archiveFileName, changed, skips)
-  if (archived.length === 0) {
+  const { archived, archivedAt, archiveFileName } = await writeArchive(now, changed, skips)
+  if (archived.length === 0 || archivedAt === null || archiveFileName === null) {
     // Every changed file vanished before it could be archived; nothing was written, nothing is recorded.
     return { nothingChanged: true, filesArchived: 0, skips, indexWasReset }
   }
@@ -86,14 +85,15 @@ async function loadIndex(): Promise<{ index: BackupIndex; indexWasReset: boolean
 }
 
 /** Streams the changed files to a temp zip and renames it into place, returning the files that were
- *  actually archived (a file that vanished since collection is skipped, not recorded). */
+ *  actually archived (a file that vanished since collection is skipped, not recorded) along with the
+ *  stamp that won. `archivedAt`/`archiveFileName` are `null` when nothing was archived (caller ignores
+ *  them then). */
 async function writeArchive(
-  archiveFileName: string,
+  now: Date,
   changed: readonly BackupCandidate[],
   skips: BackupSkip[],
-): Promise<BackupCandidate[]> {
+): Promise<{ archived: BackupCandidate[]; archivedAt: string | null; archiveFileName: string | null }> {
   const dir = await ensureBackupsDir()
-  const finalPath = path.join(dir, archiveFileName)
 
   const zip = new yazl.ZipFile()
   const archived: BackupCandidate[] = []
@@ -106,18 +106,42 @@ async function writeArchive(
     archived.push(item)
   }
   if (archived.length === 0) {
-    return archived
+    return { archived, archivedAt: null, archiveFileName: null }
   }
+
+  // No-clobber create: if `backup-<archivedAt>.zip` is already taken (another instance stamped the same
+  // millisecond), advance the stamp to the next free millisecond and use that name for both the zip and
+  // the index records that follow — an existence-check-then-rename is the accepted, best-effort mechanism
+  // per the data-backup conventions, not a locked/exclusive create.
+  const { archivedAt, archiveFileName } = resolveArchiveStamp(dir, now)
+  const finalPath = path.join(dir, archiveFileName)
 
   zip.end()
   // Write-temp → fsync → rename → fsync-dir, with the temp a sibling in the backups dir so the rename is
-  // atomic (same filesystem).
+  // atomic (same filesystem). Named <stem>-<nanoid>.tmp per the atomic-write-temp-files convention: the
+  // stem is the archive name with its .zip stripped.
+  const stem = archiveFileName.slice(0, -path.extname(archiveFileName).length)
   await writeFileAtomicVia(
     finalPath,
     (tempPath) => pipeline(zip.outputStream, createWriteStream(tempPath)),
-    path.join(dir, `.${process.pid}-${archiveFileName}.tmp`),
+    path.join(dir, `${stem}-${nanoid(10)}.tmp`),
   )
-  return archived
+  return { archived, archivedAt, archiveFileName }
+}
+
+/** Finds the first `backup-<archivedAt>.zip` name not already present in `dir`, advancing `now` by whole
+ *  milliseconds until one is free. Kept as its own existence-check-then-rename step (not a locked/atomic
+ *  create) per the data-backup conventions' no-clobber rule. */
+function resolveArchiveStamp(dir: string, now: Date): { archivedAt: string; archiveFileName: string } {
+  let candidate = now
+  for (;;) {
+    const archivedAt = utcTimestampForFilenameMs(candidate)
+    const archiveFileName = `backup-${archivedAt}.zip`
+    if (!fs.existsSync(path.join(dir, archiveFileName))) {
+      return { archivedAt, archiveFileName }
+    }
+    candidate = new Date(candidate.getTime() + 1)
+  }
 }
 
 async function ensureBackupsDir(): Promise<string> {
