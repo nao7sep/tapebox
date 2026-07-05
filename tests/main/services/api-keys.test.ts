@@ -2,7 +2,7 @@ import { mkdtempSync, statSync } from 'node:fs'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // api-keys.ts resolves its file path from TAPEBOX_HOME (paths.ts), so the override
 // must be set BEFORE the module is imported. Point the storage root at a throwaway
@@ -125,5 +125,37 @@ describe('api-keys storage', () => {
     const entries = await readdir(root)
     expect(entries.some((e) => e.startsWith('api-keys-') && e.endsWith('.invalid'))).toBe(true)
     expect(entries).not.toContain('api-keys.json')
+  })
+
+  it('treats a malformed obf: value as absent and warns naming the key id, rather than leniently decoding garbage', async () => {
+    // Buffer.from(str, 'base64') is lenient and would happily "decode" this into
+    // garbage bytes instead of throwing — the fix must reject it before decoding.
+    await writeFile(apiKeysPath, JSON.stringify({ keys: { openai: 'obf:not-valid-base64!!' } }), 'utf8')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(apiKeys.resolveApiKey(['openai'])).resolves.toBeNull()
+    await expect(apiKeys.hasApiKey(['openai'])).resolves.toBe(false)
+
+    const warned = vi
+      .mocked(console.warn)
+      .mock.calls.map(([line]) => String(line))
+      .find((line) => line.includes('stored api key is malformed'))
+    expect(warned).toBeDefined()
+    expect(JSON.parse(warned!)).toMatchObject({ level: 'warn', id: 'openai' })
+
+    warnSpy.mockRestore()
+  })
+
+  it('rejects a wrong-length obf: payload (fails the length % 4 check) as absent', async () => {
+    // 'QQ' (2 chars) is valid base64 alphabet but not a canonical length/padding.
+    await writeFile(apiKeysPath, JSON.stringify({ keys: { openai: 'obf:QQ' } }), 'utf8')
+    await expect(apiKeys.resolveApiKey(['openai'])).resolves.toBeNull()
+  })
+
+  it('round-trips a valid obf: value unchanged after the strict decode', async () => {
+    await apiKeys.writeApiKey(['openai'], 'sk-round-trips-fine')
+    const onDisk = JSON.parse(await readFile(apiKeysPath, 'utf8')) as { keys: Record<string, string> }
+    expect(onDisk.keys['openai']).toMatch(/^obf:/)
+    await expect(apiKeys.resolveApiKey(['openai'])).resolves.toBe('sk-round-trips-fine')
   })
 })

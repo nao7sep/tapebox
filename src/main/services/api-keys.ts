@@ -26,7 +26,9 @@ import { utcTimestampForFilenameMs } from '@shared/utc'
  *     never written back.
  *   - The stored value is `obf:` + base64 of the reversed UTF-8 bytes; an untagged
  *     value is treated as plaintext. This is NOT encryption — the 0600 mode is the
- *     real protection.
+ *     real protection. A marked value is validated as canonical base64 before
+ *     decoding — never leniently decoded — so a malformed/hand-edited `obf:` value
+ *     resolves to absent (warned, naming the key id) rather than a garbage "key".
  *   - On read: a group/world-readable file is warned about once and tightened to
  *     0600 (POSIX only); a corrupt/unreadable file is moved aside to a timestamped
  *     neighbour, warned, and treated as empty rather than throwing.
@@ -75,12 +77,25 @@ function encodeApiKey(plain: string): string {
   return MARKER + Buffer.from(Buffer.from(plain, 'utf8')).reverse().toString('base64')
 }
 
-// Convention: an untagged value is plaintext, used as-is; a tagged value is the
-// reversed-UTF-8-bytes form. Never throws — the caller's trim/non-empty check
-// drops anything that does not decode to a usable key.
-function decodeApiKey(stored: string): string {
+// Canonical base64 (RFC 4648, with padding): Buffer.from(str, 'base64') is lenient
+// and silently decodes non-canonical input (stray characters, wrong length) into
+// base64-derived garbage instead of throwing — exactly the malformed, hand-edited
+// or corrupted `obf:` value we must not hand to a provider as a "key".
+const CANONICAL_BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/
+
+// Convention: an untagged value is plaintext, used as-is; a tagged value's payload
+// must pass the canonical base64 shape check before it is decoded. Never throws —
+// a value that fails the check is treated as absent (never leniently decoded) and
+// warned once, naming the key id; an empty decode result is likewise absent, via
+// the caller's existing trim/non-empty check.
+function decodeApiKey(stored: string, id: string): string | null {
   if (!stored.startsWith(MARKER)) return stored
-  return Buffer.from(Buffer.from(stored.slice(MARKER.length), 'base64')).reverse().toString('utf8')
+  const encoded = stored.slice(MARKER.length)
+  if (encoded.length % 4 !== 0 || !CANONICAL_BASE64_RE.test(encoded)) {
+    log.warn('stored api key is malformed (invalid obf: encoding); treating as absent', { id })
+    return null
+  }
+  return Buffer.from(Buffer.from(encoded, 'base64')).reverse().toString('utf8')
 }
 
 // --- file read/write ---------------------------------------------------------
@@ -168,9 +183,10 @@ export async function resolveApiKey(segments: string[], options: ResolveOptions 
   }
   const all = await readAll()
   for (const level of levels) {
-    const stored = all.keys[keyId(level)]
+    const id = keyId(level)
+    const stored = all.keys[id]
     if (typeof stored === 'string') {
-      const key = decodeApiKey(stored).trim()
+      const key = decodeApiKey(stored, id)?.trim()
       if (key) return key
     }
   }

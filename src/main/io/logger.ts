@@ -13,10 +13,13 @@ import { isDebugEnabled, serializeLogLine } from './log-format'
  *   - Takes a structured object (a short stable `message` plus arbitrary
  *     `fields`), never a pre-rendered string. The logger builds the envelope and
  *     serializes.
- *   - Writes synchronously to an append fd so the lines before a crash actually
- *     reach the OS. `warn` / `error` / `debug` additionally fsync immediately, so
- *     the line you want while diagnosing is on disk now; `info` is left to the OS
- *     to flush for efficiency.
+ *   - Opens its session file exclusively ('wx': O_CREAT | O_EXCL) so a vanishing
+ *     same-millisecond clash with another process's session fails the open rather
+ *     than interleaving two sessions into one file (see initLogger); the failure
+ *     degrades to the console like any other open failure. Writes synchronously
+ *     so the lines before a crash actually reach the OS. `warn` / `error` /
+ *     `debug` additionally fsync immediately, so the line you want while
+ *     diagnosing is on disk now; `info` is left to the OS to flush for efficiency.
  *   - `debug` is developer-only (see isDebugEnabled): the firehose is free in
  *     development and silent in a release, so coverage can be verbose without
  *     ever flooding a user's disk.
@@ -61,7 +64,13 @@ export function initLogger(options: LoggerOptions): string {
   debugEnabled = options.debug
   const path = join(paths.logs, `${utcTimestampForFilenameMs()}.log`)
   try {
-    fd = openSync(path, 'a')
+    // Exclusive create: the filename is millisecond-paced, so a same-millisecond
+    // clash between two processes is only vanishingly possible, not impossible.
+    // 'wx' (O_CREAT | O_EXCL) fails with EEXIST on that clash instead of letting
+    // the second process append into the first process's session file, which
+    // would interleave two sessions into one log. The failure flows into the
+    // same catch below as any other open failure, degrading to the console.
+    fd = openSync(path, 'wx')
     currentLogPath = path
   } catch (err) {
     // No file — currentLogPath stays null so app:revealLog never points at a
