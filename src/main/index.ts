@@ -9,7 +9,6 @@ import { loadSettings } from './store/config.js'
 import { loadSession, persistNow, persistNowSync } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
-import { runBackupInBackground } from './core/backup/backupService.js'
 import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
@@ -82,11 +81,10 @@ async function startup(): Promise<void> {
   nativeTheme.themeSource = 'dark'
   createMainWindow()
 
-  // Best-effort just-in-case data backup (data-backup conventions): a silent,
-  // logged snapshot of the ~/.tapebox/ home root. Fire-and-forget AFTER the window
-  // is created and config/catalog are materialized, so it never blocks the paint
-  // and never throws out of startup.
-  runBackupInBackground()
+  // The just-in-case data backup (data-backup conventions) is write-through, not a
+  // startup pass: every managed-text save records its exact bytes into
+  // ~/.tapebox/backups.sqlite3 the instant its atomic rename lands (see
+  // store/backupStore.ts and io/atomic-json.ts). There is nothing to kick off here.
 
   // If the library file was unreadable, it was set aside (never wiped); tell the
   // user at the app edge — the session store stays UI-free.

@@ -1,7 +1,7 @@
 import { readFile, rename } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { paths } from '@main/paths'
-import { writeJsonAtomic } from '@main/io/atomic-json'
+import { writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { utcTimestampForFilenameMs } from '@shared/utc'
@@ -37,7 +37,7 @@ export async function loadSettings(): Promise<void> {
     log.info('settings loaded', { config: summarizeSettings(found) })
   } else {
     cache = defaultSettings()
-    await writeJsonAtomic(paths.config, cache, SettingsSchema)
+    await writeManagedJson(paths.config, cache, SettingsSchema)
     log.info('settings missing or invalid; defaults written', { config: summarizeSettings(cache) })
   }
 }
@@ -116,7 +116,7 @@ export function mutateSettings(
     const patch = mutator(cache)
     const merged = SettingsSchema.parse({ ...cache, ...patch })
     cache = merged
-    await writeJsonAtomic(paths.config, merged, SettingsSchema)
+    await writeManagedJson(paths.config, merged, SettingsSchema)
     log.info('settings updated', { keys: Object.keys(patch) })
     return merged
   })

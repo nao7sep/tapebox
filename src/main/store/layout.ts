@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
-import { writeJsonAtomic } from '@main/io/atomic-json'
+import { writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { LayoutSchema, defaultLayout, type Layout } from '@shared/layout'
@@ -61,7 +61,11 @@ export async function persistNow(): Promise<void> {
     saveTimer = null
   }
   try {
-    await writeJsonAtomic(paths.layout, cache, LayoutSchema)
+    // layout.json is durable managed TEXT: it records on every save through the
+    // choke point. Window geometry churns, but the store's per-path content dedup
+    // absorbs that — an unchanged geometry save writes no row (data-backup
+    // conventions: managed text is recorded; there is no "exclude volatile" rule).
+    await writeManagedJson(paths.layout, cache, LayoutSchema)
   } catch (err) {
     log.error('layout persist failed', { error: describeError(err) })
   }

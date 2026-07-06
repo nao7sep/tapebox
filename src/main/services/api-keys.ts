@@ -159,6 +159,10 @@ async function readAll(): Promise<ApiKeysFile> {
 }
 
 async function writeAll(data: ApiKeysFile): Promise<void> {
+  // not recorded: api-keys.json is a SECRET store and is never written through the
+  // managed-text choke point. A backup history that held a credential would become
+  // sensitive-at-rest in its entirety (data-backup conventions: secrets are never
+  // recorded); the live file keeps its own 0600 at-rest protection here instead.
   await writeJsonAtomic(paths.apiKeys, data, SCHEMA, ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined)
 }
 

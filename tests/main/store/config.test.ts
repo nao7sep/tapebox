@@ -14,8 +14,12 @@ vi.mock('@main/paths', () => ({
 
 const DEFAULT_LIBRARY = '/mock/.tapebox/library'
 
+// config.ts saves through the managed-text choke point (writeManagedJson), which
+// is what records to the data-backup store; stub it (and writeJsonAtomic) so this
+// resolution test touches neither disk nor the backup store.
 vi.mock('@main/io/atomic-json', () => ({
   writeJsonAtomic: vi.fn(async () => {}),
+  writeManagedJson: vi.fn(async () => {}),
 }))
 
 vi.mock('@main/io/logger', () => ({

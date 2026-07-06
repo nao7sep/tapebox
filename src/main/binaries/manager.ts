@@ -195,6 +195,9 @@ async function performInstall(name: BinaryName): Promise<void> {
     // with one atomic fsync'd rename. The chmod/de-quarantine happen on the stage
     // BEFORE it becomes finalPath, so a concurrent status check or a crash can
     // never catch the binary present-but-not-yet-runnable.
+    // not recorded: this is a native binary (yt-dlp/ffmpeg/deno), re-fetchable and not
+    // hand-authored text — a binary write that never calls the backup hook (data-backup
+    // conventions). It uses the raw writeFileAtomicVia primitive, not the choke point.
     await writeFileAtomicVia(finalPath, async (stage) => {
       if (resolved.archive) {
         await extractFileFromZip(downloadTemp, resolved.archive.innerName, stage)

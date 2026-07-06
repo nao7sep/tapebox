@@ -3,7 +3,8 @@ import { renameSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join } from 'node:path'
 import { nanoid } from 'nanoid'
 import { paths } from '@main/paths'
-import { writeJsonAtomic } from '@main/io/atomic-json'
+import { writeManagedJson } from '@main/io/atomic-json'
+import { record } from '@main/store/backupStore'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { utcTimestampForFilenameMs } from '@shared/utc'
@@ -171,7 +172,10 @@ export async function persistNow(): Promise<void> {
     saveTimer = null
   }
   try {
-    await writeJsonAtomic(paths.catalog, cache, SessionSchema)
+    // catalog.json is the app's most important durable managed text — the whole
+    // tape library structure — so it records on every save through the choke point
+    // (data-backup conventions).
+    await writeManagedJson(paths.catalog, cache, SessionSchema)
   } catch (err) {
     log.error('session persist failed', { error: describeError(err) })
     throw err
@@ -189,10 +193,19 @@ export function persistNowSync(): void {
   saveTimer = null
   try {
     const text = JSON.stringify(SessionSchema.parse(cache), null, 2) + '\n'
+    const bytes = Buffer.from(text, 'utf8')
     const stem = paths.catalog.slice(0, -extname(paths.catalog).length)
     const tmp = `${stem}-${nanoid(10)}.tmp`
-    writeFileSync(tmp, text, 'utf8')
+    writeFileSync(tmp, bytes)
     renameSync(tmp, paths.catalog)
+    // This is a managed-text save on a terminal path (uncaughtException / process
+    // 'exit'), where the async writeManagedJson choke point cannot run — so it
+    // records here directly, STRICTLY AFTER the sync rename lands, reusing the
+    // in-hand bytes. record() is synchronous (node:sqlite DatabaseSync) and
+    // best-effort, so it is safe on this last-gasp path and can never throw back
+    // into shutdown. Without it, a crash-shutdown catalog save would be a silent
+    // backup gap (data-backup conventions: every managed-text write records).
+    record(paths.catalog, bytes)
   } catch (err) {
     log.error('session sync persist failed', { error: describeError(err) })
   }

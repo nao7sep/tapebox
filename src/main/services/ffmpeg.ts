@@ -58,6 +58,9 @@ export async function saveThumbnailJpeg(
   // ignores it while it briefly exists.
   const stagePath = join(destDir, `${stem}-${nanoid(10)}.jpg`)
 
+  // not recorded: this is a JPEG thumbnail — binary image data, regenerable from the
+  // source — written straight through the raw writeFileAtomicVia primitive, never the
+  // managed-text choke point (data-backup conventions: binaries are not recorded).
   await writeFileAtomicVia(
     finalPath,
     async (stage) => {

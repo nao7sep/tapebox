@@ -209,6 +209,10 @@ export function registerLibraryHandlers(): void {
           // Validate the rewritten tapebox namespace so a rename can never downgrade
           // the sidecar into something a later import would reject.
           sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
+          // not recorded: this sidecar lives in the library directory beside the tape's
+          // media and thumbnail — a binary-bearing directory whose contents ride along
+          // into exclusion (data-backup conventions). It uses the raw writeJsonAtomic,
+          // not the managed-text choke point; the tape's catalog row records instead.
           await writeJsonAtomic(it.stage, sidecar)
         } else {
           await copyFile(it.old, it.stage)
@@ -275,6 +279,9 @@ export function registerLibraryHandlers(): void {
       try {
         const sidecar = JSON.parse(await readFile(sidecarPath, 'utf8')) as Record<string, unknown>
         sidecar['description'] = metadata.description
+        // not recorded: same as the rename path — the sidecar is library-directory
+        // content, colocated with binary media, so it is excluded (data-backup
+        // conventions) and takes the raw writeJsonAtomic, not the choke point.
         await writeJsonAtomic(sidecarPath, sidecar)
       } catch (err) {
         log.warn('applyMetadata: description write failed', { tapeId, error: describeError(err) })

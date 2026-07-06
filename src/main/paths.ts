@@ -87,12 +87,14 @@ export const paths = {
   get library()       { return join(storageRoot(), 'library') },
   get logs()          { return join(storageRoot(), 'logs') },
   get temp()          { return join(storageRoot(), 'temp') },
-  get backups()       { return join(storageRoot(), 'backups') },
   get config()        { return join(storageRoot(), 'config.json') },
   get catalog()       { return join(storageRoot(), 'catalog.json') },
   get layout()        { return join(storageRoot(), 'layout.json') },
   get apiKeys()       { return join(storageRoot(), 'api-keys.json') },
-  get backupIndex()   { return join(storageRoot(), 'backups', 'index.json') },
+  // The write-through data-backup store (data-backup conventions): one add-only
+  // SQLite FILE directly under the root, resolved through the same TAPEBOX_HOME-
+  // aware resolver as everything else. Its `-wal`/`-shm` sidecars sit beside it.
+  get backupsDb()     { return join(storageRoot(), 'backups.sqlite3') },
 }
 
 export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
