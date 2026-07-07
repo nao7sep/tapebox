@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/* A disabled button shows the plain arrow, never the hand — a dead button must
+   not invite a click. Tailwind's Preflight gives every <button> the pointer, so
+   reset it here in one place for the whole app (unlayered, to beat utilities). */
+button:disabled {
+  cursor: default;
+}
+
+/* While a tape/box drag is in progress the whole window shows the closed-hand
+   "grabbing" cursor, overriding the pointer the rows would otherwise show under
+   the roaming pointer. The body class is toggled by the DndContext drag handlers. */
+body.dnd-dragging,
+body.dnd-dragging * {
+  cursor: grabbing !important;
+}
+
+/* Type scale — one role per tier, used consistently across the app:
+     text-xs   secondary / meta: status lines, captions, hints, table cells,
+               detail rows, log output
+     text-sm   body & controls: inputs, buttons, list titles, panel text
+     text-lg   headings: dialog titles, the detail-pane title
+     text-xl   the app title (header)
+     text-2xl  reserved for the one big display number (scan count)
+   text-base is intentionally unused — it sits a hair above text-sm with no
+   distinct role. The two smallest tiers are nudged up a notch below, since the
+   defaults read too small on this dark UI; applied centrally so the utility
+   classes don't change. */
+@theme {
+  /* Explicit default fonts — TapeBox otherwise inherited Tailwind's stacks
+     (app-chrome-conventions: every app sets its fonts explicitly). --font-sans is
+     the UI font: family-only and user-overridable, since the Settings "UI font"
+     field sets --font-sans on :root at runtime to a verbatim family string the
+     browser resolves (comma-separated, graceful fallback). --font-mono is the
+     read-only face for the download log and yt-dlp-args. There is no UI font-size
+     knob. */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+}
+
+/* Scrollbars — tuned to the dark palette so they don't read as a bright OS strip
+   against the near-black UI. Styled globally, so every overflow container (lists,
+   modals, the log, description boxes) matches. WebKit pseudo-elements (Electron is
+   Chromium) give the rounded, inset thumb; the track stays transparent so each
+   container's own dark background shows through, and the thumb brightens a notch
+   on hover.
+
+   The `color-scheme: dark` declaration in the base layer below is the other half
+   of this (window-chrome-conventions: a web UI needs both). The pseudo-element
+   styling shapes the scroll bar; color-scheme tells the platform the page is dark
+   so native form controls and the scroll-corner square render in the dark palette
+   rather than a pasted-on-light default. Neither alone is sufficient. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-zinc-700, #3f3f46);
+  border-radius: 9999px;
+  /* A transparent border clipped to the padding box insets the thumb to a slim
+     pill with breathing room, rather than a bar filling the gutter edge to edge. */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-zinc-600, #52525b);
+}
+
+/* Focus ring — replace the browser default (a bright, theme-clashing outline) with
+   a quiet, sky-accented ring, and only for keyboard focus (:focus-visible). Plain
+   click focus shows nothing; hover and selection already carry state.
+
+   This MUST live in the `base` layer: controls that signal focus their own way
+   (list rows, inputs, the modal surface, the <video>) opt out with `focus:outline-*`
+   utilities, and Tailwind utilities sit in the later `utilities` layer. Cascade
+   layers beat specificity — an unlayered rule here would override every opt-out
+   (the symptom: a clipped blue outline on chapter rows). In `base`, the utilities
+   win and the opt-outs work. */
+@layer base {
+  /* Declare the page's color scheme so the platform paints native form controls
+     and the scroll-corner square in the dark palette. Pairs with the
+     ::-webkit-scrollbar styling above (window-chrome-conventions). */
+  :root {
+    color-scheme: dark;
+  }
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-sky-500, #0ea5e9);
+    outline-offset: 2px;
+  }
+}
+
+/* Indeterminate "still working" bar: a short segment sweeping left to right. */
+@keyframes tapebox-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
