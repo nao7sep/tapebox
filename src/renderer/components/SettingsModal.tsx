@@ -570,7 +570,7 @@ function AiTab({
               disabled={busy || prompts.slug === DEFAULT_SLUG_PROMPT}
               onClick={() => onPromptsPatch({ slug: DEFAULT_SLUG_PROMPT })}
             >
-              Restore default
+              Reset to latest defaults
             </Button>
           </div>
           <p className="mt-1 text-xs text-zinc-400">

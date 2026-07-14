@@ -65,9 +65,9 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>
 
 /**
  * Configurable AI prompts. The in-code DEFAULT_SLUG_PROMPT seeds a fresh config
- * (see defaultSettings) and backs the Settings → AI "Restore" button, which
- * rewrites a field back to it. The schema is authoritative — `slug` is required,
- * not defaulted; the config writer always emits it.
+ * (see defaultSettings) and backs the Settings → AI "Reset to latest defaults"
+ * button, which rewrites a field back to it. The schema is authoritative — `slug`
+ * is required, not defaulted; the config writer always emits it.
  *
  * Template tokens are substituted before the call: {title}, {uploader},
  * {description}. A token the user omits is simply not sent; a token left in
