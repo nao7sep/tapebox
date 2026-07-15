@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { AiSettings, Settings, SiteProfile } from '@shared/settings'
-import { DEFAULT_SLUG_PROMPT } from '@shared/settings'
+import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useTapesStore } from '@renderer/store/tapes'
@@ -512,7 +512,7 @@ function AiTab({
       <TextField
         label="Base URL"
         value={ai.baseUrl}
-        placeholder="https://api.openai.com/v1"
+        placeholder={DEFAULT_AI_BASE_URL}
         disabled={busy}
         onChange={(v) => onAiPatch({ baseUrl: v })}
       />
@@ -544,7 +544,7 @@ function AiTab({
       <TextField
         label="Model"
         value={ai.model}
-        placeholder="gpt-5.4-mini"
+        placeholder={DEFAULT_AI_MODEL}
         disabled={busy}
         onChange={(v) => onAiPatch({ model: v })}
       />

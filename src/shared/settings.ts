@@ -73,6 +73,18 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>
  * {description}. A token the user omits is simply not sent; a token left in
  * substitutes to empty when that field is unavailable.
  */
+/**
+ * The AI endpoint and model a fresh config starts on. Named (not inline in
+ * defaultSettings) so the Settings placeholders show the real default instead of a
+ * copy that silently goes stale — the same reason DEFAULT_SLUG_PROMPT is named.
+ *
+ * The model is free text: TapeBox targets any OpenAI-compatible endpoint, so there
+ * is no list to pick from and a wrong name is the provider's error at call time,
+ * not something this app pre-checks (ai-model-routing-conventions, open branch).
+ */
+export const DEFAULT_AI_BASE_URL = 'https://api.openai.com/v1'
+export const DEFAULT_AI_MODEL = 'gpt-5.6-luna'
+
 export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
 
 Write the slug in real English words. If the title is in another language, translate its MEANING into English — do not romanize or transliterate it. For example, a Japanese title becomes its English meaning (e.g. "morning-routine"), never its rōmaji (e.g. "asa-no-shuukan"). Proper names — people, places, brands, song or series titles — may stay as written when they have no common English form.
@@ -212,8 +224,8 @@ export function defaultSettings(): Settings {
     confirmRemove: true,
     checkUpdatesAtLaunch: true,
     ai: {
-      baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-5.4-mini',
+      baseUrl: DEFAULT_AI_BASE_URL,
+      model: DEFAULT_AI_MODEL,
     },
     prompts: {
       slug: DEFAULT_SLUG_PROMPT,

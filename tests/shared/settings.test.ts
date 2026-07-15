@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { defaultSettings, SettingsSchema, summarizeSettings } from '@shared/settings'
+import {
+  DEFAULT_AI_BASE_URL,
+  DEFAULT_AI_MODEL,
+  defaultSettings,
+  SettingsSchema,
+  summarizeSettings,
+} from '@shared/settings'
+
+// The Settings placeholders render these constants rather than their own copies of
+// the strings. This pins the seam: if a fresh config ever stops matching what the
+// placeholder promises, the two have drifted and one of them is lying to the user.
+describe('the AI defaults have a single source', () => {
+  it('seeds a fresh config from the named constants', () => {
+    const { ai } = defaultSettings()
+    expect(ai.baseUrl).toBe(DEFAULT_AI_BASE_URL)
+    expect(ai.model).toBe(DEFAULT_AI_MODEL)
+  })
+
+  it('seeds values the schema accepts', () => {
+    expect(() => SettingsSchema.parse(defaultSettings())).not.toThrow()
+  })
+})
 
 describe('the managed-tool gate', () => {
   it('defaults the single launch-check toggle on (nothing auto-downloads)', () => {
