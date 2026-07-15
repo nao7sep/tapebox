@@ -65,7 +65,7 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>
 
 /**
  * Configurable AI prompts. The in-code DEFAULT_SLUG_PROMPT seeds a fresh config
- * (see defaultSettings) and backs the Settings → AI "Reset to latest defaults"
+ * (see defaultSettings) and backs the Settings → AI "Reset slug prompt"
  * button, which rewrites a field back to it. The schema is authoritative — `slug`
  * is required, not defaulted; the config writer always emits it.
  *
