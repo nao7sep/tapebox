@@ -23,9 +23,10 @@ import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } fro
  * defaults beats crashing on boot; stores that hold real data still fail loud.
  *
  * NOTE: updateSettings/mutateSettings do a SHALLOW merge of the returned patch.
- * A caller patching a nested object (e.g. binaries) must build the full sub-object
- * from the CURRENT settings — use mutateSettings, whose mutator receives the latest
- * cache inside a serialized critical section, so the read can never be stale.
+ * A caller patching a nested object (e.g. ai or prompts) must build the full
+ * sub-object from the CURRENT settings — use mutateSettings, whose mutator receives
+ * the latest cache inside a serialized critical section, so the read can never be
+ * stale.
  */
 
 let cache: Settings | null = null
@@ -105,7 +106,7 @@ export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
 /**
  * Atomically read-modify-write settings. The mutator runs inside a serialized
  * critical section against the *current* cache, so a caller patching a nested object
- * (e.g. binaries) always reads the latest sibling fields and never overwrites a
+ * (e.g. ai or prompts) always reads the latest sibling fields and never overwrites a
  * concurrent write with a value snapshotted before it.
  */
 export function mutateSettings(

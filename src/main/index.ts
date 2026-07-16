@@ -6,6 +6,7 @@ import { notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
 import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
 import { describeError } from '@shared/error'
 import { loadSettings } from './store/config.js'
+import { loadDependencies } from './store/dependencies.js'
 import { loadSession, persistNow, persistNowSync } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
@@ -68,6 +69,7 @@ async function startup(): Promise<void> {
   })
 
   await loadSettings()
+  await loadDependencies()
   const sessionResult = await loadSession()
   await layout.loadLayout()
 

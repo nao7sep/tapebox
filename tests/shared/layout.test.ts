@@ -3,11 +3,14 @@ import {
   CONTENT_MIN_HEIGHT,
   HEADER_HEIGHT,
   LAYOUT_BOUNDS,
+  LayoutSchema,
   PANE_BORDERS,
   STATUS_BAR_HEIGHT,
+  VOLUME_DEFAULT,
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
   clampSplitter,
+  defaultLayout,
   detailPaneWidth,
 } from '@shared/layout'
 
@@ -54,6 +57,34 @@ describe('window minimum derivation', () => {
       LAYOUT_BOUNDS.chaptersPaneWidth.min -
       PANE_BORDERS
     expect(atLeftMin).toBe(detailPaneWidth.min)
+  })
+})
+
+// Playback volume is view state and lives here, not in settings
+// (persisted-store-separation-conventions). Unlike the config store, which is
+// authoritative and rejects a bad field, the layout store self-heals every field
+// so a lost/garbled volume never blocks load — losing it costs nothing.
+describe('volume as self-healing layout state', () => {
+  it('defaults to full and matches the seeded default', () => {
+    expect(VOLUME_DEFAULT).toBe(1)
+    expect(defaultLayout.volume).toBe(VOLUME_DEFAULT)
+  })
+
+  it('preserves a valid in-range volume', () => {
+    expect(LayoutSchema.parse({ ...defaultLayout, volume: 0.3 }).volume).toBe(0.3)
+    expect(LayoutSchema.parse({ ...defaultLayout, volume: 0 }).volume).toBe(0)
+  })
+
+  it('self-heals an out-of-range volume to the default instead of rejecting', () => {
+    expect(LayoutSchema.parse({ ...defaultLayout, volume: 1.5 }).volume).toBe(VOLUME_DEFAULT)
+    expect(LayoutSchema.parse({ ...defaultLayout, volume: -1 }).volume).toBe(VOLUME_DEFAULT)
+  })
+
+  it('self-heals a missing or non-numeric volume to the default', () => {
+    const { volume, ...withoutVolume } = defaultLayout
+    void volume
+    expect(LayoutSchema.parse(withoutVolume).volume).toBe(VOLUME_DEFAULT)
+    expect(LayoutSchema.parse({ ...defaultLayout, volume: 'loud' }).volume).toBe(VOLUME_DEFAULT)
   })
 })
 

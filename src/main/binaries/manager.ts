@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid'
 import { binaryPath, ensureDirs, paths } from '@main/paths'
 import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
-import { getSettings, mutateSettings } from '@main/store/config'
+import { getDependencies, mutateDependencies } from '@main/store/dependencies'
 import { execCapture } from '@main/io/spawn'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
 import { describeError } from '@shared/error'
@@ -32,7 +32,7 @@ import { assertArm64Slice } from './arch'
  * complete, executable, and flushed, never mid-extract or pre-chmod.
  * Concurrent installOrUpdate for the same name is serialized by a Set lock.
  *
- * Update-check policy: settings.binaries.<name>.{latestKnownVersion,
+ * Update-check policy: dependencies.<name>.{latestKnownVersion,
  * lastCheckedAtUtc} are the single source of truth — there's no in-memory
  * cache. The modal renders what's persisted; a fresh upstream lookup happens
  * only on startup (gated by checkUpdatesAtLaunch) or via an explicit user
@@ -85,7 +85,7 @@ async function isInstalled(name: BinaryName): Promise<boolean> {
 // from disk). The renderer derives lifecycle/currency/role from these via the
 // shared deriveStatus — main records facts, it does not pre-derive state.
 async function getStatus(name: BinaryName): Promise<BinaryStatus> {
-  const entry = getSettings().binaries[name]
+  const entry = getDependencies()[name]
   const present = await isInstalled(name)
   return {
     name,
@@ -129,14 +129,14 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
   )
 
   log.info('binary update check complete', { resolved: resolved.size, failed })
-  // Apply inside the settings critical section: read the *current* entry (so a
+  // Apply inside the dependencies critical section: read the *current* entry (so a
   // concurrent install's fields are preserved) and fold in each successful check.
-  await mutateSettings((s) => {
-    const nextBinaries = { ...s.binaries }
+  await mutateDependencies((d) => {
+    const next = { ...d }
     for (const [name, version] of resolved) {
-      nextBinaries[name] = applyCheckSuccess(s.binaries[name], version, now)
+      next[name] = applyCheckSuccess(d[name], version, now)
     }
-    return { binaries: nextBinaries }
+    return next
   })
   return getAllStatuses()
 }
@@ -225,14 +225,11 @@ async function performInstall(name: BinaryName): Promise<void> {
 
   log.info('binary installed', { name, version: resolved.version, integrityVerified })
 
-  await mutateSettings((s) => ({
-    binaries: {
-      ...s.binaries,
-      [name]: nextEntryAfterInstall(s.binaries[name], {
-        version: resolved.version,
-        nowIso: nowUtcIso(),
-      }),
-    },
+  await mutateDependencies((d) => ({
+    [name]: nextEntryAfterInstall(d[name], {
+      version: resolved.version,
+      nowIso: nowUtcIso(),
+    }),
   }))
 
   emit('binaries:ready', { name, version: resolved.version })

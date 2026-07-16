@@ -1,21 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Settings } from '@shared/settings'
+import type { Dependencies } from '@shared/dependencies'
 
 // checkForUpdates is the orchestration seam for the convention's honest-state rule:
 // a successful resolve records the latest + time; a failed one writes NOTHING. The
-// config store and the upstream registry are mocked at their module boundaries so
-// the fold is exercised without touching the network or disk.
-const settingsRef: { current: Settings } = { current: null as unknown as Settings }
+// dependencies store and the upstream registry are mocked at their module
+// boundaries so the fold is exercised without touching the network or disk.
+const depsRef: { current: Dependencies } = { current: null as unknown as Dependencies }
 
 vi.mock('@main/io/logger', () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
-vi.mock('@main/store/config', () => ({
-  getSettings: () => settingsRef.current,
-  mutateSettings: vi.fn(async (mutator: (s: Settings) => Partial<Settings>) => {
-    settingsRef.current = { ...settingsRef.current, ...mutator(settingsRef.current) }
-    return settingsRef.current
+vi.mock('@main/store/dependencies', () => ({
+  getDependencies: () => depsRef.current,
+  mutateDependencies: vi.fn(async (mutator: (d: Dependencies) => Partial<Dependencies>) => {
+    depsRef.current = { ...depsRef.current, ...mutator(depsRef.current) }
+    return depsRef.current
   }),
 }))
 
@@ -33,16 +33,14 @@ vi.mock('@main/binaries/registry', async (importOriginal) => {
 
 import { checkForUpdates, downloadTempPath } from '@main/binaries/manager'
 import { binarySpecs } from '@main/binaries/registry'
-import { freshBinaryEntry } from '@shared/settings'
+import { freshBinaryEntry } from '@shared/dependencies'
 
 function seed(): void {
-  settingsRef.current = {
-    binaries: {
-      'yt-dlp': freshBinaryEntry(),
-      ffmpeg: freshBinaryEntry(),
-      deno: freshBinaryEntry(),
-    },
-  } as Settings
+  depsRef.current = {
+    'yt-dlp': freshBinaryEntry(),
+    ffmpeg: freshBinaryEntry(),
+    deno: freshBinaryEntry(),
+  }
 }
 
 const resolved = (version: string) =>
@@ -57,7 +55,7 @@ describe('checkForUpdates — a failed check writes nothing (I3)', () => {
 
     await checkForUpdates()
 
-    const b = settingsRef.current.binaries
+    const b = depsRef.current
     // Successful checks record the latest version and a timestamp.
     expect(b['yt-dlp'].latestKnownVersion).toBe('2024.01.01')
     expect(b['yt-dlp'].lastCheckedAtUtc).not.toBeNull()

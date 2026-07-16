@@ -35,28 +35,11 @@ describe('the managed-tool gate', () => {
     expect(parsed.checkUpdatesAtLaunch).toBe(false)
   })
 
-  it('strips legacy per-binary integrity fields (no migration code)', () => {
-    const raw = {
-      ...defaultSettings(),
-      binaries: {
-        ...defaultSettings().binaries,
-        'yt-dlp': {
-          installedVersion: '1',
-          latestKnownVersion: '1',
-          lastCheckedAtUtc: null,
-          integrity: 'verified',
-          verifiedSha256: 'abc',
-          checkError: null,
-          faultError: null,
-        },
-      },
-    }
-    const parsed = SettingsSchema.parse(raw)
-    expect(parsed.binaries['yt-dlp']).toEqual({
-      installedVersion: '1',
-      latestKnownVersion: '1',
-      lastCheckedAtUtc: null,
-    })
+  // The per-binary facts moved out of Settings into their own dependencies store;
+  // the launch-check TOGGLE stays here (it is a setting the user authors). The
+  // legacy-field-stripping behavior now lives in tests/shared/dependencies.test.ts.
+  it('no longer carries the binaries facts — those are their own store', () => {
+    expect(defaultSettings()).not.toHaveProperty('binaries')
   })
 })
 
@@ -84,10 +67,13 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.safeParse(raw).success).toBe(false)
   })
 
-  it('rejects an out-of-range volume rather than persisting it', () => {
-    const raw = { ...defaultSettings(), volume: 1.5 }
-
-    expect(SettingsSchema.safeParse(raw).success).toBe(false)
+  // Volume moved to the layout (state) store — see tests/shared/layout.test.ts.
+  // A stray `volume` key on a config is simply ignored, not a field this schema
+  // defends: it must not resurrect as config.
+  it('does not carry volume — it is view state, not config', () => {
+    expect(defaultSettings()).not.toHaveProperty('volume')
+    const parsed = SettingsSchema.parse({ ...defaultSettings(), volume: 0.5 } as Record<string, unknown>)
+    expect(parsed).not.toHaveProperty('volume')
   })
 
   // libraryDir defaults to blank ("use the default folder"), exactly like

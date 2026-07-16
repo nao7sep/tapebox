@@ -1,35 +1,10 @@
 import { z } from 'zod'
 import { stripUrlCredentials } from './url'
 
-/**
- * The persisted, per-binary facts that are the single source of truth for its
- * managed-dependency status (managed-runtime-dependencies-conventions). Only what
- * cannot be re-derived is stored — the installed version, the last-known latest, and
- * the last *successful* check time. Presence is scanned from disk, not persisted. No
- * integrity flag, checksum, or check/fault error is kept: a failed check writes
- * nothing, and a damaged file fails when used and is fixed by installing again.
- *
- * `.strip()` drops any legacy fields from the old model (integrity, verifiedSha256,
- * checkError, faultError) on the next write, since the schema no longer lists them
- * (the app is pre-release; no migration code needed).
- */
-export const BinaryEntrySchema = z
-  .object({
-    installedVersion: z.string().nullable(),
-    latestKnownVersion: z.string().nullable(),
-    lastCheckedAtUtc: z.string().nullable(),
-  })
-  .strip()
-export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
-
-/** A never-installed, never-checked binary entry — the fresh-install default. */
-export function freshBinaryEntry(): BinaryEntry {
-  return {
-    installedVersion: null,
-    latestKnownVersion: null,
-    lastCheckedAtUtc: null,
-  }
-}
+// The per-binary managed-dependency facts (installed/latest versions, last-check
+// time) are NOT config — they are app-recorded facts and live in their own
+// dependencies.json / Dependencies type (see shared/dependencies.ts), per
+// persisted-store-separation-conventions. They used to hang off Settings.binaries.
 
 /**
  * Single OpenAI-compatible provider configuration. The API key is stored
@@ -143,10 +118,10 @@ export const SettingsSchema = z.object({
   // Play video audio. When off, every video is muted and can't be unmuted.
   playSound: z.boolean(),
 
-  // Last playback volume (0..1), remembered across tapes and restarts so a new
-  // tape opens at the level the user last set rather than resetting to full. Set
-  // live from the player's own volume control, not the Settings dialog.
-  volume: z.number().min(0).max(1),
+  // Last playback volume lives in the layout (state) store, not here — it is set
+  // live from the player's own volume slider, a moment-to-moment view adjustment
+  // rather than an authored setting (persisted-store-separation-conventions). See
+  // shared/layout.ts.
 
   // Hold an OS wake lock while a tape is playing, so the screen doesn't dim and
   // the machine doesn't sleep mid-watch; released the moment playback stops.
@@ -168,12 +143,6 @@ export const SettingsSchema = z.object({
 
   // Configurable AI prompts. See PromptsSettingsSchema.
   prompts: PromptsSettingsSchema,
-
-  binaries: z.object({
-    'yt-dlp': BinaryEntrySchema,
-    ffmpeg: BinaryEntrySchema,
-    deno: BinaryEntrySchema,
-  }),
 
   // Extra yt-dlp CLI args. ytdlpArgs applies to every call (probe, download,
   // scan); a matching siteProfile's args are appended on top. The app's own
@@ -219,7 +188,6 @@ export function defaultSettings(): Settings {
     autoplay: true,
     playSound: true,
     keepAwakeWhilePlaying: true,
-    volume: 1,
     trashOnRemove: true,
     confirmRemove: true,
     checkUpdatesAtLaunch: true,
@@ -229,11 +197,6 @@ export function defaultSettings(): Settings {
     },
     prompts: {
       slug: DEFAULT_SLUG_PROMPT,
-    },
-    binaries: {
-      'yt-dlp': freshBinaryEntry(),
-      ffmpeg:   freshBinaryEntry(),
-      deno:     freshBinaryEntry(),
     },
     ytdlpArgs: '',
     siteProfiles: [],
@@ -276,7 +239,6 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     autoplay: s.autoplay,
     playSound: s.playSound,
     keepAwakeWhilePlaying: s.keepAwakeWhilePlaying,
-    volume: s.volume,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
     checkUpdatesAtLaunch: s.checkUpdatesAtLaunch,

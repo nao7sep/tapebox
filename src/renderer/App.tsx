@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Settings } from '@shared/settings'
+import type { BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -39,8 +39,11 @@ import { useImportResultStore } from '@renderer/store/importResult'
 /** Skip the startup auto-check if any binary was checked within this window. */
 const AUTO_CHECK_STALE_MS = 24 * 60 * 60 * 1000
 
-function lastCheckedStale(binaries: Settings['binaries']): boolean {
-  const timestamps = Object.values(binaries)
+// The last-check times now come from the binaries:status snapshot (each status
+// mirrors the recorded dependency facts), not from settings — the facts moved to
+// their own store (persisted-store-separation-conventions).
+function lastCheckedStale(statuses: BinaryStatus[]): boolean {
+  const timestamps = statuses
     .map((b) => b.lastCheckedAtUtc)
     .filter((t): t is string => t !== null)
   if (timestamps.length === 0) return true
@@ -114,10 +117,13 @@ export default function App() {
       .then((l) => useLayoutStore.getState().setLayout(l))
       .catch((err) => log.debug('layout hydrate failed', { error: describeError(err) }))
     void ipcInvoke('settings:get')
-      .then((s) => {
+      .then(async (s) => {
         useSettingsStore.getState().setSettings(s)
         if (!s.checkUpdatesAtLaunch) return
-        if (!lastCheckedStale(s.binaries)) return
+        // The recorded facts live in their own store now, so read the last-check
+        // times from a status snapshot rather than from settings.
+        const statuses = await ipcInvoke('binaries:status')
+        if (!lastCheckedStale(statuses)) return
         // Best-effort background check the user didn't trigger: main logs the
         // authoritative per-binary + summary outcome, so here we only note at debug
         // that the call rejected — never an error toast that interrupts them.
