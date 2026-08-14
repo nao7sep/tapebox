@@ -53,7 +53,7 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "npm run typecheck:node && npm run typecheck:web && electron-vite build",
     "dist": "npm run build && electron-builder --publish never",
     "preview": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
