@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import { useFilterStore } from '@renderer/store/filter'
 import { useArchiveStore } from '@renderer/store/archive'
 import { isShortcutBlocked } from '@renderer/lib/dom'
-import { hasMod } from '@renderer/lib/shortcuts'
 
 /**
  * App-level navigation shortcuts — distinct from the per-list keys (useListboxKeyboard)
@@ -23,7 +22,7 @@ export function useAppShortcuts(onShowShortcuts: () => void): void {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.defaultPrevented || isShortcutBlocked(e.target)) return
-      const mod = hasMod(e)
+      const mod = (e.metaKey || e.ctrlKey) && !e.altKey
 
       // "?" first, then Cmd/Ctrl+/ — both forms open the same list, and the
       // slash branch tolerates Shift so shifted-slash layouts (German QWERTZ)
@@ -38,8 +37,6 @@ export function useAppShortcuts(onShowShortcuts: () => void): void {
         e.preventDefault()
         useFilterStore.getState().setFilter(e.key === '1' ? 'inbox' : 'archived')
       } else if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        // Bare printable key: raw flags, not !hasMod — the predicate's Alt
-        // exclusion would make "no command modifier" read true under AltGr.
         e.preventDefault()
         useFilterStore.getState().setFilter('archived')
         useArchiveStore.getState().setPendingSearchFocus(true)
