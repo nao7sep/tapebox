@@ -10,22 +10,22 @@ import { dialog } from 'electron'
 export function notifyCorruptConfig(quarantinePath: string): void {
   dialog.showErrorBox(
     'Settings could not be read',
-    'Your tapebox settings file was unreadable and has been set aside so nothing is lost:\n\n' +
+    'Your TapeBox settings file was unreadable and has been set aside so nothing is lost:\n\n' +
       `${quarantinePath}\n\n` +
-      'tapebox has started with default settings. Your library and media files are untouched.',
+      'TapeBox has started with default settings. Your library and media files are untouched.',
   )
 }
 
 export function notifyCorruptSession(quarantinePath: string): void {
   dialog.showErrorBox(
     'Library could not be opened',
-    'Your tapebox library file was unreadable and has been set aside so nothing is lost:\n\n' +
+    'Your TapeBox library file was unreadable and has been set aside so nothing is lost:\n\n' +
       `${quarantinePath}\n\n` +
-      'tapebox has started with an empty library. Your downloaded media files are untouched.',
+      'TapeBox has started with an empty library. Your downloaded media files are untouched.',
   )
 }
 
 export function notifyStartupFailure(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
-  dialog.showErrorBox('tapebox could not start', `${message}\n\ntapebox will now quit.`)
+  dialog.showErrorBox('TapeBox could not start', `${message}\n\nTapeBox will now quit.`)
 }
