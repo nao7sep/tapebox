@@ -28,7 +28,7 @@ describe('readSettingsFile', () => {
     const path = join(dir, 'config.json')
     await writeFile(path, JSON.stringify(defaultSettings()))
 
-    expect(await readSettingsFile(path)).toEqual(defaultSettings())
+    expect(await readSettingsFile(path)).toEqual({ settings: defaultSettings() })
   })
 
   it('quarantines an unparseable config aside rather than discarding it', async () => {
@@ -36,7 +36,7 @@ describe('readSettingsFile', () => {
     const corrupt = '{ not valid json'
     await writeFile(path, corrupt)
 
-    expect(await readSettingsFile(path)).toBeNull()
+    expect(await readSettingsFile(path)).toMatchObject({ quarantinePath: expect.stringContaining('.invalid') })
 
     // The corrupt bytes survive as a `config-<yyyymmdd-hhmmss-fff-utc>.invalid` neighbour; the original
     // is moved.
@@ -51,7 +51,7 @@ describe('readSettingsFile', () => {
     const path = join(dir, 'config.json')
     await writeFile(path, JSON.stringify({ libraryDir: 42 }))
 
-    expect(await readSettingsFile(path)).toBeNull()
+    expect(await readSettingsFile(path)).toMatchObject({ quarantinePath: expect.stringContaining('.invalid') })
 
     const quarantined = (await readdir(dir)).find(
       (f) => f.startsWith('config-') && f.endsWith('.invalid'),

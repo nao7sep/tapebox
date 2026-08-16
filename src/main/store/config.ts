@@ -31,51 +31,63 @@ import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } fro
 
 let cache: Settings | null = null
 
-export async function loadSettings(): Promise<void> {
+export async function loadSettings(): Promise<ConfigLoadResult> {
   const found = await readSettingsFile(paths.config)
-  if (found) {
-    cache = found
-    log.info('settings loaded', { config: summarizeSettings(found) })
-  } else {
-    cache = defaultSettings()
-    await writeManagedJson(paths.config, cache, SettingsSchema)
-    log.info('settings missing or invalid; defaults written', { config: summarizeSettings(cache) })
+  if (found !== null && 'settings' in found) {
+    cache = found.settings
+    log.info('settings loaded', { config: summarizeSettings(found.settings) })
+    return { status: 'loaded' }
   }
+  cache = defaultSettings()
+  await writeManagedJson(paths.config, cache, SettingsSchema)
+  if (found === null) {
+    log.info('settings missing; defaults written', { config: summarizeSettings(cache) })
+    return { status: 'seeded' }
+  }
+  log.info('settings quarantined; defaults written', { quarantinePath: found.quarantinePath })
+  return { status: 'recovered', quarantinePath: found.quarantinePath }
 }
+
+/** What loadSettings did, so the app edge can report a quarantine to the user
+ *  (the store stays UI-free, mirroring the session store's recovery result). */
+export type ConfigLoadResult =
+  | { status: 'loaded' }
+  | { status: 'seeded' }
+  | { status: 'recovered'; quarantinePath: string }
 
 /**
  * Load settings from an explicit path — the path-taking seam the app singleton wraps (mirrors
- * loadSessionFile). Returns the parsed settings, or null when the file is missing OR was corrupt. A
- * present-but-corrupt file is quarantined aside before null is returned, so the caller's reseed never
- * discards the user's bytes; a missing file returns null with nothing to preserve.
+ * loadSessionFile). Returns the parsed settings, the quarantine destination when the file was
+ * present but corrupt (unreadable bytes or a failed schema check — both are corruption, and the
+ * bytes are set aside before the caller reseeds), or null when the file is missing and there is
+ * nothing to preserve.
  */
-export async function readSettingsFile(configPath: string): Promise<Settings | null> {
+export async function readSettingsFile(
+  configPath: string,
+): Promise<{ settings: Settings } | { quarantinePath: string } | null> {
   let raw: unknown
   try {
     raw = JSON.parse(await readFile(configPath, 'utf8'))
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(err) })
-    await quarantineCorruptConfig(configPath)
-    return null
+    return { quarantinePath: await quarantineCorruptConfig(configPath) }
   }
   const parsed = SettingsSchema.safeParse(raw)
-  if (parsed.success) return parsed.data
+  if (parsed.success) return { settings: parsed.data }
   log.warn('config invalid; quarantining and falling back to defaults', { error: describeError(parsed.error) })
-  await quarantineCorruptConfig(configPath)
-  return null
+  return { quarantinePath: await quarantineCorruptConfig(configPath) }
 }
 
 // Rename a corrupt config aside to a timestamped `config-<stamp>.invalid` neighbour before the
-// caller reseeds defaults over the path — best-effort (a rename failure is logged, not fatal).
-async function quarantineCorruptConfig(configPath: string): Promise<void> {
+// caller reseeds defaults over the path. The rename either lands or its failure propagates —
+// swallowing it would let the reseed overwrite the very bytes quarantine exists to preserve
+// (storage-path conventions).
+async function quarantineCorruptConfig(configPath: string): Promise<string> {
   const quarantinePath = join(dirname(configPath), `config-${utcTimestampForFilenameMs()}.invalid`)
-  try {
-    await rename(configPath, quarantinePath)
-    log.warn('quarantined corrupt config', { quarantinePath })
-  } catch (err) {
-    log.error('failed to quarantine corrupt config', { error: describeError(err) })
-  }
+  await rename(configPath, quarantinePath)
+  log.warn('quarantined corrupt config', { quarantinePath })
+  return quarantinePath
 }
 
 export function getSettings(): Settings {

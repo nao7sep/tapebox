@@ -2,7 +2,7 @@ import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs, resetTempDir } from './paths.js'
-import { notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
+import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
 import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
 import { describeError } from '@shared/error'
 import { loadSettings } from './store/config.js'
@@ -68,7 +68,7 @@ async function startup(): Promise<void> {
     arch: process.arch,
   })
 
-  await loadSettings()
+  const configResult = await loadSettings()
   await loadDependencies()
   const sessionResult = await loadSession()
   await layout.loadLayout()
@@ -92,6 +92,9 @@ async function startup(): Promise<void> {
   // user at the app edge — the session store stays UI-free.
   if (sessionResult.status === 'recovered') {
     notifyCorruptSession(sessionResult.quarantinePath)
+  }
+  if (configResult.status === 'recovered') {
+    notifyCorruptConfig(configResult.quarantinePath)
   }
 }
 

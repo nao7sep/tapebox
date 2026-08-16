@@ -48,7 +48,7 @@ function groups(mod: string): Group[] {
       title: 'General',
       shortcuts: [
         { label: 'Add the URL in the input', keys: 'Enter' },
-        { label: 'Show this list', keys: 'Question' },
+        { label: 'Show this list', keys: `${mod}+Slash / Question` },
         { label: 'Close a dialog', keys: 'Escape' },
       ],
     },

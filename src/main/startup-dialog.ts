@@ -7,6 +7,15 @@ import { dialog } from 'electron'
  * named and greppable in a *-dialog file, rather than inline in the bootstrap.
  */
 
+export function notifyCorruptConfig(quarantinePath: string): void {
+  dialog.showErrorBox(
+    'Settings could not be read',
+    'Your tapebox settings file was unreadable and has been set aside so nothing is lost:\n\n' +
+      `${quarantinePath}\n\n` +
+      'tapebox has started with default settings. Your library and media files are untouched.',
+  )
+}
+
 export function notifyCorruptSession(quarantinePath: string): void {
   dialog.showErrorBox(
     'Library could not be opened',
