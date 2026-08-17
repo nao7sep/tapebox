@@ -1,13 +1,12 @@
-import { readFile, rename } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { renameSync, writeFileSync } from 'node:fs'
-import { dirname, extname, join } from 'node:path'
+import { extname } from 'node:path'
 import { nanoid } from 'nanoid'
 import { paths } from '@main/paths'
-import { writeManagedJson } from '@main/io/atomic-json'
+import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { record } from '@main/store/backupStore'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { utcTimestampForFilenameMs } from '@shared/utc'
 import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
 
 /**
@@ -65,12 +64,9 @@ export async function loadSessionFile(
     const session = SessionSchema.parse(JSON.parse(text))
     return { result: { status: 'loaded', tapeCount: session.tapes.length }, session }
   } catch (parseErr) {
-    const quarantinePath = join(
-      dirname(sessionPath),
-      `catalog-${utcTimestampForFilenameMs()}.invalid`,
-    )
+    let quarantinePath: string
     try {
-      await rename(sessionPath, quarantinePath)
+      quarantinePath = await quarantineFile(sessionPath)
     } catch (quarantineErr) {
       const detail = (quarantineErr as Error)?.message ?? String(quarantineErr)
       throw new Error(

@@ -1,7 +1,9 @@
-import { chmod, readFile, writeFile } from 'node:fs/promises'
+import { chmod, readFile, rename, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
 import { record } from '@main/store/backupStore'
+import { utcTimestampForFilenameMs } from '@shared/utc'
 
 /**
  * Atomic JSON read/write with zod validation.
@@ -105,4 +107,19 @@ export async function writeManagedJson<S extends z.ZodType>(
   // just wrote. Best-effort — record() never throws — so a backup problem can never
   // break the save that already succeeded above.
   record(path, bytes)
+}
+
+/**
+ * Move a corrupt managed file aside to its timestamped `<stem>-<stamp>.invalid`
+ * sibling, preserving its bytes, and return the quarantine path. The rename
+ * either lands or its failure propagates — the caller decides whether that is
+ * fatal (session), a reseed precondition (config), or degradable (api-keys).
+ * The one home of the quarantine naming grammar, so the three stores cannot
+ * drift apart on it.
+ */
+export async function quarantineFile(filePath: string): Promise<string> {
+  const stem = basename(filePath, extname(filePath))
+  const quarantinePath = join(dirname(filePath), `${stem}-${utcTimestampForFilenameMs()}.invalid`)
+  await rename(filePath, quarantinePath)
+  return quarantinePath
 }

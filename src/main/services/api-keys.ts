@@ -1,10 +1,8 @@
-import { chmod, rename, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { chmod, stat } from 'node:fs/promises'
 import { z } from 'zod'
 import { paths } from '@main/paths'
-import { readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
+import { quarantineFile, readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { utcTimestampForFilenameMs } from '@shared/utc'
 
 /**
  * API key storage and resolution — the secret store at ~/.tapebox/api-keys.json,
@@ -142,9 +140,8 @@ async function readAll(): Promise<ApiKeysFile> {
     // Corrupt/unreadable: never fail key resolution over it. Move the bad file
     // aside (timestamped) so its bytes are preserved and it is handled once,
     // then degrade to "no key" — it is rebuilt on the next write.
-    const quarantine = join(dirname(paths.apiKeys), `api-keys-${utcTimestampForFilenameMs()}.invalid`)
     try {
-      await rename(paths.apiKeys, quarantine)
+      const quarantine = await quarantineFile(paths.apiKeys)
       log.warn('api-keys.json was unreadable; set aside and treating as empty', { path: paths.apiKeys, quarantine })
     } catch (asideErr) {
       log.warn('api-keys.json was unreadable and could not be set aside; treating as empty', {

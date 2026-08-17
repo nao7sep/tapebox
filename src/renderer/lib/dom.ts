@@ -27,12 +27,17 @@ export function isEditableElement(node: EventTarget | null): boolean {
   return false
 }
 
+/** True while a modal owns the keyboard — every global shortcut stands down. */
+export function isModalOpen(): boolean {
+  return Boolean(document.querySelector('[data-dialog-surface]'))
+}
+
 /**
- * True when a global keyboard shortcut should stand down: a modal owns the keyboard,
- * or the user is typing in a text field. The single gate every window-level shortcut
- * handler (list nav, per-tape keys, app nav) checks, so they all defer consistently.
+ * True when a global bare-key shortcut should stand down: a modal owns the keyboard,
+ * or the user is typing in a text field. The gate for handlers whose keys are typed
+ * text (list nav, per-tape keys). Mod-chords check the two halves separately in
+ * useAppShortcuts — the Cmd half fires even while typing.
  */
 export function isShortcutBlocked(target: EventTarget | null): boolean {
-  if (document.querySelector('[data-dialog-surface]')) return true
-  return isEditableElement(target)
+  return isModalOpen() || isEditableElement(target)
 }

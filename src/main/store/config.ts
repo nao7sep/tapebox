@@ -1,10 +1,8 @@
-import { readFile, rename } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
-import { writeManagedJson } from '@main/io/atomic-json'
+import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { utcTimestampForFilenameMs } from '@shared/utc'
 import { SettingsSchema, defaultSettings, summarizeSettings, type Settings } from '@shared/settings'
 
 /**
@@ -71,23 +69,12 @@ export async function readSettingsFile(
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(err) })
-    return { quarantinePath: await quarantineCorruptConfig(configPath) }
+    return { quarantinePath: await quarantineFile(configPath) }
   }
   const parsed = SettingsSchema.safeParse(raw)
   if (parsed.success) return { settings: parsed.data }
   log.warn('config invalid; quarantining and falling back to defaults', { error: describeError(parsed.error) })
-  return { quarantinePath: await quarantineCorruptConfig(configPath) }
-}
-
-// Rename a corrupt config aside to a timestamped `config-<stamp>.invalid` neighbour before the
-// caller reseeds defaults over the path. The rename either lands or its failure propagates —
-// swallowing it would let the reseed overwrite the very bytes quarantine exists to preserve
-// (storage-path conventions).
-async function quarantineCorruptConfig(configPath: string): Promise<string> {
-  const quarantinePath = join(dirname(configPath), `config-${utcTimestampForFilenameMs()}.invalid`)
-  await rename(configPath, quarantinePath)
-  log.warn('quarantined corrupt config', { quarantinePath })
-  return quarantinePath
+  return { quarantinePath: await quarantineFile(configPath) }
 }
 
 export function getSettings(): Settings {
