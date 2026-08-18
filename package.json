@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "A local media library with web-import.",
-  "author": "Yoshinao Inoguchi <nao7sep@gmail.com>",
+  "author": "Yoshinao Inoguchi <yoshinao@inoguchi.com>",
   "license": "MIT",
   "main": "out/main/index.js",
   "build": {
