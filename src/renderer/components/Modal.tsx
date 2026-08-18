@@ -54,7 +54,10 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
   useLayoutEffect(() => {
     const panel = panelRef.current
     const previouslyFocused = document.activeElement
-    panel?.focus()
+    // Only claim focus if a child hasn't already (a confirm's Cancel button carries
+    // `autoFocus`, which commits before this effect runs). Otherwise the panel would
+    // pull focus straight back off it and no action would answer Enter.
+    if (panel && !panel.contains(document.activeElement)) panel.focus()
     acquireScrollLock()
 
     // Pull focus back if it slips out of the topmost modal through programmatic

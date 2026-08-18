@@ -27,7 +27,10 @@ export function ConfirmModal({
 }: Props) {
   const footer = (
     <>
-      <Button variant="ghost" onClick={onCancel}>
+      {/* Cancel takes focus, named here rather than left to markup order: a
+          confirmation exists because something could go wrong, so the action a
+          reflexive Enter reaches must be the one that costs nothing. */}
+      <Button variant="ghost" autoFocus onClick={onCancel}>
         {cancelLabel}
       </Button>
       <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
