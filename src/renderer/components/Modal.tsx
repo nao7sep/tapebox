@@ -2,6 +2,7 @@ import { useId, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEven
 import { trapTabFocus } from '@renderer/lib/focusTrap'
 import { acquireScrollLock, releaseScrollLock } from '@renderer/lib/scrollLock'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
+import { CloseIcon } from './Icon'
 
 /**
  * Three tiers, by content:
@@ -126,7 +127,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
             aria-label="Close"
             className="text-lg leading-none text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
           >
-            ✕
+            <CloseIcon />
           </button>
         </header>
 

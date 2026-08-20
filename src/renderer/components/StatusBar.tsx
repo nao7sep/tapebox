@@ -7,6 +7,7 @@ import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { summarizeActivity } from '@renderer/lib/activity'
 import { formatSpeed, formatTime } from '@renderer/lib/format'
 import { Spinner } from '@renderer/components/ui'
+import { ArrowDownIcon } from './Icon'
 
 /**
  * Footer split into three fixed zones, each owning one kind of information so
@@ -49,7 +50,7 @@ function ActivityZone() {
   let text: string
   let tone: string
   if (downloading > 0) {
-    const parts = [`↓ ${downloading} downloading`]
+    const parts = [`${downloading} downloading`]
     if (queued > 0) parts.push(`${queued} queued`)
     if (totalSpeedBps > 0) parts.push(formatSpeed(totalSpeedBps))
     if (etaSec != null) parts.push(`~${formatTime(etaSec)} left`)
@@ -74,6 +75,7 @@ function ActivityZone() {
   return (
     <span className="flex items-center gap-1.5 truncate">
       {active && <Spinner className={tone} />}
+      {downloading > 0 && <ArrowDownIcon className={tone} />}
       <span className={tone}>{text}</span>
       {failed > 0 && <span className="text-red-300">· {failed} failed</span>}
       {listing > 0 && <span className="text-violet-300">· {listing} to scan</span>}

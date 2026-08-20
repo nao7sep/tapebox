@@ -7,6 +7,7 @@ import { describeError } from '@shared/error'
 import { useToastStore } from '@renderer/store/toast'
 import { Modal } from './Modal'
 import { Button, Spinner } from './ui'
+import { CheckIcon } from './Icon'
 
 /**
  * Review-then-apply metadata refresh, and a rarely-needed one: saved metadata is
@@ -119,13 +120,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
           // mark, so it reads as "all good" rather than a broken Apply button — and
           // it spells out that this is exactly why there's nothing to apply.
           <div className="flex items-center gap-2.5 rounded-md border border-teal-800/60 bg-teal-950/30 px-3 py-2.5 text-sm text-zinc-200">
-            <svg
-              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-              className="shrink-0 text-teal-400"
-            >
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
+            <CheckIcon className="shrink-0 text-teal-400" />
             <span>Up to date — the source matches your saved metadata, so there’s nothing to apply.</span>
           </div>
         ) : (

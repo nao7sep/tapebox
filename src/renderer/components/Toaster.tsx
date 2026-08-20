@@ -1,4 +1,5 @@
 import { useToastStore } from '@renderer/store/toast'
+import { CloseIcon } from './Icon'
 
 /**
  * Floating stack of error toasts, bottom-right above the status bar. Errors
@@ -27,7 +28,7 @@ export function Toaster() {
             aria-label="Dismiss"
             className="shrink-0 rounded px-1 leading-none text-red-300/80 hover:text-red-100"
           >
-            ✕
+            <CloseIcon />
           </button>
         </div>
       ))}

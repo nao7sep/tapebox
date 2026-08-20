@@ -4,6 +4,7 @@ import { useBoxesStore } from '@renderer/store/boxes'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { Menu, MenuItem } from '@renderer/components/Menu'
 import { UNBOXED_LABEL } from '@shared/box-names'
+import { CheckIcon, PlusIcon } from './Icon'
 
 /**
  * Files an archived tape into a box (or Unboxed, or a brand-new box) via a small
@@ -41,17 +42,20 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
       )}
     >
       <MenuItem onSelect={() => moveTo(null)} className={itemClass(tape.boxId === null)}>
-        {tape.boxId === null ? '✓ ' : ''}
+        {tape.boxId === null ? <CheckIcon className="mr-1.5" /> : null}
         {UNBOXED_LABEL}
       </MenuItem>
       {sorted.map((g) => (
         <MenuItem key={g.id} onSelect={() => moveTo(g.id)} className={itemClass(tape.boxId === g.id)}>
-          {tape.boxId === g.id ? '✓ ' : ''}
+          {tape.boxId === g.id ? <CheckIcon className="mr-1.5" /> : null}
           {g.name}
         </MenuItem>
       ))}
       <div className="my-1 border-t border-zinc-700" role="separator" />
-      <MenuItem onSelect={() => void newBoxAndMove()}>+ New box</MenuItem>
+      <MenuItem onSelect={() => void newBoxAndMove()} className="whitespace-nowrap">
+        <PlusIcon className="mr-1.5" />
+        New box
+      </MenuItem>
     </Menu>
   )
 }

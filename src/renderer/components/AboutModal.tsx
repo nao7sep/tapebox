@@ -1,6 +1,7 @@
 import { Modal } from '@renderer/components/Modal'
 import { Button } from '@renderer/components/ui'
 import { useRuntimeStore } from '@renderer/store/runtime'
+import { ExternalLinkIcon } from './Icon'
 
 const GITHUB_URL = 'https://github.com/nao7sep/tapebox'
 
@@ -25,11 +26,11 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
           <p className="mt-1 text-zinc-300">A local media library with web import.</p>
         </div>
         <div className="flex gap-4">
-          <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-zinc-100">
-            GitHub ↗
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="whitespace-nowrap text-zinc-300 hover:text-zinc-100">
+            GitHub <ExternalLinkIcon />
           </a>
-          <a href={`${GITHUB_URL}/issues`} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-zinc-100">
-            Report an issue ↗
+          <a href={`${GITHUB_URL}/issues`} target="_blank" rel="noreferrer" className="whitespace-nowrap text-zinc-300 hover:text-zinc-100">
+            Report an issue <ExternalLinkIcon />
           </a>
         </div>
         <p className="text-zinc-300">© 2026 Yoshinao Inoguchi — MIT License</p>

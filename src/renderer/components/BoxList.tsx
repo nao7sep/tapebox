@@ -10,6 +10,7 @@ import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { boxNameError, UNBOXED_LABEL } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
+import { PlusIcon } from './Icon'
 
 /** Droppable id for the Unboxed row (it is not a real box, so it has no box id). */
 export const UNBOXED_DROP_ID = '__unboxed__'
@@ -88,8 +89,9 @@ export function BoxList() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between px-3 py-2">
         <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Boxes</span>
-        <button onClick={() => void newBox()} className="text-xs text-zinc-300 transition hover:text-zinc-100">
-          + New box
+        <button onClick={() => void newBox()} className="whitespace-nowrap text-xs text-zinc-300 transition hover:text-zinc-100">
+          <PlusIcon className="mr-1" />
+          New box
         </button>
       </div>
 
