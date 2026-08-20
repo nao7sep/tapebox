@@ -61,6 +61,7 @@
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:test",
     "test": "vitest run",
+    "check": "npm run typecheck && npm test",
     "test:watch": "vitest",
     "pack:mac": "electron-vite build && electron-builder --mac --dir",
     "pack:win": "electron-vite build && electron-builder --win --dir",
