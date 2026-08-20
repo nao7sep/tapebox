@@ -21,15 +21,25 @@ vi.mock('@main/store/dependencies', () => ({
 
 vi.mock('@main/binaries/registry', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/binaries/registry')>()
+  const probe = { kind: 'probe', args: ['--version'], parse: () => null } as const
   return {
     ...actual,
     binarySpecs: {
-      'yt-dlp': { name: 'yt-dlp', resolveLatest: vi.fn() },
-      ffmpeg: { name: 'ffmpeg', resolveLatest: vi.fn() },
-      deno: { name: 'deno', resolveLatest: vi.fn() },
+      'yt-dlp': { name: 'yt-dlp', resolveLatest: vi.fn(), installedVersion: probe },
+      ffmpeg: { name: 'ffmpeg', resolveLatest: vi.fn(), installedVersion: probe },
+      deno: { name: 'deno', resolveLatest: vi.fn(), installedVersion: probe },
     },
   }
 })
+
+// The status gather reads the installed version from the artifact — a subprocess
+// spawn against whatever happens to sit in the real ~/.tapebox/bin. Stubbed so this
+// test stays about the fact fold and never touches the developer's own install.
+vi.mock('@main/binaries/installed-version', () => ({
+  readInstalledVersion: vi.fn(async () => null),
+  forgetInstalledVersion: vi.fn(),
+  writeVersionSidecar: vi.fn(async () => undefined),
+}))
 
 import { checkForUpdates, downloadTempPath } from '@main/binaries/manager'
 import { binarySpecs } from '@main/binaries/registry'

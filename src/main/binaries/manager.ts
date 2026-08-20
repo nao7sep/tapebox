@@ -9,11 +9,16 @@ import { execCapture } from '@main/io/spawn'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
 import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
-import { applyCheckSuccess, nextEntryAfterInstall } from '@shared/binary-status'
+import { recordLatest } from '@shared/binary-status'
 import { withRetry } from '@main/io/retry'
 import { BINARY_DOWNLOAD_IDLE_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
+import {
+  forgetInstalledVersion,
+  readInstalledVersion,
+  writeVersionSidecar,
+} from './installed-version'
 import { downloadWithProgress } from './http'
 import { extractFileFromZip } from './archive'
 import { verifyBinaryIntegrity } from './integrity'
@@ -24,6 +29,7 @@ import { assertArm64Slice } from './arch'
  *
  * Layout on disk:
  *   ~/.tapebox/bin/{name}{ext}              -- the installed executable
+ *   ~/.tapebox/bin/{name}.json               -- its version sidecar, where the binary can't self-report
  *   ~/.tapebox/temp/{name}-{nanoid}.partial  -- disposable download staging (cleared on launch)
  *
  * Install is atomic and crash-durable: download to a temp file, then prepare the
@@ -38,6 +44,11 @@ import { assertArm64Slice } from './arch'
  * only on startup (gated by checkUpdatesAtLaunch) or via an explicit user
  * action. This keeps GitHub API hits well under the unauthenticated rate
  * limit.
+ *
+ * The INSTALLED version is not among those facts: it is read back from the binary
+ * itself (installed-version.ts), so it cannot drift from what is on disk. An
+ * install therefore records only what it learned about upstream, and drops the
+ * cached read so the next status sees the binary it just published.
  */
 
 const inFlight = new Set<BinaryName>()
@@ -80,17 +91,22 @@ async function isInstalled(name: BinaryName): Promise<boolean> {
   }
 }
 
-// Assemble the recorded facts for one binary: the persisted entry plus a freshly
-// re-probed `present` (cheap filesystem check, not persisted, so it can't drift
-// from disk). The renderer derives lifecycle/currency/role from these via the
-// shared deriveStatus — main records facts, it does not pre-derive state.
+// Assemble the facts for one binary: the persisted network facts (last-known
+// latest, last successful check) plus the two read from the artifact — presence
+// from a filesystem scan, and the installed version from the binary itself, cached
+// per process. Both artifact reads happen here, in an async handler, never on a
+// render path. The renderer derives lifecycle/currency/role from these via the
+// shared deriveStatus — main gathers facts, it does not pre-derive state.
+//
+// An absent binary is not read for a version: there is nothing to read, and
+// skipping the call is what lets a binary that appears later be read on sight.
 async function getStatus(name: BinaryName): Promise<BinaryStatus> {
   const entry = getDependencies()[name]
   const present = await isInstalled(name)
   return {
     name,
     present,
-    installedVersion: entry.installedVersion,
+    installedVersion: present ? await readInstalledVersion(name) : null,
     latestKnownVersion: entry.latestKnownVersion,
     lastCheckedAtUtc: entry.lastCheckedAtUtc,
   }
@@ -134,7 +150,7 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
   await mutateDependencies((d) => {
     const next = { ...d }
     for (const [name, version] of resolved) {
-      next[name] = applyCheckSuccess(d[name], version, now)
+      next[name] = recordLatest(d[name], version, now)
     }
     return next
   })
@@ -223,13 +239,22 @@ async function performInstall(name: BinaryName): Promise<void> {
     await unlink(downloadTemp).catch(() => {})
   }
 
+  // The binary has landed. Where it cannot report its own version, record the
+  // resolved one beside it — after the publish, so a failure here leaves a present
+  // binary reading version-unknown (offering a re-acquire) rather than an old
+  // binary wearing the new version's label.
+  if (spec.installedVersion.kind === 'sidecar') {
+    await writeVersionSidecar(name, resolved.version)
+  }
+  // Drop the cached read: the artifact changed, and the next status must see it.
+  forgetInstalledVersion(name)
+
   log.info('binary installed', { name, version: resolved.version, integrityVerified })
 
+  // Only the upstream fact is persisted. What is now installed is read back from
+  // the binary, so an install has nothing to record about it.
   await mutateDependencies((d) => ({
-    [name]: nextEntryAfterInstall(d[name], {
-      version: resolved.version,
-      nowIso: nowUtcIso(),
-    }),
+    [name]: recordLatest(d[name], resolved.version, nowUtcIso()),
   }))
 
   emit('binaries:ready', { name, version: resolved.version })

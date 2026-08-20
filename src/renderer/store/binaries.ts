@@ -52,7 +52,8 @@ export const useBinariesStore = create<BinariesState>((set) => ({
 // ── Derivation: one shared rule both surfaces (status bar + modal) call ──────
 
 /** Adapt the wire status to the derivation's fact shape (latestKnownVersion is the
- *  "desired" version in the model's vocabulary). */
+ *  "desired" version in the model's vocabulary). `present` and `installedVersion`
+ *  both come from main's read of the artifact, so they cannot disagree. */
 export function factsOf(s: BinaryStatus): DependencyFacts {
   return {
     present: s.present,
@@ -89,7 +90,7 @@ export type ToolsSummary = { role: Role; text: string; actionable: boolean }
  * The single roll-up for the status bar: the worst role across all binaries
  * (warning > info > none) with a representative message. Pure, so the status bar
  * renders only what this returns. Quiet (role 'none') when every binary is Up to
- * date — the convention's default silence. Persisted states carry no error role
+ * date — the convention's default silence. Derived states carry no error role
  * (there is no faulted/check-failed state), so 'error' never arises here.
  */
 export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
@@ -105,6 +106,14 @@ export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
     return { role, text: `${plural(count((d) => d.state === 'update-available'), 'update', 'updates')} available`, actionable: true }
   }
   if (role === 'info') {
+    // A present tool whose own version could not be read is a different story from
+    // one that simply hasn't been checked: the first needs the user to re-acquire
+    // it, the second only needs a check. Both are informational, so the roll-up
+    // says which one it is rather than defaulting to the quieter wording.
+    const unreadable = statuses.filter((s) => s.present && s.installedVersion === null).length
+    if (unreadable > 0) {
+      return { role, text: `${plural(unreadable, 'tool', 'tools')} couldn’t be read`, actionable: true }
+    }
     return { role, text: 'Updates not checked', actionable: false }
   }
   return { role: 'none', text: 'Tools ready', actionable: false }

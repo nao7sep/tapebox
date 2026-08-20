@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyCheckSuccess,
   deriveStatus,
-  nextEntryAfterInstall,
+  recordLatest,
   rollupRole,
   type BinaryEntryFacts,
   type DependencyFacts,
@@ -31,7 +30,7 @@ describe('deriveStatus — pure and total', () => {
       installed(),
       installed({ lastCheckedAtUtc: 't', desiredVersion: '2024.01.01' }),
       installed({ lastCheckedAtUtc: 't', desiredVersion: '2024.02.02' }),
-      facts({ present: true }), // present but no recorded version (user-placed)
+      facts({ present: true }), // present but its version could not be read
     ]
     for (const f of cases) {
       expect(() => deriveStatus(f)).not.toThrow()
@@ -50,8 +49,9 @@ describe('the four-state model', () => {
     expect(deriveStatus(installed())).toEqual({ state: 'installed-unchecked', role: 'info' })
   })
 
-  it('present, a user-placed copy with no recorded version → installed-unchecked, even after a check', () => {
-    // installedVersion null can't be compared to the latest, so it stays unchecked.
+  it('present, version unreadable → installed-unchecked, even after a successful check', () => {
+    // A probe that failed (or a sidecar that is absent) leaves nothing to compare
+    // against the latest, so the row stays unchecked rather than reading current.
     const s = deriveStatus(facts({ present: true, desiredVersion: '2024.02.02', lastCheckedAtUtc: 't' }))
     expect(s).toEqual({ state: 'installed-unchecked', role: 'info' })
   })
@@ -81,22 +81,23 @@ describe('honest state', () => {
   })
 })
 
-describe('applyCheckSuccess', () => {
-  const entry: BinaryEntryFacts = { installedVersion: '1', latestKnownVersion: '1', lastCheckedAtUtc: 'old' }
+describe('recordLatest', () => {
+  const entry: BinaryEntryFacts = { latestKnownVersion: '1', lastCheckedAtUtc: 'old' }
 
-  it('records the resolved latest and the check time, leaving installed untouched', () => {
-    const next = applyCheckSuccess(entry, '2', 'now')
-    expect(next).toEqual({ installedVersion: '1', latestKnownVersion: '2', lastCheckedAtUtc: 'now' })
+  it('records the resolved latest and the time it was resolved', () => {
+    expect(recordLatest(entry, '2', 'now')).toEqual({
+      latestKnownVersion: '2',
+      lastCheckedAtUtc: 'now',
+    })
   })
-})
 
-describe('nextEntryAfterInstall', () => {
-  it('sets installed = latest = the acquired version as of now', () => {
-    const next = nextEntryAfterInstall(
-      { installedVersion: null, latestKnownVersion: '2', lastCheckedAtUtc: null },
-      { version: '2', nowIso: 'now' },
-    )
-    expect(next).toEqual({ installedVersion: '2', latestKnownVersion: '2', lastCheckedAtUtc: 'now' })
+  // The one transition both writers share: an install learns the latest too, and
+  // records nothing about what is now installed — that is read from the binary.
+  it('is the whole of what a successful install persists', () => {
+    expect(recordLatest({ latestKnownVersion: null, lastCheckedAtUtc: null }, '2', 'now')).toEqual({
+      latestKnownVersion: '2',
+      lastCheckedAtUtc: 'now',
+    })
   })
 })
 

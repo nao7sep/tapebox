@@ -14,8 +14,9 @@ import { Button, Spinner, Toggle } from '@renderer/components/ui'
  * operations start. Each row derives its four-state status through the shared
  * deriveStatus and shows the version facts, live progress, and a single
  * context-aware action — Install when missing, Update when a newer version is
- * known, nothing otherwise. Operations run concurrently so other rows stay
- * interactive while one is in flight.
+ * known or when the installed one could not be read, nothing otherwise.
+ * Operations run concurrently so other rows stay interactive while one is in
+ * flight.
  *
  * The footer carries only a Close button. The modal does NOT auto-check on open —
  * checks happen at launch (gated, skipped within 24h) or via the Check button
@@ -157,13 +158,13 @@ function BinaryRow({
   onInstall: () => void
 }) {
   const d = derivedOf(status)
-  const label = acquireLabel(d.state)
+  const label = acquireLabel(d.state, status.installedVersion)
 
   return (
     <tr className="border-t border-zinc-700">
       <td className="py-3 font-medium">{status.name}</td>
       <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d)}</td>
-      <td className="py-3 text-zinc-300">{latestText(status, d, checking)}</td>
+      <td className="py-3 text-zinc-300">{latestText(status, checking)}</td>
       <td className="py-3 text-right">
         {progress ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
@@ -185,10 +186,11 @@ function BinaryRow({
   )
 }
 
-/** The installed-version cell text. */
+/** The installed-version cell text. A present tool whose version could not be read
+ *  says so — it is not absent, and it is not silently assumed current. */
 function installedText(status: BinaryStatus, d: DerivedStatus): string {
   if (d.state === 'not-installed') return 'not installed'
-  return status.installedVersion ?? 'installed'
+  return status.installedVersion ?? 'version unreadable'
 }
 
 /** Colour the installed cell by role so a to-do reads as amber at a glance. */
@@ -196,18 +198,28 @@ function installedClass(d: DerivedStatus): string {
   return d.role === 'warning' ? ROLE_TEXT_CLASS.warning : 'text-zinc-300'
 }
 
-/** The latest-version cell text; distinguishes an unchecked tool from a known latest. */
-function latestText(status: BinaryStatus, d: DerivedStatus, checking: boolean): string {
+/** The latest-version cell text; distinguishes an unchecked tool from a known
+ *  latest. Keyed off the fact itself rather than the state, because a tool can now
+ *  be installed-unchecked WITH a successful check behind it — when the check
+ *  landed but the installed version could not be read. */
+function latestText(status: BinaryStatus, checking: boolean): string {
   if (checking) return 'checking…'
-  if (d.state === 'installed-unchecked') return 'not checked'
-  return status.latestKnownVersion ?? '—'
+  return status.latestKnownVersion ?? 'not checked'
 }
 
-/** The one per-row action, or null when there is nothing to do (up to date, or a
- *  present copy with no known update). */
-function acquireLabel(state: DependencyState): string | null {
+/**
+ * The one per-row action, or null when there is nothing to do. Install when the
+ * tool is missing, Update when a newer version is known — and Update again when a
+ * present tool's own version could not be read, which is the only way out of that
+ * row: the set-wide Check resolves the LATEST, so it can never clear an unreadable
+ * INSTALLED version, and re-acquiring is what replaces the copy that would not
+ * answer. A present tool that simply hasn't been checked keeps its quiet row; the
+ * Check button above is that one's action.
+ */
+function acquireLabel(state: DependencyState, installedVersion: string | null): string | null {
   if (state === 'not-installed') return 'Install'
   if (state === 'update-available') return 'Update'
+  if (state === 'installed-unchecked' && installedVersion === null) return 'Update'
   return null
 }
 

@@ -6,12 +6,11 @@ import {
 } from '@shared/dependencies'
 
 describe('the dependencies (managed-facts) store', () => {
-  it('defaults every managed binary to never-installed, never-checked', () => {
+  it('defaults every managed binary to never-checked', () => {
     const d = defaultDependencies()
     expect(Object.keys(d).sort()).toEqual(['deno', 'ffmpeg', 'yt-dlp'])
     for (const entry of Object.values(d)) {
       expect(entry).toEqual({
-        installedVersion: null,
         latestKnownVersion: null,
         lastCheckedAtUtc: null,
       })
@@ -19,13 +18,22 @@ describe('the dependencies (managed-facts) store', () => {
     expect(freshBinaryEntry()).toEqual(d['yt-dlp'])
   })
 
+  // The store holds NETWORK facts only. The installed version is read from the
+  // binary itself, so persisting it here is what let the two drift apart.
+  it('does not persist an installed version', () => {
+    for (const entry of Object.values(defaultDependencies())) {
+      expect(entry).not.toHaveProperty('installedVersion')
+    }
+  })
+
   it('accepts the fresh default it seeds', () => {
     expect(() => DependenciesSchema.parse(defaultDependencies())).not.toThrow()
   })
 
-  // The behavior that used to be asserted against Settings.binaries: a per-binary
-  // entry drops any legacy fields from the old model on parse (no migration code).
-  it('strips legacy per-binary integrity fields (no migration code)', () => {
+  // A per-binary entry drops any field the schema no longer lists, on the next
+  // write (no migration code): the old installedVersion, and the older integrity
+  // set before it.
+  it('strips fields from earlier models, installedVersion included', () => {
     const raw = {
       ...defaultDependencies(),
       'yt-dlp': {
@@ -40,7 +48,6 @@ describe('the dependencies (managed-facts) store', () => {
     }
     const parsed = DependenciesSchema.parse(raw)
     expect(parsed['yt-dlp']).toEqual({
-      installedVersion: '1',
       latestKnownVersion: '1',
       lastCheckedAtUtc: null,
     })

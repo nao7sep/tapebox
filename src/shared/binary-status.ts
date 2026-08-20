@@ -13,8 +13,9 @@
  * any check, a present binary reads "installed-unchecked", never "up-to-date". A
  * failed check writes nothing, so it can never masquerade as fresh. There is no
  * faulted state: a damaged file fails loudly when used and is fixed by installing
- * again; and there is no "unmanaged" state — a present binary the app has no record
- * of (a user-placed copy) simply reads "installed-unchecked".
+ * again; and there is no "unmanaged" state — a user-placed binary is read the same
+ * way as one the app installed, because the installed version comes from the
+ * artifact rather than from a record of having installed it.
  *
  * Lives in @shared (no node imports) so the renderer — typechecked without
  * @types/node — derives state through the very same rule the main process records.
@@ -31,10 +32,16 @@ export type DependencyState =
 export type Role = 'none' | 'info' | 'warning' | 'error'
 
 /**
- * The recorded facts the derivation reads. `present` is cheaply re-probed by the
- * fact-gathering step in main (not persisted, so it can't drift from disk);
- * `installedVersion`, `desiredVersion` (the latest a check resolved), and
- * `lastCheckedAtUtc` are the persisted single source of truth.
+ * The recorded facts the derivation reads. `present` and `installedVersion` are
+ * both gathered from the ARTIFACT by the fact-gathering step in main — one
+ * filesystem scan and one read of the binary itself — so neither is persisted and
+ * the two cannot disagree. `desiredVersion` (the latest a check resolved) and
+ * `lastCheckedAtUtc` are the persisted network facts.
+ *
+ * A null `installedVersion` on a PRESENT binary means its version could not be
+ * read (the probe failed, or a sidecar-tracked binary has none). That is not the
+ * same as absent and must never read as up to date — `stateOf` keeps it at
+ * `installed-unchecked`, and the surface offers the re-acquire that fixes it.
  */
 export type DependencyFacts = {
   present: boolean
@@ -51,8 +58,9 @@ export type DerivedStatus = {
 function stateOf(f: DependencyFacts): DependencyState {
   if (!f.present) return 'not-installed'
   // "Checked" needs a successful check (lastCheckedAtUtc set — a failed check writes
-  // nothing) AND both versions to compare. A present copy the app never recorded
-  // installing (installedVersion null) can't be compared, so it stays unchecked.
+  // nothing) AND both versions to compare. A present copy whose installed version
+  // could not be read can't be compared, so it stays unchecked rather than being
+  // dressed up as current.
   const checked =
     f.lastCheckedAtUtc !== null && f.desiredVersion !== null && f.installedVersion !== null
   if (!checked) return 'installed-unchecked'
@@ -88,42 +96,33 @@ export function deriveStatus(facts: DependencyFacts): DerivedStatus {
 }
 
 /**
- * The persisted-fact transitions an operation applies to a binary's settings entry.
+ * The persisted-fact transition an operation applies to a binary's facts entry.
  * Pure (no I/O) so the honest-state rules are unit-tested directly, with the manager
  * reduced to gathering the outcome and persisting it. Typed against the persisted
- * subset rather than the full settings schema, so this stays node-/zod-free for the
- * renderer bundle.
+ * subset rather than the full schema, so this stays node-/zod-free for the renderer
+ * bundle.
  *
  * There is no transition for a failed check or a failed install: both write nothing.
  * A failed check leaves the facts at their last successful knowledge; a failed
  * install leaves the prior facts untouched and surfaces only transiently.
  */
 export type BinaryEntryFacts = {
-  installedVersion: string | null
   latestKnownVersion: string | null
   lastCheckedAtUtc: string | null
 }
 
-/** Apply a successful currency check: record the resolved latest and the time. */
-export function applyCheckSuccess<T extends BinaryEntryFacts>(
+/**
+ * Record the latest version an operation resolved, as of `nowIso`. The ONE
+ * transition both writers share: a currency check learns the latest, and an
+ * install learns it too (it just downloaded it). Neither records what is now
+ * installed — that is read back from the artifact.
+ */
+export function recordLatest<T extends BinaryEntryFacts>(
   entry: T,
   version: string,
   nowIso: string,
 ): T {
   return { ...entry, latestKnownVersion: version, lastCheckedAtUtc: nowIso }
-}
-
-export type InstallOutcome = { version: string; nowIso: string }
-
-/** Apply a successful Install/Update: the acquired version is both installed and the
- *  latest as of `nowIso`, so it reads Up to date. */
-export function nextEntryAfterInstall<T extends BinaryEntryFacts>(entry: T, o: InstallOutcome): T {
-  return {
-    ...entry,
-    installedVersion: o.version,
-    latestKnownVersion: o.version,
-    lastCheckedAtUtc: o.nowIso,
-  }
 }
 
 const ROLE_RANK: Record<Role, number> = { none: 0, info: 1, warning: 2, error: 3 }

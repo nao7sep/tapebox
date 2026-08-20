@@ -6,12 +6,56 @@ import type { AssetIntegrity } from './integrity'
 
 /**
  * Per-binary specification: how to resolve the latest version, where to find
- * the binary inside the downloaded archive (if any), and how to query the
- * installed version.
+ * the binary inside the downloaded archive (if any), and how the INSTALLED
+ * version is read back from the artifact.
  *
  * Linux ffmpeg currently throws — BtbN's Linux builds ship as .tar.xz and we
  * don't bundle xz extraction yet. macOS and Windows are supported.
  */
+
+/**
+ * How a binary's installed version is read — always from the artifact, never from
+ * the facts store (managed-runtime-dependencies-conventions).
+ *
+ *   probe    run the installed binary and parse what it prints. Preferred,
+ *            because the artifact answers for itself: a copy the app has no
+ *            record of installing — one predating the tracking, hand-placed, or
+ *            left by an install whose record was lost — still reports its true
+ *            version. `parse` returns null on output it does not recognize, so
+ *            noise never becomes a version.
+ *   sidecar  read `bin/<name>.json`, written beside the binary after a
+ *            successful install. Used where the tool's self-reported version
+ *            cannot be compared with what the source calls "latest": BtbN's
+ *            Windows ffmpeg is a rolling master build reporting `N-119123-g…`,
+ *            published under a release whose name is a build timestamp — two
+ *            different namespaces, so probing it would report a phantom update
+ *            forever.
+ */
+export type InstalledVersionSource =
+  | { kind: 'probe'; args: readonly string[]; parse: (stdout: string) => string | null }
+  | { kind: 'sidecar' }
+
+/**
+ * Strip vendor noise so installed and latest are compared on the same form
+ * (the convention's "normalize before comparing"): martin-riedl appends
+ * `-https://www.martin-riedl.de` to ffmpeg's version, and GitHub tags carry a
+ * leading `v` (deno ships `v2.9.5`, whose binary reports `2.9.1`). Applied to
+ * BOTH sides — every resolved latest below, and every probe/sidecar read — since
+ * the two now come from different sources and only agree once normalized.
+ */
+export function normalizeVersion(raw: string): string {
+  return raw
+    .trim()
+    .replace(/-https?:\/\/\S+$/i, '')
+    .replace(/^v/i, '')
+    .trim()
+}
+
+/** The first non-empty line of a probe's output — every tool below prints its
+ *  version banner there and detail after it. */
+function firstLine(stdout: string): string {
+  return stdout.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? ''
+}
 
 export type ResolvedAsset = {
   version: string
@@ -25,6 +69,8 @@ export type ResolvedAsset = {
 export type BinarySpec = {
   name: BinaryName
   resolveLatest: () => Promise<ResolvedAsset>
+  /** Where this binary's installed version is read from — see InstalledVersionSource. */
+  installedVersion: InstalledVersionSource
 }
 
 // ── yt-dlp ──────────────────────────────────────────────────────────────────
@@ -35,8 +81,16 @@ function ytDlpAssetName(): string {
   throw new Error(`Unsupported platform for yt-dlp: ${process.platform}`)
 }
 
+/** yt-dlp prints its version and nothing else: `2026.07.04` (a nightly adds a
+ *  fourth `.hhmmss` component). Anything not date-shaped is not a version. */
+export function parseYtDlpVersion(stdout: string): string | null {
+  const line = firstLine(stdout)
+  return /^\d{4}\.\d{2}\.\d{2}(\.\d+)?$/.test(line) ? normalizeVersion(line) : null
+}
+
 const ytDlpSpec: BinarySpec = {
   name: 'yt-dlp',
+  installedVersion: { kind: 'probe', args: ['--version'], parse: parseYtDlpVersion },
   resolveLatest: async () => {
     const release = await fetchLatestRelease('yt-dlp', 'yt-dlp')
     const assetName = ytDlpAssetName()
@@ -46,7 +100,7 @@ const ytDlpSpec: BinarySpec = {
     // already-fetched release (no extra request) and parsed at install time.
     const sums = release.assets.find((a) => a.name === 'SHA2-256SUMS')
     return {
-      version: release.tag_name,
+      version: normalizeVersion(release.tag_name),
       downloadUrl: asset.browser_download_url,
       archive: null,
       integrity: sums
@@ -72,8 +126,17 @@ function denoAssetName(): string {
   throw new Error(`Unsupported platform/arch for deno: ${p}/${a}`)
 }
 
+/** deno's banner is three lines; the first is `deno 2.9.1 (stable, release,
+ *  aarch64-apple-darwin)`. Its release tags carry a `v` the binary does not, which
+ *  normalizeVersion strips from both sides. */
+export function parseDenoVersion(stdout: string): string | null {
+  const match = /^deno (\S+)/.exec(firstLine(stdout))
+  return match ? normalizeVersion(match[1]) : null
+}
+
 const denoSpec: BinarySpec = {
   name: 'deno',
+  installedVersion: { kind: 'probe', args: ['--version'], parse: parseDenoVersion },
   resolveLatest: async () => {
     const release = await fetchLatestRelease('denoland', 'deno')
     const assetName = denoAssetName()
@@ -84,7 +147,7 @@ const denoSpec: BinarySpec = {
     // install time, identical in shape to yt-dlp's SHA2-256SUMS entries.
     const sums = release.assets.find((a) => a.name === `${assetName}.sha256sum`)
     return {
-      version: release.tag_name,
+      version: normalizeVersion(release.tag_name),
       downloadUrl: asset.browser_download_url,
       archive: { kind: 'zip', innerName: process.platform === 'win32' ? 'deno.exe' : 'deno' },
       integrity: sums
@@ -113,7 +176,15 @@ const MARTIN_BASE = 'https://ffmpeg.martin-riedl.de'
 export function parseMartinBuildVersion(downloadPath: string): string {
   const m = downloadPath.match(/\/\d+_([^/]+)\/ffmpeg\.zip$/)
   if (!m) throw new Error(`unrecognized martin-riedl ffmpeg path: ${downloadPath}`)
-  return m[1]
+  return normalizeVersion(m[1])
+}
+
+/** ffmpeg's banner opens `ffmpeg version 8.1.2-https://www.martin-riedl.de
+ *  Copyright (c) …`; normalizeVersion drops the builder suffix, leaving the
+ *  upstream release the martin-riedl build id also names. */
+export function parseFfmpegVersion(stdout: string): string | null {
+  const match = /^ffmpeg version (\S+)/.exec(firstLine(stdout))
+  return match ? normalizeVersion(match[1]) : null
 }
 
 async function resolveFfmpegMacOS(): Promise<ResolvedAsset> {
@@ -145,8 +216,13 @@ async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
   // BtbN publishes a combined `checksums.sha256` (`<hash>  <file>` per line); the
   // GPL build's line is verified at install — closing the former integrity:none gap.
   const sums = release.assets.find((a) => a.name === 'checksums.sha256')
+  // The release TAG is the constant string `latest` — a rolling pointer, not a
+  // version, so comparing it to itself would read "up to date" forever and no
+  // Windows user would ever be offered an ffmpeg update. The release NAME carries
+  // the build moment ("Latest Auto-Build (2026-08-19 19:21)") and does change,
+  // which is the only version-shaped fact this source publishes.
   return {
-    version: release.tag_name,
+    version: release.name.trim() || release.tag_name,
     downloadUrl: asset.browser_download_url,
     archive: { kind: 'zip', innerName: 'ffmpeg.exe' },
     integrity: sums
@@ -157,6 +233,15 @@ async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
 
 const ffmpegSpec: BinarySpec = {
   name: 'ffmpeg',
+  // macOS reads its own banner: martin-riedl builds a numbered upstream release
+  // (`8.1.2`), which is exactly what the build id resolveLatest parses names.
+  // Windows cannot — BtbN ships rolling master builds (`N-119123-g…`) under a
+  // release the API names by build time — so it records the resolved version in a
+  // sidecar instead. Same dependency, two namespaces, chosen per platform.
+  installedVersion:
+    process.platform === 'darwin'
+      ? { kind: 'probe', args: ['-version'], parse: parseFfmpegVersion }
+      : { kind: 'sidecar' },
   resolveLatest: async () => {
     if (process.platform === 'darwin') return resolveFfmpegMacOS()
     if (process.platform === 'win32')  return resolveFfmpegWindows()

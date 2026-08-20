@@ -18,14 +18,17 @@ function status(over: Partial<BinaryStatus> = {}): BinaryStatus {
 const absent = status({ present: false })
 const updateAvailable = status({ latestKnownVersion: '2.0.0' })
 const unchecked = status({ latestKnownVersion: null, lastCheckedAtUtc: null })
-const userPlaced = status({ installedVersion: null, latestKnownVersion: null, lastCheckedAtUtc: null })
+// Present, and a check DID succeed — but the binary would not report its own
+// version, so there is nothing to compare it against.
+const unreadable = status({ installedVersion: null, latestKnownVersion: '2.0.0' })
 
 describe('derivedOf', () => {
   it('maps a wire status to its derived four-state via the shared rule', () => {
     expect(derivedOf(status())).toEqual({ state: 'up-to-date', role: 'none' })
     expect(derivedOf(absent).state).toBe('not-installed')
     expect(derivedOf(updateAvailable).state).toBe('update-available')
-    expect(derivedOf(userPlaced).state).toBe('installed-unchecked')
+    expect(derivedOf(unchecked).state).toBe('installed-unchecked')
+    expect(derivedOf(unreadable).state).toBe('installed-unchecked')
   })
 })
 
@@ -52,6 +55,24 @@ describe('summarizeBinaries — worst-role roll-up', () => {
   it('installed-unchecked → informational "Updates not checked" (benign, not actionable)', () => {
     expect(summarizeBinaries([unchecked, status()])).toEqual({ role: 'info', text: 'Updates not checked', actionable: false })
   })
+
+  // Both are informational, but only one asks something of the user: a tool whose
+  // own version could not be read needs re-acquiring, and the set-wide Check can
+  // never clear it, so the roll-up says so and opens the modal.
+  it('a tool whose version could not be read says so, and is actionable', () => {
+    expect(summarizeBinaries([unreadable, status()])).toEqual({
+      role: 'info',
+      text: '1 tool couldn’t be read',
+      actionable: true,
+    })
+    expect(summarizeBinaries([unreadable, status({ name: 'deno', installedVersion: null })]).text).toBe(
+      '2 tools couldn’t be read',
+    )
+  })
+
+  it('an unreadable tool never outranks a real warning', () => {
+    expect(summarizeBinaries([unreadable, absent]).text).toBe('1 tool isn’t installed')
+  })
 })
 
 describe('binariesNeedAttention — startup auto-open trigger', () => {
@@ -59,14 +80,14 @@ describe('binariesNeedAttention — startup auto-open trigger', () => {
     expect(binariesNeedAttention([absent])).toBe(true)
   })
 
-  it('false for benign states (up-to-date / update-available / unchecked / user-placed)', () => {
-    expect(binariesNeedAttention([status(), updateAvailable, unchecked, userPlaced])).toBe(false)
+  it('false for benign states (up-to-date / update-available / unchecked / unreadable)', () => {
+    expect(binariesNeedAttention([status(), updateAvailable, unchecked, unreadable])).toBe(false)
   })
 })
 
 describe('allBinariesUsable', () => {
-  it('true when every tool is present (managed or a user-placed copy)', () => {
-    expect(allBinariesUsable([status(), userPlaced])).toBe(true)
+  it('true when every tool is present, whatever its version reads as', () => {
+    expect(allBinariesUsable([status(), unreadable])).toBe(true)
   })
 
   it('false when any tool is not installed', () => {
