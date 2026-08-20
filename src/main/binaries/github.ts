@@ -14,7 +14,8 @@ export type GitHubAsset = {
 
 export type GitHubRelease = {
   tag_name: string
-  name: string
+  // The API permits a null release name; consumers must fall back to the tag.
+  name: string | null
   assets: GitHubAsset[]
 }
 

@@ -243,11 +243,16 @@ async function performInstall(name: BinaryName): Promise<void> {
   // resolved one beside it — after the publish, so a failure here leaves a present
   // binary reading version-unknown (offering a re-acquire) rather than an old
   // binary wearing the new version's label.
-  if (spec.installedVersion.kind === 'sidecar') {
-    await writeVersionSidecar(name, resolved.version)
+  try {
+    if (spec.installedVersion.kind === 'sidecar') {
+      await writeVersionSidecar(name, resolved.version)
+    }
+  } finally {
+    // Drop the cached read even when the sidecar write fails: the artifact
+    // changed, and the next status must read the disk truth, not the
+    // pre-install answer.
+    forgetInstalledVersion(name)
   }
-  // Drop the cached read: the artifact changed, and the next status must see it.
-  forgetInstalledVersion(name)
 
   log.info('binary installed', { name, version: resolved.version, integrityVerified })
 

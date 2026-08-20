@@ -27,7 +27,10 @@ function IconBase({ children, className = '' }: IconProps & { children: React.Re
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
-      style={{ verticalAlign: '-0.1667em' }}
+      // Tailwind's preflight makes every svg `display: block`, which drops an inline
+      // icon onto its own line and silently disables vertical-align. Declare inline
+      // here, once, so no call site has to know about the preflight.
+      style={{ display: 'inline-block', verticalAlign: '-0.1667em' }}
     >
       {children}
     </svg>
@@ -63,9 +66,9 @@ export function ArrowDownIcon({ className }: IconProps) {
 export function ExternalLinkIcon({ className }: IconProps) {
   return (
     <IconBase className={className}>
-      <path d="M15.90 12.50L15.90 19.00L5.50 19.00L5.50 8.60L12.00 8.60" />
-      <path d="M13.30 5.57L18.50 5.57L18.50 10.77" />
-      <path d="M18.50 5.57L11.13 12.93" />
+      <path d="M16.32 11.80L16.32 19.00L4.80 19.00L4.80 7.48L12.00 7.48" />
+      <path d="M13.44 4.12L19.20 4.12L19.20 9.88" />
+      <path d="M19.20 4.12L11.04 12.28" />
     </IconBase>
   )
 }

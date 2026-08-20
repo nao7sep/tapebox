@@ -220,9 +220,10 @@ async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
   // version, so comparing it to itself would read "up to date" forever and no
   // Windows user would ever be offered an ffmpeg update. The release NAME carries
   // the build moment ("Latest Auto-Build (2026-08-19 19:21)") and does change,
-  // which is the only version-shaped fact this source publishes.
+  // which is the only version-shaped fact this source publishes. The API permits
+  // a null name, so fall back to the tag rather than crash the check on one.
   return {
-    version: release.name.trim() || release.tag_name,
+    version: release.name?.trim() || release.tag_name,
     downloadUrl: asset.browser_download_url,
     archive: { kind: 'zip', innerName: 'ffmpeg.exe' },
     integrity: sums
@@ -233,15 +234,16 @@ async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
 
 const ffmpegSpec: BinarySpec = {
   name: 'ffmpeg',
-  // macOS reads its own banner: martin-riedl builds a numbered upstream release
-  // (`8.1.2`), which is exactly what the build id resolveLatest parses names.
-  // Windows cannot — BtbN ships rolling master builds (`N-119123-g…`) under a
-  // release the API names by build time — so it records the resolved version in a
-  // sidecar instead. Same dependency, two namespaces, chosen per platform.
+  // Windows records the resolved version in a sidecar: BtbN ships rolling master
+  // builds (`N-119123-g…`) under a release the API names by build time, so the
+  // binary's own banner and the source's "latest" never meet. Everywhere else the
+  // binary is probed — martin-riedl's macOS build reports the same numbered
+  // release its build id names, and a user-placed Linux ffmpeg (no managed
+  // source there) at least reports what it is instead of reading unreadable.
   installedVersion:
-    process.platform === 'darwin'
-      ? { kind: 'probe', args: ['-version'], parse: parseFfmpegVersion }
-      : { kind: 'sidecar' },
+    process.platform === 'win32'
+      ? { kind: 'sidecar' }
+      : { kind: 'probe', args: ['-version'], parse: parseFfmpegVersion },
   resolveLatest: async () => {
     if (process.platform === 'darwin') return resolveFfmpegMacOS()
     if (process.platform === 'win32')  return resolveFfmpegWindows()
