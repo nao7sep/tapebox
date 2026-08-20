@@ -19,8 +19,11 @@ type Props = {
 export function TopBar({ clipboardEnabled }: Props) {
   const { url, setUrl, onPaste, consume } = useClipboardUrl(clipboardEnabled)
   const { composingRef, handlers: composing } = useComposing()
+  // Gates Add only — missing tools surface exclusively through the status bar's
+  // permanent roll-up (amber, click-through) and the first-run modal, never as an
+  // inline banner here: a conditional message under this row grows the top bar
+  // and shifts the layout the moment the state it guards first occurs.
   const toolsReady = useBinariesStore((s) => allBinariesUsable(s.statuses))
-  const openBinariesModal = useBinariesStore((s) => s.openModal)
   const notify = useToastStore((s) => s.notify)
 
   async function add(value: string) {
@@ -57,18 +60,6 @@ export function TopBar({ clipboardEnabled }: Props) {
           Add
         </Button>
       </div>
-
-      {!toolsReady && (
-        <p className="text-xs text-amber-300">
-          Downloading needs yt-dlp and its helpers.{' '}
-          <button
-            onClick={() => openBinariesModal()}
-            className="underline hover:text-amber-200"
-          >
-            Install tools
-          </button>
-        </p>
-      )}
     </div>
   )
 }

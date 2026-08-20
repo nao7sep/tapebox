@@ -76,8 +76,8 @@ export function ExternalLinkIcon({ className }: IconProps) {
 export function PlusIcon({ className }: IconProps) {
   return (
     <IconBase className={className}>
-      <path d="M7.05 11.54L16.95 11.54" />
-      <path d="M12.00 6.59L12.00 16.49" />
+      <path d="M5.75 11.54L18.25 11.54" />
+      <path d="M12.00 5.29L12.00 17.79" />
     </IconBase>
   )
 }
