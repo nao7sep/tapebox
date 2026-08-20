@@ -20,7 +20,7 @@ TapeBox is a local media library: download videos with `yt-dlp`, keep them as **
 
 ## Download
 
-Prebuilt installers and portable builds for macOS (Apple Silicon) and Windows are on the [Releases](https://github.com/nao7sep/tapebox/releases) page. These builds are **unsigned**, so the OS warns the first time you open one:
+Prebuilt installers and portable builds for macOS (Apple Silicon) and Windows are on the [Releases](https://github.com/nao7sep/tapebox/releases/latest) page. These builds are **unsigned**, so the OS warns the first time you open one:
 
 - **macOS** — right-click the app and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/TapeBox.app`).
 - **Windows** — on the SmartScreen prompt, click **More info → Run anyway**.
