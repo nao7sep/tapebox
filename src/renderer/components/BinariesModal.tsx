@@ -2,7 +2,11 @@ import { useState } from 'react'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import type { DependencyState, DerivedStatus } from '@shared/binary-status'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useBinariesStore, derivedOf } from '@renderer/store/binaries'
+import {
+  applyBinaryCheckResult,
+  useBinariesStore,
+  derivedOf,
+} from '@renderer/store/binaries'
 import { useSettingsStore } from '@renderer/store/settings'
 import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { Modal } from '@renderer/components/Modal'
@@ -26,15 +30,15 @@ export function BinariesModal() {
   const statuses = useBinariesStore((s) => s.statuses)
   const progress = useBinariesStore((s) => s.progress)
   const checking = useBinariesStore((s) => s.checking)
-  const setStatuses = useBinariesStore((s) => s.setStatuses)
+  const checkFailures = useBinariesStore((s) => s.checkFailures)
   const clearProgress = useBinariesStore((s) => s.clearProgress)
   const setChecking = useBinariesStore((s) => s.setChecking)
+  const setCheckFailures = useBinariesStore((s) => s.setCheckFailures)
   const closeModal = useBinariesStore((s) => s.closeModal)
   const settings = useSettingsStore((s) => s.settings)
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState<BinaryName[]>([])
   const [cancelling, setCancelling] = useState<BinaryName[]>([])
-  const [checkFailures, setCheckFailures] = useState<BinaryName[] | null>(null)
 
   const checkUpdatesAtLaunch = settings?.checkUpdatesAtLaunch ?? true
 
@@ -63,7 +67,7 @@ export function BinariesModal() {
     try {
       await ipcInvoke('binaries:update', { name })
     } catch (err) {
-      if (!isCancellation(err)) setError(String(err))
+      setError(String(err))
     } finally {
       clearProgress(name)
       setLaunching((prev) => prev.filter((n) => n !== name))
@@ -75,7 +79,10 @@ export function BinariesModal() {
     if (cancelling.includes(name)) return
     setCancelling((prev) => [...prev, name])
     try {
-      await ipcInvoke('binaries:cancelUpdate', { name })
+      const result = await ipcInvoke('binaries:cancelUpdate', { name })
+      if (result.outcome === 'not-running') {
+        setCancelling((prev) => prev.filter((n) => n !== name))
+      }
     } catch (err) {
       setCancelling((prev) => prev.filter((n) => n !== name))
       setError(String(err))
@@ -89,15 +96,7 @@ export function BinariesModal() {
     setChecking(true)
     try {
       const result = await ipcInvoke('binaries:checkUpdates')
-      setStatuses(result.statuses)
-      setCheckFailures(result.failures.map((failure) => failure.name))
-      if (result.failures.length > 0) {
-        setError(
-          `Check incomplete — ${result.failures
-            .map((failure) => `${failure.name}: ${failure.message}`)
-            .join('; ')}`,
-        )
-      }
+      applyBinaryCheckResult(result)
     } catch (err) {
       setError(String(err))
     } finally {
@@ -132,7 +131,7 @@ export function BinariesModal() {
       </div>
 
       <div className="mt-5 flex items-center justify-between text-xs text-zinc-300">
-        <span>{lastCheckedHint(statuses, checking, checkFailures)}</span>
+        <span>{lastCheckedHint(statuses, checking, checkFailures?.map((failure) => failure.name) ?? null)}</span>
         <Button variant="secondary" size="sm" onClick={() => void refresh()} loading={checking}>
           {checking ? 'Checking…' : 'Check for updates'}
         </Button>
@@ -165,8 +164,12 @@ export function BinariesModal() {
         </tbody>
       </table>
 
-      {error && (
-        <p className="mt-5 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
+      {(error || (checkFailures && checkFailures.length > 0)) && (
+        <p className="mt-5 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+          {error ?? `Check incomplete — ${checkFailures!
+            .map((failure) => `${failure.name}: ${failure.message}`)
+            .join('; ')}`}
+        </p>
       )}
     </Modal>
   )
@@ -272,11 +275,6 @@ function lastCheckedHint(
   if (timestamps.length === 0) return 'Never checked for updates.'
   const latest = timestamps.sort().at(-1)!
   return `Last checked ${relativeTime(latest)}.`
-}
-
-function isCancellation(err: unknown): boolean {
-  const text = String(err).toLowerCase()
-  return text.includes('abort') || text.includes('cancel')
 }
 
 function relativeTime(utcIso: string): string {

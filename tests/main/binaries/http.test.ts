@@ -77,6 +77,24 @@ describe('download response URL policy', () => {
       destPath: 'unused-after-policy-failure',
     })).rejects.toThrow('refusing non-https binary download response URL')
   })
+
+  it('refuses an intermediate HTTP redirect before requesting it', async () => {
+    const fetch = vi.fn(async () => ({
+      url: 'https://example.test/tool.exe',
+      ok: false,
+      status: 302,
+      statusText: 'Found',
+      headers: new Headers({ location: 'http://mirror.test/tool.exe' }),
+      body: null,
+    } as Response))
+    vi.stubGlobal('fetch', fetch)
+
+    await expect(downloadWithProgress({
+      url: 'https://example.test/tool.exe',
+      destPath: 'unused-after-policy-failure',
+    })).rejects.toThrow('refusing non-https binary download redirect URL')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('pumpToFile', () => {

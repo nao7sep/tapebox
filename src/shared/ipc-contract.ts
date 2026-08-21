@@ -103,8 +103,8 @@ export type IpcCalls = {
 
   // ── Binaries ─────────────────────────────────────────────────────────────
   'binaries:status':       { req: undefined;                         res: BinaryStatus[] }
-  'binaries:update':       { req: { name: BinaryName };              res: void }
-  'binaries:cancelUpdate': { req: { name: BinaryName };              res: void }
+  'binaries:update':       { req: { name: BinaryName };              res: BinaryUpdateResult }
+  'binaries:cancelUpdate': { req: { name: BinaryName };              res: BinaryCancelResult }
   'binaries:checkUpdates': { req: undefined;                         res: BinaryCheckResult }
 
   // ── Scan (page scan) ──────────────────────────────────────────────
@@ -135,6 +135,14 @@ export type IpcCalls = {
 
 export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
 
+export type BinaryUpdateResult =
+  | { outcome: 'installed' }
+  | { outcome: 'cancelled' }
+
+export type BinaryCancelResult =
+  | { outcome: 'cancel-requested' }
+  | { outcome: 'not-running' }
+
 /**
  * The sidecar JSON on disk: yt-dlp's full info.json (with path fields stripped)
  * plus our 'tapebox' namespace. The yt-dlp portion is intentionally untyped —
@@ -163,9 +171,11 @@ export type BinaryStatus = {
   lastCheckedAtUtc: string | null
 }
 
+export type BinaryCheckFailure = { name: BinaryName; message: string }
+
 export type BinaryCheckResult = {
   statuses: BinaryStatus[]
-  failures: Array<{ name: BinaryName; message: string }>
+  failures: BinaryCheckFailure[]
 }
 
 export type ImportResult = {

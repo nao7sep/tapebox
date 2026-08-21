@@ -79,29 +79,65 @@ type StreamingChild = ChildProcessByStdio<null, Readable, Readable> & {
   // surface it as the close cause instead of a generic non-zero exit.
   idleError?: IdleTimeoutError | null
   abortError?: Error | null
+  /** Windows taskkill settlement; close/error handlers await it before reporting. */
+  termination?: Promise<void>
 }
+
+const WINDOWS_TREE_KILL_TIMEOUT_MS = 5_000
 
 /** Terminate the process we started and, on Windows, every descendant it owns.
  * yt-dlp starts ffmpeg and Deno; killing only yt-dlp lets those children keep
  * mutating files after Cancel has returned. `taskkill /T` is Windows' native
  * process-tree operation and needs no shell. */
-function terminateOwnedProcessTree(child: StreamingChild): void {
+function terminateOwnedProcessTree(child: StreamingChild): Promise<void> {
   const pid = child.pid
   if (process.platform === 'win32' && pid !== undefined) {
-    const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
-      stdio: 'ignore',
-      windowsHide: true,
+    return new Promise<void>((resolve) => {
+      const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      })
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve()
+      }
+      const fallback = () => {
+        // Covers taskkill launch/failure and the parent-close race. The direct kill
+        // is harmless if taskkill already terminated the parent; importantly, the
+        // taskkill process itself is still awaited before cancellation settles.
+        child.kill('SIGTERM')
+      }
+      const timer = setTimeout(() => {
+        // Bound the helper too: an unhealthy taskkill must not make Cancel hang
+        // forever. Stop it, make the direct best-effort fallback, then settle.
+        killer.kill()
+        fallback()
+        finish()
+      }, WINDOWS_TREE_KILL_TIMEOUT_MS)
+
+      killer.once('error', () => {
+        fallback()
+        finish()
+      })
+      killer.once('close', (code) => {
+        if (code !== 0) fallback()
+        finish()
+      })
     })
-    const fallback = () => {
-      child.kill('SIGTERM')
-    }
-    killer.once('error', fallback)
-    killer.once('close', (code) => {
-      if (code !== 0) fallback()
-    })
-    return
   }
   child.kill('SIGTERM')
+  return Promise.resolve()
+}
+
+function beginTermination(child: StreamingChild): void {
+  child.termination ??= terminateOwnedProcessTree(child)
+}
+
+async function awaitTermination(child: StreamingChild): Promise<void> {
+  await child.termination
 }
 
 function bindAbort(child: StreamingChild, signal: AbortSignal | undefined): () => void {
@@ -110,7 +146,7 @@ function bindAbort(child: StreamingChild, signal: AbortSignal | undefined): () =
     child.abortError = signal.reason instanceof Error
       ? signal.reason
       : new DOMException('The operation was aborted', 'AbortError')
-    terminateOwnedProcessTree(child)
+    beginTermination(child)
   }
   if (signal.aborted) {
     onAbort()
@@ -131,7 +167,7 @@ function startIdleWatch(
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       timer = null
-      terminateOwnedProcessTree(child)
+      beginTermination(child)
       onTimeout()
     }, idleMs)
   }
@@ -173,16 +209,18 @@ export async function execCapture(
     child.on('error', (err) => {
       idle.stop()
       unbindAbort()
-      reject(child.abortError ?? err)
+      void awaitTermination(child).then(() => reject(child.abortError ?? err))
     })
     child.on('close', (code) => {
       idle.stop()
       unbindAbort()
-      if (child.abortError) return reject(child.abortError)
-      if (idleError) return reject(idleError)
-      const result: CaptureResult = { stdout, stderr, exitCode: code }
-      if (code === 0 || opts.reject === false) resolve(result)
-      else reject(new SubprocessError(command, code, stderr))
+      void awaitTermination(child).then(() => {
+        if (child.abortError) return reject(child.abortError)
+        if (idleError) return reject(idleError)
+        const result: CaptureResult = { stdout, stderr, exitCode: code }
+        if (code === 0 || opts.reject === false) resolve(result)
+        else reject(new SubprocessError(command, code, stderr))
+      })
     })
   })
 }
@@ -230,14 +268,18 @@ export function waitForExit(
   opts: { reject?: boolean; command?: string } = {},
 ): Promise<number | null> {
   return new Promise<number | null>((resolve, reject) => {
-    child.on('error', reject)
+    child.on('error', (err) => {
+      void awaitTermination(child).then(() => reject(child.abortError ?? err))
+    })
     child.on('close', (code) => {
-      // An idle timeout killed the process — surface that as the cause rather than a
-      // generic non-zero exit.
-      if (child.idleError) return reject(child.idleError)
-      if (child.abortError) return reject(child.abortError)
-      if (code === 0 || opts.reject === false) resolve(code)
-      else reject(new SubprocessError(opts.command ?? 'process', code, ''))
+      void awaitTermination(child).then(() => {
+        // An idle timeout killed the process — surface that as the cause rather than a
+        // generic non-zero exit.
+        if (child.idleError) return reject(child.idleError)
+        if (child.abortError) return reject(child.abortError)
+        if (code === 0 || opts.reject === false) resolve(code)
+        else reject(new SubprocessError(opts.command ?? 'process', code, ''))
+      })
     })
   })
 }

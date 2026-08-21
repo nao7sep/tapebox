@@ -135,4 +135,28 @@ describe('extractFileFromZip', () => {
 
     await expect(extractFileFromZip('archive.zip', 'deno', out)).rejects.toThrow('corrupt entry')
   })
+
+  it('aborts an extraction that is parked mid-stream', async () => {
+    archiveOf(
+      file('deno', () => {
+        let sent = false
+        return new Readable({
+          read() {
+            if (sent) return
+            sent = true
+            this.push(Buffer.from([1, 2, 3]))
+            // Deliberately remain open and silent until pipeline destroys us.
+          },
+        })
+      }),
+    )
+    const out = join(dir, 'deno')
+    const controller = new AbortController()
+    const extraction = extractFileFromZip('archive.zip', 'deno', out, controller.signal)
+
+    await vi.waitFor(async () => expect(await exists(out)).toBe(true))
+    controller.abort(new DOMException('cancel extraction', 'AbortError'))
+
+    await expect(extraction).rejects.toMatchObject({ name: 'AbortError' })
+  })
 })

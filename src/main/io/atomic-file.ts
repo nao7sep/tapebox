@@ -15,6 +15,8 @@ import { nanoid } from 'nanoid'
  * stream into it, run a subprocess that writes it, or move a file onto it. On any
  * failure the temp is removed and the original error is rethrown unchanged; an
  * existing `destPath` is left untouched (the rename is the single atomic commit).
+ * When supplied, `signal` is checked after production and again after fsync,
+ * immediately before that commit.
  *
  * The temp defaults to a `<stem>-<nanoid>.tmp` sibling (see {@link defaultTempPath})
  * so the rename is always same-filesystem (atomic, never a cross-device copy), and
@@ -32,10 +34,16 @@ export async function writeFileAtomicVia(
   destPath: string,
   produce: (tempPath: string) => Promise<void>,
   tempPath: string = defaultTempPath(destPath),
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
     await produce(tempPath)
+    signal?.throwIfAborted()
     await fsyncFile(tempPath)
+    // fsync can block long enough for a user cancellation to arrive. This is the
+    // final safe boundary: the staged file is durable but has not replaced the
+    // destination, so aborting here preserves the old artifact and removes stage.
+    signal?.throwIfAborted()
     await rename(tempPath, destPath)
     await fsyncDirBestEffort(dirname(destPath))
   } catch (err) {

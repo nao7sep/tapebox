@@ -8,7 +8,11 @@ import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
-import { useBinariesStore, binariesNeedAttention } from '@renderer/store/binaries'
+import {
+  applyBinaryCheckResult,
+  useBinariesStore,
+  binariesNeedAttention,
+} from '@renderer/store/binaries'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
@@ -128,9 +132,10 @@ export default function App() {
         // authoritative per-binary + summary outcome, so here we only note at debug
         // that the call rejected — never an error toast that interrupts them.
         const store = useBinariesStore.getState()
+        store.setCheckFailures(null)
         store.setChecking(true)
         void ipcInvoke('binaries:checkUpdates')
-          .then((result) => store.setStatuses(result.statuses))
+          .then(applyBinaryCheckResult)
           .catch((err) => log.debug('background binary check rejected', { error: describeError(err) }))
           .finally(() => useBinariesStore.getState().setChecking(false))
       })

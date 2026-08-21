@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import type { BinaryStatus } from '@shared/ipc-contract'
-import { allBinariesUsable, binariesNeedAttention, derivedOf, summarizeBinaries } from '@renderer/store/binaries'
+import {
+  allBinariesUsable,
+  applyBinaryCheckResult,
+  binariesNeedAttention,
+  derivedOf,
+  summarizeBinaries,
+  useBinariesStore,
+} from '@renderer/store/binaries'
 
 // An up-to-date tool: the quiet baseline each case deviates from.
 function status(over: Partial<BinaryStatus> = {}): BinaryStatus {
@@ -96,5 +103,16 @@ describe('allBinariesUsable', () => {
 
   it('false for an empty set (status not yet known)', () => {
     expect(allBinariesUsable([])).toBe(false)
+  })
+})
+
+describe('applyBinaryCheckResult', () => {
+  it('retains partial launch/manual failures beside the returned statuses', () => {
+    const statuses = [status()]
+    const failures = [{ name: 'ffmpeg' as const, message: 'offline' }]
+
+    applyBinaryCheckResult({ statuses, failures })
+
+    expect(useBinariesStore.getState()).toMatchObject({ statuses, checkFailures: failures })
   })
 })

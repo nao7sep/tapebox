@@ -1,5 +1,10 @@
 import { create } from 'zustand'
-import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
+import type {
+  BinaryCheckFailure,
+  BinaryCheckResult,
+  BinaryName,
+  BinaryStatus,
+} from '@shared/ipc-contract'
 import {
   deriveStatus,
   rollupRole,
@@ -22,10 +27,13 @@ type BinariesState = {
   modalOpen: boolean
   /** An update check is in flight (startup auto-check or modal-opened check). */
   checking: boolean
+  /** Failures from the most recently completed launch/manual check in this session. */
+  checkFailures: BinaryCheckFailure[] | null
   setStatuses: (s: BinaryStatus[]) => void
   setProgress: (name: BinaryName, percent: number, phase: Phase) => void
   clearProgress: (name: BinaryName) => void
   setChecking: (checking: boolean) => void
+  setCheckFailures: (failures: BinaryCheckFailure[] | null) => void
   openModal: () => void
   closeModal: () => void
 }
@@ -35,8 +43,10 @@ export const useBinariesStore = create<BinariesState>((set) => ({
   progress: {},
   modalOpen: false,
   checking: false,
+  checkFailures: null,
   setStatuses: (statuses) => set({ statuses }),
   setChecking: (checking) => set({ checking }),
+  setCheckFailures: (checkFailures) => set({ checkFailures }),
   setProgress: (name, percent, phase) =>
     set((state) => ({ progress: { ...state.progress, [name]: { percent, phase } } })),
   clearProgress: (name) =>
@@ -48,6 +58,14 @@ export const useBinariesStore = create<BinariesState>((set) => ({
   openModal: () => set({ modalOpen: true }),
   closeModal: () => set({ modalOpen: false }),
 }))
+
+/** Apply one completed manual or launch check as a single session-state result. */
+export function applyBinaryCheckResult(result: BinaryCheckResult): void {
+  useBinariesStore.setState({
+    statuses: result.statuses,
+    checkFailures: result.failures,
+  })
+}
 
 // ── Derivation: one shared rule both surfaces (status bar + modal) call ──────
 

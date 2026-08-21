@@ -3,7 +3,7 @@ import { Readable, Transform, type Writable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import { pipeline } from 'node:stream/promises'
 import { IdleTimeoutError } from '@main/io/spawn'
-import { assertHttpsUrl } from '@main/io/network'
+import { assertHttpsUrl, fetchHttps } from '@main/io/network'
 
 /**
  * Download a URL to a destination path with progress callbacks.
@@ -41,12 +41,10 @@ export async function downloadWithProgress(opts: DownloadOptions): Promise<void>
   let res: Response
   watch.kick()
   try {
-    res = await fetch(opts.url, { signal, redirect: 'follow' })
+    res = await fetchHttps(opts.url, { signal }, 'binary download')
   } finally {
     watch.clear()
   }
-
-  assertHttpsUrl(res.url, 'binary download response')
 
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} from ${opts.url}`)
   if (!res.body) throw new Error(`Response body missing from ${opts.url}`)

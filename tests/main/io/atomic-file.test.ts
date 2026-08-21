@@ -125,4 +125,35 @@ describe('writeFileAtomicVia', () => {
     expect(await exists(customTemp)).toBe(false)
     expect(await exists(dest)).toBe(false)
   })
+
+  it('rechecks cancellation after fsync and before replacing the destination', async () => {
+    const dest = join(dir, 'binary')
+    await writeFile(dest, 'original')
+    let temp = ''
+    let checks = 0
+    // Abort precisely on the second check: the first follows produce, while the
+    // second is the required post-fsync/pre-rename commit gate.
+    const signal = {
+      throwIfAborted() {
+        checks += 1
+        if (checks === 2) throw new DOMException('cancel before publish', 'AbortError')
+      },
+    } as AbortSignal
+
+    await expect(
+      writeFileAtomicVia(
+        dest,
+        async (tmp) => {
+          temp = tmp
+          await writeFile(tmp, 'replacement')
+        },
+        undefined,
+        signal,
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+
+    expect(checks).toBe(2)
+    expect(await readFile(dest, 'utf8')).toBe('original')
+    expect(await exists(temp)).toBe(false)
+  })
 })

@@ -47,6 +47,9 @@ export class UnsafeUrlError extends Error {
   }
 }
 
+const HTTPS_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+const MAX_HTTPS_REDIRECTS = 10
+
 /** A URL-policy failure is deterministic; retrying the same downgrade only
  * delays the refusal. */
 export function isRetryableHttpFailure(err: unknown): boolean {
@@ -70,5 +73,46 @@ export function assertHttpsUrl(url: string, context: string): void {
   }
   if (scheme !== 'https:') {
     throw new UnsafeUrlError(`refusing non-https ${context} URL: ${url}`)
+  }
+}
+
+/**
+ * Fetch an HTTPS resource while validating every redirect hop before it reaches
+ * the network. Checking only Response.url after redirect:'follow' is insufficient:
+ * an https -> http -> https chain finishes on HTTPS while still exposing one hop
+ * to plaintext interception. All current callers are GETs, so redirect method/body
+ * rewriting is deliberately outside this helper's surface.
+ */
+export async function fetchHttps(
+  url: string,
+  init: RequestInit | undefined,
+  context: string,
+): Promise<Response> {
+  let current = url
+  for (let redirects = 0; ; redirects += 1) {
+    assertHttpsUrl(current, context)
+    const res = await fetch(current, { ...init, redirect: 'manual' })
+    // A manual redirect must leave us on the URL we chose. Keep this check as a
+    // defence against runtime/proxy behavior that reports a different effective URL.
+    assertHttpsUrl(res.url, `${context} response`)
+
+    if (!HTTPS_REDIRECT_STATUSES.has(res.status)) return res
+    let next: string
+    try {
+      const location = res.headers.get('location')
+      if (!location) {
+        throw new Error(`HTTP ${res.status} redirect from ${current} has no Location header`)
+      }
+      if (redirects >= MAX_HTTPS_REDIRECTS) {
+        throw new Error(`too many redirects while fetching ${url}`)
+      }
+      next = new URL(location, res.url || current).toString()
+      assertHttpsUrl(next, `${context} redirect`)
+    } finally {
+      // We do not consume redirect bodies. Explicit cancellation releases their
+      // connection/resources before either following or rejecting the next hop.
+      await res.body?.cancel().catch(() => {})
+    }
+    current = next
   }
 }

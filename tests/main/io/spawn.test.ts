@@ -20,22 +20,28 @@ describe('owned subprocess cancellation', () => {
       const descendant =
         `setTimeout(() => { require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'alive'); process.exit(0) }, 4000)`
       const parent =
-        `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); ` +
-        `process.stdout.write('ready\\n'); setInterval(() => {}, 1000)`
+        `const descendant = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); ` +
+        `process.stdout.write('ready:' + descendant.pid + '\\n'); setInterval(() => {}, 1000)`
       const controller = new AbortController()
       const child = spawnStreaming(process.execPath, ['-e', parent], { signal: controller.signal })
       const exited = waitForExit(child, { command: 'tree fixture' })
 
-      await new Promise<void>((resolve, reject) => {
+      const descendantPid = await new Promise<number>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('fixture did not become ready')), 20_000)
+        let output = ''
         child.stdout.on('data', (chunk: Buffer) => {
-          if (!chunk.toString().includes('ready')) return
+          output += chunk.toString()
+          const match = /ready:(\d+)/.exec(output)
+          if (!match) return
           clearTimeout(timeout)
-          resolve()
+          resolve(Number(match[1]))
         })
       })
       controller.abort()
       await expect(exited).rejects.toHaveProperty('name', 'AbortError')
+      // Cancellation settlement is the disk-safety boundary used by queue.cancel:
+      // the descendant must already be gone, not merely scheduled for taskkill.
+      expect(() => process.kill(descendantPid, 0)).toThrow()
       await new Promise((resolve) => setTimeout(resolve, 5_000))
       await expect(access(sentinel)).rejects.toThrow()
     },

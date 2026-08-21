@@ -21,8 +21,11 @@ export async function extractFileFromZip(
   zipPath: string,
   innerName: string,
   outPath: string,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted()
   const directory = await unzipper.Open.file(zipPath)
+  signal?.throwIfAborted()
   const files = directory.files.filter((f) => f.type === 'File')
   const byBasename = files.filter((f) => f.path.endsWith('/' + innerName))
   const file =
@@ -36,5 +39,5 @@ export async function extractFileFromZip(
     throw new Error(`File ${innerName} not found in archive. Available: ${files.map((f) => f.path).join(', ')}`)
   }
 
-  await pipeline(file.stream(), createWriteStream(outPath))
+  await pipeline(file.stream(), createWriteStream(outPath), { signal })
 }

@@ -10,6 +10,7 @@ const downloadWithProgress = vi.hoisted(() => vi.fn())
 const verifyBinaryIntegrity = vi.hoisted(() => vi.fn())
 const execCapture = vi.hoisted(() => vi.fn())
 const assertArm64Slice = vi.hoisted(() => vi.fn())
+const extractFileFromZip = vi.hoisted(() => vi.fn())
 
 vi.mock('@main/paths', async () => {
   const { join } = await import('node:path')
@@ -28,6 +29,7 @@ vi.mock('@main/binaries/http', () => ({ downloadWithProgress }))
 vi.mock('@main/binaries/integrity', () => ({ verifyBinaryIntegrity }))
 vi.mock('@main/io/spawn', () => ({ execCapture }))
 vi.mock('@main/binaries/arch', () => ({ assertArm64Slice }))
+vi.mock('@main/binaries/archive', () => ({ extractFileFromZip }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 // checkForUpdates is the orchestration seam for the convention's honest-state rule:
@@ -85,6 +87,7 @@ afterEach(async () => {
   verifyBinaryIntegrity.mockReset()
   execCapture.mockReset()
   assertArm64Slice.mockReset()
+  extractFileFromZip.mockReset()
   vi.restoreAllMocks()
   await rm(testRoot, { recursive: true, force: true })
 })
@@ -164,6 +167,15 @@ describe('install download cleanup', () => {
     await expect(installOrUpdate('yt-dlp')).rejects.toThrow('refusing downgraded response')
     expect(await readdir(join(testRoot, 'temp'))).toEqual([])
   })
+
+  it('keeps a request TimeoutError as a real failure, not a cancellation outcome', async () => {
+    seed()
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockRejectedValue(
+      new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+    )
+
+    await expect(installOrUpdate('yt-dlp')).rejects.toMatchObject({ name: 'TimeoutError' })
+  })
 })
 
 describe('install final-preparation cancellation', () => {
@@ -177,8 +189,8 @@ describe('install final-preparation cancellation', () => {
     verifyBinaryIntegrity.mockResolvedValue({ verified: true, method: 'sha256' })
   }
 
-  async function expectNoPublishedArtifact(install: Promise<void>): Promise<void> {
-    await expect(install).rejects.toMatchObject({ name: 'AbortError' })
+  async function expectNoPublishedArtifact(install: ReturnType<typeof installOrUpdate>): Promise<void> {
+    await expect(install).resolves.toEqual({ outcome: 'cancelled' })
     expect(await readdir(join(testRoot, 'bin'))).toEqual([])
     expect(await readdir(join(testRoot, 'temp'))).toEqual([])
   }
@@ -215,6 +227,32 @@ describe('install final-preparation cancellation', () => {
     expect(assertArm64Slice).toHaveBeenCalledWith(expect.any(String), expect.any(AbortSignal))
 
     cancelInstall('yt-dlp')
+    await expectNoPublishedArtifact(install)
+  })
+
+  it('passes cancellation into zip extraction and removes both partial and stage', async () => {
+    arrangeInstall()
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue({
+      version: '2026.08.21',
+      downloadUrl: 'https://x',
+      archive: { kind: 'zip', innerName: 'yt-dlp' },
+      integrity: { kind: 'sums', url: 'https://x/sums', assetName: 'x' },
+    } as never)
+    extractFileFromZip.mockImplementation(
+      (_zip: string, _inner: string, _stage: string, signal: AbortSignal) =>
+        rejectWhenAborted(signal),
+    )
+
+    const install = installOrUpdate('yt-dlp')
+    await vi.waitFor(() => expect(extractFileFromZip).toHaveBeenCalledOnce(), { timeout: 10_000 })
+    expect(extractFileFromZip).toHaveBeenCalledWith(
+      expect.any(String),
+      'yt-dlp',
+      expect.any(String),
+      expect.any(AbortSignal),
+    )
+
+    expect(cancelInstall('yt-dlp')).toEqual({ outcome: 'cancel-requested' })
     await expectNoPublishedArtifact(install)
   })
 })

@@ -16,7 +16,13 @@ import {
   HTTP_RETRY,
   isRetryableHttpFailure,
 } from '@main/io/network'
-import type { BinaryCheckResult, BinaryName, BinaryStatus } from '@shared/ipc-contract'
+import type {
+  BinaryCancelResult,
+  BinaryCheckResult,
+  BinaryName,
+  BinaryStatus,
+  BinaryUpdateResult,
+} from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import {
   forgetInstalledVersion,
@@ -81,8 +87,11 @@ async function withBinaryLock<T>(
 
 /** Abort one user-started install/update. The original update IPC remains the
  * owner of settling and reporting the operation; this only delivers intent. */
-export function cancelInstall(name: BinaryName): void {
-  inFlight.get(name)?.abort(new DOMException(`${name} install cancelled`, 'AbortError'))
+export function cancelInstall(name: BinaryName): BinaryCancelResult {
+  const controller = inFlight.get(name)
+  if (!controller) return { outcome: 'not-running' }
+  controller.abort(new DOMException(`${name} install cancelled`, 'AbortError'))
+  return { outcome: 'cancel-requested' }
 }
 
 /**
@@ -173,8 +182,19 @@ export async function checkForUpdates(): Promise<BinaryCheckResult> {
   return { statuses: await getAllStatuses(), failures }
 }
 
-export async function installOrUpdate(name: BinaryName): Promise<void> {
-  await withBinaryLock(name, (signal) => performInstall(name, signal))
+export async function installOrUpdate(name: BinaryName): Promise<BinaryUpdateResult> {
+  return withBinaryLock(name, async (signal) => {
+    try {
+      await performInstall(name, signal)
+      return { outcome: 'installed' }
+    } catch (err) {
+      // Only this operation's own controller can classify a cancellation. Network
+      // TimeoutError also says "aborted" but leaves this signal live, so it remains
+      // a real failure and reaches the UI.
+      if (signal.aborted) return { outcome: 'cancelled' }
+      throw err
+    }
+  })
 }
 
 async function performInstall(name: BinaryName, signal: AbortSignal): Promise<void> {
@@ -229,43 +249,46 @@ async function performInstall(name: BinaryName, signal: AbortSignal): Promise<vo
     // not recorded: this is a native binary (yt-dlp/ffmpeg/deno), re-fetchable and not
     // hand-authored text — a binary write that never calls the backup hook (data-backup
     // conventions). It uses the raw writeFileAtomicVia primitive, not the choke point.
-    await writeFileAtomicVia(finalPath, async (stage) => {
-      if (resolved.archive) {
-        await extractFileFromZip(downloadTemp, resolved.archive.innerName, stage)
-      } else {
-        await rename(downloadTemp, stage)
-      }
-      signal.throwIfAborted()
-      if (process.platform !== 'win32') {
-        await chmod(stage, 0o755)
-        // Strip macOS Gatekeeper quarantine if present; harmless when absent.
-        if (process.platform === 'darwin') {
-          const xattrSignal = AbortSignal.any([
-            signal,
-            AbortSignal.timeout(FINAL_PREP_TIMEOUT_MS),
-          ])
-          try {
-            await execCapture('xattr', ['-d', 'com.apple.quarantine', stage], {
-              reject: false,
-              signal: xattrSignal,
-              idleTimeoutMs: FINAL_PREP_TIMEOUT_MS,
-            })
-          } catch {
-            // A missing attribute is harmless, but caller cancellation is not.
-            signal.throwIfAborted()
+    await writeFileAtomicVia(
+      finalPath,
+      async (stage) => {
+        if (resolved.archive) {
+          await extractFileFromZip(downloadTemp, resolved.archive.innerName, stage, signal)
+        } else {
+          await rename(downloadTemp, stage)
+        }
+        signal.throwIfAborted()
+        if (process.platform !== 'win32') {
+          await chmod(stage, 0o755)
+          // Strip macOS Gatekeeper quarantine if present; harmless when absent.
+          if (process.platform === 'darwin') {
+            const xattrSignal = AbortSignal.any([
+              signal,
+              AbortSignal.timeout(FINAL_PREP_TIMEOUT_MS),
+            ])
+            try {
+              await execCapture('xattr', ['-d', 'com.apple.quarantine', stage], {
+                reject: false,
+                signal: xattrSignal,
+                idleTimeoutMs: FINAL_PREP_TIMEOUT_MS,
+              })
+            } catch {
+              // A missing attribute is harmless, but caller cancellation is not.
+              signal.throwIfAborted()
+            }
           }
         }
-      }
-      // Architecture gate (macOS): reject an x86_64-only build before it is
-      // published, so a wrong-arch download fails clean here rather than at exec
-      // time on Apple Silicon (no Rosetta). A universal binary passes.
-      if (process.platform === 'darwin') {
-        await assertArm64Slice(stage, signal)
-      }
-      // This is the last cancellable boundary before writeFileAtomicVia fsyncs and
-      // atomically publishes the completed stage.
-      signal.throwIfAborted()
-    })
+        // Architecture gate (macOS): reject an x86_64-only build before it is
+        // published, so a wrong-arch download fails clean here rather than at exec
+        // time on Apple Silicon (no Rosetta). A universal binary passes.
+        if (process.platform === 'darwin') {
+          await assertArm64Slice(stage, signal)
+        }
+        signal.throwIfAborted()
+      },
+      undefined,
+      signal,
+    )
   } finally {
     await unlink(downloadTemp).catch(() => {})
   }
