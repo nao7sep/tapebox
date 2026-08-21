@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { sanitizeFilename } from '@main/core/filename'
 
 /**
@@ -29,11 +30,12 @@ describe('sanitizeFilename — path safety', () => {
   })
 
   it('keeps every sanitized name inside the target directory once joined', () => {
-    const dir = '/library'
+    const dir = resolve(tmpdir(), 'tapebox-library')
     for (const evil of ['../../escape', '/abs/path', 'a/b/c', '..\\..\\x', '....//....//y']) {
       const safe = sanitizeFilename(evil)
       const full = join(dir, `${safe}.mp4`)
-      expect(full.startsWith(`${dir}/`)).toBe(true)
+      expect(isAbsolute(full)).toBe(true)
+      expect(relative(dir, full).startsWith('..')).toBe(false)
       expect(full.includes('..')).toBe(false)
     }
   })

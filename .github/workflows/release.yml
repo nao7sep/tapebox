@@ -31,6 +31,7 @@ jobs:
           node-version: lts/*
           cache: npm
       - run: npm ci
+      - run: npm run check:release-tag
       - run: npm run typecheck
       - run: npm test
 
@@ -83,6 +84,7 @@ jobs:
             - **macOS**: right-click the app → **Open** (or `xattr -dr com.apple.quarantine TapeBox.app`)
             - **Windows**: SmartScreen → **More info** → **Run anyway**
           files: |
-            dist/*.dmg
-            dist/*.exe
-            dist/*.zip
+            dist/TapeBox-*-mac-arm64.dmg
+            dist/TapeBox-*-mac-arm64.zip
+            dist/TapeBox-*-setup.exe
+            dist/TapeBox-*-win-x64.zip

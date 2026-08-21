@@ -1,4 +1,5 @@
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { paths, resolveStorageRoot } from '@main/paths'
 
@@ -7,7 +8,7 @@ import { paths, resolveStorageRoot } from '@main/paths'
 // assertions that never touch the real environment or filesystem. Mirrors
 // mumbler's reference implementation.
 describe('resolveStorageRoot', () => {
-  const HOME = '/Users/test'
+  const HOME = resolve(tmpdir(), 'tapebox-test-home')
 
   it('defaults to <home>/.tapebox when the override is unset', () => {
     expect(resolveStorageRoot(undefined, HOME)).toBe(join(HOME, '.tapebox'))
@@ -19,11 +20,13 @@ describe('resolveStorageRoot', () => {
   })
 
   it('relocates the root to a set absolute override', () => {
-    expect(resolveStorageRoot('/data/tapebox-profile', HOME)).toBe('/data/tapebox-profile')
+    const profile = resolve(tmpdir(), 'tapebox-profile')
+    expect(resolveStorageRoot(profile, HOME)).toBe(profile)
   })
 
   it('trims surrounding whitespace before using the override', () => {
-    expect(resolveStorageRoot('  /data/tapebox  ', HOME)).toBe('/data/tapebox')
+    const profile = resolve(tmpdir(), 'tapebox')
+    expect(resolveStorageRoot(`  ${profile}  `, HOME)).toBe(profile)
   })
 
   it('expands a leading ~ against the home directory', () => {
@@ -37,10 +40,11 @@ describe('resolveStorageRoot', () => {
 
   it('expands $VAR / ${VAR} environment references in the override', () => {
     const previous = process.env.TAPEBOX_TEST_ROOT
-    process.env.TAPEBOX_TEST_ROOT = '/mnt/disk2'
+    process.env.TAPEBOX_TEST_ROOT = resolve(tmpdir(), 'tapebox-disk2')
     try {
-      expect(resolveStorageRoot('$TAPEBOX_TEST_ROOT/tapebox', HOME)).toBe('/mnt/disk2/tapebox')
-      expect(resolveStorageRoot('${TAPEBOX_TEST_ROOT}/tapebox', HOME)).toBe('/mnt/disk2/tapebox')
+      const expected = join(process.env.TAPEBOX_TEST_ROOT, 'tapebox')
+      expect(resolveStorageRoot('$TAPEBOX_TEST_ROOT/tapebox', HOME)).toBe(expected)
+      expect(resolveStorageRoot('${TAPEBOX_TEST_ROOT}/tapebox', HOME)).toBe(expected)
     } finally {
       if (previous === undefined) delete process.env.TAPEBOX_TEST_ROOT
       else process.env.TAPEBOX_TEST_ROOT = previous

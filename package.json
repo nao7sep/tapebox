@@ -19,6 +19,7 @@
     "mac": {
       "icon": "build/icon.icns",
       "identity": "-",
+      "artifactName": "${productName}-${version}-mac-arm64.${ext}",
       "extendInfo": {
         "CFBundleIconName": "vhs-cassette-front-azure-rose"
       },
@@ -39,6 +40,7 @@
     },
     "win": {
       "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-win-x64.${ext}",
       "target": [
         "nsis",
         "zip"
@@ -62,6 +64,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:test",
     "test": "vitest run",
     "check": "npm run typecheck && npm test",
+    "check:release-tag": "node scripts/check-release-tag.mjs",
     "test:watch": "vitest",
     "pack:mac": "electron-vite build && electron-builder --mac --dir",
     "pack:win": "electron-vite build && electron-builder --win --dir",

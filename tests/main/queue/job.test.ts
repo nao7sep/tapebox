@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { Job, type JobDeps } from '@main/queue/job'
 import type { ProbeVideo } from '@main/services/ytdlp'
@@ -6,6 +8,7 @@ import type { Tape } from '@shared/domain'
 
 const T0 = '2026-01-01T00:00:00.000Z'
 const T1 = '2026-06-26T00:00:00.000Z'
+const LIBRARY_DIR = join(tmpdir(), 'tapebox-job-library')
 
 function tape(over: Partial<Tape>): Tape {
   return {
@@ -61,8 +64,8 @@ function makeDeps(opts: {
     ytdlp: {
       probe: opts.probe ?? (async () => ({ kind: 'page' })),
       download:
-        opts.download ?? (async () => ({ mediaPath: '/lib/t1.mp4', infoJsonPath: '/lib/t1.info.json' })),
-      findThumbnail: async () => '/lib/t1.webp',
+        opts.download ?? (async () => ({ mediaPath: join(LIBRARY_DIR, 't1.mp4'), infoJsonPath: join(LIBRARY_DIR, 't1.info.json') })),
+      findThumbnail: async () => join(LIBRARY_DIR, 't1.webp'),
     },
     ffmpeg: {
       probeMedia: async () => ({
@@ -84,7 +87,7 @@ function makeDeps(opts: {
         tapes.set(t.id, t)
       },
     },
-    getLibraryDir: () => '/lib',
+    getLibraryDir: () => LIBRARY_DIR,
     emit: ((channel: string) => {
       emits.push(channel)
     }) as JobDeps['emit'],
