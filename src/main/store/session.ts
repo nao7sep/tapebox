@@ -197,10 +197,10 @@ export function persistNowSync(): void {
     // This is a managed-text save on a terminal path (uncaughtException / process
     // 'exit'), where the async writeManagedJson choke point cannot run — so it
     // records here directly, STRICTLY AFTER the sync rename lands, reusing the
-    // in-hand bytes. record() is synchronous (node:sqlite DatabaseSync) and
-    // best-effort, so it is safe on this last-gasp path and can never throw back
-    // into shutdown. Without it, a crash-shutdown catalog save would be a silent
-    // backup gap (data-backup conventions: every managed-text write records).
+    // in-hand bytes. record() queues best-effort work and can never throw back into
+    // shutdown. The ordinary before-quit path drains that queue before exit; a hard
+    // process failure may still terminate before this last-gasp record runs. Without
+    // this call, the terminal catalog save would always be a backup gap.
     record(paths.catalog, bytes)
   } catch (err) {
     log.error('session sync persist failed', { error: describeError(err) })

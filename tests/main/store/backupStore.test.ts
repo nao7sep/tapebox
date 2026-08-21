@@ -78,7 +78,7 @@ afterEach(async () => {
   if (prev === undefined) delete process.env.TAPEBOX_HOME
   else process.env.TAPEBOX_HOME = prev
   const { closeBackupStore } = await import('@main/store/backupStore')
-  closeBackupStore()
+  await closeBackupStore()
   vi.resetModules() // fresh singleton per test so each opens against its own throwaway root
   vi.doUnmock('node:sqlite')
   await rm(root, { recursive: true, force: true })
@@ -86,13 +86,14 @@ afterEach(async () => {
 
 describe('record: BLOB fidelity, hash, size, path, and timestamp shape', () => {
   it('stores byte-identical content (CR/LF + non-UTF-8 byte), correct sha256, size, absolute path, ISO-ms time', async () => {
-    const { record } = await import('@main/store/backupStore')
+    const { record, flushBackupStore } = await import('@main/store/backupStore')
     // A UTF-8 BOM, a CR/LF pair, and a lone 0xFF (invalid UTF-8) — reading this as a string then storing
     // it would normalize the CR/LF, alter the BOM, or corrupt the 0xFF. The BLOB must be verbatim.
     const bytes = Buffer.from([0xef, 0xbb, 0xbf, 0x61, 0x0d, 0x0a, 0x62, 0xff, 0x00, 0x63])
     const file = path.join(root, 'catalog.json')
 
     record(file, bytes)
+    await flushBackupStore()
 
     const rows = readRows(root)
     expect(rows).toHaveLength(1)
@@ -119,23 +120,25 @@ describe('record: BLOB fidelity, hash, size, path, and timestamp shape', () => {
 
 describe('dedup by content hash, per path', () => {
   it('skips an unchanged re-save (no new row) but records a genuinely changed save', async () => {
-    const { record } = await import('@main/store/backupStore')
+    const { record, flushBackupStore } = await import('@main/store/backupStore')
     const file = path.join(root, 'catalog.json')
     const v1 = Buffer.from('alpha', 'utf8')
     const v2 = Buffer.from('beta', 'utf8')
 
     record(file, v1)
     record(file, v1) // identical — deduped, no new row
+    await flushBackupStore()
     expect(readRows(root)).toHaveLength(1)
 
     record(file, v2) // changed — recorded
+    await flushBackupStore()
     const rows = readRows(root)
     expect(rows).toHaveLength(2)
     expect(Buffer.from(rows[1]!.content).toString('utf8')).toBe('beta')
   })
 
   it('records a revert to earlier content as a new row (differs from the immediately-preceding row)', async () => {
-    const { record } = await import('@main/store/backupStore')
+    const { record, flushBackupStore } = await import('@main/store/backupStore')
     const file = path.join(root, 'catalog.json')
     const a = Buffer.from('A', 'utf8')
     const b = Buffer.from('B', 'utf8')
@@ -143,6 +146,7 @@ describe('dedup by content hash, per path', () => {
     record(file, a) // row 1: A
     record(file, b) // row 2: B
     record(file, a) // row 3: A again — a revert, differs from the preceding row (B), so it IS recorded
+    await flushBackupStore()
 
     const rows = readRows(root)
     expect(rows).toHaveLength(3)
@@ -150,7 +154,7 @@ describe('dedup by content hash, per path', () => {
   })
 
   it('dedups per path, so two different paths never collide', async () => {
-    const { record } = await import('@main/store/backupStore')
+    const { record, flushBackupStore } = await import('@main/store/backupStore')
     const same = Buffer.from('shared', 'utf8')
     const p1 = path.join(root, 'config.json')
     const p2 = path.join(root, 'catalog.json')
@@ -158,6 +162,7 @@ describe('dedup by content hash, per path', () => {
     record(p1, same)
     record(p2, same) // same content, DIFFERENT path — recorded (dedup is per path)
     record(p1, same) // same content, same path as row 1 — deduped
+    await flushBackupStore()
 
     const rows = readRows(root)
     expect(rows).toHaveLength(2)
@@ -171,7 +176,7 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
     {
       const { record, closeBackupStore } = await import('@main/store/backupStore')
       record(path.join(root, 'catalog.json'), Buffer.from('good', 'utf8'))
-      closeBackupStore()
+      await closeBackupStore()
     }
     expect(readRows(root)).toHaveLength(1)
 
@@ -202,9 +207,10 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
       return { ...actual, DatabaseSync: FailingInsertDb }
     })
 
-    const { record } = await import('@main/store/backupStore')
+    const { record, flushBackupStore } = await import('@main/store/backupStore')
     // A DIFFERENT content so dedup does not short-circuit before the insert is attempted.
     expect(() => record(path.join(root, 'catalog.json'), Buffer.from('changed', 'utf8'))).not.toThrow()
+    await flushBackupStore()
 
     // Exactly one warn, naming the file and carrying a reason; no error line.
     expect(logCalls.warn).toHaveLength(1)
@@ -228,9 +234,10 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
     writeFileSync(blocker, 'x') // a file where a directory would need to be
     process.env.TAPEBOX_HOME = path.join(blocker, 'nested') // parent is a file -> mkdir/open fails
 
-    const { record } = await import('@main/store/backupStore')
+    const { record, flushBackupStore } = await import('@main/store/backupStore')
     expect(() => record('/whatever/catalog.json', Buffer.from('a', 'utf8'))).not.toThrow()
     expect(() => record('/whatever/catalog.json', Buffer.from('b', 'utf8'))).not.toThrow()
+    await flushBackupStore()
 
     // Exactly one warn total (the open failure), not one per record — disabled for the session.
     expect(logCalls.warn).toHaveLength(1)
@@ -247,6 +254,8 @@ describe('write-through: a real managed save records the exact bytes after the r
     // No config.json on the throwaway root -> loadSettings seeds defaults and writes them through the
     // managed-text choke point, which records after the rename.
     await loadSettings()
+    const { flushBackupStore } = await import('@main/store/backupStore')
+    await flushBackupStore()
 
     const file = path.join(root, 'config.json')
     const onDisk = readFileSync(file) // the exact bytes the atomic write landed
@@ -267,6 +276,8 @@ describe('write-through: a real managed save records the exact bytes after the r
     await loadSettings() // row 1: defaults
     await updateSettings({ maxConcurrentDownloads: 5 }) // row 2: changed
     await updateSettings({ maxConcurrentDownloads: 5 }) // identical serialized bytes -> deduped, no row
+    const { flushBackupStore } = await import('@main/store/backupStore')
+    await flushBackupStore()
 
     const rows = readRows(root)
     expect(rows).toHaveLength(2)

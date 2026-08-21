@@ -7,10 +7,10 @@
  *
  * SQLite binding: Node's built-in `node:sqlite` (`DatabaseSync`), not better-sqlite3. In an Electron main
  * process better-sqlite3 is a native addon that must be rebuilt against Electron's Node ABI on every
- * Electron bump — real, recurring packaging drag. `node:sqlite` is built into Node (TapeBox requires
- * >=22.5, and Electron 43 bundles Node 22.x), needs no native build, no `node-gyp`, no `electron-rebuild`,
- * and is synchronous — which is exactly what a record-after-rename hook wants. It returns a BLOB as a
- * `Uint8Array`, wrapped in a Buffer here for byte-identical hashing and compare.
+ * Electron bump. `node:sqlite` is built into Node and needs no native build. Its synchronous calls run
+ * from a one-at-a-time `setImmediate` queue, after the save has returned, so hashing and SQLite lock
+ * waits never lengthen the managed-file save path. It returns a BLOB as a `Uint8Array`, wrapped in a
+ * Buffer here for byte-identical hashing and compare.
  *
  * Two absolute musts drive every line below (they are not best-effort aspirations):
  *
@@ -52,6 +52,11 @@ CREATE INDEX IF NOT EXISTS idx_backups_path_id ON backups (path, id);
  *  becomes a no-op rather than retrying (and re-logging) a broken open on every save. */
 let db: DatabaseSync | null = null
 let initialized = false
+type PendingRecord = { absolutePath: string; bytes: Buffer }
+const pending: PendingRecord[] = []
+let draining = false
+let accepting = true
+let idleWaiters: Array<() => void> = []
 
 /**
  * Open and initialize the store once (create the table if absent, switch on WAL). Best-effort: on any
@@ -72,9 +77,9 @@ function ensureOpen(): DatabaseSync | null {
     mkdirSync(dirname(file), { recursive: true })
     const opened = new DatabaseSync(file)
     opened.exec('PRAGMA journal_mode = WAL')
-    // busy_timeout: under the tolerated two-instance case, a contended write waits up to this long for
-    // SQLite's write lock instead of immediately failing with SQLITE_BUSY and dropping that record.
-    opened.exec('PRAGMA busy_timeout = 5000')
+    // Keep lock contention bounded tightly. A backup is best-effort; freezing the Electron main thread
+    // for seconds is worse than dropping one history row and recording the next save.
+    opened.exec('PRAGMA busy_timeout = 100')
     opened.exec(SCHEMA)
     db = opened
   } catch (err) {
@@ -104,7 +109,7 @@ function sha256(bytes: Buffer): string {
  * Best-effort and silent on success; any failure is caught, logged once at `warn` (file + reason), and
  * swallowed. It never throws, never crashes the app, and never breaks the save.
  */
-export function record(absolutePath: string, bytes: Buffer): void {
+function recordNow(absolutePath: string, bytes: Buffer): void {
   const store = ensureOpen()
   if (!store) return // open failed earlier; disabled for the session (already warned once)
   try {
@@ -127,10 +132,45 @@ export function record(absolutePath: string, bytes: Buffer): void {
   }
 }
 
-/** Close the store (best-effort). For tests that need to release the file handle between throwaway roots;
- *  the app itself lets the process exit close it. Resets the singleton so the next {@link record} re-opens
- *  against the current `TAPEBOX_HOME`. */
-export function closeBackupStore(): void {
+function resolveIdle(): void {
+  if (draining || pending.length > 0) return
+  const waiters = idleWaiters
+  idleWaiters = []
+  for (const resolve of waiters) resolve()
+}
+
+function scheduleDrain(): void {
+  if (draining || pending.length === 0) return
+  draining = true
+  setImmediate(() => {
+    const next = pending.shift()
+    if (next) recordNow(next.absolutePath, next.bytes)
+    draining = false
+    if (pending.length > 0) scheduleDrain()
+    else resolveIdle()
+  })
+}
+
+/** Queue a managed-text version and return immediately. FIFO order preserves the
+ * exact save sequence used by latest-row dedup. Managed writers hand off their
+ * completed, immutable Buffer, so the save path does no copy or hash work. */
+export function record(absolutePath: string, bytes: Buffer): void {
+  if (!accepting) return
+  pending.push({ absolutePath, bytes })
+  scheduleDrain()
+}
+
+/** Wait until every queued record has either landed or failed. */
+export function flushBackupStore(): Promise<void> {
+  if (!draining && pending.length === 0) return Promise.resolve()
+  return new Promise((resolve) => idleWaiters.push(resolve))
+}
+
+/** Stop accepting work, drain the FIFO, and close the store best-effort. Resets the
+ * singleton so tests can re-open against a new `TAPEBOX_HOME`. */
+export async function closeBackupStore(): Promise<void> {
+  accepting = false
+  await flushBackupStore()
   try {
     db?.close()
   } catch {
@@ -138,4 +178,5 @@ export function closeBackupStore(): void {
   }
   db = null
   initialized = false
+  accepting = true
 }

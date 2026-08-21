@@ -14,6 +14,7 @@ import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
+import { closeBackupStore } from './store/backupStore.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -85,7 +86,7 @@ async function startup(): Promise<void> {
 
   // The just-in-case data backup (data-backup conventions) is write-through, not a
   // startup pass: every managed-text save records its exact bytes into
-  // ~/.tapebox/backups.sqlite3 the instant its atomic rename lands (see
+  // ~/.tapebox/backups.sqlite3 through a FIFO queue after its atomic rename lands (see
   // store/backupStore.ts and io/atomic-json.ts). There is nothing to kick off here.
 
   // If the library file was unreadable, it was set aside (never wiped); tell the
@@ -118,6 +119,7 @@ function shutdown(reason: string): Promise<void> {
     }
     await layout.persistNow()
     await stopMediaServer()
+    await closeBackupStore()
     closeLogger()
   })()
   return shutdownPromise
