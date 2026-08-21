@@ -132,17 +132,21 @@ describe('terminal recording', () => {
     expect(Buffer.from(rows[0]!.content)).toEqual(bytes)
   })
 
-  it('drains queued ordinary records during intended shutdown', async () => {
-    const { record, closeBackupStore } = await import('@main/store/backupStore')
-    const file = path.join(root, 'layout.json')
-    const bytes = Buffer.from('queued layout', 'utf8')
+  it('drains ordinary work, then permits only the terminal record after queue closure', async () => {
+    const { record, recordBeforeExit, closeBackupStore } = await import('@main/store/backupStore')
+    const layout = path.join(root, 'layout.json')
+    const ignored = path.join(root, 'config.json')
+    const catalog = path.join(root, 'catalog.json')
 
-    record(file, bytes)
+    record(layout, Buffer.from('queued layout', 'utf8'))
     await closeBackupStore()
+    record(ignored, Buffer.from('too late for the ordinary queue', 'utf8'))
+    recordBeforeExit(catalog, Buffer.from('final exit catalog', 'utf8'))
 
     const rows = readRows(root)
-    expect(rows).toHaveLength(1)
-    expect(Buffer.from(rows[0]!.content)).toEqual(bytes)
+    expect(rows.map((row) => row.path)).toEqual([layout, catalog])
+    expect(Buffer.from(rows[0]!.content).toString('utf8')).toBe('queued layout')
+    expect(Buffer.from(rows[1]!.content).toString('utf8')).toBe('final exit catalog')
   })
 })
 

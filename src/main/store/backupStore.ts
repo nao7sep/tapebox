@@ -162,11 +162,12 @@ export function record(absolutePath: string, bytes: Buffer): void {
 }
 
 /** Fatal/exit-only path. The catalog has already been published synchronously and
- * the process cannot wait for `setImmediate`, so attempt this one record now. The
- * SQLite lock wait remains capped by the store's 100 ms busy timeout. Ordinary
- * saves must use {@link record}; this deliberate blocking is terminal-only. */
+ * the process cannot wait for `setImmediate`, so attempt this one record now. This
+ * deliberately ignores `accepting`: orderly shutdown closes the ordinary queue
+ * before Node's final `exit` event, and a catalog save there must be allowed to
+ * reopen the DB. The SQLite lock wait remains capped by the store's 100 ms busy
+ * timeout. Ordinary saves must use {@link record}; this blocking is terminal-only. */
 export function recordBeforeExit(absolutePath: string, bytes: Buffer): void {
-  if (!accepting) return
   recordNow(absolutePath, bytes)
 }
 
