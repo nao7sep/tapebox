@@ -96,9 +96,4 @@ describe('verifyBinaryIntegrity', () => {
       kind: 'sums', url: 'https://example.invalid/checksums.sha256', assetName: 'ffmpeg.zip',
     })).rejects.toThrow(/no checksum/)
   })
-
-  it('returns unverified for a source that publishes nothing', async () => {
-    expect(await verifyBinaryIntegrity(filePath, { kind: 'none' })).toEqual({ verified: false })
-    expect(fetchText).not.toHaveBeenCalled()
-  })
 })

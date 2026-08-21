@@ -61,14 +61,13 @@ export type ResolvedAsset = {
   version: string
   downloadUrl: string
   archive: { kind: 'zip'; innerName: string } | null
-  // How this asset's bytes are verified before being made executable — a sums file,
-  // a detached OpenPGP signature, or nothing the vendor publishes (see integrity.ts).
+  // How this asset's bytes are verified before being made executable.
   integrity: AssetIntegrity
 }
 
 export type BinarySpec = {
   name: BinaryName
-  resolveLatest: () => Promise<ResolvedAsset>
+  resolveLatest: (signal?: AbortSignal) => Promise<ResolvedAsset>
   /** Where this binary's installed version is read from — see InstalledVersionSource. */
   installedVersion: InstalledVersionSource
 }
@@ -91,21 +90,20 @@ export function parseYtDlpVersion(stdout: string): string | null {
 const ytDlpSpec: BinarySpec = {
   name: 'yt-dlp',
   installedVersion: { kind: 'probe', args: ['--version'], parse: parseYtDlpVersion },
-  resolveLatest: async () => {
-    const release = await fetchLatestRelease('yt-dlp', 'yt-dlp')
+  resolveLatest: async (signal) => {
+    const release = await fetchLatestRelease('yt-dlp', 'yt-dlp', signal)
     const assetName = ytDlpAssetName()
     const asset = release.assets.find((a) => a.name === assetName)
     if (!asset) throw new Error(`yt-dlp asset not found: ${assetName}`)
     // yt-dlp publishes a SHA2-256SUMS file alongside its binaries — found here in the
     // already-fetched release (no extra request) and parsed at install time.
     const sums = release.assets.find((a) => a.name === 'SHA2-256SUMS')
+    if (!sums) throw new Error('yt-dlp release has no SHA2-256SUMS')
     return {
       version: normalizeVersion(release.tag_name),
       downloadUrl: asset.browser_download_url,
       archive: null,
-      integrity: sums
-        ? { kind: 'sums', url: sums.browser_download_url, assetName }
-        : { kind: 'none' },
+      integrity: { kind: 'sums', url: sums.browser_download_url, assetName },
     }
   },
 }
@@ -137,8 +135,8 @@ export function parseDenoVersion(stdout: string): string | null {
 const denoSpec: BinarySpec = {
   name: 'deno',
   installedVersion: { kind: 'probe', args: ['--version'], parse: parseDenoVersion },
-  resolveLatest: async () => {
-    const release = await fetchLatestRelease('denoland', 'deno')
+  resolveLatest: async (signal) => {
+    const release = await fetchLatestRelease('denoland', 'deno', signal)
     const assetName = denoAssetName()
     const asset = release.assets.find((a) => a.name === assetName)
     if (!asset) throw new Error(`deno asset not found: ${assetName}`)
@@ -146,13 +144,12 @@ const denoSpec: BinarySpec = {
     // line — found in the already-fetched release (no extra request) and parsed at
     // install time, identical in shape to yt-dlp's SHA2-256SUMS entries.
     const sums = release.assets.find((a) => a.name === `${assetName}.sha256sum`)
+    if (!sums) throw new Error(`Deno release has no ${assetName}.sha256sum`)
     return {
       version: normalizeVersion(release.tag_name),
       downloadUrl: asset.browser_download_url,
       archive: { kind: 'zip', innerName: process.platform === 'win32' ? 'deno.exe' : 'deno' },
-      integrity: sums
-        ? { kind: 'sums', url: sums.browser_download_url, assetName }
-        : { kind: 'none' },
+      integrity: { kind: 'sums', url: sums.browser_download_url, assetName },
     }
   },
 }
@@ -187,11 +184,14 @@ export function parseFfmpegVersion(stdout: string): string | null {
   return match ? normalizeVersion(match[1]) : null
 }
 
-async function resolveFfmpegMacOS(): Promise<ResolvedAsset> {
+async function resolveFfmpegMacOS(signal?: AbortSignal): Promise<ResolvedAsset> {
   // macOS is arm64-only by design: the fleet ships Apple Silicon builds and a primary
   // goal is surviving Rosetta removal, so tapebox never fetches an x86_64 ffmpeg on
   // macOS. (Windows x64 is native on Windows and is unaffected by this.)
-  const location = await fetchRedirectLocation(`${MARTIN_BASE}/redirect/latest/macos/arm64/release/ffmpeg.zip`)
+  const location = await fetchRedirectLocation(
+    `${MARTIN_BASE}/redirect/latest/macos/arm64/release/ffmpeg.zip`,
+    { signal },
+  )
   // The redirect Location could be an absolute URL; refuse a downgrade before it
   // becomes the download URL and (with `.sha256`) the integrity URL. The fetch
   // helpers assert https too, but rejecting here keeps a bad Location from ever
@@ -208,14 +208,15 @@ async function resolveFfmpegMacOS(): Promise<ResolvedAsset> {
   }
 }
 
-async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
-  const release = await fetchLatestRelease('BtbN', 'FFmpeg-Builds')
+async function resolveFfmpegWindows(signal?: AbortSignal): Promise<ResolvedAsset> {
+  const release = await fetchLatestRelease('BtbN', 'FFmpeg-Builds', signal)
   const assetName = 'ffmpeg-master-latest-win64-gpl.zip'
   const asset = release.assets.find((a) => a.name === assetName)
   if (!asset) throw new Error('ffmpeg Windows asset not found')
   // BtbN publishes a combined `checksums.sha256` (`<hash>  <file>` per line); the
-  // GPL build's line is verified at install — closing the former integrity:none gap.
+  // GPL build's line is verified at install.
   const sums = release.assets.find((a) => a.name === 'checksums.sha256')
+  if (!sums) throw new Error('ffmpeg Windows release has no checksums.sha256')
   // The release TAG is the constant string `latest` — a rolling pointer, not a
   // version, so comparing it to itself would read "up to date" forever and no
   // Windows user would ever be offered an ffmpeg update. The release NAME carries
@@ -226,9 +227,7 @@ async function resolveFfmpegWindows(): Promise<ResolvedAsset> {
     version: release.name?.trim() || release.tag_name,
     downloadUrl: asset.browser_download_url,
     archive: { kind: 'zip', innerName: 'ffmpeg.exe' },
-    integrity: sums
-      ? { kind: 'sums', url: sums.browser_download_url, assetName }
-      : { kind: 'none' },
+    integrity: { kind: 'sums', url: sums.browser_download_url, assetName },
   }
 }
 
@@ -244,9 +243,9 @@ const ffmpegSpec: BinarySpec = {
     process.platform === 'win32'
       ? { kind: 'sidecar' }
       : { kind: 'probe', args: ['-version'], parse: parseFfmpegVersion },
-  resolveLatest: async () => {
-    if (process.platform === 'darwin') return resolveFfmpegMacOS()
-    if (process.platform === 'win32')  return resolveFfmpegWindows()
+  resolveLatest: async (signal) => {
+    if (process.platform === 'darwin') return resolveFfmpegMacOS(signal)
+    if (process.platform === 'win32')  return resolveFfmpegWindows(signal)
     throw new Error(
       `ffmpeg auto-install not yet supported on ${process.platform}. ` +
       `Install ffmpeg manually and place it at ~/.tapebox/bin/ffmpeg.`,

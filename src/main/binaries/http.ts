@@ -46,6 +46,8 @@ export async function downloadWithProgress(opts: DownloadOptions): Promise<void>
     watch.clear()
   }
 
+  assertHttpsUrl(res.url, 'binary download response')
+
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} from ${opts.url}`)
   if (!res.body) throw new Error(`Response body missing from ${opts.url}`)
 

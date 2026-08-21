@@ -130,7 +130,7 @@ export default function App() {
         const store = useBinariesStore.getState()
         store.setChecking(true)
         void ipcInvoke('binaries:checkUpdates')
-          .then(store.setStatuses)
+          .then((result) => store.setStatuses(result.statuses))
           .catch((err) => log.debug('background binary check rejected', { error: describeError(err) }))
           .finally(() => useBinariesStore.getState().setChecking(false))
       })

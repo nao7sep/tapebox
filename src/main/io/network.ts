@@ -40,6 +40,19 @@ export const HTTP_RETRY: RetryPolicy = {
   intervals: [2_000, 5_000, 15_000],
 }
 
+export class UnsafeUrlError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UnsafeUrlError'
+  }
+}
+
+/** A URL-policy failure is deterministic; retrying the same downgrade only
+ * delays the refusal. */
+export function isRetryableHttpFailure(err: unknown): boolean {
+  return !(err instanceof UnsafeUrlError)
+}
+
 /**
  * Refuse any non-https URL before it reaches the network. Every managed-binary
  * request — the binary download, the GitHub release metadata, the vendor redirect,
@@ -53,9 +66,9 @@ export function assertHttpsUrl(url: string, context: string): void {
   try {
     scheme = new URL(url).protocol
   } catch {
-    throw new Error(`invalid ${context} URL: ${url}`)
+    throw new UnsafeUrlError(`invalid ${context} URL: ${url}`)
   }
   if (scheme !== 'https:') {
-    throw new Error(`refusing non-https ${context} URL: ${url}`)
+    throw new UnsafeUrlError(`refusing non-https ${context} URL: ${url}`)
   }
 }

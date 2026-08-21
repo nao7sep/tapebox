@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream'
-import { describe, expect, it } from 'vitest'
-import { pumpToFile } from '@main/binaries/http'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { downloadWithProgress, pumpToFile } from '@main/binaries/http'
 import { IdleTimeoutError } from '@main/io/spawn'
 
 // pumpToFile is the streaming core of downloadWithProgress, lifted out so the
@@ -58,6 +58,26 @@ function collector(chunks: Buffer[], opts: { delayMs?: number; highWaterMark?: n
 }
 
 const OPTS = { total: 0, url: 'https://example.test/file' }
+
+afterEach(() => vi.unstubAllGlobals())
+
+describe('download response URL policy', () => {
+  it('refuses a followed redirect that finishes on HTTP before writing bytes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      url: 'http://mirror.test/tool.exe',
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      body: bodyOf(new Uint8Array([1, 2, 3])),
+      headers: new Headers(),
+    } as Response)))
+
+    await expect(downloadWithProgress({
+      url: 'https://example.test/tool.exe',
+      destPath: 'unused-after-policy-failure',
+    })).rejects.toThrow('refusing non-https binary download response URL')
+  })
+})
 
 describe('pumpToFile', () => {
   it('writes every byte and reports cumulative progress', async () => {

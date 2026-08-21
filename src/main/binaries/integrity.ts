@@ -6,24 +6,18 @@ import { fetchText } from '@main/io/fetch-json'
 /**
  * Integrity verification for downloaded binaries. These bytes are made executable,
  * so they are checked against the source's published SHA-256 before install. How a
- * source publishes it differs, so each resolved asset declares one of:
+ * source publishes it differs, so each resolved asset declares:
  *
  *   - 'sums' : a `<sha256>  <file>` sums file to fetch and match this asset's line
  *              (yt-dlp's SHA2-256SUMS, deno's per-asset .sha256sum, martin-riedl's
  *              `ffmpeg.zip.sha256`, BtbN's combined `checksums.sha256`).
- *   - 'none' : the source publishes nothing parseable; install proceeds unverified
- *              (logged by the caller), with https-only transport still enforced.
- *
- * verifyBinaryIntegrity throws on an ACTUAL failure (hash mismatch, or no line for
- * the asset) so the install aborts; it returns {verified:false} only for 'none'.
+ * Every registered source publishes a checksum. A missing checksum asset is a
+ * resolution failure, never permission to install executable bytes unverified.
+ * verifyBinaryIntegrity throws on any failure so the install aborts.
  */
-export type AssetIntegrity =
-  | { kind: 'sums'; url: string; assetName: string }
-  | { kind: 'none' }
+export type AssetIntegrity = { kind: 'sums'; url: string; assetName: string }
 
-export type IntegrityResult =
-  | { verified: true; method: 'sha256' }
-  | { verified: false }
+export type IntegrityResult = { verified: true; method: 'sha256' }
 
 /** Parse a `<sha256>  <filename>` sums file for `assetName`'s hash (lowercase hex), or null. */
 export function parseSums(text: string, assetName: string): string | null {
@@ -37,23 +31,24 @@ export function parseSums(text: string, assetName: string): string | null {
 }
 
 /** SHA-256 of a file as lowercase hex. */
-export async function sha256OfFile(path: string): Promise<string> {
+export async function sha256OfFile(path: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash('sha256')
-  await pipeline(createReadStream(path), hash)
+  await pipeline(createReadStream(path), hash, { signal })
   return hash.digest('hex')
 }
 
 /**
- * Verify a freshly-downloaded file against its declared integrity. Throws on a real
- * failure (hash mismatch / no checksum line for the asset) so the caller aborts the
- * install; returns {verified:false} only when the source publishes nothing to check.
+ * Verify a freshly-downloaded file against its declared integrity. Throws on a
+ * hash mismatch or a missing checksum line so the caller aborts the install.
  */
-export async function verifyBinaryIntegrity(filePath: string, integrity: AssetIntegrity): Promise<IntegrityResult> {
-  if (integrity.kind === 'none') return { verified: false }
-
-  const expected = parseSums(await fetchText(integrity.url), integrity.assetName)
+export async function verifyBinaryIntegrity(
+  filePath: string,
+  integrity: AssetIntegrity,
+  signal?: AbortSignal,
+): Promise<IntegrityResult> {
+  const expected = parseSums(await fetchText(integrity.url, { signal }), integrity.assetName)
   if (!expected) throw new Error(`no checksum for ${integrity.assetName} in ${integrity.url}`)
-  const actual = await sha256OfFile(filePath)
+  const actual = await sha256OfFile(filePath, signal)
   if (actual !== expected) throw new Error(`checksum mismatch (expected ${expected}, got ${actual})`)
   return { verified: true, method: 'sha256' }
 }

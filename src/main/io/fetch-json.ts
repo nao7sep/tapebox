@@ -1,5 +1,10 @@
 import { withRetry, withRequestTimeout } from './retry'
-import { HTTP_RETRY, VERSION_CHECK_TIMEOUT_MS, assertHttpsUrl } from './network'
+import {
+  HTTP_RETRY,
+  VERSION_CHECK_TIMEOUT_MS,
+  assertHttpsUrl,
+  isRetryableHttpFailure,
+} from './network'
 
 /**
  * GET + parse JSON with a per-attempt request timeout plus retries with backoff.
@@ -8,12 +13,16 @@ import { HTTP_RETRY, VERSION_CHECK_TIMEOUT_MS, assertHttpsUrl } from './network'
  */
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   assertHttpsUrl(url, 'metadata')
-  return withRetry(HTTP_RETRY, () =>
-    withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, undefined, async (signal) => {
-      const res = await fetch(url, { ...init, signal })
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
-      return res.json() as Promise<T>
-    }),
+  return withRetry(
+    HTTP_RETRY,
+    () =>
+      withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, init?.signal ?? undefined, async (signal) => {
+        const res = await fetch(url, { ...init, signal })
+        assertHttpsUrl(res.url, 'metadata response')
+        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
+        return res.json() as Promise<T>
+      }),
+    { signal: init?.signal ?? undefined, isRetryable: isRetryableHttpFailure },
   )
 }
 
@@ -25,12 +34,16 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
  */
 export async function fetchText(url: string, init?: RequestInit): Promise<string> {
   assertHttpsUrl(url, 'checksum')
-  return withRetry(HTTP_RETRY, () =>
-    withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, undefined, async (signal) => {
-      const res = await fetch(url, { ...init, signal })
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
-      return res.text()
-    }),
+  return withRetry(
+    HTTP_RETRY,
+    () =>
+      withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, init?.signal ?? undefined, async (signal) => {
+        const res = await fetch(url, { ...init, signal })
+        assertHttpsUrl(res.url, 'checksum response')
+        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
+        return res.text()
+      }),
+    { signal: init?.signal ?? undefined, isRetryable: isRetryableHttpFailure },
   )
 }
 
@@ -42,14 +55,17 @@ export async function fetchText(url: string, init?: RequestInit): Promise<string
  */
 export async function fetchRedirectLocation(url: string, init?: RequestInit): Promise<string> {
   assertHttpsUrl(url, 'redirect')
-  return withRetry(HTTP_RETRY, () =>
-    withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, undefined, async (signal) => {
-      const res = await fetch(url, { ...init, redirect: 'manual', signal })
-      const location = res.headers.get('location')
-      if (!location) {
-        throw new Error(`expected a redirect with a Location header from ${url} (got HTTP ${res.status})`)
-      }
-      return location
-    }),
+  return withRetry(
+    HTTP_RETRY,
+    () =>
+      withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, init?.signal ?? undefined, async (signal) => {
+        const res = await fetch(url, { ...init, redirect: 'manual', signal })
+        const location = res.headers.get('location')
+        if (!location) {
+          throw new Error(`expected a redirect with a Location header from ${url} (got HTTP ${res.status})`)
+        }
+        return location
+      }),
+    { signal: init?.signal ?? undefined, isRetryable: isRetryableHttpFailure },
   )
 }

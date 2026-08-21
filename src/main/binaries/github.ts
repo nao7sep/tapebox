@@ -19,9 +19,14 @@ export type GitHubRelease = {
   assets: GitHubAsset[]
 }
 
-export async function fetchLatestRelease(owner: string, repo: string): Promise<GitHubRelease> {
+export async function fetchLatestRelease(
+  owner: string,
+  repo: string,
+  signal?: AbortSignal,
+): Promise<GitHubRelease> {
   const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`
   return fetchJson<GitHubRelease>(url, {
+    signal,
     headers: {
       Accept: 'application/vnd.github+json',
       'User-Agent': 'tapebox',

@@ -20,7 +20,7 @@ import type { LoggableError } from '@shared/error'
  *     for downloads and page scan.
  *
  * Both honour:
- *   - signal: AbortSignal (sends SIGTERM on abort, native to spawn)
+ *   - signal: AbortSignal (terminates the owned process tree on Windows)
  *   - idleTimeoutMs: kill the process if no stdout/stderr arrived for this
  *     many ms. Resets on each chunk. This is the right kind of timeout for
  *     network-bound work — a wall-clock timeout would falsely kill
@@ -78,6 +78,46 @@ type StreamingChild = ChildProcessByStdio<null, Readable, Readable> & {
   // Set by the idle watchdog when it kills the process; waitForExit/execCapture
   // surface it as the close cause instead of a generic non-zero exit.
   idleError?: IdleTimeoutError | null
+  abortError?: Error | null
+}
+
+/** Terminate the process we started and, on Windows, every descendant it owns.
+ * yt-dlp starts ffmpeg and Deno; killing only yt-dlp lets those children keep
+ * mutating files after Cancel has returned. `taskkill /T` is Windows' native
+ * process-tree operation and needs no shell. */
+function terminateOwnedProcessTree(child: StreamingChild): void {
+  const pid = child.pid
+  if (process.platform === 'win32' && pid !== undefined) {
+    const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    const fallback = () => {
+      child.kill('SIGTERM')
+    }
+    killer.once('error', fallback)
+    killer.once('close', (code) => {
+      if (code !== 0) fallback()
+    })
+    return
+  }
+  child.kill('SIGTERM')
+}
+
+function bindAbort(child: StreamingChild, signal: AbortSignal | undefined): () => void {
+  if (!signal) return () => {}
+  const onAbort = () => {
+    child.abortError = signal.reason instanceof Error
+      ? signal.reason
+      : new DOMException('The operation was aborted', 'AbortError')
+    terminateOwnedProcessTree(child)
+  }
+  if (signal.aborted) {
+    onAbort()
+    return () => {}
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  return () => signal.removeEventListener('abort', onAbort)
 }
 
 function startIdleWatch(
@@ -91,7 +131,7 @@ function startIdleWatch(
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       timer = null
-      child.kill('SIGTERM')
+      terminateOwnedProcessTree(child)
       onTimeout()
     }, idleMs)
   }
@@ -110,10 +150,10 @@ export async function execCapture(
   args: readonly string[],
   opts: CaptureOptions = {},
 ): Promise<CaptureResult> {
+  opts.signal?.throwIfAborted()
   const child = spawn(command, args as string[], {
     env: opts.env,
     cwd: opts.cwd,
-    signal: opts.signal,
     stdio: ['ignore', 'pipe', 'pipe'],
   }) as StreamingChild
 
@@ -124,6 +164,7 @@ export async function execCapture(
   const idle = startIdleWatch(child, opts.idleTimeoutMs, () => {
     idleError = new IdleTimeoutError(command, opts.idleTimeoutMs!)
   })
+  const unbindAbort = bindAbort(child, opts.signal)
 
   child.stdout.on('data', (d: Buffer) => { stdout += d.toString('utf8'); idle.kick() })
   child.stderr.on('data', (d: Buffer) => { stderr += d.toString('utf8'); idle.kick() })
@@ -131,10 +172,13 @@ export async function execCapture(
   return new Promise<CaptureResult>((resolve, reject) => {
     child.on('error', (err) => {
       idle.stop()
-      reject(err)
+      unbindAbort()
+      reject(child.abortError ?? err)
     })
     child.on('close', (code) => {
       idle.stop()
+      unbindAbort()
+      if (child.abortError) return reject(child.abortError)
       if (idleError) return reject(idleError)
       const result: CaptureResult = { stdout, stderr, exitCode: code }
       if (code === 0 || opts.reject === false) resolve(result)
@@ -154,10 +198,10 @@ export function spawnStreaming(
   args: readonly string[],
   opts: SpawnOptions = {},
 ): StreamingChild {
+  opts.signal?.throwIfAborted()
   const child = spawn(command, args as string[], {
     env: opts.env,
     cwd: opts.cwd,
-    signal: opts.signal,
     stdio: ['ignore', 'pipe', 'pipe'],
   }) as StreamingChild
 
@@ -174,6 +218,10 @@ export function spawnStreaming(
     child.on('error', () => idle.stop())
   }
 
+  const unbindAbort = bindAbort(child, opts.signal)
+  child.on('close', unbindAbort)
+  child.on('error', unbindAbort)
+
   return child
 }
 
@@ -187,6 +235,7 @@ export function waitForExit(
       // An idle timeout killed the process — surface that as the cause rather than a
       // generic non-zero exit.
       if (child.idleError) return reject(child.idleError)
+      if (child.abortError) return reject(child.abortError)
       if (code === 0 || opts.reject === false) resolve(code)
       else reject(new SubprocessError(opts.command ?? 'process', code, ''))
     })

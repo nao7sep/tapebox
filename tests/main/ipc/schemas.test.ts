@@ -26,6 +26,8 @@ describe('ipcRequestSchemas — validation at the IPC trust boundary', () => {
   it('rejects an unknown binary name but accepts a known one', () => {
     expect(ipcRequestSchemas['binaries:update'].safeParse({ name: 'bogus' }).success).toBe(false)
     expect(ipcRequestSchemas['binaries:update'].safeParse({ name: 'yt-dlp' }).success).toBe(true)
+    expect(ipcRequestSchemas['binaries:cancelUpdate'].safeParse({ name: 'bogus' }).success).toBe(false)
+    expect(ipcRequestSchemas['binaries:cancelUpdate'].safeParse({ name: 'ffmpeg' }).success).toBe(true)
   })
 
   it('requires bare undefined for a no-argument channel', () => {

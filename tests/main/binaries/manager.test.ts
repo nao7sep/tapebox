@@ -1,5 +1,34 @@
-import { describe, expect, it, vi } from 'vitest'
+import { readdir, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Dependencies } from '@shared/dependencies'
+
+const testRoot = vi.hoisted(
+  () => `${process.env.TEMP ?? process.env.TMPDIR ?? '/tmp'}/tapebox-manager-${process.pid}`,
+)
+const downloadWithProgress = vi.hoisted(() => vi.fn())
+const verifyBinaryIntegrity = vi.hoisted(() => vi.fn())
+const execCapture = vi.hoisted(() => vi.fn())
+const assertArm64Slice = vi.hoisted(() => vi.fn())
+
+vi.mock('@main/paths', async () => {
+  const { join } = await import('node:path')
+  const { mkdir } = await import('node:fs/promises')
+  return {
+    paths: { temp: join(testRoot, 'temp'), bin: join(testRoot, 'bin') },
+    binaryPath: (name: string) => join(testRoot, 'bin', `${name}.exe`),
+    ensureDirs: async () => {
+      await mkdir(join(testRoot, 'temp'), { recursive: true })
+      await mkdir(join(testRoot, 'bin'), { recursive: true })
+    },
+  }
+})
+
+vi.mock('@main/binaries/http', () => ({ downloadWithProgress }))
+vi.mock('@main/binaries/integrity', () => ({ verifyBinaryIntegrity }))
+vi.mock('@main/io/spawn', () => ({ execCapture }))
+vi.mock('@main/binaries/arch', () => ({ assertArm64Slice }))
+vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 // checkForUpdates is the orchestration seam for the convention's honest-state rule:
 // a successful resolve records the latest + time; a failed one writes NOTHING. The
@@ -41,9 +70,24 @@ vi.mock('@main/binaries/installed-version', () => ({
   writeVersionSidecar: vi.fn(async () => undefined),
 }))
 
-import { checkForUpdates, downloadTempPath } from '@main/binaries/manager'
+import {
+  cancelInstall,
+  checkForUpdates,
+  downloadTempPath,
+  installOrUpdate,
+} from '@main/binaries/manager'
 import { binarySpecs } from '@main/binaries/registry'
 import { freshBinaryEntry } from '@shared/dependencies'
+import { UnsafeUrlError } from '@main/io/network'
+
+afterEach(async () => {
+  downloadWithProgress.mockReset()
+  verifyBinaryIntegrity.mockReset()
+  execCapture.mockReset()
+  assertArm64Slice.mockReset()
+  vi.restoreAllMocks()
+  await rm(testRoot, { recursive: true, force: true })
+})
 
 function seed(): void {
   depsRef.current = {
@@ -54,7 +98,20 @@ function seed(): void {
 }
 
 const resolved = (version: string) =>
-  ({ version, downloadUrl: 'https://x', archive: null, integrity: { kind: 'none' } }) as never
+  ({
+    version,
+    downloadUrl: 'https://x',
+    archive: null,
+    integrity: { kind: 'sums', url: 'https://x/sums', assetName: 'x' },
+  }) as never
+
+function rejectWhenAborted(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    const onAbort = (): void => reject(signal.reason)
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
 
 describe('checkForUpdates — a failed check writes nothing (I3)', () => {
   it('folds only successful resolves; a failed binary keeps its facts null', async () => {
@@ -63,7 +120,7 @@ describe('checkForUpdates — a failed check writes nothing (I3)', () => {
     vi.mocked(binarySpecs.ffmpeg.resolveLatest).mockRejectedValue(new Error('offline'))
     vi.mocked(binarySpecs.deno.resolveLatest).mockResolvedValue(resolved('1.44'))
 
-    await checkForUpdates()
+    const result = await checkForUpdates()
 
     const b = depsRef.current
     // Successful checks record the latest version and a timestamp.
@@ -74,6 +131,8 @@ describe('checkForUpdates — a failed check writes nothing (I3)', () => {
     // The failed check wrote nothing — no version, no timestamp.
     expect(b.ffmpeg.latestKnownVersion).toBeNull()
     expect(b.ffmpeg.lastCheckedAtUtc).toBeNull()
+    expect(result.failures).toEqual([{ name: 'ffmpeg', message: 'offline' }])
+    expect(result.statuses).toHaveLength(3)
   })
 })
 
@@ -90,5 +149,72 @@ describe('downloadTempPath', () => {
     const first = downloadTempPath('yt-dlp')
     const second = downloadTempPath('yt-dlp')
     expect(first).not.toBe(second)
+  })
+})
+
+describe('install download cleanup', () => {
+  it('removes a partial file when the final download attempt fails', async () => {
+    seed()
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue(resolved('2026.08.21'))
+    downloadWithProgress.mockImplementation(async ({ destPath }: { destPath: string }) => {
+      await writeFile(destPath, 'partial bytes')
+      throw new UnsafeUrlError('refusing downgraded response')
+    })
+
+    await expect(installOrUpdate('yt-dlp')).rejects.toThrow('refusing downgraded response')
+    expect(await readdir(join(testRoot, 'temp'))).toEqual([])
+  })
+})
+
+describe('install final-preparation cancellation', () => {
+  function arrangeInstall(): void {
+    seed()
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue(resolved('2026.08.21'))
+    downloadWithProgress.mockImplementation(async ({ destPath }: { destPath: string }) => {
+      await writeFile(destPath, 'verified binary bytes')
+    })
+    verifyBinaryIntegrity.mockResolvedValue({ verified: true, method: 'sha256' })
+  }
+
+  async function expectNoPublishedArtifact(install: Promise<void>): Promise<void> {
+    await expect(install).rejects.toMatchObject({ name: 'AbortError' })
+    expect(await readdir(join(testRoot, 'bin'))).toEqual([])
+    expect(await readdir(join(testRoot, 'temp'))).toEqual([])
+  }
+
+  it('aborts bounded xattr work and removes the stage instead of publishing it', async () => {
+    arrangeInstall()
+    execCapture.mockImplementation(
+      (_command: string, _args: readonly string[], opts: { signal: AbortSignal }) =>
+        rejectWhenAborted(opts.signal),
+    )
+
+    const install = installOrUpdate('yt-dlp')
+    await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce(), { timeout: 10_000 })
+    expect(execCapture).toHaveBeenCalledWith(
+      'xattr',
+      expect.any(Array),
+      expect.objectContaining({ signal: expect.any(AbortSignal), idleTimeoutMs: 5_000 }),
+    )
+
+    cancelInstall('yt-dlp')
+    await expectNoPublishedArtifact(install)
+    expect(assertArm64Slice).not.toHaveBeenCalled()
+  })
+
+  it('aborts lipo inspection and removes the stage instead of publishing it', async () => {
+    arrangeInstall()
+    execCapture.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
+    assertArm64Slice.mockImplementation((_filePath: string, signal: AbortSignal) =>
+      rejectWhenAborted(signal),
+    )
+
+    const install = installOrUpdate('yt-dlp')
+    await vi.waitFor(() => expect(assertArm64Slice).toHaveBeenCalledOnce(), { timeout: 10_000 })
+    expect(assertArm64Slice).toHaveBeenCalledWith(expect.any(String), expect.any(AbortSignal))
+
+    cancelInstall('yt-dlp')
+    await expectNoPublishedArtifact(install)
   })
 })

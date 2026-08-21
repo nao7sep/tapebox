@@ -27,11 +27,14 @@ export function BinariesModal() {
   const progress = useBinariesStore((s) => s.progress)
   const checking = useBinariesStore((s) => s.checking)
   const setStatuses = useBinariesStore((s) => s.setStatuses)
+  const clearProgress = useBinariesStore((s) => s.clearProgress)
   const setChecking = useBinariesStore((s) => s.setChecking)
   const closeModal = useBinariesStore((s) => s.closeModal)
   const settings = useSettingsStore((s) => s.settings)
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState<BinaryName[]>([])
+  const [cancelling, setCancelling] = useState<BinaryName[]>([])
+  const [checkFailures, setCheckFailures] = useState<BinaryName[] | null>(null)
 
   const checkUpdatesAtLaunch = settings?.checkUpdatesAtLaunch ?? true
 
@@ -60,18 +63,41 @@ export function BinariesModal() {
     try {
       await ipcInvoke('binaries:update', { name })
     } catch (err) {
-      setError(String(err))
+      if (!isCancellation(err)) setError(String(err))
     } finally {
+      clearProgress(name)
       setLaunching((prev) => prev.filter((n) => n !== name))
+      setCancelling((prev) => prev.filter((n) => n !== name))
+    }
+  }
+
+  async function cancel(name: BinaryName) {
+    if (cancelling.includes(name)) return
+    setCancelling((prev) => [...prev, name])
+    try {
+      await ipcInvoke('binaries:cancelUpdate', { name })
+    } catch (err) {
+      setCancelling((prev) => prev.filter((n) => n !== name))
+      setError(String(err))
     }
   }
 
   async function refresh() {
     if (checking) return
     setError(null)
+    setCheckFailures(null)
     setChecking(true)
     try {
-      setStatuses(await ipcInvoke('binaries:checkUpdates'))
+      const result = await ipcInvoke('binaries:checkUpdates')
+      setStatuses(result.statuses)
+      setCheckFailures(result.failures.map((failure) => failure.name))
+      if (result.failures.length > 0) {
+        setError(
+          `Check incomplete — ${result.failures
+            .map((failure) => `${failure.name}: ${failure.message}`)
+            .join('; ')}`,
+        )
+      }
     } catch (err) {
       setError(String(err))
     } finally {
@@ -106,7 +132,7 @@ export function BinariesModal() {
       </div>
 
       <div className="mt-5 flex items-center justify-between text-xs text-zinc-300">
-        <span>{lastCheckedHint(statuses, checking)}</span>
+        <span>{lastCheckedHint(statuses, checking, checkFailures)}</span>
         <Button variant="secondary" size="sm" onClick={() => void refresh()} loading={checking}>
           {checking ? 'Checking…' : 'Check for updates'}
         </Button>
@@ -130,8 +156,10 @@ export function BinariesModal() {
               status={s}
               progress={progress[s.name]}
               pending={launching.includes(s.name)}
+              cancelling={cancelling.includes(s.name)}
               checking={checking}
               onInstall={() => void install(s.name)}
+              onCancel={() => void cancel(s.name)}
             />
           ))}
         </tbody>
@@ -148,14 +176,18 @@ function BinaryRow({
   status,
   progress,
   pending,
+  cancelling,
   checking,
   onInstall,
+  onCancel,
 }: {
   status: BinaryStatus
   progress: { percent: number; phase: string } | undefined
   pending: boolean
+  cancelling: boolean
   checking: boolean
   onInstall: () => void
+  onCancel: () => void
 }) {
   const d = derivedOf(status)
   const label = acquireLabel(d.state, status.installedVersion)
@@ -166,15 +198,19 @@ function BinaryRow({
       <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d)}</td>
       <td className="py-3 text-zinc-300">{latestText(status, checking)}</td>
       <td className="py-3 text-right">
-        {progress ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
-            <Spinner />
-            {progress.phase} {progress.percent}%
-          </span>
-        ) : pending ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
-            <Spinner />
-            working…
+        {progress || pending ? (
+          <span className="inline-flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+              <Spinner />
+              {cancelling
+                ? 'cancelling…'
+                : progress
+                  ? `${progress.phase} ${progress.percent}%`
+                  : 'working…'}
+            </span>
+            <Button variant="ghost" size="sm" disabled={cancelling} onClick={onCancel}>
+              Cancel
+            </Button>
           </span>
         ) : label ? (
           <Button variant="warm" size="sm" onClick={onInstall}>
@@ -223,12 +259,24 @@ function acquireLabel(state: DependencyState, installedVersion: string | null): 
   return null
 }
 
-function lastCheckedHint(statuses: BinaryStatus[], checking: boolean): string {
+function lastCheckedHint(
+  statuses: BinaryStatus[],
+  checking: boolean,
+  failedNames: BinaryName[] | null,
+): string {
   if (checking) return 'Checking…'
+  if (failedNames && failedNames.length > 0) {
+    return `Check incomplete — ${failedNames.join(', ')} failed.`
+  }
   const timestamps = statuses.map((s) => s.lastCheckedAtUtc).filter((t): t is string => !!t)
   if (timestamps.length === 0) return 'Never checked for updates.'
   const latest = timestamps.sort().at(-1)!
   return `Last checked ${relativeTime(latest)}.`
+}
+
+function isCancellation(err: unknown): boolean {
+  const text = String(err).toLowerCase()
+  return text.includes('abort') || text.includes('cancel')
 }
 
 function relativeTime(utcIso: string): string {

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
+const LIPO_TIMEOUT_MS = 5_000
 
 /**
  * A downloaded macOS binary must carry a native arm64 slice — the fleet is
@@ -26,8 +27,14 @@ export function hasArm64Slice(lipoArchsOutput: string): boolean {
     .some((slice) => ARM64_SLICES.has(slice))
 }
 
-export async function assertArm64Slice(filePath: string): Promise<void> {
-  const { stdout } = await execFileAsync('lipo', ['-archs', filePath])
+export async function assertArm64Slice(filePath: string, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  const { stdout } = await execFileAsync('lipo', ['-archs', filePath], {
+    signal,
+    timeout: LIPO_TIMEOUT_MS,
+    windowsHide: true,
+  })
+  signal?.throwIfAborted()
   if (!hasArm64Slice(stdout)) {
     throw new Error(
       `downloaded binary is not arm64-native (lipo reports: ${stdout.trim() || 'no slices'})`,

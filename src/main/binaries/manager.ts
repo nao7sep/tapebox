@@ -7,12 +7,16 @@ import { emit } from '@main/ipc/events'
 import { getDependencies, mutateDependencies } from '@main/store/dependencies'
 import { execCapture } from '@main/io/spawn'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
-import { describeError } from '@shared/error'
+import { describeError, errorMessage } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
 import { recordLatest } from '@shared/binary-status'
 import { withRetry } from '@main/io/retry'
-import { BINARY_DOWNLOAD_IDLE_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
-import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
+import {
+  BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
+  HTTP_RETRY,
+  isRetryableHttpFailure,
+} from '@main/io/network'
+import type { BinaryCheckResult, BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import {
   forgetInstalledVersion,
@@ -36,7 +40,8 @@ import { assertArm64Slice } from './arch'
  * executable at a staging file (extract or move, then chmod) and publish it with
  * one fsync'd rename (writeFileAtomicVia) — so the file at bin/ only ever appears
  * complete, executable, and flushed, never mid-extract or pre-chmod.
- * Concurrent installOrUpdate for the same name is serialized by a Set lock.
+ * Concurrent installOrUpdate for the same name is serialized by the in-flight map,
+ * which also owns that operation's cancellation controller.
  *
  * Update-check policy: dependencies.<name>.{latestKnownVersion,
  * lastCheckedAtUtc} are the single source of truth — there's no in-memory
@@ -51,22 +56,33 @@ import { assertArm64Slice } from './arch'
  * cached read so the next status sees the binary it just published.
  */
 
-const inFlight = new Set<BinaryName>()
+const inFlight = new Map<BinaryName, AbortController>()
+const FINAL_PREP_TIMEOUT_MS = 5_000
 
 /**
  * Serialize operations per binary (the convention's per-dependency rule): a second
  * install/update on the same binary is rejected rather than racing the first.
  */
-async function withBinaryLock<T>(name: BinaryName, run: () => Promise<T>): Promise<T> {
+async function withBinaryLock<T>(
+  name: BinaryName,
+  run: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   if (inFlight.has(name)) {
     throw new Error(`${name} operation already in progress`)
   }
-  inFlight.add(name)
+  const controller = new AbortController()
+  inFlight.set(name, controller)
   try {
-    return await run()
+    return await run(controller.signal)
   } finally {
-    inFlight.delete(name)
+    if (inFlight.get(name) === controller) inFlight.delete(name)
   }
+}
+
+/** Abort one user-started install/update. The original update IPC remains the
+ * owner of settling and reporting the operation; this only delivers intent. */
+export function cancelInstall(name: BinaryName): void {
+  inFlight.get(name)?.abort(new DOMException(`${name} install cancelled`, 'AbortError'))
 }
 
 /**
@@ -124,10 +140,10 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
  * knowledge (the convention's honest-state rule). Failures are logged, never
  * persisted, so there is no "check-failed" state to represent.
  */
-export async function checkForUpdates(): Promise<BinaryStatus[]> {
+export async function checkForUpdates(): Promise<BinaryCheckResult> {
   const now = nowUtcIso()
   const resolved = new Map<BinaryName, string>()
-  let failed = 0
+  const failures: BinaryCheckResult['failures'] = []
 
   await Promise.all(
     binaryNames.map(async (name) => {
@@ -138,13 +154,13 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
         // A failed check writes NOTHING (managed-runtime-dependencies-conventions):
         // no version, no timestamp, no error state — the displayed wording stays at
         // the last successful knowledge. Log it and move on.
-        failed += 1
+        failures.push({ name, message: errorMessage(err) })
         log.warn('binary update check failed', { name, error: describeError(err) })
       }
     }),
   )
 
-  log.info('binary update check complete', { resolved: resolved.size, failed })
+  log.info('binary update check complete', { resolved: resolved.size, failed: failures.length })
   // Apply inside the dependencies critical section: read the *current* entry (so a
   // concurrent install's fields are preserved) and fold in each successful check.
   await mutateDependencies((d) => {
@@ -154,56 +170,55 @@ export async function checkForUpdates(): Promise<BinaryStatus[]> {
     }
     return next
   })
-  return getAllStatuses()
+  return { statuses: await getAllStatuses(), failures }
 }
 
 export async function installOrUpdate(name: BinaryName): Promise<void> {
-  await withBinaryLock(name, () => performInstall(name))
+  await withBinaryLock(name, (signal) => performInstall(name, signal))
 }
 
-async function performInstall(name: BinaryName): Promise<void> {
+async function performInstall(name: BinaryName, signal: AbortSignal): Promise<void> {
   log.info('binary install start', { name })
   emit('binaries:progress', { name, percent: 0, phase: 'download' })
 
   const spec = binarySpecs[name]
-  const resolved = await spec.resolveLatest()
+  const resolved = await spec.resolveLatest(signal)
+  signal.throwIfAborted()
   log.info('binary resolved', { name, version: resolved.version, url: resolved.downloadUrl })
 
   await ensureDirs()
   const downloadTemp = downloadTempPath(name)
 
   let lastEmittedPct = -1
-  await withRetry(HTTP_RETRY, () =>
-    downloadWithProgress({
-      url: resolved.downloadUrl,
-      destPath: downloadTemp,
-      idleTimeoutMs: BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
-      onProgress: (received, total) => {
-        const pct = total > 0 ? Math.floor((received / total) * 100) : 0
-        if (pct !== lastEmittedPct) {
-          lastEmittedPct = pct
-          emit('binaries:progress', { name, percent: pct, phase: 'download' })
-        }
-      },
-    }),
-  )
-
-  const finalPath = binaryPath(name)
-  let integrityVerified = false
   try {
+    await withRetry(
+      HTTP_RETRY,
+      () =>
+        downloadWithProgress({
+          url: resolved.downloadUrl,
+          destPath: downloadTemp,
+          idleTimeoutMs: BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
+          signal,
+          onProgress: (received, total) => {
+            const pct = total > 0 ? Math.floor((received / total) * 100) : 0
+            if (pct !== lastEmittedPct) {
+              lastEmittedPct = pct
+              emit('binaries:progress', { name, percent: pct, phase: 'download' })
+            }
+          },
+        }),
+      { signal, isRetryable: isRetryableHttpFailure },
+    )
+
+    const finalPath = binaryPath(name)
     emit('binaries:progress', { name, percent: 0, phase: 'verify' })
     // Integrity gate: verify the downloaded bytes against the vendor's published
     // SHA-256 sums file before making them executable. A failure throws and aborts
-    // the install (the temp is cleaned in the finally below); a source that
-    // publishes nothing is logged and installed unverified (https-only transport
-    // still applies), and its integrity is recorded as unestablished, not verified.
-    const integrity = await verifyBinaryIntegrity(downloadTemp, resolved.integrity)
-    integrityVerified = integrity.verified
-    if (integrity.verified) {
-      log.info('binary integrity verified', { name, method: integrity.method })
-    } else {
-      log.warn('binary integrity unavailable; installed unverified', { name })
-    }
+    // the install (the temp is cleaned in the finally below). Every registered
+    // source is required to provide this evidence; resolution refuses one that does not.
+    const integrity = await verifyBinaryIntegrity(downloadTemp, resolved.integrity, signal)
+    log.info('binary integrity verified', { name, method: integrity.method })
+    signal.throwIfAborted()
 
     emit('binaries:progress', { name, percent: 0, phase: 'install' })
 
@@ -220,20 +235,36 @@ async function performInstall(name: BinaryName): Promise<void> {
       } else {
         await rename(downloadTemp, stage)
       }
+      signal.throwIfAborted()
       if (process.platform !== 'win32') {
         await chmod(stage, 0o755)
         // Strip macOS Gatekeeper quarantine if present; harmless when absent.
         if (process.platform === 'darwin') {
-          await execCapture('xattr', ['-d', 'com.apple.quarantine', stage], { reject: false })
-            .catch(() => {})
+          const xattrSignal = AbortSignal.any([
+            signal,
+            AbortSignal.timeout(FINAL_PREP_TIMEOUT_MS),
+          ])
+          try {
+            await execCapture('xattr', ['-d', 'com.apple.quarantine', stage], {
+              reject: false,
+              signal: xattrSignal,
+              idleTimeoutMs: FINAL_PREP_TIMEOUT_MS,
+            })
+          } catch {
+            // A missing attribute is harmless, but caller cancellation is not.
+            signal.throwIfAborted()
+          }
         }
       }
       // Architecture gate (macOS): reject an x86_64-only build before it is
       // published, so a wrong-arch download fails clean here rather than at exec
       // time on Apple Silicon (no Rosetta). A universal binary passes.
       if (process.platform === 'darwin') {
-        await assertArm64Slice(stage)
+        await assertArm64Slice(stage, signal)
       }
+      // This is the last cancellable boundary before writeFileAtomicVia fsyncs and
+      // atomically publishes the completed stage.
+      signal.throwIfAborted()
     })
   } finally {
     await unlink(downloadTemp).catch(() => {})
@@ -254,7 +285,7 @@ async function performInstall(name: BinaryName): Promise<void> {
     forgetInstalledVersion(name)
   }
 
-  log.info('binary installed', { name, version: resolved.version, integrityVerified })
+  log.info('binary installed', { name, version: resolved.version, integrityVerified: true })
 
   // Only the upstream fact is persisted. What is now installed is read back from
   // the binary, so an install has nothing to record about it.
