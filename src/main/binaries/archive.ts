@@ -1,4 +1,5 @@
 import { createWriteStream } from 'node:fs'
+import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import unzipper from 'unzipper'
 
@@ -21,6 +22,7 @@ export async function extractFileFromZip(
   zipPath: string,
   innerName: string,
   outPath: string,
+  maxBytes: number,
   signal?: AbortSignal,
 ): Promise<void> {
   signal?.throwIfAborted()
@@ -39,5 +41,23 @@ export async function extractFileFromZip(
     throw new Error(`File ${innerName} not found in archive. Available: ${files.map((f) => f.path).join(', ')}`)
   }
 
-  await pipeline(file.stream(), createWriteStream(outPath), { signal })
+  const advertisedSize = (file as typeof file & {
+    vars?: { uncompressedSize?: number }
+  }).vars?.uncompressedSize
+  if (advertisedSize !== undefined && advertisedSize > maxBytes) {
+    throw new Error(`Extracted ${innerName} is too large (${advertisedSize} bytes; limit ${maxBytes})`)
+  }
+
+  let extracted = 0
+  const limiter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      if (extracted + chunk.byteLength > maxBytes) {
+        callback(new Error(`Extracted ${innerName} exceeded ${maxBytes} bytes`))
+        return
+      }
+      extracted += chunk.byteLength
+      callback(null, chunk)
+    },
+  })
+  await pipeline(file.stream(), limiter, createWriteStream(outPath), { signal })
 }

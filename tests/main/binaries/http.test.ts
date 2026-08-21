@@ -57,7 +57,7 @@ function collector(chunks: Buffer[], opts: { delayMs?: number; highWaterMark?: n
   })
 }
 
-const OPTS = { total: 0, url: 'https://example.test/file' }
+const OPTS = { total: 0, url: 'https://example.test/file', maxBytes: 1024 }
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -75,6 +75,7 @@ describe('download response URL policy', () => {
     await expect(downloadWithProgress({
       url: 'https://example.test/tool.exe',
       destPath: 'unused-after-policy-failure',
+      maxBytes: 1024,
     })).rejects.toThrow('refusing non-https binary download response URL')
   })
 
@@ -92,8 +93,28 @@ describe('download response URL policy', () => {
     await expect(downloadWithProgress({
       url: 'https://example.test/tool.exe',
       destPath: 'unused-after-policy-failure',
+      maxBytes: 1024,
     })).rejects.toThrow('refusing non-https binary download redirect URL')
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an oversized advertised body before writing it', async () => {
+    const cancel = vi.fn(async () => undefined)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      url: 'https://example.test/tool.exe',
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      body: { cancel },
+      headers: new Headers({ 'content-length': '2048' }),
+    } as unknown as Response)))
+
+    await expect(downloadWithProgress({
+      url: 'https://example.test/tool.exe',
+      destPath: 'must-not-be-opened',
+      maxBytes: 1024,
+    })).rejects.toThrow('too large')
+    expect(cancel).toHaveBeenCalledOnce()
   })
 })
 
@@ -208,5 +229,16 @@ describe('pumpToFile', () => {
 
     expect(received).toEqual([])
     expect(progressCalls).toBe(0)
+  })
+
+  it('rejects before passing a chunk that crosses the byte ceiling', async () => {
+    const received: Buffer[] = []
+    await expect(
+      pumpToFile(bodyOf(new Uint8Array([1, 2]), new Uint8Array([3, 4])), collector(received), {
+        ...OPTS,
+        maxBytes: 3,
+      }),
+    ).rejects.toThrow('exceeded 3 bytes')
+    expect(Buffer.concat(received)).toEqual(Buffer.from([1, 2]))
   })
 })

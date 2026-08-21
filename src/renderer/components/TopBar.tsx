@@ -1,5 +1,5 @@
 import { ipcInvoke } from '@renderer/ipc/client'
-import { useBinariesStore, allBinariesUsable } from '@renderer/store/binaries'
+import { useBinariesStore, requiredBinariesUsable } from '@renderer/store/binaries'
 import { useToastStore } from '@renderer/store/toast'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
@@ -23,7 +23,7 @@ export function TopBar({ clipboardEnabled }: Props) {
   // permanent roll-up (amber, click-through) and the first-run modal, never as an
   // inline banner here: a conditional message under this row grows the top bar
   // and shifts the layout the moment the state it guards first occurs.
-  const toolsReady = useBinariesStore((s) => allBinariesUsable(s.statuses))
+  const toolsReady = useBinariesStore((s) => requiredBinariesUsable(s.statuses))
   const notify = useToastStore((s) => s.notify)
 
   async function add(value: string) {

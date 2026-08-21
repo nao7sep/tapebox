@@ -106,6 +106,7 @@ export type IpcCalls = {
   'binaries:update':       { req: { name: BinaryName };              res: BinaryUpdateResult }
   'binaries:cancelUpdate': { req: { name: BinaryName };              res: BinaryCancelResult }
   'binaries:checkUpdates': { req: undefined;                         res: BinaryCheckResult }
+  'binaries:cancelCheck':  { req: undefined;                         res: BinaryCancelResult }
 
   // ── Scan (page scan) ──────────────────────────────────────────────
   // The Scan-a-page modal subscribes to scan:* events, then calls scan:start.
@@ -173,10 +174,9 @@ export type BinaryStatus = {
 
 export type BinaryCheckFailure = { name: BinaryName; message: string }
 
-export type BinaryCheckResult = {
-  statuses: BinaryStatus[]
-  failures: BinaryCheckFailure[]
-}
+export type BinaryCheckResult =
+  | { outcome: 'completed'; statuses: BinaryStatus[]; failures: BinaryCheckFailure[] }
+  | { outcome: 'cancelled' }
 
 export type ImportResult = {
   imported: Tape[]

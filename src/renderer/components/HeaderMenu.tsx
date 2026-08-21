@@ -20,7 +20,7 @@ export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortc
     { label: 'Scan a page', action: onScanPage },
     { label: 'Import files', action: onImport },
     { label: 'Settings', action: onSettings },
-    { label: 'Required tools', action: onTools },
+    { label: 'Managed tools', action: onTools },
     { label: 'Keyboard shortcuts', action: onShortcuts },
     { label: 'Reveal session log', action: onRevealLog },
     { label: 'About', action: onAbout },

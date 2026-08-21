@@ -45,6 +45,10 @@ describe('the four-state model', () => {
     expect(deriveStatus(facts())).toEqual({ state: 'not-installed', role: 'warning' })
   })
 
+  it('absent optional dependency → not-installed (info)', () => {
+    expect(deriveStatus(facts(), false)).toEqual({ state: 'not-installed', role: 'info' })
+  })
+
   it('present, no successful check → installed-unchecked (info)', () => {
     expect(deriveStatus(installed())).toEqual({ state: 'installed-unchecked', role: 'info' })
   })

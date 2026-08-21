@@ -61,6 +61,7 @@ export const useBinariesStore = create<BinariesState>((set) => ({
 
 /** Apply one completed manual or launch check as a single session-state result. */
 export function applyBinaryCheckResult(result: BinaryCheckResult): void {
+  if (result.outcome === 'cancelled') return
   useBinariesStore.setState({
     statuses: result.statuses,
     checkFailures: result.failures,
@@ -82,15 +83,17 @@ export function factsOf(s: BinaryStatus): DependencyFacts {
 }
 
 export function derivedOf(s: BinaryStatus): DerivedStatus {
-  return deriveStatus(factsOf(s))
+  return deriveStatus(factsOf(s), s.name !== 'deno')
 }
 
 /**
- * True once every managed binary is present — the blocking add-URL gate. A binary
- * that is not installed blocks downloads until the user provisions it.
+ * True once the two tools every download needs are present. Deno remains optional:
+ * yt-dlp uses it only for sites that need a JavaScript runtime.
  */
-export function allBinariesUsable(statuses: BinaryStatus[]): boolean {
-  return statuses.length > 0 && statuses.every((s) => s.present)
+export function requiredBinariesUsable(statuses: BinaryStatus[]): boolean {
+  return (['yt-dlp', 'ffmpeg'] as const).every(
+    (name) => statuses.find((status) => status.name === name)?.present === true,
+  )
 }
 
 /**
@@ -99,7 +102,7 @@ export function allBinariesUsable(statuses: BinaryStatus[]): boolean {
  * it surfaces passively in the status bar.
  */
 export function binariesNeedAttention(statuses: BinaryStatus[]): boolean {
-  return statuses.some((s) => derivedOf(s).state === 'not-installed')
+  return statuses.some((s) => s.name !== 'deno' && derivedOf(s).state === 'not-installed')
 }
 
 export type ToolsSummary = { role: Role; text: string; actionable: boolean }
@@ -131,6 +134,9 @@ export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
     const unreadable = statuses.filter((s) => s.present && s.installedVersion === null).length
     if (unreadable > 0) {
       return { role, text: `${plural(unreadable, 'tool', 'tools')} couldn’t be read`, actionable: true }
+    }
+    if (statuses.some((s) => s.name === 'deno' && !s.present)) {
+      return { role, text: 'Optional tool isn’t installed', actionable: true }
     }
     return { role, text: 'Updates not checked', actionable: false }
   }

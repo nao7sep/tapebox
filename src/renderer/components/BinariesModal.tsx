@@ -104,9 +104,17 @@ export function BinariesModal() {
     }
   }
 
+  async function cancelCheck() {
+    try {
+      await ipcInvoke('binaries:cancelCheck')
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
   return (
     <Modal
-      title="Required tools"
+      title="Managed tools"
       onClose={closeModal}
       size="2xl"
       fitContent
@@ -132,9 +140,11 @@ export function BinariesModal() {
 
       <div className="mt-5 flex items-center justify-between text-xs text-zinc-300">
         <span>{lastCheckedHint(statuses, checking, checkFailures?.map((failure) => failure.name) ?? null)}</span>
-        <Button variant="secondary" size="sm" onClick={() => void refresh()} loading={checking}>
-          {checking ? 'Checking…' : 'Check for updates'}
-        </Button>
+        {checking ? (
+          <Button variant="ghost" size="sm" onClick={() => void cancelCheck()}>Cancel check</Button>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={() => void refresh()}>Check for updates</Button>
+        )}
       </div>
 
       {/* Fixed layout with explicit widths so the three data columns spread evenly

@@ -67,14 +67,13 @@ function stateOf(f: DependencyFacts): DependencyState {
   return f.desiredVersion === f.installedVersion ? 'up-to-date' : 'update-available'
 }
 
-// All of tapebox's managed binaries (yt-dlp, ffmpeg, deno) are required to work, so
-// a missing one is a warning (its urgency carried by the blocking add-URL gate);
-// update-available is a warning; installed-unchecked is a benign informational; and
-// up-to-date is silent.
-function roleOf(state: DependencyState): Role {
+// yt-dlp and ffmpeg are required throughout the download flow; Deno is optional
+// outside the sites whose yt-dlp extractor needs a JavaScript runtime. Missing is
+// therefore warning or informational according to the current scope.
+function roleOf(state: DependencyState, required: boolean): Role {
   switch (state) {
     case 'not-installed':
-      return 'warning'
+      return required ? 'warning' : 'info'
     case 'update-available':
       return 'warning'
     case 'installed-unchecked':
@@ -90,9 +89,9 @@ function roleOf(state: DependencyState): Role {
  * running install's progress, a just-failed action) is layered over this by the
  * surface, never folded into the persisted state.
  */
-export function deriveStatus(facts: DependencyFacts): DerivedStatus {
+export function deriveStatus(facts: DependencyFacts, required = true): DerivedStatus {
   const state = stateOf(facts)
-  return { state, role: roleOf(state) }
+  return { state, role: roleOf(state, required) }
 }
 
 /**

@@ -81,4 +81,14 @@ describe('BinariesModal check and acquisition outcomes', () => {
 
     expect(document.body.textContent).toContain('The operation was aborted due to timeout')
   })
+
+  it('lets the user cancel an in-progress update check', async () => {
+    useBinariesStore.setState({ checking: true })
+    ipcInvoke.mockResolvedValueOnce({ outcome: 'cancel-requested' })
+    await mount()
+
+    await act(async () => button('Cancel check').click())
+
+    expect(ipcInvoke).toHaveBeenCalledWith('binaries:cancelCheck')
+  })
 })

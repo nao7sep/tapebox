@@ -23,6 +23,7 @@ export type DownloadOptions = {
   onProgress?: (received: number, total: number) => void
   signal?: AbortSignal
   idleTimeoutMs?: number
+  maxBytes: number
 }
 
 export async function downloadWithProgress(opts: DownloadOptions): Promise<void> {
@@ -49,13 +50,23 @@ export async function downloadWithProgress(opts: DownloadOptions): Promise<void>
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} from ${opts.url}`)
   if (!res.body) throw new Error(`Response body missing from ${opts.url}`)
 
-  const total = Number(res.headers.get('content-length') ?? 0)
+  const contentLength = res.headers.get('content-length')
+  const total = contentLength === null ? 0 : Number(contentLength)
+  if (contentLength !== null && (!Number.isSafeInteger(total) || total < 0)) {
+    await res.body.cancel().catch(() => {})
+    throw new Error(`Invalid Content-Length from ${opts.url}: ${contentLength}`)
+  }
+  if (total > opts.maxBytes) {
+    await res.body.cancel().catch(() => {})
+    throw new Error(`Download from ${opts.url} is too large (${total} bytes; limit ${opts.maxBytes})`)
+  }
   const out = createWriteStream(opts.destPath)
   await pumpToFile(res.body, out, {
     total,
     url: opts.url,
     idleTimeoutMs: opts.idleTimeoutMs,
     signal: opts.signal,
+    maxBytes: opts.maxBytes,
     onProgress: opts.onProgress,
   })
 }
@@ -85,6 +96,7 @@ export async function pumpToFile(
     url: string
     idleTimeoutMs?: number
     signal?: AbortSignal
+    maxBytes: number
     onProgress?: (received: number, total: number) => void
   },
 ): Promise<void> {
@@ -100,6 +112,10 @@ export async function pumpToFile(
   let received = 0
   const counter = new Transform({
     transform(chunk: Buffer, _enc, cb) {
+      if (received + chunk.byteLength > opts.maxBytes) {
+        cb(new Error(`Download from ${opts.url} exceeded ${opts.maxBytes} bytes`))
+        return
+      }
       received += chunk.byteLength
       watch.kick()
       opts.onProgress?.(received, opts.total)

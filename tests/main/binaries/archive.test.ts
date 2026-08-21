@@ -15,14 +15,19 @@ vi.mock('unzipper', () => ({ default: { Open: { file: openFile } } }))
 
 import { extractFileFromZip } from '@main/binaries/archive'
 
-type FakeEntry = { type: 'File' | 'Directory'; path: string; stream: () => Readable }
+type FakeEntry = {
+  type: 'File' | 'Directory'
+  path: string
+  vars: { uncompressedSize: number }
+  stream: () => Readable
+}
 
-function file(path: string, makeStream: () => Readable): FakeEntry {
-  return { type: 'File', path, stream: makeStream }
+function file(path: string, makeStream: () => Readable, uncompressedSize = 0): FakeEntry {
+  return { type: 'File', path, vars: { uncompressedSize }, stream: makeStream }
 }
 
 function dirEntry(path: string): FakeEntry {
-  return { type: 'Directory', path, stream: () => Readable.from([]) }
+  return { type: 'Directory', path, vars: { uncompressedSize: 0 }, stream: () => Readable.from([]) }
 }
 
 /** A source that emits the given bytes in one chunk and closes cleanly. */
@@ -59,7 +64,7 @@ describe('extractFileFromZip', () => {
     archiveOf(file('deno', bytes(1, 2, 3)))
     const out = join(dir, 'deno')
 
-    await extractFileFromZip('archive.zip', 'deno', out)
+    await extractFileFromZip('archive.zip', 'deno', out, 1024)
 
     expect([...(await readFile(out))]).toEqual([1, 2, 3])
   })
@@ -68,7 +73,7 @@ describe('extractFileFromZip', () => {
     archiveOf(file('ffmpeg-7.1/readme.txt', bytes(0)), file('ffmpeg-7.1/bin/ffmpeg', bytes(9, 9)))
     const out = join(dir, 'ffmpeg')
 
-    await extractFileFromZip('archive.zip', 'ffmpeg', out)
+    await extractFileFromZip('archive.zip', 'ffmpeg', out, 1024)
 
     expect([...(await readFile(out))]).toEqual([9, 9])
   })
@@ -77,7 +82,7 @@ describe('extractFileFromZip', () => {
     archiveOf(file('nested/ffmpeg', bytes(1)), file('ffmpeg', bytes(2, 2)))
     const out = join(dir, 'ffmpeg')
 
-    await extractFileFromZip('archive.zip', 'ffmpeg', out)
+    await extractFileFromZip('archive.zip', 'ffmpeg', out, 1024)
 
     // The top-level 'ffmpeg' (exact), not 'nested/ffmpeg' (basename).
     expect([...(await readFile(out))]).toEqual([2, 2])
@@ -87,7 +92,7 @@ describe('extractFileFromZip', () => {
     archiveOf(file('x/ffmpeg', bytes(1)), file('y/ffmpeg', bytes(2)))
     const out = join(dir, 'ffmpeg')
 
-    await expect(extractFileFromZip('archive.zip', 'ffmpeg', out)).rejects.toThrow(
+    await expect(extractFileFromZip('archive.zip', 'ffmpeg', out, 1024)).rejects.toThrow(
       'File ffmpeg matches multiple entries in archive: x/ffmpeg, y/ffmpeg',
     )
     expect(await exists(out)).toBe(false)
@@ -97,7 +102,7 @@ describe('extractFileFromZip', () => {
     archiveOf(dirEntry('ffmpeg'), dirEntry('bin/ffmpeg'))
     const out = join(dir, 'ffmpeg')
 
-    await expect(extractFileFromZip('archive.zip', 'ffmpeg', out)).rejects.toThrow('not found in archive')
+    await expect(extractFileFromZip('archive.zip', 'ffmpeg', out, 1024)).rejects.toThrow('not found in archive')
     expect(await exists(out)).toBe(false)
   })
 
@@ -105,7 +110,7 @@ describe('extractFileFromZip', () => {
     archiveOf(file('readme.txt', bytes(0)), file('LICENSE', bytes(0)))
     const out = join(dir, 'deno')
 
-    await expect(extractFileFromZip('archive.zip', 'deno', out)).rejects.toThrow(
+    await expect(extractFileFromZip('archive.zip', 'deno', out, 1024)).rejects.toThrow(
       'File deno not found in archive. Available: readme.txt, LICENSE',
     )
     expect(await exists(out)).toBe(false)
@@ -133,7 +138,7 @@ describe('extractFileFromZip', () => {
     )
     const out = join(dir, 'deno')
 
-    await expect(extractFileFromZip('archive.zip', 'deno', out)).rejects.toThrow('corrupt entry')
+    await expect(extractFileFromZip('archive.zip', 'deno', out, 1024)).rejects.toThrow('corrupt entry')
   })
 
   it('aborts an extraction that is parked mid-stream', async () => {
@@ -152,11 +157,21 @@ describe('extractFileFromZip', () => {
     )
     const out = join(dir, 'deno')
     const controller = new AbortController()
-    const extraction = extractFileFromZip('archive.zip', 'deno', out, controller.signal)
+    const extraction = extractFileFromZip('archive.zip', 'deno', out, 1024, controller.signal)
 
     await vi.waitFor(async () => expect(await exists(out)).toBe(true))
     controller.abort(new DOMException('cancel extraction', 'AbortError'))
 
     await expect(extraction).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('rejects an entry whose advertised or streamed size exceeds the ceiling', async () => {
+    archiveOf(file('deno', bytes(1, 2, 3, 4), 4))
+    await expect(extractFileFromZip('archive.zip', 'deno', join(dir, 'advertised'), 3))
+      .rejects.toThrow('too large')
+
+    archiveOf(file('deno', bytes(1, 2, 3, 4)))
+    await expect(extractFileFromZip('archive.zip', 'deno', join(dir, 'streamed'), 3))
+      .rejects.toThrow('exceeded 3 bytes')
   })
 })

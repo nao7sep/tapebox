@@ -83,6 +83,7 @@ import { freshBinaryEntry } from '@shared/dependencies'
 import { UnsafeUrlError } from '@main/io/network'
 
 afterEach(async () => {
+  vi.useRealTimers()
   downloadWithProgress.mockReset()
   verifyBinaryIntegrity.mockReset()
   execCapture.mockReset()
@@ -105,6 +106,8 @@ const resolved = (version: string) =>
     version,
     downloadUrl: 'https://x',
     archive: null,
+    maxDownloadBytes: 64 * 1024 * 1024,
+    maxInstalledBytes: 64 * 1024 * 1024,
     integrity: { kind: 'sums', url: 'https://x/sums', assetName: 'x' },
   }) as never
 
@@ -134,8 +137,25 @@ describe('checkForUpdates — a failed check writes nothing (I3)', () => {
     // The failed check wrote nothing — no version, no timestamp.
     expect(b.ffmpeg.latestKnownVersion).toBeNull()
     expect(b.ffmpeg.lastCheckedAtUtc).toBeNull()
-    expect(result.failures).toEqual([{ name: 'ffmpeg', message: 'offline' }])
-    expect(result.statuses).toHaveLength(3)
+    expect(result).toMatchObject({
+      outcome: 'completed',
+      failures: [{ name: 'ffmpeg', message: 'offline' }],
+    })
+    if (result.outcome === 'completed') expect(result.statuses).toHaveLength(3)
+  })
+
+  it('cancels the whole check without persisting partial results', async () => {
+    seed()
+    const controller = new AbortController()
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockImplementation((signal) => rejectWhenAborted(signal!))
+    vi.mocked(binarySpecs.ffmpeg.resolveLatest).mockImplementation((signal) => rejectWhenAborted(signal!))
+    vi.mocked(binarySpecs.deno.resolveLatest).mockImplementation((signal) => rejectWhenAborted(signal!))
+
+    const check = checkForUpdates(controller.signal)
+    controller.abort(new DOMException('cancel check', 'AbortError'))
+
+    await expect(check).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Object.values(depsRef.current).every((entry) => entry.lastCheckedAtUtc === null)).toBe(true)
   })
 })
 
@@ -176,6 +196,7 @@ describe('install download cleanup', () => {
 
     await expect(installOrUpdate('yt-dlp')).rejects.toMatchObject({ name: 'TimeoutError' })
   })
+
 })
 
 describe('install final-preparation cancellation', () => {
@@ -236,10 +257,12 @@ describe('install final-preparation cancellation', () => {
       version: '2026.08.21',
       downloadUrl: 'https://x',
       archive: { kind: 'zip', innerName: 'yt-dlp' },
+      maxDownloadBytes: 64 * 1024 * 1024,
+      maxInstalledBytes: 64 * 1024 * 1024,
       integrity: { kind: 'sums', url: 'https://x/sums', assetName: 'x' },
     } as never)
     extractFileFromZip.mockImplementation(
-      (_zip: string, _inner: string, _stage: string, signal: AbortSignal) =>
+      (_zip: string, _inner: string, _stage: string, _maxBytes: number, signal: AbortSignal) =>
         rejectWhenAborted(signal),
     )
 
@@ -249,6 +272,7 @@ describe('install final-preparation cancellation', () => {
       expect.any(String),
       'yt-dlp',
       expect.any(String),
+      64 * 1024 * 1024,
       expect.any(AbortSignal),
     )
 

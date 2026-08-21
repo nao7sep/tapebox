@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { BinaryStatus } from '@shared/ipc-contract'
 import {
-  allBinariesUsable,
+  requiredBinariesUsable,
   applyBinaryCheckResult,
   binariesNeedAttention,
   derivedOf,
@@ -63,6 +63,15 @@ describe('summarizeBinaries — worst-role roll-up', () => {
     expect(summarizeBinaries([unchecked, status()])).toEqual({ role: 'info', text: 'Updates not checked', actionable: false })
   })
 
+  it('treats missing optional Deno as informational and actionable', () => {
+    const deno = status({ name: 'deno', present: false, installedVersion: null })
+    expect(summarizeBinaries([status(), status({ name: 'ffmpeg' }), deno])).toEqual({
+      role: 'info',
+      text: 'Optional tool isn’t installed',
+      actionable: true,
+    })
+  })
+
   // Both are informational, but only one asks something of the user: a tool whose
   // own version could not be read needs re-acquiring, and the set-wide Check can
   // never clear it, so the roll-up says so and opens the modal.
@@ -90,19 +99,27 @@ describe('binariesNeedAttention — startup auto-open trigger', () => {
   it('false for benign states (up-to-date / update-available / unchecked / unreadable)', () => {
     expect(binariesNeedAttention([status(), updateAvailable, unchecked, unreadable])).toBe(false)
   })
+
+  it('does not auto-open for missing optional Deno', () => {
+    expect(binariesNeedAttention([status({ name: 'deno', present: false })])).toBe(false)
+  })
 })
 
-describe('allBinariesUsable', () => {
+describe('requiredBinariesUsable', () => {
   it('true when every tool is present, whatever its version reads as', () => {
-    expect(allBinariesUsable([status(), unreadable])).toBe(true)
+    expect(requiredBinariesUsable([status(), status({ name: 'ffmpeg', installedVersion: null })])).toBe(true)
   })
 
   it('false when any tool is not installed', () => {
-    expect(allBinariesUsable([status(), absent])).toBe(false)
+    expect(requiredBinariesUsable([status(), absent])).toBe(false)
   })
 
   it('false for an empty set (status not yet known)', () => {
-    expect(allBinariesUsable([])).toBe(false)
+    expect(requiredBinariesUsable([])).toBe(false)
+  })
+
+  it('does not block the app when optional Deno is absent', () => {
+    expect(requiredBinariesUsable([status(), status({ name: 'ffmpeg' }), status({ name: 'deno', present: false })])).toBe(true)
   })
 })
 
@@ -111,7 +128,7 @@ describe('applyBinaryCheckResult', () => {
     const statuses = [status()]
     const failures = [{ name: 'ffmpeg' as const, message: 'offline' }]
 
-    applyBinaryCheckResult({ statuses, failures })
+    applyBinaryCheckResult({ outcome: 'completed', statuses, failures })
 
     expect(useBinariesStore.getState()).toMatchObject({ statuses, checkFailures: failures })
   })

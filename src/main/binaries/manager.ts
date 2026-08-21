@@ -13,11 +13,13 @@ import { recordLatest } from '@shared/binary-status'
 import { withRetry } from '@main/io/retry'
 import {
   BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
+  BINARY_ACQUIRE_TIMEOUT_MS,
   HTTP_RETRY,
   isRetryableHttpFailure,
 } from '@main/io/network'
 import type {
   BinaryCancelResult,
+  BinaryCheckFailure,
   BinaryCheckResult,
   BinaryName,
   BinaryStatus,
@@ -149,17 +151,18 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
  * knowledge (the convention's honest-state rule). Failures are logged, never
  * persisted, so there is no "check-failed" state to represent.
  */
-export async function checkForUpdates(): Promise<BinaryCheckResult> {
+export async function checkForUpdates(signal?: AbortSignal): Promise<BinaryCheckResult> {
   const now = nowUtcIso()
   const resolved = new Map<BinaryName, string>()
-  const failures: BinaryCheckResult['failures'] = []
+  const failures: BinaryCheckFailure[] = []
 
   await Promise.all(
     binaryNames.map(async (name) => {
       try {
-        const asset = await binarySpecs[name].resolveLatest()
+        const asset = await binarySpecs[name].resolveLatest(signal)
         resolved.set(name, asset.version)
       } catch (err) {
+        if (signal?.aborted) throw signal.reason
         // A failed check writes NOTHING (managed-runtime-dependencies-conventions):
         // no version, no timestamp, no error state — the displayed wording stays at
         // the last successful knowledge. Log it and move on.
@@ -179,11 +182,15 @@ export async function checkForUpdates(): Promise<BinaryCheckResult> {
     }
     return next
   })
-  return { statuses: await getAllStatuses(), failures }
+  return { outcome: 'completed', statuses: await getAllStatuses(), failures }
 }
 
 export async function installOrUpdate(name: BinaryName): Promise<BinaryUpdateResult> {
-  return withBinaryLock(name, async (signal) => {
+  return withBinaryLock(name, async (cancelSignal) => {
+    const signal = AbortSignal.any([
+      cancelSignal,
+      AbortSignal.timeout(BINARY_ACQUIRE_TIMEOUT_MS),
+    ])
     try {
       await performInstall(name, signal)
       return { outcome: 'installed' }
@@ -191,7 +198,7 @@ export async function installOrUpdate(name: BinaryName): Promise<BinaryUpdateRes
       // Only this operation's own controller can classify a cancellation. Network
       // TimeoutError also says "aborted" but leaves this signal live, so it remains
       // a real failure and reaches the UI.
-      if (signal.aborted) return { outcome: 'cancelled' }
+      if (cancelSignal.aborted) return { outcome: 'cancelled' }
       throw err
     }
   })
@@ -218,6 +225,7 @@ async function performInstall(name: BinaryName, signal: AbortSignal): Promise<vo
           url: resolved.downloadUrl,
           destPath: downloadTemp,
           idleTimeoutMs: BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
+          maxBytes: resolved.maxDownloadBytes,
           signal,
           onProgress: (received, total) => {
             const pct = total > 0 ? Math.floor((received / total) * 100) : 0
@@ -253,7 +261,13 @@ async function performInstall(name: BinaryName, signal: AbortSignal): Promise<vo
       finalPath,
       async (stage) => {
         if (resolved.archive) {
-          await extractFileFromZip(downloadTemp, resolved.archive.innerName, stage, signal)
+          await extractFileFromZip(
+            downloadTemp,
+            resolved.archive.innerName,
+            stage,
+            resolved.maxInstalledBytes,
+            signal,
+          )
         } else {
           await rename(downloadTemp, stage)
         }

@@ -26,6 +26,10 @@ export const VERSION_CHECK_TIMEOUT_MS = 30_000
 /** Idle watchdog for binary downloads from GitHub — guards against a stalled transfer. */
 export const BINARY_DOWNLOAD_IDLE_TIMEOUT_MS = 60_000
 
+/** Whole acquire transaction deadline, including metadata, retries, download,
+ * integrity verification, extraction, preparation, and durable publication. */
+export const BINARY_ACQUIRE_TIMEOUT_MS = 30 * 60_000
+
 /** Per-attempt request deadline for AI provider calls (slug generation). */
 export const AI_REQUEST_TIMEOUT_MS = 120_000
 
