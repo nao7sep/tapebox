@@ -57,11 +57,28 @@ export async function generateSlug(opts: {
   // Result line for the external boundary (the request was logged above): the
   // finish_reason distinguishes a normal stop from a length/content-filter cutoff.
   log.info('ai: generateSlug response', { model: ai.model, finishReason: res.choices[0]?.finish_reason })
-  const message = res.choices[0]?.message
+  return completionText(res.choices[0])
+}
+
+type CompletionChoice = {
+  finish_reason: string | null
+  message: { refusal?: string | null; content?: unknown }
+} | undefined
+
+/** Return only a complete, accepted text result. Provider-declared refusal and
+ * truncation reasons are checked before content so partial text is never accepted. */
+export function completionText(choice: CompletionChoice): string {
+  const message = choice?.message
   // A refusal (or content-filter) comes back as a `refusal` string with null content;
   // surface its reason rather than a generic "empty response".
   if (message?.refusal) {
     throw new Error(`The AI declined to suggest a name: ${message.refusal}`)
+  }
+  if (choice?.finish_reason === 'content_filter') {
+    throw new Error('The AI declined to suggest a name (finish_reason: content_filter)')
+  }
+  if (choice?.finish_reason === 'length') {
+    throw new Error('The AI response was truncated (finish_reason: length)')
   }
   // Content can be null or a non-string structured part; only a non-empty string is usable.
   const content = message?.content
