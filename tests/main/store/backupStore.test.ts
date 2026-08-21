@@ -118,6 +118,34 @@ describe('record: BLOB fidelity, hash, size, path, and timestamp shape', () => {
   })
 })
 
+describe('terminal recording', () => {
+  it('records fatal-path bytes synchronously before the event loop can stop', async () => {
+    const { recordBeforeExit } = await import('@main/store/backupStore')
+    const file = path.join(root, 'catalog.json')
+    const bytes = Buffer.from('fatal catalog', 'utf8')
+
+    recordBeforeExit(file, bytes)
+
+    const rows = readRows(root)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.path).toBe(file)
+    expect(Buffer.from(rows[0]!.content)).toEqual(bytes)
+  })
+
+  it('drains queued ordinary records during intended shutdown', async () => {
+    const { record, closeBackupStore } = await import('@main/store/backupStore')
+    const file = path.join(root, 'layout.json')
+    const bytes = Buffer.from('queued layout', 'utf8')
+
+    record(file, bytes)
+    await closeBackupStore()
+
+    const rows = readRows(root)
+    expect(rows).toHaveLength(1)
+    expect(Buffer.from(rows[0]!.content)).toEqual(bytes)
+  })
+})
+
 describe('dedup by content hash, per path', () => {
   it('skips an unchanged re-save (no new row) but records a genuinely changed save', async () => {
     const { record, flushBackupStore } = await import('@main/store/backupStore')

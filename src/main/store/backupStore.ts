@@ -57,6 +57,7 @@ const pending: PendingRecord[] = []
 let draining = false
 let accepting = true
 let idleWaiters: Array<() => void> = []
+const CLOSE_DRAIN_TIMEOUT_MS = 1_000
 
 /**
  * Open and initialize the store once (create the table if absent, switch on WAL). Best-effort: on any
@@ -160,17 +161,37 @@ export function record(absolutePath: string, bytes: Buffer): void {
   scheduleDrain()
 }
 
+/** Fatal/exit-only path. The catalog has already been published synchronously and
+ * the process cannot wait for `setImmediate`, so attempt this one record now. The
+ * SQLite lock wait remains capped by the store's 100 ms busy timeout. Ordinary
+ * saves must use {@link record}; this deliberate blocking is terminal-only. */
+export function recordBeforeExit(absolutePath: string, bytes: Buffer): void {
+  if (!accepting) return
+  recordNow(absolutePath, bytes)
+}
+
 /** Wait until every queued record has either landed or failed. */
 export function flushBackupStore(): Promise<void> {
   if (!draining && pending.length === 0) return Promise.resolve()
   return new Promise((resolve) => idleWaiters.push(resolve))
 }
 
-/** Stop accepting work, drain the FIFO, and close the store best-effort. Resets the
- * singleton so tests can re-open against a new `TAPEBOX_HOME`. */
+/** Stop accepting work, give the FIFO a bounded drain, and close best-effort. The
+ * process is terminating; tests reset the module before opening another root. */
 export async function closeBackupStore(): Promise<void> {
   accepting = false
-  await flushBackupStore()
+  let timeout: NodeJS.Timeout | undefined
+  await Promise.race([
+    flushBackupStore(),
+    new Promise<void>((resolve) => {
+      timeout = setTimeout(resolve, CLOSE_DRAIN_TIMEOUT_MS)
+    }),
+  ])
+  if (timeout) clearTimeout(timeout)
+  // A normal queue is empty here. On timeout, abandon the remaining best-effort
+  // history rather than keep quit unbounded; every live managed file is already
+  // safely published, and the next save starts a fresh record.
+  pending.length = 0
   try {
     db?.close()
   } catch {
@@ -178,5 +199,4 @@ export async function closeBackupStore(): Promise<void> {
   }
   db = null
   initialized = false
-  accepting = true
 }

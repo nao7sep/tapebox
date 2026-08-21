@@ -4,7 +4,7 @@ import { extname } from 'node:path'
 import { nanoid } from 'nanoid'
 import { paths } from '@main/paths'
 import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
-import { record } from '@main/store/backupStore'
+import { recordBeforeExit } from '@main/store/backupStore'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
@@ -197,11 +197,9 @@ export function persistNowSync(): void {
     // This is a managed-text save on a terminal path (uncaughtException / process
     // 'exit'), where the async writeManagedJson choke point cannot run — so it
     // records here directly, STRICTLY AFTER the sync rename lands, reusing the
-    // in-hand bytes. record() queues best-effort work and can never throw back into
-    // shutdown. The ordinary before-quit path drains that queue before exit; a hard
-    // process failure may still terminate before this last-gasp record runs. Without
-    // this call, the terminal catalog save would always be a backup gap.
-    record(paths.catalog, bytes)
+    // in-hand bytes. This terminal-only path makes its bounded SQLite attempt now;
+    // there is no event-loop turn left for the ordinary queue.
+    recordBeforeExit(paths.catalog, bytes)
   } catch (err) {
     log.error('session sync persist failed', { error: describeError(err) })
   }
