@@ -17,6 +17,7 @@ const TAPE_LIST_PAGE = 10
 export function useTapeListboxKeyboard<E extends HTMLElement>(
   visible: Tape[],
   selectedId: string | null,
+  onReorder?: (activeId: string, offset: -1 | 1) => void,
 ): ListboxKeyboard<E> {
   const kb = useListboxKeyboard<E>({
     itemIds: visible.map((t) => t.id),
@@ -24,6 +25,7 @@ export function useTapeListboxKeyboard<E extends HTMLElement>(
     onActivate: selectTape,
     idPrefix: 'tape',
     page: TAPE_LIST_PAGE,
+    onReorder,
   })
   useAutoFocusList(kb.ref)
   return kb

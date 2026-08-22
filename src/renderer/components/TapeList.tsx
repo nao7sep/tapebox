@@ -32,7 +32,10 @@ export function TapeList() {
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const sensors = useTapeDragSensors()
-  const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId)
+  const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId, (id, offset) => {
+    const from = visible.findIndex((t) => t.id === id)
+    reorderTape(from, from + offset)
+  })
 
   // Scroll the newly-added tape into view. New tapes land at the top, so a top
   // sentinel + scrollIntoView('nearest') reveals them when the list is scrolled
@@ -63,8 +66,13 @@ export function TapeList() {
     const from = visible.findIndex((t) => t.id === active.id)
     const to = visible.findIndex((t) => t.id === over.id)
     if (from < 0 || to < 0) return
+    reorderTape(from, to)
+  }
+
+  function reorderTape(from: number, to: number) {
+    if (from < 0 || to < 0 || to >= visible.length || from === to) return
     const reordered = arrayMove(visible, from, to)
-    // Optimistically reindex, then persist the whole new sequence.
+    // Pointer and keyboard reorder share this one optimistic + durable operation.
     useTapesStore.getState().upsertMany(reordered.map((t, i) => ({ ...t, order: i })))
     void ipcInvoke('tapes:reorder', { orderedIds: reordered.map((t) => t.id) })
   }

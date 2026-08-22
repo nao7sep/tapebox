@@ -22,7 +22,7 @@ export const UNBOXED_DROP_ID = '__unboxed__'
  * file it); the parent DndContext owns the drag handling. Deleting a box only
  * re-files its tapes to Unboxed — it never removes the tapes.
  */
-export function BoxList() {
+export function BoxList({ onReorder }: { onReorder: (activeId: string, offset: -1 | 1) => void }) {
   const boxes = useBoxesStore((s) => s.boxes)
   const tapes = useTapesStore((s) => s.tapes)
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
@@ -46,6 +46,9 @@ export function BoxList() {
     activeId: selectedBoxId ?? UNBOXED_DROP_ID,
     onActivate: (id) => selectBox(id === UNBOXED_DROP_ID ? null : id),
     idPrefix: 'box',
+    onReorder: (id, offset) => {
+      if (id !== UNBOXED_DROP_ID) onReorder(id, offset)
+    },
   })
 
   // Names of every box except the one being edited — what a rename collides with.
@@ -240,7 +243,8 @@ function SortableBoxRow({
 }) {
   // Spread dnd-kit's `listeners` (pointer drag) but NOT its `attributes`: those put
   // role="button" and a tab index on the row wrapper, which would add a second tab
-  // stop and shadow the inner option. Keyboard reorder isn't enabled here.
+  // stop and shadow the inner option. The listbox's Cmd/Ctrl+Shift+Arrow command
+  // supplies keyboard reorder through the same parent operation as pointer drag.
   const { listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
     id,
     data: { type: 'box' },

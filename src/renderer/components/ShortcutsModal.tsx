@@ -18,6 +18,7 @@ function groups(mod: string): Group[] {
       note: 'arrows act on the list you tabbed into or last clicked — videos, chapters, or boxes',
       shortcuts: [
         { label: 'Move selection up / down', keys: 'Up / Down' },
+        { label: 'Reorder selected tape or box', keys: `${mod}+Shift+Up / Down` },
         { label: 'Inbox', keys: `${mod}+1` },
         { label: 'Archived', keys: `${mod}+2` },
         { label: 'Search the archive', keys: 'Slash' },

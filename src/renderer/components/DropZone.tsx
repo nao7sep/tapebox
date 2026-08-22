@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { pathForFile } from '@renderer/ipc/client'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
 
@@ -14,7 +14,40 @@ type Props = { children: ReactNode }
  */
 export function DropZone({ children }: Props) {
   const [active, setActive] = useState(false)
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const importMedia = useImportMedia()
+
+  function clearResetTimer() {
+    if (resetTimer.current !== null) clearTimeout(resetTimer.current)
+    resetTimer.current = null
+  }
+
+  function clearActive() {
+    clearResetTimer()
+    setActive(false)
+  }
+
+  function armIndependentReset() {
+    clearResetTimer()
+    // An OS drag cancelled over a webview need not deliver leave/drop/dragend.
+    // Dragover repeats while the drag is live; silence means it ended elsewhere.
+    resetTimer.current = setTimeout(clearActive, 1000)
+  }
+
+  useEffect(() => {
+    const reset = () => {
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current)
+      resetTimer.current = null
+      setActive(false)
+    }
+    window.addEventListener('blur', reset)
+    window.addEventListener('dragend', reset)
+    return () => {
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current)
+      window.removeEventListener('blur', reset)
+      window.removeEventListener('dragend', reset)
+    }
+  }, [])
 
   function isFileDrag(e: DragEvent): boolean {
     return Array.from(e.dataTransfer?.types ?? []).includes('Files')
@@ -24,23 +57,26 @@ export function DropZone({ children }: Props) {
     if (!isFileDrag(e)) return
     e.preventDefault()
     setActive(true)
+    armIndependentReset()
   }
 
   function onDragOver(e: DragEvent<HTMLDivElement>) {
     if (!isFileDrag(e)) return
     e.preventDefault()
     e.dataTransfer!.dropEffect = 'copy'
+    setActive(true)
+    armIndependentReset()
   }
 
   function onDragLeave(e: DragEvent<HTMLDivElement>) {
     // Leaving a child element fires this too; require leaving the wrapper itself.
-    if (e.currentTarget === e.target) setActive(false)
+    if (e.currentTarget === e.target) clearActive()
   }
 
   async function onDrop(e: DragEvent<HTMLDivElement>) {
     if (!isFileDrag(e)) return
     e.preventDefault()
-    setActive(false)
+    clearActive()
     // Hand every dropped file's path to importMedia — it keeps the .json sidecars
     // (and guides the user if there are none). The video/image dropped alongside a
     // sidecar are read from the sidecar, not from the drop.
@@ -63,7 +99,7 @@ export function DropZone({ children }: Props) {
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-zinc-950/70">
           <div className="rounded-lg border-2 border-dashed border-zinc-400 px-8 py-6 text-center">
             <p className="text-sm font-medium text-zinc-100">Drop to restore tapes</p>
-            <p className="mt-1 text-xs text-zinc-300">drop the .json sidecars — video &amp; image come along</p>
+            <p className="mt-1 text-xs text-zinc-300">Drop the .json sidecars — video &amp; image come along</p>
           </div>
         </div>
       )}

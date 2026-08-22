@@ -99,14 +99,7 @@ export function ArchiveOrganizer() {
 
     if (activeType === 'box') {
       if (activeId === overId) return
-      const ids = [...boxes].sort((a, b) => a.order - b.order).map((g) => g.id)
-      const from = ids.indexOf(activeId)
-      const to = ids.indexOf(overId)
-      if (from < 0 || to < 0) return
-      const next = arrayMove(ids, from, to)
-      const orderById = new Map(next.map((id, i) => [id, i]))
-      useBoxesStore.getState().setBoxes(boxes.map((g) => ({ ...g, order: orderById.get(g.id) ?? g.order })))
-      void ipcInvoke('boxes:reorder', { orderedIds: next })
+      reorderBox(activeId, sortedBoxIds().indexOf(overId))
       return
     }
 
@@ -127,11 +120,31 @@ export function ArchiveOrganizer() {
         const from = tapes.findIndex((t) => t.id === activeId)
         const to = tapes.findIndex((t) => t.id === overId)
         if (from < 0 || to < 0) return
-        const reordered = arrayMove(tapes, from, to)
-        useTapesStore.getState().upsertMany(reordered.map((t, i) => ({ ...t, order: i })))
-        void ipcInvoke('tapes:reorder', { orderedIds: reordered.map((t) => t.id) })
+        reorderTape(activeId, to)
       }
     }
+  }
+
+  function sortedBoxIds(): string[] {
+    return [...boxes].sort((a, b) => a.order - b.order).map((box) => box.id)
+  }
+
+  function reorderBox(activeId: string, to: number) {
+    const ids = sortedBoxIds()
+    const from = ids.indexOf(activeId)
+    if (from < 0 || to < 0 || to >= ids.length || from === to) return
+    const next = arrayMove(ids, from, to)
+    const orderById = new Map(next.map((id, i) => [id, i]))
+    useBoxesStore.getState().setBoxes(boxes.map((box) => ({ ...box, order: orderById.get(box.id) ?? box.order })))
+    void ipcInvoke('boxes:reorder', { orderedIds: next })
+  }
+
+  function reorderTape(activeId: string, to: number) {
+    const from = tapes.findIndex((tape) => tape.id === activeId)
+    if (from < 0 || to < 0 || to >= tapes.length || from === to) return
+    const reordered = arrayMove(tapes, from, to)
+    useTapesStore.getState().upsertMany(reordered.map((tape, i) => ({ ...tape, order: i })))
+    void ipcInvoke('tapes:reorder', { orderedIds: reordered.map((tape) => tape.id) })
   }
 
   return (
@@ -154,7 +167,9 @@ export function ArchiveOrganizer() {
           />
         </div>
         <div className="relative flex shrink-0 flex-col border-b border-zinc-700" style={{ height: effectiveBoxesHeight }}>
-          <BoxList />
+          <BoxList
+            onReorder={(id, offset) => reorderBox(id, sortedBoxIds().indexOf(id) + offset)}
+          />
           <ResizeHandle
             edge="bottom"
             // Start from the displayed height; the handle reports the new INTENT,
@@ -168,7 +183,16 @@ export function ArchiveOrganizer() {
           />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {searching ? <SearchResults /> : <ArchiveTapeList />}
+          {searching ? (
+            <SearchResults />
+          ) : (
+            <ArchiveTapeList
+              onReorder={(id, offset) => {
+                const from = tapes.findIndex((tape) => tape.id === id)
+                reorderTape(id, from + offset)
+              }}
+            />
+          )}
         </div>
       </div>
       <DragOverlay>

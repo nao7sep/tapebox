@@ -216,10 +216,10 @@ function BinaryRow({
             <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
               <Spinner />
               {cancelling
-                ? 'cancelling…'
+                ? 'Cancelling…'
                 : progress
-                  ? `${progress.phase} ${progress.percent}%`
-                  : 'working…'}
+                  ? `${phaseLabel(progress.phase)} ${progress.percent}%`
+                  : 'Working…'}
             </span>
             <Button variant="ghost" size="sm" disabled={cancelling} onClick={onCancel}>
               Cancel
@@ -238,8 +238,8 @@ function BinaryRow({
 /** The installed-version cell text. A present tool whose version could not be read
  *  says so — it is not absent, and it is not silently assumed current. */
 function installedText(status: BinaryStatus, d: DerivedStatus): string {
-  if (d.state === 'not-installed') return 'not installed'
-  return status.installedVersion ?? 'version unreadable'
+  if (d.state === 'not-installed') return 'Not installed'
+  return status.installedVersion ?? 'Version unreadable'
 }
 
 /** Colour the installed cell by role so a to-do reads as amber at a glance. */
@@ -252,8 +252,12 @@ function installedClass(d: DerivedStatus): string {
  *  be installed-unchecked WITH a successful check behind it — when the check
  *  landed but the installed version could not be read. */
 function latestText(status: BinaryStatus, checking: boolean): string {
-  if (checking) return 'checking…'
-  return status.latestKnownVersion ?? 'not checked'
+  if (checking) return 'Checking…'
+  return status.latestKnownVersion ?? 'Not checked'
+}
+
+function phaseLabel(phase: string): string {
+  return phase.length === 0 ? phase : phase[0].toUpperCase() + phase.slice(1)
 }
 
 /**

@@ -13,11 +13,11 @@ import { SortableTape } from './SortableTape'
  * box row) are both handled by the parent DndContext's onDragEnd. Rows reuse the
  * shared TapeRow; the sortable wrapper is shared with the inbox.
  */
-export function ArchiveTapeList() {
+export function ArchiveTapeList({ onReorder }: { onReorder: (activeId: string, offset: -1 | 1) => void }) {
   const tapes = useVisibleTapes()
   const progress = useTapesStore((s) => s.progress)
   const selectedId = useSelectionStore((s) => s.selectedId)
-  const kb = useTapeListboxKeyboard<HTMLUListElement>(tapes, selectedId)
+  const kb = useTapeListboxKeyboard<HTMLUListElement>(tapes, selectedId, onReorder)
 
   if (tapes.length === 0) {
     return <div className="p-6 text-sm text-zinc-300">This box is empty.</div>

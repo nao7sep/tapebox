@@ -48,15 +48,17 @@ export function useListboxKeyboard<E extends HTMLElement = HTMLElement>(opts: {
   page?: number
   /** Extra keys handled before navigation; return true if the key was consumed. */
   onCommandKey?: (e: KeyboardEvent, activeId: string | null) => boolean
+  /** Reorder the active item by one position without competing with plain arrows. */
+  onReorder?: (activeId: string, offset: -1 | 1) => void
 }): ListboxKeyboard<E> {
-  const { itemIds, activeId, onActivate, idPrefix, page, onCommandKey } = opts
+  const { itemIds, activeId, onActivate, idPrefix, page, onCommandKey, onReorder } = opts
   const ref = useRef<E | null>(null)
   const optionId = (itemId: string) => `${idPrefix}-opt-${itemId}`
 
   // The keydown handler reads live state through a ref so the container binds a stable
   // handler rather than re-subscribing every render.
-  const stateRef = useRef({ itemIds, activeId, onActivate, page, onCommandKey })
-  stateRef.current = { itemIds, activeId, onActivate, page, onCommandKey }
+  const stateRef = useRef({ itemIds, activeId, onActivate, page, onCommandKey, onReorder })
+  stateRef.current = { itemIds, activeId, onActivate, page, onCommandKey, onReorder }
 
   // Keep the active option in view as it changes (under playback, or via the keys).
   useEffect(() => {
@@ -68,7 +70,21 @@ export function useListboxKeyboard<E extends HTMLElement = HTMLElement>(opts: {
 
   function onKeyDown(e: KeyboardEvent): void {
     if (e.defaultPrevented) return
-    const { itemIds, activeId, onActivate, page, onCommandKey } = stateRef.current
+    const { itemIds, activeId, onActivate, page, onCommandKey, onReorder } = stateRef.current
+
+    const reorderOffset =
+      e.shiftKey && !e.altKey && (e.metaKey || e.ctrlKey)
+        ? e.key === 'ArrowUp'
+          ? -1
+          : e.key === 'ArrowDown'
+            ? 1
+            : null
+        : null
+    if (onReorder && reorderOffset !== null) {
+      e.preventDefault()
+      if (activeId !== null) onReorder(activeId, reorderOffset)
+      return
+    }
 
     if (onCommandKey?.(e, activeId)) return
 

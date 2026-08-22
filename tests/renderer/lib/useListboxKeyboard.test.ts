@@ -44,6 +44,7 @@ function Listbox(props: {
   activeId: string | null
   onActivate: (id: string) => void
   onCommandKey?: (e: React.KeyboardEvent, activeId: string | null) => boolean
+  onReorder?: (activeId: string, offset: -1 | 1) => void
 }): React.ReactElement {
   const kb = useListboxKeyboard<HTMLUListElement>({
     itemIds: props.itemIds,
@@ -52,6 +53,7 @@ function Listbox(props: {
     idPrefix: 'test',
     page: 3,
     onCommandKey: props.onCommandKey,
+    onReorder: props.onReorder,
   })
   return React.createElement(
     'ul',
@@ -61,9 +63,9 @@ function Listbox(props: {
 }
 
 const lb = () => document.getElementById('lb')!
-function press(key: string): void {
+function press(key: string, init: KeyboardEventInit = {}): void {
   act(() => {
-    lb().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    lb().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }))
   })
 }
 
@@ -138,6 +140,33 @@ describe('useListboxKeyboard navigation', () => {
 
     press('ArrowDown') // a non-command key still navigates
     expect(onActivate).toHaveBeenCalledWith('c')
+  })
+
+  it('routes Cmd/Ctrl+Shift+Up/Down to reorder without moving selection', () => {
+    const onReorder = vi.fn()
+    let onActivate = renderListbox('c', { onReorder })
+    press('ArrowUp', { metaKey: true, shiftKey: true })
+    expect(onReorder).toHaveBeenCalledWith('c', -1)
+    expect(onActivate).not.toHaveBeenCalled()
+
+    onReorder.mockClear()
+    onActivate = renderListbox('c', { onReorder })
+    press('ArrowDown', { ctrlKey: true, shiftKey: true })
+    expect(onReorder).toHaveBeenCalledWith('c', 1)
+    expect(onActivate).not.toHaveBeenCalled()
+  })
+
+  it('does not treat plain or Alt-modified arrows as reorder commands', () => {
+    const onReorder = vi.fn()
+    const onActivate = renderListbox('c', { onReorder })
+    press('ArrowUp')
+    expect(onActivate).toHaveBeenCalledWith('b')
+    expect(onReorder).not.toHaveBeenCalled()
+
+    onActivate.mockClear()
+    press('ArrowDown', { metaKey: true, shiftKey: true, altKey: true })
+    expect(onActivate).toHaveBeenCalledWith('d')
+    expect(onReorder).not.toHaveBeenCalled()
   })
 })
 

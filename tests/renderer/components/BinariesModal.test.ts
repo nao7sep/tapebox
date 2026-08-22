@@ -91,4 +91,19 @@ describe('BinariesModal check and acquisition outcomes', () => {
 
     expect(ipcInvoke).toHaveBeenCalledWith('binaries:cancelCheck')
   })
+
+  it('presents dependency states as user-facing labels', async () => {
+    await mount()
+    expect(document.body.textContent).toContain('Not installed')
+    expect(document.body.textContent).toContain('Not checked')
+
+    await act(async () => {
+      useBinariesStore.setState({
+        statuses: [status({ present: true, installedVersion: null })],
+        checking: true,
+      })
+    })
+    expect(document.body.textContent).toContain('Version unreadable')
+    expect(document.body.textContent).toContain('Checking…')
+  })
 })
