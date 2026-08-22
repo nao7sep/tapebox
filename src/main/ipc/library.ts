@@ -1,5 +1,5 @@
 import { access, constants, copyFile, readFile, stat, unlink } from 'node:fs/promises'
-import { dirname, extname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
@@ -15,12 +15,11 @@ import {
   moveClaimedFile,
   publishFileNoOverwrite,
   restoreClaimedFile,
-  unlinkClaimedFile,
   unlinkClaimedFiles,
   writeFileAtomicNoOverwriteVia,
   type FileClaim,
 } from '@main/io/atomic-file'
-import { portableSiblingExists } from '@main/io/portable-directory'
+import { portableSiblingExists, type AllowedPortableDirectoryEntry } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
@@ -201,9 +200,8 @@ export function registerLibraryHandlers(): void {
     // The tape's own current physical claims are the only portable aliases allowed
     // during an equivalent-name rename. A second sibling with the same casefold/NFC
     // identity remains a collision even if its spelling resembles an owned name.
-    const ownClaims = items.map((it) => it.original)
     for (const it of items) {
-      await assertMissing(it.fresh, ownClaims)
+      await assertMissing(it.fresh, [{ name: basename(it.old), identity: it.original.identity }])
       await assertMissing(it.stage)
       await assertMissing(it.hold)
     }
@@ -297,13 +295,6 @@ export function registerLibraryHandlers(): void {
       }
       throw err
     }
-    const heldByItem = new Map(held.map(({ item, claim }) => [item, claim]))
-    for (const it of items) {
-      const heldClaim = heldByItem.get(it)
-      if (heldClaim) await unlinkClaimedFile(heldClaim).catch(() => false)
-      else if (it.fresh !== it.old) await unlinkClaimedFile(it.original).catch(() => false)
-    }
-
     const updated = {
       ...tape,
       filename: newMediaName,
@@ -314,6 +305,27 @@ export function registerLibraryHandlers(): void {
     }
     session.upsertTape(updated)
     emit('tapes:updated', updated)
+
+    // Every final member is committed, so the new bundle and catalog row are now
+    // authoritative. Old/held cleanup is a post-commit operation: if any exact
+    // claim cannot be removed, report the partial result honestly while keeping
+    // the catalog and renderer pointed at the complete new bundle.
+    const heldByItem = new Map(held.map(({ item, claim }) => [item, claim]))
+    const obsoleteClaims = items.flatMap((it) => {
+      const heldClaim = heldByItem.get(it)
+      if (heldClaim) return [heldClaim]
+      return it.fresh !== it.old ? [it.original] : []
+    })
+    try {
+      await unlinkClaimedFiles(obsoleteClaims)
+    } catch (cleanupError) {
+      const paths = obsoleteClaims.map((claim) => claim.path)
+      throw new AggregateError(
+        [cleanupError],
+        `Rename committed and the catalog points to the new bundle, but old claims could not be fully cleaned up. ` +
+          `Held/old paths: ${paths.join(', ')}.`,
+      )
+    }
     log.info('renamed', { tapeId: tape.id, name: cleanName })
     return updated
   })
@@ -467,7 +479,7 @@ export function registerLibraryHandlers(): void {
             [err, cleanupError],
             `Copy into library failed: ${String(err)}. Published files could not be fully cleaned up.`,
           )
-          rejected.push({ path: sidecarPath, reason: String(failure) })
+          rejected.push({ path: sidecarPath, reason: errorMessage(failure) })
         }
         continue
       }
@@ -598,13 +610,13 @@ async function discardFile(path: string, toTrash: boolean): Promise<void> {
  */
 export async function caseInsensitiveSiblingExists(
   path: string,
-  allowedClaims: readonly FileClaim[] = [],
+  allowedEntries: readonly AllowedPortableDirectoryEntry[] = [],
 ): Promise<boolean> {
-  return portableSiblingExists(path, allowedClaims)
+  return portableSiblingExists(path, allowedEntries)
 }
 
-async function assertMissing(path: string, allowedClaims: readonly FileClaim[] = []): Promise<void> {
-  if (await caseInsensitiveSiblingExists(path, allowedClaims)) {
+async function assertMissing(path: string, allowedEntries: readonly AllowedPortableDirectoryEntry[] = []): Promise<void> {
+  if (await caseInsensitiveSiblingExists(path, allowedEntries)) {
     throw new Error(`Target already exists (case-insensitive): ${path}`)
   }
 }

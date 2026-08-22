@@ -50,11 +50,27 @@ function flatten(err: unknown, seen: WeakSet<object>): Record<string, unknown> |
       // A misbehaving toLogFields() must not break error logging.
     }
   }
+  if (err instanceof AggregateError) {
+    out.errors = err.errors.map((nested) => flatten(nested, seen))
+  }
   if (err.cause !== undefined) out.cause = flatten(err.cause, seen)
   return out
 }
 
 /** The human-readable message for an error, without a leading "ErrorName:" prefix. */
 export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+  const messages = collectMessages(err, new WeakSet())
+  return [...new Set(messages)].join(' | ')
+}
+
+function collectMessages(err: unknown, seen: WeakSet<object>): string[] {
+  if (!(err instanceof Error)) return [String(err)]
+  if (seen.has(err)) return []
+  seen.add(err)
+  const messages = [err.message]
+  if (err instanceof AggregateError) {
+    for (const nested of err.errors) messages.push(...collectMessages(nested, seen))
+  }
+  if (err.cause !== undefined) messages.push(...collectMessages(err.cause, seen))
+  return messages.filter((message) => message.length > 0)
 }

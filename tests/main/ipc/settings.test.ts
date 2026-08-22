@@ -165,4 +165,20 @@ describe('settings:update — relocation refused while downloads run', () => {
     expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [])
     expect(rollbackLibraryRelocation).toHaveBeenCalledWith('/current/library', files)
   })
+
+  it('surfaces an exact recovery path when settings rollback is incomplete', async () => {
+    const recoveryPath = '/data/new-library/a-rollback-recovery.tmp'
+    const files = [
+      { name: 'a.mp4', claim: { path: '/data/new-library/a.mp4', identity: '1:1' } },
+    ]
+    relocateLibrary.mockResolvedValueOnce({ moved: true, count: 1, crossDevice: false, files })
+    updateSettings.mockRejectedValueOnce(new Error('config disk full'))
+    rollbackLibraryRelocation.mockRejectedValueOnce(
+      new AggregateError([new Error(`Recovery claim remains at ${recoveryPath}`)], 'rollback incomplete'),
+    )
+
+    const failure = update({ libraryDir: '/data/new-library' })
+    await expect(failure).rejects.toThrow(/Settings could not be saved/)
+    await expect(failure).rejects.toThrow(recoveryPath)
+  })
 })

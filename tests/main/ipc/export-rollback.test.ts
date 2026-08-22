@@ -33,7 +33,12 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
       return claim
     }),
     unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
-      if (state.cleanupThrows) throw new Error('cleanup permission denied')
+      if (state.cleanupThrows) {
+        throw new AggregateError(
+          [new Error(`Recovery claim remains at ${join(state.destinationDir, 'export-recovery.tmp')}`)],
+          'cleanup permission denied',
+        )
+      }
       return actual.unlinkClaimedFiles(...args)
     }),
   }
@@ -110,5 +115,6 @@ describe('export:files rollback ownership', () => {
 
     await expect(failure).rejects.toThrow(/sidecar publication failed/)
     await expect(failure).rejects.toThrow(/could not be fully cleaned up/)
+    await expect(failure).rejects.toThrow(join(state.destinationDir, 'export-recovery.tmp'))
   })
 })

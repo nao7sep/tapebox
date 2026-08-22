@@ -38,10 +38,11 @@ vi.mock('@main/io/logger', () => ({
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 const rollbackMutation = vi.hoisted(() => ({
-  mode: null as null | 'committed-winner' | 'held-winner' | 'source-winner' | 'restore-failure',
+  mode: null as null | 'committed-winner' | 'held-winner' | 'source-winner' | 'restore-failure' | 'final-cleanup',
   publishes: 0,
   moves: 0,
   firstClaim: null as null | { path: string; identity: string },
+  cleanupPath: '',
   dir: '',
 }))
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
@@ -88,6 +89,16 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
       if (rollbackMutation.mode === 'restore-failure') return null
       return actual.restoreClaimedFile(...args)
     }),
+    unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
+      if (rollbackMutation.mode === 'final-cleanup' && rollbackMutation.publishes === 3) {
+        rollbackMutation.cleanupPath = args[0][0]!.path
+        throw new AggregateError(
+          [new Error(`Recovery claim remains at ${rollbackMutation.cleanupPath}`)],
+          'old-claim cleanup failed',
+        )
+      }
+      return actual.unlinkClaimedFiles(...args)
+    }),
   }
 })
 
@@ -104,6 +115,7 @@ beforeEach(async () => {
   rollbackMutation.publishes = 0
   rollbackMutation.moves = 0
   rollbackMutation.firstClaim = null
+  rollbackMutation.cleanupPath = ''
   rollbackMutation.dir = dir
   state.tape = {
     id: 'Abc123_-xy', sourceUrl: 'https://example.test/watch', state: 'downloaded',
@@ -219,5 +231,24 @@ describe('library:rename', () => {
     expect(heldNames.length).toBe(3)
     const heldContents = await Promise.all(heldNames.map((name) => readFile(join(dir, name), 'utf8')))
     expect(heldContents).toContain('video')
+  })
+
+  it('keeps the committed catalog authoritative when final old-claim cleanup fails', async () => {
+    rollbackMutation.mode = 'final-cleanup'
+    const invoke = handlers.get('library:rename')!
+
+    const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'take' }))
+    await expect(failure).rejects.toThrow(/Rename committed and the catalog points to the new bundle/)
+    expect(rollbackMutation.cleanupPath).toMatch(/\.tmp\.original$/)
+    await expect(failure).rejects.toThrow(rollbackMutation.cleanupPath)
+
+    expect(state.tape).toMatchObject({
+      name: 'take',
+      filename: 'take.mp4',
+      sidecarFilename: 'take.json',
+      thumbnailFilename: 'take.jpg',
+    })
+    expect((await readdir(dir)).sort()).toEqual(expect.arrayContaining(['take.jpg', 'take.json', 'take.mp4']))
+    expect((await readdir(dir)).filter((name) => name.endsWith('.tmp.original')).length).toBe(3)
   })
 })

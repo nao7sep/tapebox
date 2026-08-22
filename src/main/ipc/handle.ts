@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
 import type { IpcCalls } from '@shared/ipc-contract'
-import { describeError } from '@shared/error'
+import { describeError, errorMessage } from '@shared/error'
 import { log } from '@main/io/logger'
 import { ipcRequestSchemas } from './schemas'
 
@@ -35,6 +35,10 @@ export function handle<K extends keyof IpcCalls>(
       return await handler(req)
     } catch (err) {
       log.error('ipc handler failed', { channel, error: describeError(err) })
+      const visibleMessage = errorMessage(err)
+      if (err instanceof Error && visibleMessage !== err.message) {
+        throw new Error(visibleMessage, { cause: err })
+      }
       throw err
     }
   })

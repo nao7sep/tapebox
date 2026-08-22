@@ -23,6 +23,15 @@ describe('describeError', () => {
     expect(out['cause']).toMatchObject({ name: 'Error', message: 'root' })
   })
 
+  it('preserves nested AggregateError branches for structured logs', () => {
+    const recovery = new Error('/tmp/tapebox-recovery-hold.tmp')
+    const out = describeError(new AggregateError([new Error('copy failed'), recovery], 'rollback failed'))
+    expect(out['errors']).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: 'copy failed' }),
+      expect.objectContaining({ message: '/tmp/tapebox-recovery-hold.tmp' }),
+    ]))
+  })
+
   it('caps a self-referential cause instead of overflowing the stack', () => {
     const err = new Error('self') as Error & { cause?: unknown }
     err.cause = err
@@ -89,5 +98,13 @@ describe('errorMessage', () => {
   it('stringifies a non-Error', () => {
     expect(errorMessage({ toString: () => 'obj' })).toBe('obj')
     expect(errorMessage(7)).toBe('7')
+  })
+  it('flattens nested aggregate and cause messages for user-visible transport', () => {
+    const recovery = '/tmp/tapebox-recovery-hold.tmp'
+    const nested = new AggregateError([new Error(`Recovery claim: ${recovery}`)], 'cleanup failed')
+    const wrapped = new Error('rename failed', { cause: nested })
+    expect(errorMessage(wrapped)).toContain('rename failed')
+    expect(errorMessage(wrapped)).toContain('cleanup failed')
+    expect(errorMessage(wrapped)).toContain(recovery)
   })
 })
