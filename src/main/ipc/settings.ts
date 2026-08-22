@@ -7,7 +7,7 @@ import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
 import { paths } from '@main/paths'
 import { reconcileWakeLock } from '@main/power-blocker'
-import { relocateLibrary } from '@main/store/library-move'
+import { relocateLibrary, rollbackLibraryRelocation, type RelocatedFile } from '@main/store/library-move'
 import { log } from '@main/io/logger'
 import { SettingsSchema, type Settings } from '@shared/settings'
 
@@ -77,7 +77,7 @@ function normalizeUserDir(label: string, value: string): string {
  * from under one would strand or lose those files. Refusing is the simpler safe
  * option — the user finishes or stops downloads, then relocates.
  */
-type CompletedRelocation = { fromDir: string; toDir: string; entries: string[] }
+type CompletedRelocation = { fromDir: string; files: RelocatedFile[] }
 
 async function relocateIfLibraryDirChanged(patch: Partial<Settings>): Promise<CompletedRelocation | null> {
   if (patch.libraryDir === undefined) return null
@@ -97,7 +97,7 @@ async function relocateIfLibraryDirChanged(patch: Partial<Settings>): Promise<Co
   if (result.moved) {
     log.info('library relocated', { from: fromDir, to: toDir, count: result.count, crossDevice: result.crossDevice })
   }
-  return { fromDir, toDir, entries }
+  return result.moved ? { fromDir, files: result.files } : null
 }
 
 export function registerSettingsHandlers(): void {
@@ -131,11 +131,10 @@ export function registerSettingsHandlers(): void {
     } catch (saveError) {
       if (relocation) {
         try {
-          await relocateLibrary(relocation.toDir, relocation.fromDir, relocation.entries)
+          await rollbackLibraryRelocation(relocation.fromDir, relocation.files)
           log.info('library relocation rolled back after settings save failure', {
-            from: relocation.toDir,
             to: relocation.fromDir,
-            files: relocation.entries.length,
+            files: relocation.files.length,
           })
         } catch (rollbackError) {
           throw new AggregateError(

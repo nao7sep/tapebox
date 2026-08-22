@@ -52,7 +52,7 @@ export async function writeFileAtomicVia(
   }
 }
 
-const LINK_UNSUPPORTED = new Set(['EACCES', 'EMLINK', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM'])
+const LINK_UNSUPPORTED = new Set(['EACCES', 'EMLINK', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV'])
 const COPY_CHUNK_BYTES = 256 * 1024
 
 export interface ExclusivePublishSource {
@@ -69,6 +69,7 @@ export interface ExclusivePublishDestination {
 
 export interface ExclusivePublishOperations {
   link(tempPath: string, destPath: string): Promise<void>
+  rename(fromPath: string, toPath: string): Promise<void>
   openRead(path: string): Promise<ExclusivePublishSource>
   openExclusive(path: string): Promise<ExclusivePublishDestination>
   pathIdentity(path: string): Promise<string | null>
@@ -76,9 +77,11 @@ export interface ExclusivePublishOperations {
 }
 
 export type FileClaim = { path: string; identity: string }
+type Publication = { claim: FileClaim; fallbackCode: string | null }
 
 const realPublishOperations: ExclusivePublishOperations = {
   link,
+  rename,
   openRead: (path) => open(path, 'r'),
   openExclusive: async (path) => {
     const handle = await open(path, 'wx')
@@ -164,18 +167,20 @@ async function copyExclusive(
  * use a bounded copy into an exclusive destination claim. The fallback tracks
  * the claimed file's physical identity so cleanup never removes a concurrent
  * replacement winner and a replaced claim is never reported as success. */
-export async function publishFileNoOverwrite(
+async function publishFileNoOverwriteDetailed(
   tempPath: string,
   destPath: string,
   operations: ExclusivePublishOperations = realPublishOperations,
   expectedSourceIdentity?: string,
-): Promise<FileClaim> {
-  await fsyncFile(tempPath)
+  syncSource = true,
+): Promise<Publication> {
+  if (syncSource) await fsyncFile(tempPath)
   const sourceIdentity = await operations.pathIdentity(tempPath)
   if (sourceIdentity === null || (expectedSourceIdentity !== undefined && sourceIdentity !== expectedSourceIdentity)) {
     throw destinationChanged(tempPath)
   }
   let identity: string
+  let fallbackCode: string | null = null
   try {
     await operations.link(tempPath, destPath)
     if ((await operations.pathIdentity(destPath)) !== sourceIdentity) throw destinationChanged(destPath)
@@ -183,6 +188,7 @@ export async function publishFileNoOverwrite(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
     if (!code || !LINK_UNSUPPORTED.has(code)) throw err
+    fallbackCode = code
     identity = await copyExclusive(tempPath, destPath, operations)
   }
   // Destination publication is the commit point. A stale temp is inert and can
@@ -192,7 +198,16 @@ export async function publishFileNoOverwrite(
     await operations.unlink(tempPath).catch(() => {})
   }
   await fsyncDirBestEffort(dirname(destPath))
-  return { path: destPath, identity }
+  return { claim: { path: destPath, identity }, fallbackCode }
+}
+
+export async function publishFileNoOverwrite(
+  tempPath: string,
+  destPath: string,
+  operations: ExclusivePublishOperations = realPublishOperations,
+  expectedSourceIdentity?: string,
+): Promise<FileClaim> {
+  return (await publishFileNoOverwriteDetailed(tempPath, destPath, operations, expectedSourceIdentity)).claim
 }
 
 /** Produce and durably publish a file only if the destination is still absent at
@@ -220,18 +235,78 @@ export async function claimFile(path: string): Promise<FileClaim> {
   return { path, identity }
 }
 
-/** Remove a transaction-owned file only while the pathname still names its claim. */
-export async function unlinkClaimedFile(claim: FileClaim): Promise<boolean> {
-  if ((await realPublishOperations.pathIdentity(claim.path)) !== claim.identity) return false
-  await unlink(claim.path)
+/** Move a claimed public pathname to a private sibling. When the public path was
+ * replaced after the claim, preserve that replacement and put it back rather than
+ * accepting it as ours. Callers use unique sibling destinations. */
+export async function moveClaimedFile(
+  claim: FileClaim,
+  destPath: string,
+  operations: ExclusivePublishOperations = realPublishOperations,
+): Promise<FileClaim | null> {
+  try {
+    await operations.rename(claim.path, destPath)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
+  }
+
+  const movedIdentity = await operations.pathIdentity(destPath)
+  if (movedIdentity === claim.identity) return { path: destPath, identity: movedIdentity }
+  if (movedIdentity === null) return null
+
+  try {
+    await publishFileNoOverwriteDetailed(destPath, claim.path, operations, movedIdentity, false)
+  } catch (restoreError) {
+    throw new AggregateError(
+      [destinationChanged(claim.path), restoreError],
+      `A replaced file could not be restored to ${claim.path}.`,
+    )
+  }
+  return null
+}
+
+/** Remove a transaction-owned public pathname without a check→unlink race. The
+ * pathname is first moved to a private sibling, verified there, and only that
+ * private claim is deleted. */
+export async function unlinkClaimedFile(
+  claim: FileClaim,
+  operations: ExclusivePublishOperations = realPublishOperations,
+): Promise<boolean> {
+  const held = await moveClaimedFile(claim, defaultTempPath(claim.path), operations)
+  if (!held) return false
+  await operations.unlink(held.path)
   return true
 }
 
-/** Restore an original held under a sibling name without replacing an external
- * winner. Publication verifies that the hold still names the original claim. */
+/** Relocate a claim without overwriting a late destination winner. The source is
+ * first bound under a private sibling, so cross-device copy and cleanup never act
+ * on a public pathname that another writer can replace. */
+export async function relocateClaimedFileNoOverwrite(
+  claim: FileClaim,
+  destPath: string,
+  operations: ExclusivePublishOperations = realPublishOperations,
+): Promise<{ claim: FileClaim; crossDevice: boolean } | null> {
+  const held = await moveClaimedFile(claim, defaultTempPath(claim.path), operations)
+  if (!held) return null
+  try {
+    const published = await publishFileNoOverwriteDetailed(held.path, destPath, operations, held.identity, false)
+    return { claim: published.claim, crossDevice: published.fallbackCode === 'EXDEV' }
+  } catch (publishError) {
+    try {
+      await publishFileNoOverwriteDetailed(held.path, claim.path, operations, held.identity, false)
+    } catch (restoreError) {
+      throw new AggregateError(
+        [publishError, restoreError],
+        `File publication failed and the source could not be restored to ${claim.path}.`,
+      )
+    }
+    throw publishError
+  }
+}
+
+/** Restore an original held under a sibling name without replacing an external winner. */
 export async function restoreClaimedFile(claim: FileClaim, destPath: string): Promise<FileClaim | null> {
-  if ((await realPublishOperations.pathIdentity(claim.path)) !== claim.identity) return null
-  return publishFileNoOverwrite(claim.path, destPath, realPublishOperations, claim.identity)
+  return (await relocateClaimedFileNoOverwrite(claim, destPath))?.claim ?? null
 }
 
 /**

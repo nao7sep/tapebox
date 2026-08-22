@@ -1,9 +1,12 @@
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, link, lstat, mkdtemp, open, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   publishFileNoOverwrite,
+  claimFile,
+  relocateClaimedFileNoOverwrite,
+  unlinkClaimedFile,
   type ExclusivePublishDestination,
   type ExclusivePublishOperations,
   type ExclusivePublishSource,
@@ -66,12 +69,46 @@ function memoryPublishOperations(
     readLengths,
     operations: {
       link: vi.fn().mockResolvedValue(undefined),
+      rename: vi.fn().mockResolvedValue(undefined),
       openRead: vi.fn().mockResolvedValue(source),
       openExclusive: vi.fn().mockResolvedValue(destination),
       pathIdentity: vi.fn().mockResolvedValue('claim'),
       unlink: vi.fn().mockResolvedValue(undefined),
       ...overrides,
     },
+  }
+}
+
+function realOperations(
+  overrides: Partial<ExclusivePublishOperations> = {},
+): ExclusivePublishOperations {
+  return {
+    link,
+    rename,
+    openRead: (path) => open(path, 'r'),
+    openExclusive: async (path) => {
+      const handle = await open(path, 'wx')
+      return {
+        write: (buffer, offset, length, position) => handle.write(buffer, offset, length, position),
+        sync: () => handle.sync(),
+        close: () => handle.close(),
+        identity: async () => {
+          const value = await handle.stat({ bigint: true })
+          return `${value.dev}:${value.ino}`
+        },
+      }
+    },
+    pathIdentity: async (path) => {
+      try {
+        const value = await lstat(path, { bigint: true })
+        return `${value.dev}:${value.ino}`
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+        throw err
+      }
+    },
+    unlink,
+    ...overrides,
   }
 }
 
@@ -257,5 +294,89 @@ describe('portable no-overwrite publication', () => {
 
     expect(fixture.operations.unlink).not.toHaveBeenCalled()
     expect(await readFile(temp, 'utf8')).toBe('complete bytes')
+  })
+})
+
+describe('physical claim transitions', () => {
+  it('relocates an existing read-only file without requiring write access to its source handle', async () => {
+    const source = join(dir, 'read-only.bin')
+    const destination = join(dir, 'moved.bin')
+    await writeFile(source, 'source')
+    await chmod(source, 0o444)
+
+    const moved = await relocateClaimedFileNoOverwrite(await claimFile(source), destination)
+
+    expect(moved).not.toBeNull()
+    expect(await readFile(destination, 'utf8')).toBe('source')
+  })
+
+  it('preserves a winner that replaces a claim at the exact removal boundary', async () => {
+    const path = join(dir, 'claimed.bin')
+    const winnerTemp = join(dir, 'winner.bin')
+    await writeFile(path, 'ours')
+    await writeFile(winnerTemp, 'winner')
+    const claim = await claimFile(path)
+    let replaced = false
+    const operations = realOperations({
+      rename: async (from, to) => {
+        if (!replaced && from === path) {
+          replaced = true
+          await rename(winnerTemp, path)
+        }
+        await rename(from, to)
+      },
+    })
+
+    await expect(unlinkClaimedFile(claim, operations)).resolves.toBe(false)
+
+    expect(await readFile(path, 'utf8')).toBe('winner')
+    expect((await readdir(dir)).filter((name) => name.endsWith('.tmp'))).toEqual([])
+  })
+
+  it('refuses a late relocation destination and restores the exact source claim', async () => {
+    const source = join(dir, 'source.bin')
+    const destination = join(dir, 'destination.bin')
+    await writeFile(source, 'source')
+    const claim = await claimFile(source)
+    let insertedWinner = false
+    const operations = realOperations({
+      link: async (from, to) => {
+        if (!insertedWinner && to === destination) {
+          insertedWinner = true
+          await writeFile(destination, 'winner')
+        }
+        await link(from, to)
+      },
+    })
+
+    await expect(relocateClaimedFileNoOverwrite(claim, destination, operations)).rejects.toMatchObject({
+      code: 'EEXIST',
+    })
+
+    expect(await readFile(source, 'utf8')).toBe('source')
+    expect(await readFile(destination, 'utf8')).toBe('winner')
+  })
+
+  it('never removes a late source winner during the cross-device copy fallback', async () => {
+    const source = join(dir, 'source.bin')
+    const destination = join(dir, 'destination.bin')
+    await writeFile(source, 'source')
+    const claim = await claimFile(source)
+    let published = false
+    const operations = realOperations({
+      link: async (_from, to) => {
+        if (!published && to === destination) {
+          published = true
+          await writeFile(source, 'late source winner')
+        }
+        throw failure('EXDEV')
+      },
+    })
+
+    const moved = await relocateClaimedFileNoOverwrite(claim, destination, operations)
+
+    expect(moved?.crossDevice).toBe(true)
+    expect(await readFile(destination, 'utf8')).toBe('source')
+    expect(await readFile(source, 'utf8')).toBe('late source winner')
   })
 })

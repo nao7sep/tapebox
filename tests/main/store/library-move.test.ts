@@ -3,22 +3,24 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Real filesystem (temp dirs) so the rename / copy+fsync+verify+unlink / rollback
-// is exercised end to end. The cross-device branch can't be produced by two temp
-// dirs on the same volume, and a mid-move failure can't be forced on a healthy FS,
-// so node:fs/promises.rename is replaced with a spy that DELEGATES to the real
-// rename by default; individual tests override it to throw EXDEV / a hard error.
-// Every other fs call (copyFile, stat, open, unlink, mkdir) stays real.
+// Real filesystem (temp dirs) exercises claimed source holds, exclusive final
+// publication, and rollback end to end. A link spy injects cross-device fallback
+// and exact-boundary destination winners while delegating every ordinary call.
 
 const realFsPromises = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
 const renameSpy = vi.fn(realFsPromises.rename)
+const linkSpy = vi.fn(realFsPromises.link)
 
 vi.mock('node:fs/promises', async () => {
   const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
-  return { ...actual, rename: (...args: Parameters<typeof actual.rename>) => renameSpy(...args) }
+  return {
+    ...actual,
+    rename: (...args: Parameters<typeof actual.rename>) => renameSpy(...args),
+    link: (...args: Parameters<typeof actual.link>) => linkSpy(...args),
+  }
 })
 
-const { relocateLibrary } = await import('@main/store/library-move')
+const { relocateLibrary, rollbackLibraryRelocation } = await import('@main/store/library-move')
 
 let root: string
 let fromDir: string
@@ -51,6 +53,7 @@ function mp4s(list: string[]): string[] {
 
 beforeEach(async () => {
   renameSpy.mockImplementation(realFsPromises.rename)
+  linkSpy.mockImplementation(realFsPromises.link)
   root = await mkdtemp(join(tmpdir(), 'tapebox-move-'))
   fromDir = join(root, 'from')
   toDir = join(root, 'to')
@@ -77,7 +80,7 @@ describe('relocateLibrary', () => {
 
     const result = await relocateLibrary(fromDir, toDir, ['a.mp4', 'a.json', 'a.jpg'])
 
-    expect(result).toEqual({ moved: true, count: 3, crossDevice: false })
+    expect(result).toMatchObject({ moved: true, count: 3, crossDevice: false })
     expect(await names(toDir)).toEqual(['a.jpg', 'a.json', 'a.mp4'])
     expect(await names(fromDir)).toEqual([])
     expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('video-a')
@@ -120,7 +123,7 @@ describe('relocateLibrary', () => {
     // 'a.json' is named but missing on disk — relocation should move what exists and
     // not fail on the missing one.
     const result = await relocateLibrary(fromDir, toDir, ['a.mp4', 'a.json'])
-    expect(result).toEqual({ moved: true, count: 1, crossDevice: false })
+    expect(result).toMatchObject({ moved: true, count: 1, crossDevice: false })
     expect(await names(toDir)).toEqual(['a.mp4'])
   })
 
@@ -128,8 +131,10 @@ describe('relocateLibrary', () => {
     await seed(fromDir, 'a.mp4', 'video-bytes')
     await seed(fromDir, 'a.json', '{"sidecar":true}')
 
-    // Every rename looks cross-device, so each move takes the copy fallback.
-    renameSpy.mockImplementation(async () => {
+    // Destination hard links look cross-device, so publication takes the bounded
+    // exclusive-copy fallback after the source has been held privately.
+    linkSpy.mockImplementation(async (src, dest) => {
+      if (!String(dest).startsWith(`${toDir}/`)) return realFsPromises.link(src, dest)
       const err = new Error('EXDEV: cross-device link not permitted') as NodeJS.ErrnoException
       err.code = 'EXDEV'
       throw err
@@ -137,7 +142,7 @@ describe('relocateLibrary', () => {
 
     const result = await relocateLibrary(fromDir, toDir, ['a.mp4', 'a.json'])
 
-    expect(result).toEqual({ moved: true, count: 2, crossDevice: true })
+    expect(result).toMatchObject({ moved: true, count: 2, crossDevice: true })
     expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('video-bytes')
     expect(await readFile(join(toDir, 'a.json'), 'utf8')).toBe('{"sidecar":true}')
     expect(await names(fromDir)).toEqual([])
@@ -159,30 +164,39 @@ describe('relocateLibrary', () => {
     expect(await exists(join(toDir, 'a.mp4'))).toBe(false)
   })
 
-  it('rolls back to the source and rethrows when a file move fails partway', async () => {
+  it('rolls back exact claims when a late destination winner appears partway', async () => {
     await seed(fromDir, 'a.mp4', 'video-a')
     await seed(fromDir, 'b.mp4', 'video-b')
     await seed(fromDir, 'c.mp4', 'video-c')
 
-    // The first file renames fine; the SECOND forward rename throws a non-EXDEV
-    // error (no copy fallback), which must roll the first one back (a reverse rename
-    // that should succeed) and abort before the third. The rollback rename must NOT
-    // be the one that throws, so we key off the destination being inside toDir.
-    renameSpy.mockImplementation(async (src, dest) => {
-      const destStr = String(dest)
-      if (destStr === join(toDir, 'b.mp4')) {
-        const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException
-        err.code = 'EACCES'
-        throw err
+    // The preflight sees an empty destination. Insert a winner only at b.mp4's
+    // final publication edge, after a.mp4 has moved, so a rolls back and the winner
+    // is preserved.
+    linkSpy.mockImplementation(async (src, dest) => {
+      if (String(dest) === join(toDir, 'b.mp4')) {
+        await writeFile(dest, 'late winner')
       }
-      return realFsPromises.rename(src, dest)
+      return realFsPromises.link(src, dest)
     })
 
-    await expect(relocateLibrary(fromDir, toDir, ['a.mp4', 'b.mp4', 'c.mp4'])).rejects.toThrow(/EACCES/)
+    await expect(relocateLibrary(fromDir, toDir, ['a.mp4', 'b.mp4', 'c.mp4'])).rejects.toMatchObject({ code: 'EEXIST' })
 
     // Everything is back in the source; nothing stranded in the destination.
     expect(mp4s(await names(fromDir))).toEqual(['a.mp4', 'b.mp4', 'c.mp4'])
     expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('video-a')
-    expect(mp4s(await names(toDir))).toEqual([])
+    expect(mp4s(await names(toDir))).toEqual(['b.mp4'])
+    expect(await readFile(join(toDir, 'b.mp4'), 'utf8')).toBe('late winner')
+  })
+
+  it('preserves both sides when an old-location winner blocks settings rollback', async () => {
+    await seed(fromDir, 'a.mp4', 'moved library file')
+    const result = await relocateLibrary(fromDir, toDir, ['a.mp4'])
+    if (!result.moved) throw new Error('fixture did not move')
+    await seed(fromDir, 'a.mp4', 'old-location winner')
+
+    await expect(rollbackLibraryRelocation(fromDir, result.files)).rejects.toThrow(/rolled back/)
+
+    expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('old-location winner')
+    expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('moved library file')
   })
 })

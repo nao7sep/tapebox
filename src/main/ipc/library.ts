@@ -1,4 +1,4 @@
-import { access, constants, copyFile, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { access, constants, copyFile, readdir, readFile, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
@@ -12,6 +12,7 @@ import { describeError, errorMessage } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import {
   claimFile,
+  moveClaimedFile,
   publishFileNoOverwrite,
   restoreClaimedFile,
   unlinkClaimedFile,
@@ -243,9 +244,8 @@ export function registerLibraryHandlers(): void {
       // deletes the newly published file on macOS/Windows.
       for (const it of items) {
         if (it.fresh !== it.old && it.fresh.toLowerCase() === it.old.toLowerCase()) {
-          await rename(it.old, it.hold)
-          const claim = await claimFile(it.hold)
-          if (claim.identity !== it.original.identity) {
+          const claim = await moveClaimedFile(it.original, it.hold)
+          if (!claim) {
             throw Object.assign(new Error(`Original changed while being held: ${it.old}`), { code: 'EEXIST' })
           }
           held.push({ item: it, claim })

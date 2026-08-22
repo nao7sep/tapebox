@@ -38,8 +38,9 @@ vi.mock('@main/io/logger', () => ({
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 const rollbackMutation = vi.hoisted(() => ({
-  mode: null as null | 'committed-winner' | 'held-winner',
+  mode: null as null | 'committed-winner' | 'held-winner' | 'source-winner',
   publishes: 0,
+  moves: 0,
   firstClaim: null as null | { path: string; identity: string },
   dir: '',
 }))
@@ -47,6 +48,15 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
     ...actual,
+    moveClaimedFile: vi.fn(async (...args: Parameters<typeof actual.moveClaimedFile>) => {
+      rollbackMutation.moves += 1
+      if (rollbackMutation.mode === 'source-winner' && rollbackMutation.moves === 1) {
+        const winner = join(rollbackMutation.dir, 'external-source-winner.tmp')
+        await writeFile(winner, 'external source winner')
+        await rename(winner, args[0].path)
+      }
+      return actual.moveClaimedFile(...args)
+    }),
     publishFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.publishFileNoOverwrite>) => {
       rollbackMutation.publishes += 1
       if (rollbackMutation.mode === 'committed-winner' && rollbackMutation.publishes === 2) {
@@ -85,6 +95,7 @@ beforeEach(async () => {
   state.libraryDir = dir
   rollbackMutation.mode = null
   rollbackMutation.publishes = 0
+  rollbackMutation.moves = 0
   rollbackMutation.firstClaim = null
   rollbackMutation.dir = dir
   state.tape = {
@@ -150,5 +161,16 @@ describe('library:rename', () => {
     expect(held).toBeDefined()
     expect(await readFile(join(dir, held!), 'utf8')).toBe('external hold winner')
     expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
+  })
+
+  it('restores a source winner that arrives at the exact case-only hold boundary', async () => {
+    rollbackMutation.mode = 'source-winner'
+    const invoke = handlers.get('library:rename')!
+
+    await expect(invoke({ tapeId: state.tape!.id, name: 'take' })).rejects.toThrow(/changed while being held/)
+
+    expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('external source winner')
+    expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
+    expect(state.tape?.name).toBe('Take')
   })
 })

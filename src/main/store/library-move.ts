@@ -1,5 +1,10 @@
-import { copyFile, mkdir, open, rename, stat, unlink } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import {
+  claimFile,
+  relocateClaimedFileNoOverwrite,
+  type FileClaim,
+} from '@main/io/atomic-file'
 
 /**
  * Move the library's flat contents from one folder to another when the user
@@ -19,13 +24,12 @@ import { join, resolve } from 'node:path'
  *   3. Collision guard, up front: if ANY entry already exists at the destination we
  *      abort before moving a single file — a relocation must never overwrite a file
  *      already in the new folder, and aborting early means nothing has moved yet.
- *   4. Per file: try rename (one inode op, instant, same-filesystem). On EXDEV
- *      (the dirs are on different volumes) fall back to copy → fsync → verify byte
- *      length → unlink the source, so the source is removed only after the copy is
- *      confirmed durable on disk.
- *   5. If any file fails, roll back every file already moved (back to the source)
- *      and rethrow. The caller keeps the OLD setting, so the catalog still points at
- *      the intact source files.
+ *   4. Per file: claim its inode, move it to a private sibling, then publish to the
+ *      destination without overwrite. Cross-device publication uses an exclusive,
+ *      durable bounded copy while the public source name is already vacated.
+ *   5. If any file fails, roll back every exact destination claim. The returned
+ *      claims also let the settings caller perform the same rollback if config save
+ *      fails after the move.
  *
  * Only the named entries are touched — files the app created and tracks (media,
  * sidecars, thumbnails). Unrelated files the user dropped in the folder are left
@@ -34,7 +38,9 @@ import { join, resolve } from 'node:path'
 
 export type RelocateResult =
   | { moved: false; reason: 'same-dir' }
-  | { moved: true; count: number; crossDevice: boolean }
+  | { moved: true; count: number; crossDevice: boolean; files: RelocatedFile[] }
+
+export type RelocatedFile = { name: string; claim: FileClaim }
 
 /**
  * Resolve whether two library paths point at the same effective directory. The
@@ -55,53 +61,28 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-/**
- * fsync a file by path so a cross-device copy is durable before the source is
- * unlinked. Opened 'r+' (not 'r') because on Windows FlushFileBuffers requires
- * write access to the handle. Mirrors io/atomic-file.ts's fsyncFile.
- */
-async function fsyncFile(path: string): Promise<void> {
-  const handle = await open(path, 'r+')
-  try {
-    await handle.sync()
-  } finally {
-    await handle.close()
+async function rollbackMovedFiles(fromDir: string, files: readonly RelocatedFile[]): Promise<void> {
+  const failures: unknown[] = []
+  for (const file of [...files].reverse()) {
+    try {
+      const restored = await relocateClaimedFileNoOverwrite(file.claim, join(fromDir, file.name))
+      if (!restored) throw new Error(`Moved file changed before rollback: ${file.claim.path}`)
+    } catch (err) {
+      failures.push(err)
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, 'Library relocation could not be fully rolled back.')
   }
 }
 
-/**
- * Move one file. Returns true if it crossed a device boundary (copy fallback),
- * false if a plain rename. Throws on any real failure, having left no partial
- * destination behind (the copy temp is the destination itself, removed on failure).
- */
-async function moveOne(from: string, to: string): Promise<boolean> {
-  // not recorded: library relocation preserves an already-accounted media bundle
-  // at a new managed location; it does not author a new text version. The bundle's
-  // binary-bearing directory remains excluded, while config records the new path.
-  try {
-    await rename(from, to)
-    return false
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err
-  }
-
-  // Cross-device: copy, fsync, verify, then unlink the source. Any failure removes
-  // the partial destination and rethrows, so the source is still the only copy.
-  try {
-    await copyFile(from, to)
-    await fsyncFile(to)
-    const [srcStat, dstStat] = await Promise.all([stat(from), stat(to)])
-    if (srcStat.size !== dstStat.size) {
-      throw new Error(
-        `Copy size mismatch for ${from} → ${to} (${srcStat.size} vs ${dstStat.size}).`,
-      )
-    }
-  } catch (err) {
-    await unlink(to).catch(() => {})
-    throw err
-  }
-  await unlink(from)
-  return true
+/** Roll back a completed relocation using the exact destination inode claims it
+ * returned. A later replacement at either pathname wins and is never overwritten. */
+export async function rollbackLibraryRelocation(
+  fromDir: string,
+  files: readonly RelocatedFile[],
+): Promise<void> {
+  await rollbackMovedFiles(fromDir, files)
 }
 
 /**
@@ -135,7 +116,7 @@ export async function relocateLibrary(
     )
   }
 
-  const movedNames: string[] = []
+  const movedFiles: RelocatedFile[] = []
   let crossDevice = false
   try {
     for (const name of entries) {
@@ -143,26 +124,31 @@ export async function relocateLibrary(
       // A file the catalog references but that isn't on disk (already deleted out of
       // band) is skipped, not failed — there's nothing to move and nothing to lose.
       if (!(await pathExists(src))) continue
-      const crossed = await moveOne(src, join(toDir, name))
-      crossDevice = crossDevice || crossed
-      movedNames.push(name)
+      let sourceClaim: FileClaim
+      try {
+        sourceClaim = await claimFile(src)
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue
+        throw err
+      }
+      // not recorded: relocation preserves an already-accounted media bundle at
+      // a new managed location; it does not author new content.
+      const moved = await relocateClaimedFileNoOverwrite(sourceClaim, join(toDir, name))
+      if (!moved) throw new Error(`Library file changed while being moved: ${src}`)
+      crossDevice = crossDevice || moved.crossDevice
+      movedFiles.push({ name, claim: moved.claim })
     }
   } catch (err) {
-    // Roll back: move every already-moved file back to the source. Best-effort per
-    // file (we can't do better than try), but the common case — a same-volume rename
-    // failing partway — rolls back cleanly because each reverse rename is itself a
-    // simple inode op. Rethrow the ORIGINAL failure so the caller reports the real
-    // cause and keeps the old setting.
-    for (const name of movedNames) {
-      await rename(join(toDir, name), join(fromDir, name)).catch(async () => {
-        // not recorded: cross-device rollback copies the same excluded library
-        // bundle bytes back to their original location; it creates no new content.
-        await copyFile(join(toDir, name), join(fromDir, name)).catch(() => {})
-        await unlink(join(toDir, name)).catch(() => {})
-      })
+    try {
+      await rollbackMovedFiles(fromDir, movedFiles)
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [err, rollbackError],
+        'Library relocation failed and could not be fully rolled back.',
+      )
     }
     throw err
   }
 
-  return { moved: true, count: movedNames.length, crossDevice }
+  return { moved: true, count: movedFiles.length, crossDevice, files: movedFiles }
 }

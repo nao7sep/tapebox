@@ -42,8 +42,11 @@ const { getSettings, getLibraryDir, updateSettings } = vi.hoisted(() => ({
 }))
 vi.mock('@main/store/config', () => ({ getSettings, getLibraryDir, updateSettings }))
 
-const { relocateLibrary } = vi.hoisted(() => ({ relocateLibrary: vi.fn() }))
-vi.mock('@main/store/library-move', () => ({ relocateLibrary }))
+const { relocateLibrary, rollbackLibraryRelocation } = vi.hoisted(() => ({
+  relocateLibrary: vi.fn(),
+  rollbackLibraryRelocation: vi.fn(),
+}))
+vi.mock('@main/store/library-move', () => ({ relocateLibrary, rollbackLibraryRelocation }))
 
 vi.mock('@main/store/session', () => ({ getTapes: vi.fn(() => []) }))
 vi.mock('@main/services/api-keys', () => ({
@@ -78,6 +81,7 @@ beforeEach(() => {
   // check in the handler sees a stable shape.
   updateSettings.mockImplementation(async (patch: Partial<Settings>) => ({ ...base, ...patch }))
   relocateLibrary.mockResolvedValue({ moved: false, reason: 'same-dir' })
+  rollbackLibraryRelocation.mockResolvedValue(undefined)
   activeCount.mockReturnValue(0)
   registerSettingsHandlers()
 })
@@ -140,7 +144,7 @@ describe('settings:update — relocation refused while downloads run', () => {
 
   it('proceeds with the move and commit when no downloads are active', async () => {
     activeCount.mockReturnValue(0)
-    relocateLibrary.mockResolvedValue({ moved: true, count: 0, crossDevice: false })
+    relocateLibrary.mockResolvedValue({ moved: true, count: 0, crossDevice: false, files: [] })
     await update({ libraryDir: '/data/new-library' })
     expect(relocateLibrary).toHaveBeenCalledTimes(1)
     expect(updateSettings).toHaveBeenCalledTimes(1)
@@ -149,14 +153,16 @@ describe('settings:update — relocation refused while downloads run', () => {
   })
 
   it('moves the library back when the durable settings save fails', async () => {
-    relocateLibrary
-      .mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false })
-      .mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false })
+    const files = [
+      { name: 'a.mp4', claim: { path: '/data/new-library/a.mp4', identity: '1:1' } },
+      { name: 'a.json', claim: { path: '/data/new-library/a.json', identity: '1:2' } },
+    ]
+    relocateLibrary.mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false, files })
     updateSettings.mockRejectedValueOnce(new Error('config disk full'))
 
     await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('config disk full')
 
     expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [])
-    expect(relocateLibrary).toHaveBeenNthCalledWith(2, '/data/new-library', '/current/library', [])
+    expect(rollbackLibraryRelocation).toHaveBeenCalledWith('/current/library', files)
   })
 })
