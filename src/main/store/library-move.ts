@@ -75,6 +75,9 @@ async function fsyncFile(path: string): Promise<void> {
  * destination behind (the copy temp is the destination itself, removed on failure).
  */
 async function moveOne(from: string, to: string): Promise<boolean> {
+  // not recorded: library relocation preserves an already-accounted media bundle
+  // at a new managed location; it does not author a new text version. The bundle's
+  // binary-bearing directory remains excluded, while config records the new path.
   try {
     await rename(from, to)
     return false
@@ -152,7 +155,8 @@ export async function relocateLibrary(
     // cause and keeps the old setting.
     for (const name of movedNames) {
       await rename(join(toDir, name), join(fromDir, name)).catch(async () => {
-        // Cross-device reverse: copy back, then remove the destination copy.
+        // not recorded: cross-device rollback copies the same excluded library
+        // bundle bytes back to their original location; it creates no new content.
         await copyFile(join(toDir, name), join(fromDir, name)).catch(() => {})
         await unlink(join(toDir, name)).catch(() => {})
       })

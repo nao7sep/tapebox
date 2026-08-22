@@ -61,16 +61,13 @@ export function registerExportHandlers(): void {
     tb['thumbnailFilename'] = newThumbName
     sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
 
-    // Media + thumbnail: byte-for-byte copies; then the validated sidecar.
+    // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
+    // written to the user's chosen destination and then forgotten. They are OUTPUT,
+    // and the sidecar is also colocated with binary media, so none enters backups.
     await copyFile(join(libDir, tape.filename), mediaDst)
     if (thumbDst && tape.thumbnailFilename) {
       await copyFile(join(libDir, tape.thumbnailFilename), thumbDst)
     }
-    // not recorded: this sidecar is written into the user's chosen destinationDir as
-    // part of an exported bundle — OUTPUT written for the user then forgotten, and it
-    // sits beside the exported media (a binary-bearing bundle). Neither output nor
-    // binary-colocated content is recorded (data-backup conventions), so it uses the
-    // raw writeJsonAtomic. Nothing this feature writes ever lands beside user files.
     await writeJsonAtomic(sidecarDst, sidecar)
 
     log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })

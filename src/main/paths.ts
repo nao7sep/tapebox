@@ -90,7 +90,7 @@ export const paths = {
   get config()        { return join(storageRoot(), 'config.json') },
   get catalog()       { return join(storageRoot(), 'catalog.json') },
   get layout()        { return join(storageRoot(), 'layout.json') },
-  // Recorded managed-dependency facts (installed/latest versions, last-check time),
+  // Re-derivable managed-dependency facts (latest versions and last-check time),
   // kept apart from config.json so a settings reset never wipes them and their
   // update-check churn never rewrites the config file (persisted-store-separation).
   get dependencies()  { return join(storageRoot(), 'dependencies.json') },

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
-import { writeManagedJson } from '@main/io/atomic-json'
+import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { DependenciesSchema, defaultDependencies, type Dependencies } from '@shared/dependencies'
@@ -73,7 +73,10 @@ export function mutateDependencies(
     const patch = mutator(cache)
     const merged = DependenciesSchema.parse({ ...cache, ...patch })
     cache = merged
-    await writeManagedJson(paths.dependencies, merged, DependenciesSchema)
+    // not recorded: dependencies.json contains only re-derivable dependency and
+    // update facts (last-known upstream versions and successful-check times), not
+    // user-authored text. A refresh reconstructs everything in this store.
+    await writeJsonAtomic(paths.dependencies, merged, DependenciesSchema)
     log.info('dependencies updated', { keys: Object.keys(patch) })
     return merged
   })

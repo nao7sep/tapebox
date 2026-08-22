@@ -215,6 +215,9 @@ export function registerLibraryHandlers(): void {
           // not the managed-text choke point; the tape's catalog row records instead.
           await writeJsonAtomic(it.stage, sidecar)
         } else {
+          // not recorded: rename stages the tape's existing media/thumbnail bytes
+          // inside the binary-bearing library. The catalog records the user-authored
+          // name; copying the binary bundle does not create backup-worthy text.
           await copyFile(it.old, it.stage)
         }
       }
@@ -375,6 +378,9 @@ export function registerLibraryHandlers(): void {
       const targetMedia = join(libraryDir, mediaFilename)
       const targetSidecar = join(libraryDir, `${mediaStem}.json`)
       try {
+        // not recorded: import copies a media bundle (binary plus its colocated,
+        // source-derived sidecar) into the binary-bearing managed library. The
+        // new catalog row records the user's durable library membership instead.
         if (srcMedia !== targetMedia) {
           await assertMissing(targetMedia)
           await copyFile(srcMedia, targetMedia)
@@ -396,6 +402,8 @@ export function registerLibraryHandlers(): void {
         const srcThumb = join(dir, tbThumb)
         const dstThumb = join(libraryDir, tbThumb)
         try {
+          // not recorded: the imported thumbnail is binary image data colocated
+          // with the tape's media and sidecar in the binary-bearing library.
           if (srcThumb !== dstThumb) {
             await assertMissing(dstThumb)
             await copyFile(srcThumb, dstThumb)

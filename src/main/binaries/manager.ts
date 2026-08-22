@@ -218,6 +218,9 @@ async function performInstall(name: BinaryName, signal: AbortSignal): Promise<vo
 
   let lastEmittedPct = -1
   try {
+    // not recorded: this .partial is disposable staging for a re-fetchable native
+    // binary or its archive, not user-authored text. The completed executable has
+    // the same exclusion below when it is atomically published into bin/.
     await withRetry(
       HTTP_RETRY,
       () =>

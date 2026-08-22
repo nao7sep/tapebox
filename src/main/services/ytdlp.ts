@@ -155,6 +155,9 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
   const captured: { finalPath: string | null } = { finalPath: null }
   let lastPct = -1
 
+  // not recorded: yt-dlp writes media, a raw thumbnail, and info JSON into the
+  // binary-bearing library directory (including a user-selected external library).
+  // The bundle is source-regenerable; its durable catalog row records separately.
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
     [
@@ -325,6 +328,9 @@ export async function downloadThumbnail(
   stem: string,
   signal: AbortSignal,
 ): Promise<string | null> {
+  // not recorded: this yt-dlp subprocess writes a source-regenerable binary image
+  // into the binary-bearing library directory; saveThumbnailJpeg replaces it with
+  // the canonical JPEG through the same deliberate binary exclusion.
   await execCapture(
     binaryPath('yt-dlp'),
     [

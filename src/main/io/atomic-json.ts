@@ -22,7 +22,8 @@ import { utcTimestampForFilenameMs } from '@shared/utc'
  *     text write that bypasses it is a silent backup gap (data-backup conventions).
  *   - {@link writeJsonAtomic} is the raw atomic-write primitive for JSON that must
  *     NOT be recorded — the binary-bearing library sidecars, the exported bundle's
- *     sidecar, and the secret api-keys.json. It never touches the backup store.
+ *     sidecar, the secret api-keys.json, and re-derivable dependencies.json facts.
+ *     It never touches the backup store.
  *
  * Generic shape: <S extends z.ZodType> captures the actual schema so that
  * z.infer<S> resolves to the OUTPUT type (defaults applied, transforms run),
@@ -55,8 +56,9 @@ function serializeJson<S extends z.ZodType>(data: z.input<S> | z.infer<S>, schem
 /**
  * Raw atomic JSON write, NOT recorded to the data-backup store. For JSON that is
  * excluded from the backup by design-time, per-write-site decision: the binary-
- * bearing library/export sidecars and the secret api-keys.json (see the module
- * docstring). Managed text goes through {@link writeManagedJson} instead.
+ * bearing library/export sidecars, the secret api-keys.json, and re-derivable
+ * dependency/update facts (see the module docstring). Managed text goes through
+ * {@link writeManagedJson} instead.
  */
 export async function writeJsonAtomic<S extends z.ZodType>(
   path: string,
