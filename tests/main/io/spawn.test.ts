@@ -21,7 +21,9 @@ describe('owned subprocess cancellation', () => {
         `process.on('SIGTERM', () => {}); ` +
         `setTimeout(() => { require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'alive'); process.exit(0) }, 3000)`
       const parent =
-        `process.on('SIGTERM', () => {}); ` +
+        // Mutation target: the direct parent exits on SIGTERM while its descendant
+        // ignores it. Resolving on parent close would leave the descendant alive.
+        `process.once('SIGTERM', () => process.exit(0)); ` +
         `const descendant = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); ` +
         `process.stdout.write('ready:' + descendant.pid + '\\n'); setInterval(() => {}, 1000)`
       const controller = new AbortController()

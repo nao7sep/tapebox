@@ -10,7 +10,14 @@ import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError, errorMessage } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
-import { publishFileNoOverwrite, writeFileAtomicNoOverwriteVia } from '@main/io/atomic-file'
+import {
+  claimFile,
+  publishFileNoOverwrite,
+  restoreClaimedFile,
+  unlinkClaimedFile,
+  writeFileAtomicNoOverwriteVia,
+  type FileClaim,
+} from '@main/io/atomic-file'
 import { planRename } from '@main/core/rename-plan'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import * as queue from '@main/queue/manager'
@@ -175,12 +182,16 @@ export function registerLibraryHandlers(): void {
     // every file under a nanoid `.tmp` sibling, then rename them all into place; the
     // originals are untouched until the very end, so a failure mid-swap is undone by
     // deleting just the new files — the session record still points at the intacts.
-    const items = plan.items.map((it) => ({
-      artifact: it.artifact,
-      old: p(it.old),
-      fresh: p(it.fresh),
-      stage: p(it.stage),
-      hold: p(`${it.stage}.original`),
+    const items = await Promise.all(plan.items.map(async (it) => {
+      const old = p(it.old)
+      return {
+        artifact: it.artifact,
+        old,
+        fresh: p(it.fresh),
+        stage: p(it.stage),
+        hold: p(`${it.stage}.original`),
+        original: await claimFile(old),
+      }
     }))
 
     // The tape's own current files are the ones about to be renamed, so they must not
@@ -199,8 +210,8 @@ export function registerLibraryHandlers(): void {
     // share one cleanup: the originals stay put (their unlink is the very last step),
     // so undo is just removing any staging files plus any finals already swapped in —
     // whether the failure was a copy, the sidecar validation, or a rename.
-    const done: typeof items = []
-    const held: typeof items = []
+    const done: FileClaim[] = []
+    const held: { item: (typeof items)[number]; claim: FileClaim }[] = []
     try {
       for (const it of items) {
         if (it.artifact === 'sidecar') {
@@ -233,7 +244,11 @@ export function registerLibraryHandlers(): void {
       for (const it of items) {
         if (it.fresh !== it.old && it.fresh.toLowerCase() === it.old.toLowerCase()) {
           await rename(it.old, it.hold)
-          held.push(it)
+          const claim = await claimFile(it.hold)
+          if (claim.identity !== it.original.identity) {
+            throw Object.assign(new Error(`Original changed while being held: ${it.old}`), { code: 'EEXIST' })
+          }
+          held.push({ item: it, claim })
         }
       }
 
@@ -241,19 +256,19 @@ export function registerLibraryHandlers(): void {
       // with EEXIST and is never replaced. The completed stages remain rollback
       // authority until every member has committed.
       for (const it of items) {
-        await publishFileNoOverwrite(it.stage, it.fresh)
-        done.push(it)
+        done.push(await publishFileNoOverwrite(it.stage, it.fresh))
       }
     } catch (err) {
-      for (const it of done) await unlink(it.fresh).catch(() => {})
-      for (const it of held.reverse()) await rename(it.hold, it.old).catch(() => {})
+      for (const claim of done) await unlinkClaimedFile(claim).catch(() => false)
+      for (const { item, claim } of held.reverse()) await restoreClaimedFile(claim, item.old).catch(() => null)
       for (const it of items) await unlink(it.stage).catch(() => {})
       throw err
     }
-    const heldSet = new Set(held)
+    const heldByItem = new Map(held.map(({ item, claim }) => [item, claim]))
     for (const it of items) {
-      if (heldSet.has(it)) await unlink(it.hold).catch(() => {})
-      else if (it.fresh !== it.old) await unlink(it.old).catch(() => {})
+      const heldClaim = heldByItem.get(it)
+      if (heldClaim) await unlinkClaimedFile(heldClaim).catch(() => false)
+      else if (it.fresh !== it.old) await unlinkClaimedFile(it.original).catch(() => false)
     }
 
     const updated = {
@@ -397,23 +412,21 @@ export function registerLibraryHandlers(): void {
       const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
       const targetMedia = join(libraryDir, mediaFilename)
       const targetSidecar = join(libraryDir, `${mediaStem}.json`)
-      const copied: string[] = []
+      const copied: FileClaim[] = []
       try {
         // not recorded: import copies a media bundle (binary plus its colocated,
         // source-derived sidecar) into the binary-bearing managed library. The
         // new catalog row records the user's durable library membership instead.
         if (srcMedia !== targetMedia) {
           await assertMissing(targetMedia)
-          await writeFileAtomicNoOverwriteVia(targetMedia, (temp) => copyFile(srcMedia, temp))
-          copied.push(targetMedia)
+          copied.push(await writeFileAtomicNoOverwriteVia(targetMedia, (temp) => copyFile(srcMedia, temp)))
         }
         if (sidecarPath !== targetSidecar) {
           await assertMissing(targetSidecar)
-          await writeFileAtomicNoOverwriteVia(targetSidecar, (temp) => copyFile(sidecarPath, temp))
-          copied.push(targetSidecar)
+          copied.push(await writeFileAtomicNoOverwriteVia(targetSidecar, (temp) => copyFile(sidecarPath, temp)))
         }
       } catch (err) {
-        await Promise.all(copied.map((path) => unlink(path).catch(() => {})))
+        await Promise.all(copied.map((claim) => unlinkClaimedFile(claim).catch(() => false)))
         rejected.push({ path: sidecarPath, reason: `copy into library failed: ${String(err)}` })
         continue
       }

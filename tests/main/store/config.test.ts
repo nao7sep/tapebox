@@ -26,7 +26,8 @@ vi.mock('@main/io/logger', () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
-import { getLibraryDir, loadSettings, updateSettings } from '@main/store/config'
+import { writeManagedJson } from '@main/io/atomic-json'
+import { getLibraryDir, getSettings, loadSettings, updateSettings } from '@main/store/config'
 
 beforeEach(async () => {
   // No config.json on disk → loadSettings seeds the cache with defaults (blank
@@ -52,5 +53,14 @@ describe('getLibraryDir', () => {
   it('uses a set libraryDir as-is', async () => {
     await updateSettings({ libraryDir: '/custom/library' })
     expect(getLibraryDir()).toBe('/custom/library')
+  })
+
+  it('keeps the last durable settings authoritative when a save fails', async () => {
+    vi.mocked(writeManagedJson).mockRejectedValueOnce(new Error('disk full'))
+
+    await expect(updateSettings({ libraryDir: '/not-durable' })).rejects.toThrow('disk full')
+
+    expect(getSettings().libraryDir).toBe('')
+    expect(getLibraryDir()).toBe(DEFAULT_LIBRARY)
   })
 })

@@ -139,13 +139,22 @@ function terminateOwnedProcessTree(child: StreamingChild): Promise<void> {
     let settled = false
     let termTimer: NodeJS.Timeout | undefined
     let killTimer: NodeJS.Timeout | undefined
+    let livenessTimer: NodeJS.Timeout | undefined
     const finish = () => {
       if (settled) return
       settled = true
       if (termTimer) clearTimeout(termTimer)
       if (killTimer) clearTimeout(killTimer)
-      child.off('close', finish)
+      if (livenessTimer) clearInterval(livenessTimer)
       resolve()
+    }
+    const groupIsAlive = () => {
+      try {
+        process.kill(-pid, 0)
+        return true
+      } catch {
+        return false
+      }
     }
     const signalGroup = (signal: NodeJS.Signals) => {
       try {
@@ -158,9 +167,18 @@ function terminateOwnedProcessTree(child: StreamingChild): Promise<void> {
       }
     }
 
-    child.once('close', finish)
     signalGroup('SIGTERM')
+    // The direct child can obey SIGTERM while an ffmpeg/Deno descendant ignores
+    // it. Child close is therefore not the ownership boundary: retain the group
+    // id and poll its liveness until every member exits or escalation settles.
+    livenessTimer = setInterval(() => {
+      if (!groupIsAlive()) finish()
+    }, 25)
     termTimer = setTimeout(() => {
+      if (!groupIsAlive()) {
+        finish()
+        return
+      }
       signalGroup('SIGKILL')
       // SIGKILL should close promptly. Bound the bookkeeping as well so an OS
       // anomaly cannot leave the termination promise itself pending forever.

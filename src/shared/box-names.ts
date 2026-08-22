@@ -3,7 +3,7 @@
  * process (authoritative validation) so the rule lives in exactly one place.
  *
  * A box name must be non-empty, not a reserved word, and unique among the other
- * boxes — all compared case-insensitively after trimming.
+ * boxes — all compared case-insensitively after NFC normalization and trimming.
  */
 
 /**
@@ -15,7 +15,10 @@ export const UNBOXED_LABEL = 'Unboxed'
 
 const RESERVED_BOX_NAMES = [UNBOXED_LABEL]
 
-const norm = (s: string) => s.trim().toLowerCase()
+export const normalizeBoxName = (name: string): string => name.normalize('NFC').trim()
+
+/** One identity used by live validation and durable catalog validation. */
+export const boxNameIdentity = (name: string): string => normalizeBoxName(name).toLowerCase()
 
 /**
  * Validate a candidate box name. `takenNames` is the names of the *other*
@@ -23,11 +26,11 @@ const norm = (s: string) => s.trim().toLowerCase()
  * no-op, not a collision). Returns a human-readable error, or null when ok.
  */
 export function boxNameError(name: string, takenNames: string[]): string | null {
-  const trimmed = name.trim()
+  const trimmed = normalizeBoxName(name)
   if (!trimmed) return 'Enter a name.'
-  const lower = norm(trimmed)
-  if (RESERVED_BOX_NAMES.some((r) => norm(r) === lower)) return `"${trimmed}" is a reserved name.`
-  if (takenNames.some((n) => norm(n) === lower)) return `A box named "${trimmed}" already exists.`
+  const identity = boxNameIdentity(trimmed)
+  if (RESERVED_BOX_NAMES.some((r) => boxNameIdentity(r) === identity)) return `"${trimmed}" is a reserved name.`
+  if (takenNames.some((n) => boxNameIdentity(n) === identity)) return `A box named "${trimmed}" already exists.`
   return null
 }
 
@@ -37,9 +40,10 @@ export function boxNameError(name: string, takenNames: string[]): string | null 
  * then overtypes.
  */
 export function uniqueBoxName(desired: string, takenNames: string[]): string {
-  if (boxNameError(desired, takenNames) === null) return desired
+  const normalized = normalizeBoxName(desired)
+  if (boxNameError(normalized, takenNames) === null) return normalized
   for (let i = 2; ; i++) {
-    const candidate = `${desired} ${i}`
+    const candidate = `${normalized} ${i}`
     if (boxNameError(candidate, takenNames) === null) return candidate
   }
 }

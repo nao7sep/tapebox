@@ -36,10 +36,11 @@ export async function loadSettings(): Promise<ConfigLoadResult> {
     log.info('settings loaded', { config: summarizeSettings(found.settings) })
     return { status: 'loaded' }
   }
-  cache = defaultSettings()
-  await writeManagedJson(paths.config, cache, SettingsSchema)
+  const defaults = defaultSettings()
+  await writeManagedJson(paths.config, defaults, SettingsSchema)
+  cache = defaults
   if (found === null) {
-    log.info('settings missing; defaults written', { config: summarizeSettings(cache) })
+    log.info('settings missing; defaults written', { config: summarizeSettings(defaults) })
     return { status: 'seeded' }
   }
   log.info('settings quarantined; defaults written', { quarantinePath: found.quarantinePath })
@@ -115,8 +116,10 @@ export function mutateSettings(
     if (!cache) throw new Error('config.ts: loadSettings() must be awaited first')
     const patch = mutator(cache)
     const merged = SettingsSchema.parse({ ...cache, ...patch })
-    cache = merged
     await writeManagedJson(paths.config, merged, SettingsSchema)
+    // The in-memory view is authoritative only after the durable commit. A failed
+    // save leaves every consumer on the last settings file that actually exists.
+    cache = merged
     log.info('settings updated', { keys: Object.keys(patch) })
     return merged
   })

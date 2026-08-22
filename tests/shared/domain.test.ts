@@ -66,4 +66,14 @@ describe('SessionSchema identities', () => {
     expect(() => SessionSchema.parse({ tapes: [{ ...tape, boxId: 'missing123' }], boxes: [] })).toThrow(/unknown box id/)
     expect(() => SessionSchema.parse({ tapes: [], boxes: [box, { ...box, id: 'box7654321', name: ' box ' }] })).toThrow(/box names/)
   })
+
+  it('treats canonically equivalent box names as one durable identity', () => {
+    expect(() => SessionSchema.parse({
+      tapes: [],
+      boxes: [
+        { id: 'box1234567', name: 'Caf\u00e9', order: 0 },
+        { id: 'box7654321', name: 'Cafe\u0301', order: 1 },
+      ],
+    })).toThrow(/box names/)
+  })
 })

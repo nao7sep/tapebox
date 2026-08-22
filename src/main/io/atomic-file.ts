@@ -75,6 +75,8 @@ export interface ExclusivePublishOperations {
   unlink(path: string): Promise<void>
 }
 
+export type FileClaim = { path: string; identity: string }
+
 const realPublishOperations: ExclusivePublishOperations = {
   link,
   openRead: (path) => open(path, 'r'),
@@ -112,7 +114,7 @@ async function copyExclusive(
   tempPath: string,
   destPath: string,
   operations: ExclusivePublishOperations,
-): Promise<void> {
+): Promise<string> {
   const source = await operations.openRead(tempPath)
   let destination: ExclusivePublishDestination | null = null
   let claimIdentity: string | null = null
@@ -139,6 +141,7 @@ async function copyExclusive(
     destination = null
     if ((await operations.pathIdentity(destPath)) !== claimIdentity) throw destinationChanged(destPath)
     committed = true
+    return claimIdentity
   } catch (err) {
     if (destination) await destination.close().catch(() => {})
     let failure = err
@@ -165,20 +168,31 @@ export async function publishFileNoOverwrite(
   tempPath: string,
   destPath: string,
   operations: ExclusivePublishOperations = realPublishOperations,
-): Promise<void> {
+  expectedSourceIdentity?: string,
+): Promise<FileClaim> {
   await fsyncFile(tempPath)
+  const sourceIdentity = await operations.pathIdentity(tempPath)
+  if (sourceIdentity === null || (expectedSourceIdentity !== undefined && sourceIdentity !== expectedSourceIdentity)) {
+    throw destinationChanged(tempPath)
+  }
+  let identity: string
   try {
     await operations.link(tempPath, destPath)
+    if ((await operations.pathIdentity(destPath)) !== sourceIdentity) throw destinationChanged(destPath)
+    identity = sourceIdentity
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
     if (!code || !LINK_UNSUPPORTED.has(code)) throw err
-    await copyExclusive(tempPath, destPath, operations)
+    identity = await copyExclusive(tempPath, destPath, operations)
   }
   // Destination publication is the commit point. A stale temp is inert and can
   // be cleaned later; its unlink failure must not make callers roll back or
   // report a committed output as failed.
-  await operations.unlink(tempPath).catch(() => {})
+  if ((await operations.pathIdentity(tempPath).catch(() => null)) === sourceIdentity) {
+    await operations.unlink(tempPath).catch(() => {})
+  }
   await fsyncDirBestEffort(dirname(destPath))
+  return { path: destPath, identity }
 }
 
 /** Produce and durably publish a file only if the destination is still absent at
@@ -187,14 +201,37 @@ export async function writeFileAtomicNoOverwriteVia(
   destPath: string,
   produce: (tempPath: string) => Promise<void>,
   tempPath: string = defaultTempPath(destPath),
-): Promise<void> {
+): Promise<FileClaim> {
   try {
     await produce(tempPath)
-    await publishFileNoOverwrite(tempPath, destPath)
+    return await publishFileNoOverwrite(tempPath, destPath)
   } catch (err) {
     await unlink(tempPath).catch(() => {})
     throw err
   }
+}
+
+/** Bind cleanup to the exact physical file this transaction created or moved. */
+export async function claimFile(path: string): Promise<FileClaim> {
+  const identity = await realPublishOperations.pathIdentity(path)
+  if (identity === null) {
+    throw Object.assign(new Error(`File disappeared before it could be claimed: ${path}`), { code: 'ENOENT' })
+  }
+  return { path, identity }
+}
+
+/** Remove a transaction-owned file only while the pathname still names its claim. */
+export async function unlinkClaimedFile(claim: FileClaim): Promise<boolean> {
+  if ((await realPublishOperations.pathIdentity(claim.path)) !== claim.identity) return false
+  await unlink(claim.path)
+  return true
+}
+
+/** Restore an original held under a sibling name without replacing an external
+ * winner. Publication verifies that the hold still names the original claim. */
+export async function restoreClaimedFile(claim: FileClaim, destPath: string): Promise<FileClaim | null> {
+  if ((await realPublishOperations.pathIdentity(claim.path)) !== claim.identity) return null
+  return publishFileNoOverwrite(claim.path, destPath, realPublishOperations, claim.identity)
 }
 
 /**

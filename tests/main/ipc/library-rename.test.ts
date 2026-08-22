@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -37,6 +37,43 @@ vi.mock('@main/io/logger', () => ({
 }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
+const rollbackMutation = vi.hoisted(() => ({
+  mode: null as null | 'committed-winner' | 'held-winner',
+  publishes: 0,
+  firstClaim: null as null | { path: string; identity: string },
+  dir: '',
+}))
+vi.mock('@main/io/atomic-file', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
+  return {
+    ...actual,
+    publishFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.publishFileNoOverwrite>) => {
+      rollbackMutation.publishes += 1
+      if (rollbackMutation.mode === 'committed-winner' && rollbackMutation.publishes === 2) {
+        const winner = join(rollbackMutation.dir, 'external-winner.tmp')
+        await writeFile(winner, 'external winner')
+        await rename(winner, rollbackMutation.firstClaim!.path)
+        throw new Error('second publication failed')
+      }
+      if (rollbackMutation.mode === 'held-winner' && rollbackMutation.publishes === 1) {
+        const heldNames = (await readdir(rollbackMutation.dir)).filter((name) => name.endsWith('.tmp.original'))
+        let held: string | undefined
+        for (const candidate of heldNames) {
+          if ((await readFile(join(rollbackMutation.dir, candidate), 'utf8')) === 'video') held = candidate
+        }
+        if (!held) throw new Error('held fixture not found')
+        const winner = join(rollbackMutation.dir, 'external-hold-winner.tmp')
+        await writeFile(winner, 'external hold winner')
+        await rename(winner, join(rollbackMutation.dir, held))
+        throw new Error('publication failed after hold replacement')
+      }
+      const claim = await actual.publishFileNoOverwrite(...args)
+      rollbackMutation.firstClaim ??= claim
+      return claim
+    }),
+  }
+})
+
 const { registerLibraryHandlers } = await import('@main/ipc/library')
 
 let dir: string
@@ -46,6 +83,10 @@ beforeEach(async () => {
   upsertTape.mockClear()
   dir = await mkdtemp(join(tmpdir(), 'tapebox-rename-'))
   state.libraryDir = dir
+  rollbackMutation.mode = null
+  rollbackMutation.publishes = 0
+  rollbackMutation.firstClaim = null
+  rollbackMutation.dir = dir
   state.tape = {
     id: 'Abc123_-xy', sourceUrl: 'https://example.test/watch', state: 'downloaded',
     addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
@@ -83,5 +124,31 @@ describe('library:rename', () => {
     expect(await readFile(join(dir, 'take.mp4'), 'utf8')).toBe('video')
     expect(await readFile(join(dir, 'take.jpg'), 'utf8')).toBe('poster')
     expect(state.tape).toMatchObject({ name: 'take', filename: 'take.mp4', sidecarFilename: 'take.json' })
+  })
+
+  it('preserves a replacement winner instead of deleting it during committed-member rollback', async () => {
+    rollbackMutation.mode = 'committed-winner'
+    const invoke = handlers.get('library:rename')!
+
+    await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow(/publication failed/)
+
+    expect(await readFile(join(dir, 'renamed.mp4'), 'utf8')).toBe('external winner')
+    expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('video')
+  })
+
+  it('does not restore or delete a held-original pathname replaced by an external winner', async () => {
+    rollbackMutation.mode = 'held-winner'
+    const invoke = handlers.get('library:rename')!
+
+    await expect(invoke({ tapeId: state.tape!.id, name: 'take' })).rejects.toThrow(/hold replacement/)
+
+    const heldNames = (await readdir(dir)).filter((name) => name.endsWith('.tmp.original'))
+    let held: string | undefined
+    for (const candidate of heldNames) {
+      if ((await readFile(join(dir, candidate), 'utf8')) === 'external hold winner') held = candidate
+    }
+    expect(held).toBeDefined()
+    expect(await readFile(join(dir, held!), 'utf8')).toBe('external hold winner')
+    expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
   })
 })

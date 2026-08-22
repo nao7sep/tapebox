@@ -147,4 +147,16 @@ describe('settings:update — relocation refused while downloads run', () => {
     const stored = updateSettings.mock.calls[0]![0] as Partial<Settings>
     expect(stored.libraryDir).toBe('/data/new-library')
   })
+
+  it('moves the library back when the durable settings save fails', async () => {
+    relocateLibrary
+      .mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false })
+      .mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false })
+    updateSettings.mockRejectedValueOnce(new Error('config disk full'))
+
+    await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('config disk full')
+
+    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [])
+    expect(relocateLibrary).toHaveBeenNthCalledWith(2, '/data/new-library', '/current/library', [])
+  })
 })

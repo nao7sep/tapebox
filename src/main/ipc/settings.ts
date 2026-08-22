@@ -77,11 +77,13 @@ function normalizeUserDir(label: string, value: string): string {
  * from under one would strand or lose those files. Refusing is the simpler safe
  * option — the user finishes or stops downloads, then relocates.
  */
-async function relocateIfLibraryDirChanged(patch: Partial<Settings>): Promise<void> {
-  if (patch.libraryDir === undefined) return
+type CompletedRelocation = { fromDir: string; toDir: string; entries: string[] }
+
+async function relocateIfLibraryDirChanged(patch: Partial<Settings>): Promise<CompletedRelocation | null> {
+  if (patch.libraryDir === undefined) return null
   const fromDir = config.getLibraryDir()
   const toDir = effectiveLibraryDir(patch.libraryDir)
-  if (resolve(fromDir) === resolve(toDir)) return
+  if (resolve(fromDir) === resolve(toDir)) return null
 
   if (queue.activeCount() > 0) {
     throw new Error(
@@ -95,6 +97,7 @@ async function relocateIfLibraryDirChanged(patch: Partial<Settings>): Promise<vo
   if (result.moved) {
     log.info('library relocated', { from: fromDir, to: toDir, count: result.count, crossDevice: result.crossDevice })
   }
+  return { fromDir, toDir, entries }
 }
 
 export function registerSettingsHandlers(): void {
@@ -121,8 +124,28 @@ export function registerSettingsHandlers(): void {
     // Move the library first; if it throws (collision, in-flight downloads, a
     // failed-and-rolled-back move) the new libraryDir is never committed, so the
     // renderer surfaces the error and the catalog still points at the old folder.
-    await relocateIfLibraryDirChanged(normalized)
-    const next = await config.updateSettings(normalized)
+    const relocation = await relocateIfLibraryDirChanged(normalized)
+    let next: Settings
+    try {
+      next = await config.updateSettings(normalized)
+    } catch (saveError) {
+      if (relocation) {
+        try {
+          await relocateLibrary(relocation.toDir, relocation.fromDir, relocation.entries)
+          log.info('library relocation rolled back after settings save failure', {
+            from: relocation.toDir,
+            to: relocation.fromDir,
+            files: relocation.entries.length,
+          })
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [saveError, rollbackError],
+            'Settings could not be saved and the library relocation could not be fully rolled back.',
+          )
+        }
+      }
+      throw saveError
+    }
     // Flipping autostart on should start anything already waiting.
     if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
     // Toggling keep-awake off mid-playback must release the held wake lock now

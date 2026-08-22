@@ -1,4 +1,4 @@
-import { copyFile, readFile, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { handle } from './handle'
 import { caseInsensitiveSiblingExists, removeTapes } from './library'
@@ -7,7 +7,7 @@ import { getLibraryDir } from '@main/store/config'
 import { planExport } from '@main/core/export-plan'
 import { SidecarTapeBoxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
-import { writeFileAtomicNoOverwriteVia } from '@main/io/atomic-file'
+import { unlinkClaimedFile, writeFileAtomicNoOverwriteVia, type FileClaim } from '@main/io/atomic-file'
 
 /**
  * export:files — copy a tape out of the library, verbatim. No transcoding:
@@ -64,19 +64,20 @@ export function registerExportHandlers(): void {
     // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
     // written to the user's chosen destination and then forgotten. They are OUTPUT,
     // and the sidecar is also colocated with binary media, so none enters backups.
-    const committed: string[] = []
+    const committed: FileClaim[] = []
     try {
-      await writeFileAtomicNoOverwriteVia(mediaDst, (temp) => copyFile(join(libDir, tape.filename!), temp))
-      committed.push(mediaDst)
+      committed.push(
+        await writeFileAtomicNoOverwriteVia(mediaDst, (temp) => copyFile(join(libDir, tape.filename!), temp)),
+      )
       if (thumbDst && tape.thumbnailFilename) {
-        await writeFileAtomicNoOverwriteVia(thumbDst, (temp) => copyFile(join(libDir, tape.thumbnailFilename!), temp))
-        committed.push(thumbDst)
+        committed.push(
+          await writeFileAtomicNoOverwriteVia(thumbDst, (temp) => copyFile(join(libDir, tape.thumbnailFilename!), temp)),
+        )
       }
       const sidecarBytes = Buffer.from(JSON.stringify(sidecar, null, 2) + '\n', 'utf8')
-      await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes))
-      committed.push(sidecarDst)
+      committed.push(await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes)))
     } catch (err) {
-      await Promise.all(committed.map((path) => unlink(path).catch(() => {})))
+      await Promise.all(committed.map((claim) => unlinkClaimedFile(claim).catch(() => false)))
       throw err
     }
 

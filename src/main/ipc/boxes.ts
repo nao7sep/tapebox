@@ -3,7 +3,7 @@ import { handle } from './handle'
 import { emit } from './events'
 import * as session from '@main/store/session'
 import { log } from '@main/io/logger'
-import { boxNameError, uniqueBoxName } from '@shared/box-names'
+import { boxNameError, normalizeBoxName, uniqueBoxName } from '@shared/box-names'
 import { frontOrders } from '@shared/order'
 import type { Box, Tape } from '@shared/domain'
 
@@ -20,7 +20,7 @@ export function registerBoxHandlers(): void {
     const order = boxes.reduce((max, g) => Math.max(max, g.order), -1) + 1
     // Seed with a unique, non-reserved name so the inline edit that follows
     // always starts from a valid name the user can overtype.
-    const finalName = uniqueBoxName(name.trim() || 'New box', boxes.map((g) => g.name))
+    const finalName = uniqueBoxName(normalizeBoxName(name) || 'New box', boxes.map((g) => g.name))
     const box: Box = { id: nanoid(10), name: finalName, order }
     session.upsertBox(box)
     emit('boxes:changed', session.getBoxes())
@@ -32,7 +32,7 @@ export function registerBoxHandlers(): void {
     const boxes = session.getBoxes()
     const box = boxes.find((g) => g.id === boxId)
     if (!box) throw new Error(`Box not found: ${boxId}`)
-    const trimmed = name.trim()
+    const trimmed = normalizeBoxName(name)
     if (!trimmed) return box // empty = no-op, keep the current name
     // Authoritative guard; the renderer validates inline, but main is the
     // source of truth (reserved words + case-insensitive uniqueness).
