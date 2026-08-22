@@ -23,6 +23,7 @@ import { join } from 'node:path'
 const home = vi.hoisted(() => ({ bin: '' }))
 const capture = vi.hoisted(() => ({
   calls: [] as { command: string; args: readonly string[] }[],
+  idleTimeouts: [] as (number | undefined)[],
   result: null as { stdout: string; exitCode: number } | null,
   error: null as Error | null,
 }))
@@ -40,11 +41,14 @@ vi.mock('@main/paths', async () => {
 })
 
 vi.mock('@main/io/spawn', () => ({
-  execCapture: vi.fn(async (command: string, args: readonly string[]) => {
-    capture.calls.push({ command, args })
-    if (capture.error) throw capture.error
-    return { stdout: capture.result?.stdout ?? '', stderr: '', exitCode: capture.result?.exitCode ?? 0 }
-  }),
+  execCapture: vi.fn(
+    async (command: string, args: readonly string[], options?: { idleTimeoutMs?: number }) => {
+      capture.calls.push({ command, args })
+      capture.idleTimeouts.push(options?.idleTimeoutMs)
+      if (capture.error) throw capture.error
+      return { stdout: capture.result?.stdout ?? '', stderr: '', exitCode: capture.result?.exitCode ?? 0 }
+    },
+  ),
 }))
 
 vi.mock('@main/io/logger', () => ({
@@ -84,6 +88,7 @@ import {
 beforeEach(() => {
   home.bin = mkdtempSync(join(tmpdir(), 'tapebox-bin-'))
   capture.calls = []
+  capture.idleTimeouts = []
   capture.result = null
   capture.error = null
   forgetAllInstalledVersions()
@@ -100,6 +105,7 @@ describe('probing the binary', () => {
     // model could not represent.
     expect(await readInstalledVersion('yt-dlp')).toBe('2026.07.04')
     expect(capture.calls).toEqual([{ command: join(home.bin, 'yt-dlp'), args: ['--version'] }])
+    expect(capture.idleTimeouts).toEqual([30_000])
   })
 
   it('normalizes what it reads, so it compares against the resolved latest', async () => {

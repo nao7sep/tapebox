@@ -42,10 +42,10 @@ import { binarySpecs, normalizeVersion } from './registry'
  * the derivation holds at "installed (not checked)".
  */
 
-// A --version call that hasn't printed anything in this long is not going to. Long
-// enough for a cold start of a 80 MB binary off a spun-down disk, short enough that
-// a wedged process can't stall the status read behind it.
-const PROBE_IDLE_TIMEOUT_MS = 10_000
+// A cold first launch of yt-dlp's standalone macOS binary can spend more than ten
+// seconds in OS validation before it prints its version. Keep the probe bounded,
+// but leave enough room for that supported artifact to start on a fast local disk.
+const PROBE_IDLE_TIMEOUT_MS = 30_000
 
 /**
  * `bin/<name>.json` — the version sidecar beside `bin/<name>[.exe]`. Stem plus the
