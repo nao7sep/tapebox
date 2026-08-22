@@ -90,6 +90,12 @@ describe('SettingsSchema', () => {
   it('defaults uiFontFamily to blank, meaning the built-in default font', () => {
     expect(defaultSettings().uiFontFamily).toBe('')
   })
+
+  it('rejects invalid or duplicate durable site-profile identities', () => {
+    const profile = { id: 'Ab12_-xy', name: 'a', urlPattern: 'x', isRegex: false, args: '', comment: '' }
+    expect(SettingsSchema.safeParse({ ...defaultSettings(), siteProfiles: [{ ...profile, id: '' }] }).success).toBe(false)
+    expect(SettingsSchema.safeParse({ ...defaultSettings(), siteProfiles: [profile, { ...profile }] }).success).toBe(false)
+  })
 })
 
 describe('summarizeSettings', () => {

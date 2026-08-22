@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { IpcCalls } from '@shared/ipc-contract'
-import { SettingsSchema } from '@shared/settings'
+import { SettingsPatchSchema } from '@shared/settings'
 import { LayoutSchema } from '@shared/layout'
 
 /**
@@ -82,7 +82,7 @@ export const ipcRequestSchemas = {
   // ── Settings ──────────────────────────────────────────────────────────────
   'settings:get':          z.undefined(),
   'settings:defaultLibraryDir': z.undefined(),
-  'settings:update':       SettingsSchema.partial(),
+  'settings:update':       SettingsPatchSchema,
   'settings:setApiKey':    z.object({ apiKey: z.string() }),
   'settings:clearApiKey':  z.undefined(),
   'settings:hasApiKey':    z.undefined(),

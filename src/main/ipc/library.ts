@@ -10,6 +10,7 @@ import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError, errorMessage } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
+import { publishFileNoOverwrite, writeFileAtomicNoOverwriteVia } from '@main/io/atomic-file'
 import { planRename } from '@main/core/rename-plan'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import * as queue from '@main/queue/manager'
@@ -179,6 +180,7 @@ export function registerLibraryHandlers(): void {
       old: p(it.old),
       fresh: p(it.fresh),
       stage: p(it.stage),
+      hold: p(`${it.stage}.original`),
     }))
 
     // The tape's own current files are the ones about to be renamed, so they must not
@@ -190,6 +192,7 @@ export function registerLibraryHandlers(): void {
     for (const it of items) {
       if (it.fresh.toLowerCase() !== it.old.toLowerCase()) await assertMissing(it.fresh, ownNames)
       await assertMissing(it.stage, ownNames)
+      await assertMissing(it.hold, ownNames)
     }
 
     // Build every staging file, then atomically swap them into place. Both phases
@@ -197,6 +200,7 @@ export function registerLibraryHandlers(): void {
     // so undo is just removing any staging files plus any finals already swapped in —
     // whether the failure was a copy, the sidecar validation, or a rename.
     const done: typeof items = []
+    const held: typeof items = []
     try {
       for (const it of items) {
         if (it.artifact === 'sidecar') {
@@ -222,19 +226,35 @@ export function registerLibraryHandlers(): void {
         }
       }
 
-      // Atomic swap: rename staging -> final, one inode op each on the same
-      // filesystem. Windows refuses the rename if a target is an open file handle;
-      // that surfaces as a clear error rather than partial state.
+      // A case-only rename targets the same case-insensitive directory entry as its
+      // original. Hold those originals under unique sibling names first; otherwise
+      // publishing the stage replaces the old file and the later old-name cleanup
+      // deletes the newly published file on macOS/Windows.
       for (const it of items) {
-        await rename(it.stage, it.fresh)
+        if (it.fresh !== it.old && it.fresh.toLowerCase() === it.old.toLowerCase()) {
+          await rename(it.old, it.hold)
+          held.push(it)
+        }
+      }
+
+      // Final-edge exclusive publication: an external creator after preflight wins
+      // with EEXIST and is never replaced. The completed stages remain rollback
+      // authority until every member has committed.
+      for (const it of items) {
+        await publishFileNoOverwrite(it.stage, it.fresh)
         done.push(it)
       }
     } catch (err) {
-      for (const it of done) if (it.fresh !== it.old) await unlink(it.fresh).catch(() => {})
+      for (const it of done) await unlink(it.fresh).catch(() => {})
+      for (const it of held.reverse()) await rename(it.hold, it.old).catch(() => {})
       for (const it of items) await unlink(it.stage).catch(() => {})
       throw err
     }
-    for (const it of items) if (it.fresh !== it.old) await unlink(it.old).catch(() => {})
+    const heldSet = new Set(held)
+    for (const it of items) {
+      if (heldSet.has(it)) await unlink(it.hold).catch(() => {})
+      else if (it.fresh !== it.old) await unlink(it.old).catch(() => {})
+    }
 
     const updated = {
       ...tape,
@@ -377,19 +397,23 @@ export function registerLibraryHandlers(): void {
       const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
       const targetMedia = join(libraryDir, mediaFilename)
       const targetSidecar = join(libraryDir, `${mediaStem}.json`)
+      const copied: string[] = []
       try {
         // not recorded: import copies a media bundle (binary plus its colocated,
         // source-derived sidecar) into the binary-bearing managed library. The
         // new catalog row records the user's durable library membership instead.
         if (srcMedia !== targetMedia) {
           await assertMissing(targetMedia)
-          await copyFile(srcMedia, targetMedia)
+          await writeFileAtomicNoOverwriteVia(targetMedia, (temp) => copyFile(srcMedia, temp))
+          copied.push(targetMedia)
         }
         if (sidecarPath !== targetSidecar) {
           await assertMissing(targetSidecar)
-          await copyFile(sidecarPath, targetSidecar)
+          await writeFileAtomicNoOverwriteVia(targetSidecar, (temp) => copyFile(sidecarPath, temp))
+          copied.push(targetSidecar)
         }
       } catch (err) {
+        await Promise.all(copied.map((path) => unlink(path).catch(() => {})))
         rejected.push({ path: sidecarPath, reason: `copy into library failed: ${String(err)}` })
         continue
       }
@@ -406,7 +430,7 @@ export function registerLibraryHandlers(): void {
           // with the tape's media and sidecar in the binary-bearing library.
           if (srcThumb !== dstThumb) {
             await assertMissing(dstThumb)
-            await copyFile(srcThumb, dstThumb)
+            await writeFileAtomicNoOverwriteVia(dstThumb, (temp) => copyFile(srcThumb, temp))
           }
           thumbnailFilename = tbThumb
         } catch (err) {

@@ -1,4 +1,4 @@
-import { open, rename, unlink } from 'node:fs/promises'
+import { link, lstat, open, rename, unlink } from 'node:fs/promises'
 import { dirname, extname } from 'node:path'
 import { nanoid } from 'nanoid'
 
@@ -46,6 +46,151 @@ export async function writeFileAtomicVia(
     signal?.throwIfAborted()
     await rename(tempPath, destPath)
     await fsyncDirBestEffort(dirname(destPath))
+  } catch (err) {
+    await unlink(tempPath).catch(() => {})
+    throw err
+  }
+}
+
+const LINK_UNSUPPORTED = new Set(['EACCES', 'EMLINK', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM'])
+const COPY_CHUNK_BYTES = 256 * 1024
+
+export interface ExclusivePublishSource {
+  read(buffer: Buffer, offset: number, length: number, position: number): Promise<{ bytesRead: number }>
+  close(): Promise<void>
+}
+
+export interface ExclusivePublishDestination {
+  write(buffer: Buffer, offset: number, length: number, position: null): Promise<{ bytesWritten: number }>
+  sync(): Promise<void>
+  close(): Promise<void>
+  identity(): Promise<string>
+}
+
+export interface ExclusivePublishOperations {
+  link(tempPath: string, destPath: string): Promise<void>
+  openRead(path: string): Promise<ExclusivePublishSource>
+  openExclusive(path: string): Promise<ExclusivePublishDestination>
+  pathIdentity(path: string): Promise<string | null>
+  unlink(path: string): Promise<void>
+}
+
+const realPublishOperations: ExclusivePublishOperations = {
+  link,
+  openRead: (path) => open(path, 'r'),
+  openExclusive: async (path) => {
+    const handle = await open(path, 'wx')
+    return {
+      write: (buffer, offset, length, position) => handle.write(buffer, offset, length, position),
+      sync: () => handle.sync(),
+      close: () => handle.close(),
+      identity: async () => {
+        const stat = await handle.stat({ bigint: true })
+        return `${stat.dev}:${stat.ino}`
+      },
+    }
+  },
+  pathIdentity: async (path) => {
+    try {
+      const stat = await lstat(path, { bigint: true })
+      return `${stat.dev}:${stat.ino}`
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw err
+    }
+  },
+  unlink,
+}
+
+function destinationChanged(destPath: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`Destination changed during exclusive publication: ${destPath}`), {
+    code: 'EEXIST',
+  })
+}
+
+async function copyExclusive(
+  tempPath: string,
+  destPath: string,
+  operations: ExclusivePublishOperations,
+): Promise<void> {
+  const source = await operations.openRead(tempPath)
+  let destination: ExclusivePublishDestination | null = null
+  let claimIdentity: string | null = null
+  let committed = false
+  try {
+    destination = await operations.openExclusive(destPath)
+    claimIdentity = await destination.identity()
+    const buffer = Buffer.allocUnsafe(COPY_CHUNK_BYTES)
+    let readPosition = 0
+    for (;;) {
+      const { bytesRead } = await source.read(buffer, 0, buffer.length, readPosition)
+      if (bytesRead === 0) break
+      readPosition += bytesRead
+
+      let written = 0
+      while (written < bytesRead) {
+        const result = await destination.write(buffer, written, bytesRead - written, null)
+        if (result.bytesWritten === 0) throw new Error(`Could not publish ${destPath}: write made no progress`)
+        written += result.bytesWritten
+      }
+    }
+    await destination.sync()
+    await destination.close()
+    destination = null
+    if ((await operations.pathIdentity(destPath)) !== claimIdentity) throw destinationChanged(destPath)
+    committed = true
+  } catch (err) {
+    if (destination) await destination.close().catch(() => {})
+    let failure = err
+    if (claimIdentity !== null && !committed) {
+      const currentIdentity = await operations.pathIdentity(destPath).catch(() => null)
+      if (currentIdentity === claimIdentity) {
+        await operations.unlink(destPath).catch(() => {})
+      } else if (currentIdentity !== null) {
+        failure = destinationChanged(destPath)
+      }
+    }
+    throw failure
+  } finally {
+    await source.close().catch(() => {})
+  }
+}
+
+/** Publish one already-complete sibling temp without replacing a destination.
+ * Hard-linking is the atomic fast path. Filesystems without hard-link support
+ * use a bounded copy into an exclusive destination claim. The fallback tracks
+ * the claimed file's physical identity so cleanup never removes a concurrent
+ * replacement winner and a replaced claim is never reported as success. */
+export async function publishFileNoOverwrite(
+  tempPath: string,
+  destPath: string,
+  operations: ExclusivePublishOperations = realPublishOperations,
+): Promise<void> {
+  await fsyncFile(tempPath)
+  try {
+    await operations.link(tempPath, destPath)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (!code || !LINK_UNSUPPORTED.has(code)) throw err
+    await copyExclusive(tempPath, destPath, operations)
+  }
+  // Destination publication is the commit point. A stale temp is inert and can
+  // be cleaned later; its unlink failure must not make callers roll back or
+  // report a committed output as failed.
+  await operations.unlink(tempPath).catch(() => {})
+  await fsyncDirBestEffort(dirname(destPath))
+}
+
+/** Produce and durably publish a file only if the destination is still absent at
+ * the commit instant. The completed temp is removed on every failure. */
+export async function writeFileAtomicNoOverwriteVia(
+  destPath: string,
+  produce: (tempPath: string) => Promise<void>,
+  tempPath: string = defaultTempPath(destPath),
+): Promise<void> {
+  try {
+    await produce(tempPath)
+    await publishFileNoOverwrite(tempPath, destPath)
   } catch (err) {
     await unlink(tempPath).catch(() => {})
     throw err

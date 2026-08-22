@@ -1,8 +1,15 @@
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { writeFileAtomicVia } from '@main/io/atomic-file'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  publishFileNoOverwrite,
+  type ExclusivePublishDestination,
+  type ExclusivePublishOperations,
+  type ExclusivePublishSource,
+  writeFileAtomicNoOverwriteVia,
+  writeFileAtomicVia,
+} from '@main/io/atomic-file'
 
 // Real filesystem (a temp dir) so the temp → fsync → rename → cleanup is actually
 // exercised end to end; the producer is the seam every caller plugs into.
@@ -23,6 +30,48 @@ async function exists(path: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+function failure(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(code), { code })
+}
+
+function memoryPublishOperations(
+  sourceBytes: Buffer,
+  overrides: Partial<ExclusivePublishOperations> = {},
+): { operations: ExclusivePublishOperations; published: Buffer[]; readLengths: number[] } {
+  const published: Buffer[] = []
+  const readLengths: number[] = []
+  const source: ExclusivePublishSource = {
+    read: vi.fn(async (buffer, offset, length, position) => {
+      readLengths.push(length)
+      const bytesRead = Math.min(length, Math.max(0, sourceBytes.length - position))
+      sourceBytes.copy(buffer, offset, position, position + bytesRead)
+      return { bytesRead }
+    }),
+    close: vi.fn().mockResolvedValue(undefined),
+  }
+  const destination: ExclusivePublishDestination = {
+    write: vi.fn(async (buffer, offset, length) => {
+      published.push(Buffer.from(buffer.subarray(offset, offset + length)))
+      return { bytesWritten: length }
+    }),
+    sync: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+    identity: vi.fn().mockResolvedValue('claim'),
+  }
+  return {
+    published,
+    readLengths,
+    operations: {
+      link: vi.fn().mockResolvedValue(undefined),
+      openRead: vi.fn().mockResolvedValue(source),
+      openExclusive: vi.fn().mockResolvedValue(destination),
+      pathIdentity: vi.fn().mockResolvedValue('claim'),
+      unlink: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    },
   }
 }
 
@@ -155,5 +204,58 @@ describe('writeFileAtomicVia', () => {
     expect(checks).toBe(2)
     expect(await readFile(dest, 'utf8')).toBe('original')
     expect(await exists(temp)).toBe(false)
+  })
+})
+
+describe('writeFileAtomicNoOverwriteVia', () => {
+  it('preserves a destination created after production began and removes its temp', async () => {
+    const dest = join(dir, 'claimed.bin')
+    let temp = ''
+
+    await expect(
+      writeFileAtomicNoOverwriteVia(dest, async (path) => {
+        temp = path
+        await writeFile(path, 'ours')
+        // Mutation-sensitive final-edge race: a competing process wins after any
+        // caller preflight but before our publication attempt.
+        await writeFile(dest, 'winner')
+      }),
+    ).rejects.toMatchObject({ code: 'EEXIST' })
+
+    expect(await readFile(dest, 'utf8')).toBe('winner')
+    expect(await exists(temp)).toBe(false)
+  })
+})
+
+describe('portable no-overwrite publication', () => {
+  it('uses a bounded exclusive copy when the filesystem rejects hard links', async () => {
+    const temp = join(dir, 'stage.bin')
+    const bytes = Buffer.alloc(600_000, 0x5a)
+    await writeFile(temp, bytes)
+    const fixture = memoryPublishOperations(bytes, {
+      link: vi.fn().mockRejectedValue(failure('ENOTSUP')),
+    })
+
+    await publishFileNoOverwrite(temp, join(dir, 'output.bin'), fixture.operations)
+
+    expect(Buffer.concat(fixture.published)).toEqual(bytes)
+    expect(Math.max(...fixture.readLengths)).toBeLessThanOrEqual(256 * 1024)
+    expect(fixture.operations.unlink).toHaveBeenCalledWith(temp)
+  })
+
+  it('rejects success and preserves a replacement winner in the fallback path', async () => {
+    const temp = join(dir, 'stage.bin')
+    await writeFile(temp, 'complete bytes')
+    const fixture = memoryPublishOperations(Buffer.from('complete bytes'), {
+      link: vi.fn().mockRejectedValue(failure('ENOTSUP')),
+      pathIdentity: vi.fn().mockResolvedValue('winner'),
+    })
+
+    await expect(
+      publishFileNoOverwrite(temp, join(dir, 'output.bin'), fixture.operations),
+    ).rejects.toMatchObject({ code: 'EEXIST' })
+
+    expect(fixture.operations.unlink).not.toHaveBeenCalled()
+    expect(await readFile(temp, 'utf8')).toBe('complete bytes')
   })
 })

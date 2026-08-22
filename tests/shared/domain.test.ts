@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TapeSchema } from '@shared/domain'
+import { SessionSchema, TapeSchema } from '@shared/domain'
 
 /** A complete current Tape — every field present, as the app always writes it. */
 function completeTape(): Record<string, unknown> {
@@ -48,5 +48,22 @@ describe('TapeSchema', () => {
   it('strips unknown keys (e.g. a since-removed field) instead of failing', () => {
     const parsed = TapeSchema.parse({ ...completeTape(), thumbnailUrl: 'https://cdn/x.jpg' }) as Record<string, unknown>
     expect('thumbnailUrl' in parsed).toBe(false)
+  })
+
+  it('rejects non-web sources and path-bearing tracked filenames', () => {
+    expect(() => TapeSchema.parse({ ...completeTape(), sourceUrl: 'file:///etc/passwd' })).toThrow()
+    expect(() => TapeSchema.parse({ ...completeTape(), filename: '../escape.mp4' })).toThrow()
+    expect(() => TapeSchema.parse({ ...completeTape(), sidecarFilename: 'dir\\escape.json' })).toThrow()
+  })
+})
+
+describe('SessionSchema identities', () => {
+  it('rejects duplicate tape and box ids plus dangling box membership', () => {
+    const tape = completeTape()
+    const box = { id: 'box1234567', name: 'Box', order: 0 }
+    expect(() => SessionSchema.parse({ tapes: [tape, { ...tape }], boxes: [] })).toThrow(/duplicate tape id/)
+    expect(() => SessionSchema.parse({ tapes: [], boxes: [box, { ...box }] })).toThrow(/duplicate box id/)
+    expect(() => SessionSchema.parse({ tapes: [{ ...tape, boxId: 'missing123' }], boxes: [] })).toThrow(/unknown box id/)
+    expect(() => SessionSchema.parse({ tapes: [], boxes: [box, { ...box, id: 'box7654321', name: ' box ' }] })).toThrow(/box names/)
   })
 })

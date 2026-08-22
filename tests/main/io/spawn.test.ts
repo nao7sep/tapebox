@@ -11,6 +11,41 @@ afterEach(async () => {
 })
 
 describe('owned subprocess cancellation', () => {
+  it.runIf(process.platform !== 'win32')(
+    'escalates from SIGTERM and terminates the owned POSIX process group',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'tapebox-spawn-posix-tree-'))
+      dirs.push(dir)
+      const sentinel = join(dir, 'descendant-survived')
+      const descendant =
+        `process.on('SIGTERM', () => {}); ` +
+        `setTimeout(() => { require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'alive'); process.exit(0) }, 3000)`
+      const parent =
+        `process.on('SIGTERM', () => {}); ` +
+        `const descendant = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); ` +
+        `process.stdout.write('ready:' + descendant.pid + '\\n'); setInterval(() => {}, 1000)`
+      const controller = new AbortController()
+      const child = spawnStreaming(process.execPath, ['-e', parent], { signal: controller.signal })
+      const exited = waitForExit(child, { command: 'POSIX tree fixture' })
+
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('fixture did not become ready')), 10_000)
+        child.stdout.on('data', (chunk: Buffer) => {
+          if (!chunk.toString().includes('ready:')) return
+          clearTimeout(timeout)
+          resolve()
+        })
+      })
+      const started = Date.now()
+      controller.abort()
+      await expect(exited).rejects.toHaveProperty('name', 'AbortError')
+      expect(Date.now() - started).toBeLessThan(4_000)
+      await new Promise((resolve) => setTimeout(resolve, 3_500))
+      await expect(access(sentinel)).rejects.toThrow()
+    },
+    15_000,
+  )
+
   it.runIf(process.platform === 'win32')(
     'terminates descendants before the parent reports cancellation',
     async () => {

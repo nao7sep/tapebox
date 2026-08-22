@@ -91,7 +91,7 @@ export type PromptsSettings = z.infer<typeof PromptsSettingsSchema>
  * (a raw CLI line) are appended to that yt-dlp call. comment is a user note.
  */
 export const SiteProfileSchema = z.object({
-  id: z.string(),
+  id: z.string().regex(/^[A-Za-z0-9_-]{8}$/),
   name: z.string(),
   urlPattern: z.string(),
   isRegex: z.boolean(),
@@ -100,7 +100,7 @@ export const SiteProfileSchema = z.object({
 })
 export type SiteProfile = z.infer<typeof SiteProfileSchema>
 
-export const SettingsSchema = z.object({
+const SettingsObjectSchema = z.object({
   // Folder where the library lives — where tapes are saved and read from. Empty =
   // use the default library folder (~/.tapebox/library); main resolves it via
   // getLibraryDir(). A set value is a custom folder used as-is. Never read this as a
@@ -170,6 +170,19 @@ export const SettingsSchema = z.object({
   // back on its own (app-chrome-conventions: web fonts are engine-resolved, never
   // parsed here). Family only — there is deliberately no UI font-size knob.
   uiFontFamily: z.string(),
+})
+
+export const SettingsPatchSchema = SettingsObjectSchema.partial()
+
+export const SettingsSchema = SettingsObjectSchema.superRefine((settings, ctx) => {
+  const ids = new Set<string>()
+  for (let i = 0; i < settings.siteProfiles.length; i++) {
+    const id = settings.siteProfiles[i]!.id
+    if (ids.has(id)) {
+      ctx.addIssue({ code: 'custom', path: ['siteProfiles', i, 'id'], message: `duplicate site profile id: ${id}` })
+    }
+    ids.add(id)
+  }
 })
 export type Settings = z.infer<typeof SettingsSchema>
 

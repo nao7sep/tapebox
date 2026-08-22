@@ -1,13 +1,13 @@
-import { copyFile, readFile } from 'node:fs/promises'
+import { copyFile, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { handle } from './handle'
 import { caseInsensitiveSiblingExists, removeTapes } from './library'
 import * as session from '@main/store/session'
 import { getLibraryDir } from '@main/store/config'
-import { writeJsonAtomic } from '@main/io/atomic-json'
 import { planExport } from '@main/core/export-plan'
 import { SidecarTapeBoxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
+import { writeFileAtomicNoOverwriteVia } from '@main/io/atomic-file'
 
 /**
  * export:files — copy a tape out of the library, verbatim. No transcoding:
@@ -64,11 +64,21 @@ export function registerExportHandlers(): void {
     // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
     // written to the user's chosen destination and then forgotten. They are OUTPUT,
     // and the sidecar is also colocated with binary media, so none enters backups.
-    await copyFile(join(libDir, tape.filename), mediaDst)
-    if (thumbDst && tape.thumbnailFilename) {
-      await copyFile(join(libDir, tape.thumbnailFilename), thumbDst)
+    const committed: string[] = []
+    try {
+      await writeFileAtomicNoOverwriteVia(mediaDst, (temp) => copyFile(join(libDir, tape.filename!), temp))
+      committed.push(mediaDst)
+      if (thumbDst && tape.thumbnailFilename) {
+        await writeFileAtomicNoOverwriteVia(thumbDst, (temp) => copyFile(join(libDir, tape.thumbnailFilename!), temp))
+        committed.push(thumbDst)
+      }
+      const sidecarBytes = Buffer.from(JSON.stringify(sidecar, null, 2) + '\n', 'utf8')
+      await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes))
+      committed.push(sidecarDst)
+    } catch (err) {
+      await Promise.all(committed.map((path) => unlink(path).catch(() => {})))
+      throw err
     }
-    await writeJsonAtomic(sidecarDst, sidecar)
 
     log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })
 

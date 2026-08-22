@@ -7,6 +7,9 @@ describe('classifyImport', () => {
     expect(classifyImport({}).status).toBe('reject')
     expect(classifyImport({ tapebox: {} }).status).toBe('reject')
     expect(classifyImport({ tapebox: { sourceUrl: 123 } }).status).toBe('reject')
+    expect(classifyImport(null).status).toBe('reject')
+    expect(classifyImport([]).status).toBe('reject')
+    expect(classifyImport({ tapebox: { sourceUrl: 'file:///etc/passwd', mediaFilename: 'v.mp4' } }).status).toBe('reject')
   })
 
   it('rejects a sidecar that does not name its media file', () => {
@@ -24,6 +27,13 @@ describe('classifyImport', () => {
       status: 'accept',
       thumbnailFilename: null,
     })
+  })
+
+  it('rejects path-bearing and colliding bundle filenames before filesystem use', () => {
+    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: '../../escape.mp4' } }).status).toBe('reject')
+    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: '../escape.jpg' } }).status).toBe('reject')
+    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.json' } }).status).toBe('reject')
+    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: 'CLIP.MP4' } }).status).toBe('reject')
   })
 })
 

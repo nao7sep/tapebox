@@ -27,7 +27,7 @@ afterEach(async () => {
 describe('terminal catalog persistence', () => {
   it('hands the exact published bytes to the fatal/exit recorder before returning', async () => {
     await loadSession()
-    upsertBox({ id: 'box-1', name: 'Keepers', order: 0 })
+    upsertBox({ id: 'box1234567', name: 'Keepers', order: 0 })
 
     persistNowSync()
 

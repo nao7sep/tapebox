@@ -15,6 +15,7 @@ import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
 import { closeBackupStore } from './store/backupStore.js'
+import { isImportableUrl } from '@shared/url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -29,19 +30,25 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('second-instance', () => {
-  const win = BrowserWindow.getAllWindows()[0]
-  if (!win) return
-  if (win.isMinimized()) win.restore()
-  win.focus()
+  showOrCreateMainWindow()
 })
 
+let mainWindow: BrowserWindow | null = null
+let startupReady = false
+
 function createMainWindow(): BrowserWindow {
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow
   const win = new BrowserWindow(windowOptions(join(__dirname, '../preload/index.cjs')))
+  mainWindow = win
+  win.once('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
 
   // Open external links (About modal, etc.) in the OS browser, never a new
   // Electron window.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    if (isImportableUrl(url)) void shell.openExternal(url)
+    else log.warn('blocked external URL scheme')
     return { action: 'deny' }
   })
 
@@ -54,6 +61,21 @@ function createMainWindow(): BrowserWindow {
 
   win.once('ready-to-show', () => win.show())
   return win
+}
+
+/** Focus the one owner window, or defer creation until stores/IPC/server are
+ * ready. Both Dock activation and a second launch route here. */
+function showOrCreateMainWindow(): void {
+  if (!startupReady) return
+  const existing = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  if (!existing) {
+    createMainWindow()
+    return
+  }
+  const win = existing
+  if (win.isMinimized()) win.restore()
+  if (!win.isVisible()) win.show()
+  win.focus()
 }
 
 async function startup(): Promise<void> {
@@ -82,6 +104,7 @@ async function startup(): Promise<void> {
   // dark to match the renderer, which is a dark-only UI. Without this the title bar
   // follows the OS theme and looks pasted-on-light against the app's #09090b body.
   nativeTheme.themeSource = 'dark'
+  startupReady = true
   createMainWindow()
 
   // The just-in-case data backup (data-backup conventions) is write-through, not a
@@ -145,6 +168,10 @@ process.on('exit', () => {
 })
 
 void app.whenReady().then(() => {
+  // Register before starting asynchronous initialization: macOS can deliver an
+  // activation while stores/server/IPC are still loading. The handler defers;
+  // startup creates the one owner window as soon as readiness is established.
+  app.on('activate', showOrCreateMainWindow)
   void startup().catch((err) => {
     log.error('startup failed', { error: describeError(err) })
     // Report before stopping so a failed launch — most visibly an unusable
@@ -154,9 +181,6 @@ void app.whenReady().then(() => {
     app.quit()
   })
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
-  })
 })
 
 app.on('window-all-closed', () => {

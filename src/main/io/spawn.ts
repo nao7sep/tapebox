@@ -84,11 +84,13 @@ type StreamingChild = ChildProcessByStdio<null, Readable, Readable> & {
 }
 
 const WINDOWS_TREE_KILL_TIMEOUT_MS = 5_000
+const POSIX_TERM_GRACE_MS = 1_000
+const POSIX_KILL_SETTLE_MS = 1_000
 
-/** Terminate the process we started and, on Windows, every descendant it owns.
- * yt-dlp starts ffmpeg and Deno; killing only yt-dlp lets those children keep
- * mutating files after Cancel has returned. `taskkill /T` is Windows' native
- * process-tree operation and needs no shell. */
+/** Terminate the process we started and every descendant it owns. yt-dlp starts
+ * ffmpeg and Deno; killing only yt-dlp lets those children keep mutating files
+ * after Cancel has returned. Windows uses native `taskkill /T`; POSIX children
+ * own a detached process group that is signalled and then escalated as a unit. */
 function terminateOwnedProcessTree(child: StreamingChild): Promise<void> {
   const pid = child.pid
   if (process.platform === 'win32' && pid !== undefined) {
@@ -128,8 +130,43 @@ function terminateOwnedProcessTree(child: StreamingChild): Promise<void> {
       })
     })
   }
-  child.kill('SIGTERM')
-  return Promise.resolve()
+  if (pid === undefined) {
+    child.kill('SIGTERM')
+    return Promise.resolve()
+  }
+
+  return new Promise<void>((resolve) => {
+    let settled = false
+    let termTimer: NodeJS.Timeout | undefined
+    let killTimer: NodeJS.Timeout | undefined
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (termTimer) clearTimeout(termTimer)
+      if (killTimer) clearTimeout(killTimer)
+      child.off('close', finish)
+      resolve()
+    }
+    const signalGroup = (signal: NodeJS.Signals) => {
+      try {
+        // Non-Windows children are spawned detached below, making their pid the
+        // process-group id. Signal the whole owned group so yt-dlp wrappers cannot
+        // leave ffmpeg/Deno descendants mutating the library after Cancel settles.
+        process.kill(-pid, signal)
+      } catch {
+        child.kill(signal)
+      }
+    }
+
+    child.once('close', finish)
+    signalGroup('SIGTERM')
+    termTimer = setTimeout(() => {
+      signalGroup('SIGKILL')
+      // SIGKILL should close promptly. Bound the bookkeeping as well so an OS
+      // anomaly cannot leave the termination promise itself pending forever.
+      killTimer = setTimeout(finish, POSIX_KILL_SETTLE_MS)
+    }, POSIX_TERM_GRACE_MS)
+  })
 }
 
 function beginTermination(child: StreamingChild): void {
@@ -191,6 +228,7 @@ export async function execCapture(
     env: opts.env,
     cwd: opts.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
   }) as StreamingChild
 
   let stdout = ''
@@ -241,6 +279,7 @@ export function spawnStreaming(
     env: opts.env,
     cwd: opts.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
   }) as StreamingChild
 
   if (opts.idleTimeoutMs != null) {
