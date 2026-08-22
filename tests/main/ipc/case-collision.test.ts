@@ -39,6 +39,11 @@ describe('caseInsensitiveSiblingExists', () => {
     expect(await caseInsensitiveSiblingExists(join(dir, 'take.wav'))).toBe(true)
   })
 
+  it('treats composed and decomposed Unicode spellings as one portable sibling', async () => {
+    await seed('Cafe\u0301.wav')
+    expect(await caseInsensitiveSiblingExists(join(dir, 'Caf\u00e9.wav'))).toBe(true)
+  })
+
   it('does not flag a genuinely unique name', async () => {
     await seed('Take.wav')
     expect(await caseInsensitiveSiblingExists(join(dir, 'other.wav'))).toBe(false)

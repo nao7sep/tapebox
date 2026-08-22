@@ -137,6 +137,32 @@ describe('library:rename', () => {
     expect(state.tape).toMatchObject({ name: 'take', filename: 'take.mp4', sidecarFilename: 'take.json' })
   })
 
+  it('preserves every bundle member during a composed/decomposed rename', async () => {
+    const decomposed = 'Cafe\u0301'
+    const composed = 'Caf\u00e9'
+    for (const extension of ['mp4', 'json', 'jpg']) {
+      await rename(join(dir, `Take.${extension}`), join(dir, `${decomposed}.${extension}`))
+    }
+    state.tape = {
+      ...state.tape!,
+      name: decomposed,
+      filename: `${decomposed}.mp4`,
+      sidecarFilename: `${decomposed}.json`,
+      thumbnailFilename: `${decomposed}.jpg`,
+    }
+    const invoke = handlers.get('library:rename')!
+
+    await invoke({ tapeId: state.tape.id, name: composed })
+
+    expect((await readdir(dir)).sort()).toEqual([`${composed}.jpg`, `${composed}.json`, `${composed}.mp4`])
+    expect(await readFile(join(dir, `${composed}.mp4`), 'utf8')).toBe('video')
+    expect(state.tape).toMatchObject({
+      name: composed,
+      filename: `${composed}.mp4`,
+      sidecarFilename: `${composed}.json`,
+    })
+  })
+
   it('preserves a replacement winner instead of deleting it during committed-member rollback', async () => {
     rollbackMutation.mode = 'committed-winner'
     const invoke = handlers.get('library:rename')!

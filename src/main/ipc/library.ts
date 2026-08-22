@@ -20,6 +20,7 @@ import {
   type FileClaim,
 } from '@main/io/atomic-file'
 import { planRename } from '@main/core/rename-plan'
+import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import * as queue from '@main/queue/manager'
 import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
@@ -196,13 +197,15 @@ export function registerLibraryHandlers(): void {
     }))
 
     // The tape's own current files are the ones about to be renamed, so they must not
-    // count as collisions — including when the change is only case ("Take.mp4" ->
-    // "take.mp4"), which the case-insensitive scan would otherwise flag against itself.
+    // count as collisions — including when the change differs only by case or Unicode
+    // composition, which the portable-name scan would otherwise flag against itself.
     // caseInsensitiveSiblingExists compares against bare readdir basenames, so the
     // ignore list must be basenames too — not the absolute paths `it.old` holds.
     const ownNames = items.map((it) => basename(it.old))
     for (const it of items) {
-      if (it.fresh.toLowerCase() !== it.old.toLowerCase()) await assertMissing(it.fresh, ownNames)
+      if (portableFilenameIdentity(it.fresh) !== portableFilenameIdentity(it.old)) {
+        await assertMissing(it.fresh, ownNames)
+      }
       await assertMissing(it.stage, ownNames)
       await assertMissing(it.hold, ownNames)
     }
@@ -238,12 +241,12 @@ export function registerLibraryHandlers(): void {
         }
       }
 
-      // A case-only rename targets the same case-insensitive directory entry as its
-      // original. Hold those originals under unique sibling names first; otherwise
-      // publishing the stage replaces the old file and the later old-name cleanup
-      // deletes the newly published file on macOS/Windows.
+      // An equivalent-name rename targets the same portable directory entry as its
+      // original (case on Windows/macOS; canonical Unicode composition on macOS).
+      // Hold those originals under unique sibling names first; otherwise publication
+      // collides with the old entry and cannot commit the bundle.
       for (const it of items) {
-        if (it.fresh !== it.old && it.fresh.toLowerCase() === it.old.toLowerCase()) {
+        if (it.fresh !== it.old && portableFilenameIdentity(it.fresh) === portableFilenameIdentity(it.old)) {
           const claim = await moveClaimedFile(it.original, it.hold)
           if (!claim) {
             throw Object.assign(new Error(`Original changed while being held: ${it.old}`), { code: 'EEXIST' })
@@ -549,16 +552,15 @@ async function discardFile(path: string, toTrash: boolean): Promise<void> {
 }
 
 /**
- * True if `path`'s directory already holds a sibling whose name matches the target
- * basename case-insensitively — the collision macOS/Windows would silently clobber
- * even though a case-sensitive `stat(path)` reports the exact name as missing
- * (storage-path-conventions' case-insensitive-uniqueness invariant). `ignore` names
- * (compared case-insensitively) are excluded so a file is never treated as its own
- * collision when it is being re-cased in place. A missing directory = no sibling.
+ * True if `path`'s directory already holds a sibling with the same portable filename
+ * identity: NFC-normalized and lowercased. These aliases collide on macOS/Windows
+ * even when an exact `stat(path)` reports the requested spelling missing. `ignore`
+ * names use the same identity so a file is not its own collision during an equivalent
+ * rename. A missing directory means no sibling.
  */
 export async function caseInsensitiveSiblingExists(path: string, ignore: string[] = []): Promise<boolean> {
-  const target = basename(path).toLowerCase()
-  const skip = new Set(ignore.map((n) => n.toLowerCase()))
+  const target = portableFilenameIdentity(basename(path))
+  const skip = new Set(ignore.map(portableFilenameIdentity))
   let entries: string[]
   try {
     entries = await readdir(dirname(path))
@@ -566,7 +568,10 @@ export async function caseInsensitiveSiblingExists(path: string, ignore: string[
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw err
   }
-  return entries.some((name) => name.toLowerCase() === target && !skip.has(name.toLowerCase()))
+  return entries.some((name) => {
+    const identity = portableFilenameIdentity(name)
+    return identity === target && !skip.has(identity)
+  })
 }
 
 async function assertMissing(path: string, ignore: string[] = []): Promise<void> {

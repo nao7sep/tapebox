@@ -34,6 +34,7 @@ describe('classifyImport', () => {
     expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: '../escape.jpg' } }).status).toBe('reject')
     expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.json' } }).status).toBe('reject')
     expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: 'CLIP.MP4' } }).status).toBe('reject')
+    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'Caf\u00e9.mp4', thumbnailFilename: 'Cafe\u0301.MP4' } }).status).toBe('reject')
   })
 })
 

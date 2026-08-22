@@ -1,7 +1,7 @@
 import { extname } from 'node:path'
 import { nanoid } from 'nanoid'
 
-import { sanitizeFilename } from '@main/core/filename'
+import { portableFilenameIdentity, sanitizeFilename } from '@main/core/filename'
 
 // The pure naming/file-op planning behind `library:rename`, lifted out of the IPC
 // handler so the derived names, the no-op short-circuit, and — critically — the
@@ -74,7 +74,8 @@ export function planRename(
   // neither target exists on disk yet — so without this guard the staging build
   // and atomic swap would clobber one file with the other.
   const fresh = items.map((it) => it.fresh)
-  const collided = fresh.find((name, index) => fresh.indexOf(name) !== index)
+  const freshIdentities = fresh.map(portableFilenameIdentity)
+  const collided = fresh.find((_name, index) => freshIdentities.indexOf(freshIdentities[index]!) !== index)
   if (collided) {
     return {
       status: 'error',

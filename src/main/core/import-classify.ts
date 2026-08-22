@@ -1,5 +1,6 @@
 import { FlatFilenameSchema, ImportableUrlSchema, type Tape } from '@shared/domain'
 import { extname } from 'node:path'
+import { portableFilenameIdentity } from '@main/core/filename'
 
 // The pure decisions behind `library:import`, lifted out of the IPC handler: the
 // sidecar-shape accept/reject classification and the ~25-field Tape coercion. The
@@ -50,7 +51,7 @@ export function classifyImport(sidecar: unknown): ImportClassification {
   const sidecarName = `${media.slice(0, -mediaExtension.length)}.json`
   const thumbnail = thumbnailFilename === null ? null : thumbnailFilename.data
   const bundleNames = [media, sidecarName, ...(thumbnail ? [thumbnail] : [])]
-  if (new Set(bundleNames.map((name) => name.toLowerCase())).size !== bundleNames.length) {
+  if (new Set(bundleNames.map(portableFilenameIdentity)).size !== bundleNames.length) {
     return { status: 'reject', reason: 'sidecar bundle filenames must be distinct' }
   }
   return { status: 'accept', sourceUrl: sourceUrl.data, mediaFilename: media, thumbnailFilename: thumbnail }

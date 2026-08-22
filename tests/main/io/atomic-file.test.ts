@@ -280,20 +280,76 @@ describe('portable no-overwrite publication', () => {
     expect(fixture.operations.unlink).toHaveBeenCalledWith(temp)
   })
 
-  it('rejects success and preserves a replacement winner in the fallback path', async () => {
+  it('preserves a replacement arriving at fallback failure cleanup', async () => {
     const temp = join(dir, 'stage.bin')
+    const destination = join(dir, 'output.bin')
+    const winner = join(dir, 'winner.bin')
     await writeFile(temp, 'complete bytes')
-    const fixture = memoryPublishOperations(Buffer.from('complete bytes'), {
-      link: vi.fn().mockRejectedValue(failure('ENOTSUP')),
-      pathIdentity: vi.fn().mockResolvedValue('winner'),
+    const base = realOperations()
+    let replaced = false
+    const operations = realOperations({
+      link: async (from, to) => {
+        if (from === temp && to === destination) throw failure('ENOTSUP')
+        await base.link(from, to)
+      },
+      openExclusive: async (path) => {
+        const opened = await base.openExclusive(path)
+        return {
+          ...opened,
+          write: async (buffer, offset, length, position) => {
+            await opened.write(buffer, offset, Math.min(3, length), position)
+            throw failure('ENOSPC')
+          },
+        }
+      },
+      rename: async (from, to) => {
+        if (!replaced && from === destination) {
+          replaced = true
+          await writeFile(winner, 'external winner')
+          await rename(winner, destination)
+        }
+        await rename(from, to)
+      },
+    })
+
+    await expect(publishFileNoOverwrite(temp, destination, operations)).rejects.toMatchObject({ code: 'EEXIST' })
+
+    expect(await readFile(destination, 'utf8')).toBe('external winner')
+    expect(await readFile(temp, 'utf8')).toBe('complete bytes')
+  })
+
+  it('surfaces failed EXDEV destination cleanup and restores the source claim', async () => {
+    const source = join(dir, 'source.bin')
+    const destination = join(dir, 'destination.bin')
+    await writeFile(source, 'source bytes')
+    const base = realOperations()
+    const operations = realOperations({
+      link: async (from, to) => {
+        if (to === destination) throw failure('EXDEV')
+        await base.link(from, to)
+      },
+      openExclusive: async (path) => {
+        const opened = await base.openExclusive(path)
+        return {
+          ...opened,
+          write: async (buffer, offset, length, position) => {
+            await opened.write(buffer, offset, Math.min(3, length), position)
+            throw failure('ENOSPC')
+          },
+        }
+      },
+      rename: async (from, to) => {
+        if (from === destination) throw failure('EACCES')
+        await rename(from, to)
+      },
     })
 
     await expect(
-      publishFileNoOverwrite(temp, join(dir, 'output.bin'), fixture.operations),
-    ).rejects.toMatchObject({ code: 'EEXIST' })
+      relocateClaimedFileNoOverwrite(await claimFile(source), destination, operations),
+    ).rejects.toThrow(/destination claim could not be cleaned up/)
 
-    expect(fixture.operations.unlink).not.toHaveBeenCalled()
-    expect(await readFile(temp, 'utf8')).toBe('complete bytes')
+    expect(await readFile(source, 'utf8')).toBe('source bytes')
+    expect(await readFile(destination, 'utf8')).toBe('sou')
   })
 })
 

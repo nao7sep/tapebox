@@ -149,11 +149,19 @@ async function copyExclusive(
     if (destination) await destination.close().catch(() => {})
     let failure = err
     if (claimIdentity !== null && !committed) {
-      const currentIdentity = await operations.pathIdentity(destPath).catch(() => null)
-      if (currentIdentity === claimIdentity) {
-        await operations.unlink(destPath).catch(() => {})
-      } else if (currentIdentity !== null) {
-        failure = destinationChanged(destPath)
+      try {
+        // Never check a public pathname and then unlink it: a replacement can land
+        // between those operations. Move the pathname to a private sibling first;
+        // moveClaimedFile verifies the moved inode and restores a replacement.
+        const removed = await unlinkClaimedFile({ path: destPath, identity: claimIdentity }, operations)
+        if (!removed && (await operations.pathIdentity(destPath)) !== null) {
+          failure = destinationChanged(destPath)
+        }
+      } catch (cleanupError) {
+        failure = new AggregateError(
+          [err, cleanupError],
+          `Exclusive publication failed and its destination claim could not be cleaned up: ${destPath}.`,
+        )
       }
     }
     throw failure
