@@ -2,7 +2,8 @@ import { mkdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
   claimFile,
-  relocateClaimedFileNoOverwrite,
+  copyClaimedFileNoOverwrite,
+  unlinkClaimedFiles,
   type FileClaim,
 } from '@main/io/atomic-file'
 import { portableSiblingExists } from '@main/io/portable-directory'
@@ -17,8 +18,8 @@ import { portableFilenameIdentity } from '@shared/filename'
  * resolves.
  *
  * A multi-file move is not atomic, and the files ARE the user's data, so the whole
- * operation is built to leave EITHER every file at the destination OR every file
- * back at the source — never a split:
+ * operation retains every catalog-visible source until the caller durably commits
+ * the new libraryDir authority:
  *
  *   1. Same effective dir → no-op (custom→default that resolves equal, a re-pick of
  *      the same folder, whitespace differences). Compared by resolved path.
@@ -26,12 +27,12 @@ import { portableFilenameIdentity } from '@shared/filename'
  *   3. Collision guard, up front: if ANY entry already exists at the destination we
  *      abort before moving a single file — a relocation must never overwrite a file
  *      already in the new folder, and aborting early means nothing has moved yet.
- *   4. Per file: claim its inode, publish to the destination without overwrite,
- *      then remove only the exact source claim. Cross-device publication uses an
+ *   4. Per file: claim its inode and publish to the destination without overwrite,
+ *      retaining the exact public source. Cross-device publication uses an
  *      exclusive, durable bounded copy while the public source remains visible.
- *   5. If any file fails, roll back every exact destination claim. The returned
- *      claims also let the settings caller perform the same rollback if config save
- *      fails after the move.
+ *   5. If publication or the later config save fails, remove every exact destination
+ *      claim. Only after config commits may the caller remove exact source claims;
+ *      a crash at any earlier phase therefore leaves the old config fully readable.
  *
  * Only the named entries are touched — files the app created and tracks (media,
  * sidecars, thumbnails). Unrelated files the user dropped in the folder are left
@@ -42,7 +43,7 @@ export type RelocateResult =
   | { moved: false; reason: 'same-dir' }
   | { moved: true; count: number; crossDevice: boolean; files: RelocatedFile[] }
 
-export type RelocatedFile = { name: string; claim: FileClaim }
+export type RelocatedFile = { name: string; sourceClaim: FileClaim; claim: FileClaim }
 
 /**
  * Resolve whether two library paths point at the same effective directory. The
@@ -63,35 +64,29 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-async function rollbackMovedFiles(fromDir: string, files: readonly RelocatedFile[]): Promise<void> {
-  const failures: unknown[] = []
-  for (const file of [...files].reverse()) {
-    try {
-      const restored = await relocateClaimedFileNoOverwrite(file.claim, join(fromDir, file.name))
-      if (!restored) throw new Error(`Moved file changed before rollback: ${file.claim.path}`)
-    } catch (err) {
-      failures.push(err)
-    }
-  }
-  if (failures.length > 0) {
-    throw new AggregateError(failures, 'Library relocation could not be fully rolled back.')
-  }
+async function rollbackPublishedFiles(files: readonly RelocatedFile[]): Promise<void> {
+  await unlinkClaimedFiles([...files].reverse().map((file) => file.claim))
 }
 
-/** Roll back a completed relocation using the exact destination inode claims it
- * returned. A later replacement at either pathname wins and is never overwritten. */
+/** Roll back pre-config publication using exact destination claims. The old
+ * catalog-visible source claims were never removed. */
 export async function rollbackLibraryRelocation(
-  fromDir: string,
   files: readonly RelocatedFile[],
 ): Promise<void> {
-  await rollbackMovedFiles(fromDir, files)
+  await rollbackPublishedFiles(files)
+}
+
+/** Complete a relocation only after config.json durably names the destination.
+ * A changed source winner is preserved and reported as an explicit partial
+ * success; the authoritative destination bundle remains complete. */
+export async function completeLibraryRelocation(files: readonly RelocatedFile[]): Promise<void> {
+  await unlinkClaimedFiles(files.map((file) => file.sourceClaim))
 }
 
 /**
- * Move `entries` (basenames) from `fromDir` to `toDir`. See the module doc for the
- * full contract. `entries` should be deduplicated by the caller; duplicates would
- * make the second move fail with ENOENT (source already gone) and trigger a
- * rollback, which is safe but wasteful.
+ * Publish `entries` (basenames) from `fromDir` to `toDir`. See the module doc for
+ * the full contract. `entries` should be deduplicated by the caller; portable
+ * aliases are rejected by preflight before any destination publication.
  */
 export async function relocateLibrary(
   fromDir: string,
@@ -139,14 +134,14 @@ export async function relocateLibrary(
       }
       // not recorded: relocation preserves an already-accounted media bundle at
       // a new managed location; it does not author new content.
-      const moved = await relocateClaimedFileNoOverwrite(sourceClaim, join(toDir, name))
-      if (!moved) throw new Error(`Library file changed while being moved: ${src}`)
-      crossDevice = crossDevice || moved.crossDevice
-      movedFiles.push({ name, claim: moved.claim })
+      const copied = await copyClaimedFileNoOverwrite(sourceClaim, join(toDir, name))
+      if (!copied) throw new Error(`Library file changed while being copied: ${src}`)
+      crossDevice = crossDevice || copied.crossDevice
+      movedFiles.push({ name, sourceClaim, claim: copied.claim })
     }
   } catch (err) {
     try {
-      await rollbackMovedFiles(fromDir, movedFiles)
+      await rollbackPublishedFiles(movedFiles)
     } catch (rollbackError) {
       throw new AggregateError(
         [err, rollbackError],

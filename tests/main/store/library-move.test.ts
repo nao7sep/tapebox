@@ -20,7 +20,11 @@ vi.mock('node:fs/promises', async () => {
   }
 })
 
-const { relocateLibrary, rollbackLibraryRelocation } = await import('@main/store/library-move')
+const {
+  completeLibraryRelocation,
+  relocateLibrary,
+  rollbackLibraryRelocation,
+} = await import('@main/store/library-move')
 
 let root: string
 let fromDir: string
@@ -73,7 +77,7 @@ describe('relocateLibrary', () => {
     expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('video')
   })
 
-  it('moves every named file via rename, creating the destination dir', async () => {
+  it('publishes every named file while retaining sources through the config commit boundary', async () => {
     await seed(fromDir, 'a.mp4', 'video-a')
     await seed(fromDir, 'a.json', 'sidecar-a')
     await seed(fromDir, 'a.jpg', 'thumb-a')
@@ -82,8 +86,11 @@ describe('relocateLibrary', () => {
 
     expect(result).toMatchObject({ moved: true, count: 3, crossDevice: false })
     expect(await names(toDir)).toEqual(['a.jpg', 'a.json', 'a.mp4'])
-    expect(await names(fromDir)).toEqual([])
+    expect(await names(fromDir)).toEqual(['a.jpg', 'a.json', 'a.mp4'])
     expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('video-a')
+    if (!result.moved) throw new Error('fixture did not publish')
+    await completeLibraryRelocation(result.files)
+    expect(await names(fromDir)).toEqual([])
   })
 
   it('relocates from the default folder to a custom one (default→custom)', async () => {
@@ -96,7 +103,7 @@ describe('relocateLibrary', () => {
 
     expect(result.moved).toBe(true)
     expect(await names(toDir)).toEqual(['x.json', 'x.webm'])
-    expect(await names(fromDir)).toEqual([])
+    expect(await names(fromDir)).toEqual(['x.json', 'x.webm'])
   })
 
   it('relocates from a custom folder back to the default (custom→default)', async () => {
@@ -104,7 +111,7 @@ describe('relocateLibrary', () => {
     const result = await relocateLibrary(fromDir, toDir, ['y.mkv'])
     expect(result.moved).toBe(true)
     expect(await readFile(join(toDir, 'y.mkv'), 'utf8')).toBe('y')
-    expect(await exists(join(fromDir, 'y.mkv'))).toBe(false)
+    expect(await readFile(join(fromDir, 'y.mkv'), 'utf8')).toBe('y')
   })
 
   it('leaves unrelated files in the source untouched', async () => {
@@ -145,7 +152,7 @@ describe('relocateLibrary', () => {
     expect(result).toMatchObject({ moved: true, count: 2, crossDevice: true })
     expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('video-bytes')
     expect(await readFile(join(toDir, 'a.json'), 'utf8')).toBe('{"sidecar":true}')
-    expect(await names(fromDir)).toEqual([])
+    expect(await names(fromDir)).toEqual(['a.json', 'a.mp4'])
   })
 
   it('aborts with no changes when a destination file with the same name exists', async () => {
@@ -190,22 +197,59 @@ describe('relocateLibrary', () => {
 
     await expect(relocateLibrary(fromDir, toDir, ['a.mp4', 'b.mp4', 'c.mp4'])).rejects.toMatchObject({ code: 'EEXIST' })
 
-    // Everything is back in the source; nothing stranded in the destination.
+    // Every source stayed public throughout; only the external winner remains at
+    // the destination after exact rollback of the transaction's earlier claims.
     expect(mp4s(await names(fromDir))).toEqual(['a.mp4', 'b.mp4', 'c.mp4'])
     expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('video-a')
     expect(mp4s(await names(toDir))).toEqual(['b.mp4'])
     expect(await readFile(join(toDir, 'b.mp4'), 'utf8')).toBe('late winner')
   })
 
-  it('preserves both sides when an old-location winner blocks settings rollback', async () => {
+  it('preserves a destination replacement winner during pre-config rollback', async () => {
     await seed(fromDir, 'a.mp4', 'moved library file')
     const result = await relocateLibrary(fromDir, toDir, ['a.mp4'])
-    if (!result.moved) throw new Error('fixture did not move')
-    await seed(fromDir, 'a.mp4', 'old-location winner')
+    if (!result.moved) throw new Error('fixture did not publish')
+    await writeFile(join(root, 'destination-winner.tmp'), 'destination winner')
+    await realFsPromises.rename(join(root, 'destination-winner.tmp'), join(toDir, 'a.mp4'))
 
-    await expect(rollbackLibraryRelocation(fromDir, result.files)).rejects.toThrow(/rolled back/)
+    await expect(rollbackLibraryRelocation(result.files)).rejects.toThrow(/could not be cleaned up/)
 
-    expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('old-location winner')
-    expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('moved library file')
+    expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('moved library file')
+    expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('destination winner')
+  })
+
+  it('keeps every source readable at a partial-publication process boundary', async () => {
+    await seed(fromDir, 'a.mp4', 'video-a')
+    await seed(fromDir, 'b.mp4', 'video-b')
+    let signalPaused!: () => void
+    let resume!: () => void
+    const paused = new Promise<void>((resolve) => { signalPaused = resolve })
+    const resumed = new Promise<void>((resolve) => { resume = resolve })
+    linkSpy.mockImplementation(async (src, dest) => {
+      if (String(dest) === join(toDir, 'b.mp4')) {
+        signalPaused()
+        await resumed
+      }
+      return realFsPromises.link(src, dest)
+    })
+
+    const relocation = relocateLibrary(fromDir, toDir, ['a.mp4', 'b.mp4'])
+    await paused
+
+    // If the process stopped here, config.json would still name fromDir and both
+    // catalog-visible source paths remain complete despite partial publication.
+    expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('video-a')
+    expect(await readFile(join(fromDir, 'b.mp4'), 'utf8')).toBe('video-b')
+    expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('video-a')
+    expect(await exists(join(toDir, 'b.mp4'))).toBe(false)
+
+    resume()
+    const result = await relocation
+    if (!result.moved) throw new Error('fixture did not publish')
+
+    // Complete publication is also pre-config: old authority still resolves every
+    // source until the caller explicitly completes after the durable settings save.
+    expect(await names(fromDir)).toEqual(['a.mp4', 'b.mp4'])
+    expect(await readFile(join(toDir, 'b.mp4'), 'utf8')).toBe('video-b')
   })
 })

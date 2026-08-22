@@ -339,12 +339,11 @@ export async function unlinkClaimedFiles(
   }
 }
 
-/** Relocate a claim without overwriting a late destination winner. The public
- * source remains in place throughout destination publication (including a long
- * cross-device copy). Only after the destination is durable is the exact source
- * claim removed, so a crash cannot strand the sole catalog-visible copy in a
- * private temp path. */
-export async function relocateClaimedFileNoOverwrite(
+/** Durably publish a claimed file without overwriting a late destination winner,
+ * while retaining the public source claim. The caller chooses its later durable
+ * authority boundary and may then remove either the exact source or destination
+ * claim. This is the crash-safe primitive for multi-file/location transactions. */
+export async function copyClaimedFileNoOverwrite(
   claim: FileClaim,
   destPath: string,
   operations: ExclusivePublishOperations = realPublishOperations,
@@ -402,6 +401,21 @@ export async function relocateClaimedFileNoOverwrite(
     throw publishError
   }
 
+  return { claim: published.claim, crossDevice: published.fallbackCode === 'EXDEV' }
+}
+
+/** Relocate a claim without overwriting a late destination winner. The public
+ * source remains in place throughout destination publication (including a long
+ * cross-device copy). Only after the destination is durable is the exact source
+ * claim removed, so a crash cannot strand the sole catalog-visible copy in a
+ * private temp path. */
+export async function relocateClaimedFileNoOverwrite(
+  claim: FileClaim,
+  destPath: string,
+  operations: ExclusivePublishOperations = realPublishOperations,
+): Promise<{ claim: FileClaim; crossDevice: boolean } | null> {
+  const published = await copyClaimedFileNoOverwrite(claim, destPath, operations)
+  if (!published) return null
   try {
     // A false result means the public source was replaced or removed after the
     // destination committed. Preserve that winner; the original bytes are already
@@ -422,7 +436,7 @@ export async function relocateClaimedFileNoOverwrite(
     throw cleanupError
   }
 
-  return { claim: published.claim, crossDevice: published.fallbackCode === 'EXDEV' }
+  return published
 }
 
 /** Restore an original held under a sibling name without replacing an external winner. */

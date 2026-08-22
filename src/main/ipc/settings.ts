@@ -7,7 +7,12 @@ import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
 import { paths } from '@main/paths'
 import { reconcileWakeLock } from '@main/power-blocker'
-import { relocateLibrary, rollbackLibraryRelocation, type RelocatedFile } from '@main/store/library-move'
+import {
+  completeLibraryRelocation,
+  relocateLibrary,
+  rollbackLibraryRelocation,
+  type RelocatedFile,
+} from '@main/store/library-move'
 import { log } from '@main/io/logger'
 import { SettingsSchema, type Settings } from '@shared/settings'
 
@@ -67,10 +72,11 @@ function normalizeUserDir(label: string, value: string): string {
 
 /**
  * Relocate the library when a settings patch changes the effective library dir.
- * Runs the move BEFORE the new setting is committed: only if every file lands does
- * the caller persist libraryDir, so a failed move leaves the catalog pointing at the
- * intact source files under the OLD setting. A no-op (effective dir unchanged)
- * returns immediately and the normal update proceeds.
+ * Publishes destination copies BEFORE the new setting is committed while retaining
+ * every source claim. Only after config.json durably names the destination does the
+ * caller clean the obsolete sources. A crash or failure before that commit leaves
+ * the old libraryDir and every catalog-visible source coherent; a no-op (effective
+ * dir unchanged) returns immediately and the normal update proceeds.
  *
  * In-flight downloads are refused, not drained: a job finalizes its media, sidecar,
  * and thumbnail straight into the current library dir, so moving the library out
@@ -95,7 +101,12 @@ async function relocateIfLibraryDirChanged(patch: Partial<Settings>): Promise<Co
   log.info('relocating library', { from: fromDir, to: toDir, files: entries.length })
   const result = await relocateLibrary(fromDir, toDir, entries)
   if (result.moved) {
-    log.info('library relocated', { from: fromDir, to: toDir, count: result.count, crossDevice: result.crossDevice })
+    log.info('library destinations published; awaiting settings commit', {
+      from: fromDir,
+      to: toDir,
+      count: result.count,
+      crossDevice: result.crossDevice,
+    })
   }
   return result.moved ? { fromDir, files: result.files } : null
 }
@@ -131,9 +142,9 @@ export function registerSettingsHandlers(): void {
     } catch (saveError) {
       if (relocation) {
         try {
-          await rollbackLibraryRelocation(relocation.fromDir, relocation.files)
-          log.info('library relocation rolled back after settings save failure', {
-            to: relocation.fromDir,
+          await rollbackLibraryRelocation(relocation.files)
+          log.info('library destinations rolled back after settings save failure', {
+            source: relocation.fromDir,
             files: relocation.files.length,
           })
         } catch (rollbackError) {
@@ -151,6 +162,20 @@ export function registerSettingsHandlers(): void {
     // (and toggling it on while a tape plays must acquire it) — reconcile against
     // the new setting rather than waiting for the next play/pause transition.
     reconcileWakeLock()
+    if (relocation) {
+      try {
+        await completeLibraryRelocation(relocation.files)
+        log.info('obsolete library sources cleaned after settings commit', {
+          from: relocation.fromDir,
+          files: relocation.files.length,
+        })
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [cleanupError],
+          'Settings were saved and the new library is authoritative, but obsolete source cleanup was incomplete.',
+        )
+      }
+    }
     return next
   })
   handle('settings:setApiKey', async ({ apiKey }) => {

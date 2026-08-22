@@ -42,11 +42,16 @@ const { getSettings, getLibraryDir, updateSettings } = vi.hoisted(() => ({
 }))
 vi.mock('@main/store/config', () => ({ getSettings, getLibraryDir, updateSettings }))
 
-const { relocateLibrary, rollbackLibraryRelocation } = vi.hoisted(() => ({
+const { completeLibraryRelocation, relocateLibrary, rollbackLibraryRelocation } = vi.hoisted(() => ({
+  completeLibraryRelocation: vi.fn(),
   relocateLibrary: vi.fn(),
   rollbackLibraryRelocation: vi.fn(),
 }))
-vi.mock('@main/store/library-move', () => ({ relocateLibrary, rollbackLibraryRelocation }))
+vi.mock('@main/store/library-move', () => ({
+  completeLibraryRelocation,
+  relocateLibrary,
+  rollbackLibraryRelocation,
+}))
 
 vi.mock('@main/store/session', () => ({ getTapes: vi.fn(() => []) }))
 vi.mock('@main/services/api-keys', () => ({
@@ -81,6 +86,7 @@ beforeEach(() => {
   // check in the handler sees a stable shape.
   updateSettings.mockImplementation(async (patch: Partial<Settings>) => ({ ...base, ...patch }))
   relocateLibrary.mockResolvedValue({ moved: false, reason: 'same-dir' })
+  completeLibraryRelocation.mockResolvedValue(undefined)
   rollbackLibraryRelocation.mockResolvedValue(undefined)
   activeCount.mockReturnValue(0)
   registerSettingsHandlers()
@@ -148,14 +154,23 @@ describe('settings:update — relocation refused while downloads run', () => {
     await update({ libraryDir: '/data/new-library' })
     expect(relocateLibrary).toHaveBeenCalledTimes(1)
     expect(updateSettings).toHaveBeenCalledTimes(1)
+    expect(completeLibraryRelocation).toHaveBeenCalledWith([])
     const stored = updateSettings.mock.calls[0]![0] as Partial<Settings>
     expect(stored.libraryDir).toBe('/data/new-library')
   })
 
-  it('moves the library back when the durable settings save fails', async () => {
+  it('removes destination claims when the durable settings save fails', async () => {
     const files = [
-      { name: 'a.mp4', claim: { path: '/data/new-library/a.mp4', identity: '1:1' } },
-      { name: 'a.json', claim: { path: '/data/new-library/a.json', identity: '1:2' } },
+      {
+        name: 'a.mp4',
+        sourceClaim: { path: '/current/library/a.mp4', identity: '1:1' },
+        claim: { path: '/data/new-library/a.mp4', identity: '2:1' },
+      },
+      {
+        name: 'a.json',
+        sourceClaim: { path: '/current/library/a.json', identity: '1:2' },
+        claim: { path: '/data/new-library/a.json', identity: '2:2' },
+      },
     ]
     relocateLibrary.mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false, files })
     updateSettings.mockRejectedValueOnce(new Error('config disk full'))
@@ -163,13 +178,18 @@ describe('settings:update — relocation refused while downloads run', () => {
     await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('config disk full')
 
     expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [])
-    expect(rollbackLibraryRelocation).toHaveBeenCalledWith('/current/library', files)
+    expect(rollbackLibraryRelocation).toHaveBeenCalledWith(files)
+    expect(completeLibraryRelocation).not.toHaveBeenCalled()
   })
 
   it('surfaces an exact recovery path when settings rollback is incomplete', async () => {
     const recoveryPath = '/data/new-library/a-rollback-recovery.tmp'
     const files = [
-      { name: 'a.mp4', claim: { path: '/data/new-library/a.mp4', identity: '1:1' } },
+      {
+        name: 'a.mp4',
+        sourceClaim: { path: '/current/library/a.mp4', identity: '1:1' },
+        claim: { path: '/data/new-library/a.mp4', identity: '2:1' },
+      },
     ]
     relocateLibrary.mockResolvedValueOnce({ moved: true, count: 1, crossDevice: false, files })
     updateSettings.mockRejectedValueOnce(new Error('config disk full'))
@@ -180,5 +200,24 @@ describe('settings:update — relocation refused while downloads run', () => {
     const failure = update({ libraryDir: '/data/new-library' })
     await expect(failure).rejects.toThrow(/Settings could not be saved/)
     await expect(failure).rejects.toThrow(recoveryPath)
+  })
+
+  it('reports post-commit source cleanup as partial success without rolling back the destination', async () => {
+    const sourcePath = '/current/library/a.mp4'
+    const files = [{
+      name: 'a.mp4',
+      sourceClaim: { path: sourcePath, identity: '1:1' },
+      claim: { path: '/data/new-library/a.mp4', identity: '2:1' },
+    }]
+    relocateLibrary.mockResolvedValueOnce({ moved: true, count: 1, crossDevice: false, files })
+    completeLibraryRelocation.mockRejectedValueOnce(
+      new AggregateError([new Error(`Source claim remains at ${sourcePath}`)], 'cleanup incomplete'),
+    )
+
+    const failure = update({ libraryDir: '/data/new-library' })
+    await expect(failure).rejects.toThrow(/Settings were saved and the new library is authoritative/)
+    await expect(failure).rejects.toThrow(sourcePath)
+    expect(updateSettings).toHaveBeenCalledOnce()
+    expect(rollbackLibraryRelocation).not.toHaveBeenCalled()
   })
 })
