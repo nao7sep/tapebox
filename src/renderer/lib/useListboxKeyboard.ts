@@ -54,19 +54,21 @@ export function useListboxKeyboard<E extends HTMLElement = HTMLElement>(opts: {
   const { itemIds, activeId, onActivate, idPrefix, page, onCommandKey, onReorder } = opts
   const ref = useRef<E | null>(null)
   const optionId = (itemId: string) => `${idPrefix}-opt-${itemId}`
+  const activeIndex = activeId == null ? -1 : itemIds.indexOf(activeId)
 
   // The keydown handler reads live state through a ref so the container binds a stable
   // handler rather than re-subscribing every render.
   const stateRef = useRef({ itemIds, activeId, onActivate, page, onCommandKey, onReorder })
   stateRef.current = { itemIds, activeId, onActivate, page, onCommandKey, onReorder }
 
-  // Keep the active option in view as it changes (under playback, or via the keys).
+  // Keep the active option in view as it changes or is reordered. Reorder preserves
+  // the stable active id, so its index is the signal that the same row moved.
   useEffect(() => {
     if (activeId == null) return
     document.getElementById(optionId(activeId))?.scrollIntoView({ block: 'nearest' })
     // optionId is pure in idPrefix, which is stable for a given list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, idPrefix])
+  }, [activeId, activeIndex, idPrefix])
 
   function onKeyDown(e: KeyboardEvent): void {
     if (e.defaultPrevented) return

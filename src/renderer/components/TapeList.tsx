@@ -12,7 +12,7 @@ import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
-import { useTapeDragSensors } from '@renderer/lib/dnd'
+import { useDragBodyCursor, useTapeDragSensors } from '@renderer/lib/dnd'
 import { selectTape } from '@renderer/lib/selectTape'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
@@ -32,6 +32,7 @@ export function TapeList() {
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const sensors = useTapeDragSensors()
+  const dragCursor = useDragBodyCursor()
   const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId, (id, offset) => {
     const from = visible.findIndex((t) => t.id === id)
     reorderTape(from, from + offset)
@@ -56,12 +57,12 @@ export function TapeList() {
 
   function onDragStart({ active }: DragStartEvent) {
     setActiveId(String(active.id))
-    document.body.classList.add('dnd-dragging')
+    dragCursor.start()
   }
 
   function onDragEnd({ active, over }: DragEndEvent) {
     setActiveId(null)
-    document.body.classList.remove('dnd-dragging')
+    dragCursor.stop()
     if (!over || active.id === over.id) return
     const from = visible.findIndex((t) => t.id === active.id)
     const to = visible.findIndex((t) => t.id === over.id)
@@ -89,7 +90,7 @@ export function TapeList() {
       collisionDetection={closestCenter}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onDragCancel={() => { setActiveId(null); document.body.classList.remove('dnd-dragging') }}
+      onDragCancel={() => { setActiveId(null); dragCursor.stop() }}
     >
       <div ref={topRef} />
       <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>

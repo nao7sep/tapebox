@@ -27,7 +27,7 @@ export function SortableTape({ id, children }: { id: string; children: ReactNode
     opacity: isDragging ? 0 : 1,
   }
   return (
-    <li ref={setNodeRef} style={style} role="presentation" {...listeners}>
+    <li ref={setNodeRef} style={style} role="presentation" {...listeners} className="dnd-sortable">
       {children}
     </li>
   )

@@ -19,7 +19,7 @@ import { useArchiveStore } from '@renderer/store/archive'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
-import { useTapeDragSensors } from '@renderer/lib/dnd'
+import { useDragBodyCursor, useTapeDragSensors } from '@renderer/lib/dnd'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { BoxList, UNBOXED_DROP_ID } from './BoxList'
 import { ArchiveTapeList } from './ArchiveTapeList'
@@ -83,9 +83,10 @@ export function ArchiveOrganizer() {
   const draggedBox = activeDrag?.type === 'box' ? boxes.find((b) => b.id === activeDrag.id) : undefined
 
   const sensors = useTapeDragSensors()
+  const dragCursor = useDragBodyCursor()
 
   function onDragStart({ active }: DragStartEvent) {
-    document.body.classList.add('dnd-dragging')
+    dragCursor.start()
     const type = active.data.current?.type
     if (type === 'tape' || type === 'box') setActiveDrag({ type, id: String(active.id) })
   }
@@ -152,8 +153,8 @@ export function ArchiveOrganizer() {
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={onDragStart}
-      onDragEnd={(e) => { onDragEnd(e); setActiveDrag(null); document.body.classList.remove('dnd-dragging') }}
-      onDragCancel={() => { setActiveDrag(null); document.body.classList.remove('dnd-dragging') }}
+      onDragEnd={(e) => { onDragEnd(e); setActiveDrag(null); dragCursor.stop() }}
+      onDragCancel={() => { setActiveDrag(null); dragCursor.stop() }}
     >
       <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 px-3 py-2">

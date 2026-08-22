@@ -12,6 +12,14 @@ button:disabled {
   cursor: default;
 }
 
+/* Sortable rows advertise their drag affordance at rest. The option child has its
+   own clickable cursor, so override that projection while leaving row buttons as
+   ordinary pointer controls. */
+.dnd-sortable,
+.dnd-sortable > [role="option"] {
+  cursor: grab;
+}
+
 /* While a tape/box drag is in progress the whole window shows the closed-hand
    "grabbing" cursor, overriding the pointer the rows would otherwise show under
    the roaming pointer. The body class is toggled by the DndContext drag handlers. */

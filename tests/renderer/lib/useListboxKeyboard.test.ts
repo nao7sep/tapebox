@@ -6,9 +6,11 @@ import { useListboxKeyboard, useAutoFocusList } from '@renderer/lib/useListboxKe
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const scrollIntoView = vi.fn()
+
 beforeAll(() => {
   // jsdom doesn't implement scrollIntoView; the hook calls it when the active id moves.
-  Element.prototype.scrollIntoView = () => {}
+  Element.prototype.scrollIntoView = scrollIntoView
 })
 
 let root: Root | null = null
@@ -33,6 +35,7 @@ afterEach(() => {
     root = null
   }
   document.body.innerHTML = ''
+  scrollIntoView.mockClear()
 })
 
 // ── Navigation ───────────────────────────────────────────────────────────────
@@ -154,6 +157,23 @@ describe('useListboxKeyboard navigation', () => {
     press('ArrowDown', { ctrlKey: true, shiftKey: true })
     expect(onReorder).toHaveBeenCalledWith('c', 1)
     expect(onActivate).not.toHaveBeenCalled()
+  })
+
+  it('scrolls the preserved active item into view after its order changes', () => {
+    const onActivate = vi.fn()
+    mount(React.createElement(Listbox, { itemIds: ITEMS, activeId: 'c', onActivate }))
+    scrollIntoView.mockClear()
+
+    act(() => {
+      root!.render(React.createElement(Listbox, {
+        itemIds: ['a', 'b', 'd', 'c', 'e'],
+        activeId: 'c',
+        onActivate,
+      }))
+    })
+
+    expect(scrollIntoView).toHaveBeenCalledOnce()
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
   })
 
   it('does not treat plain or Alt-modified arrows as reorder commands', () => {

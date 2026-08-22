@@ -257,7 +257,7 @@ function SortableBoxRow({
     opacity: isDragging ? 0 : 1,
   }
   return (
-    <div ref={setNodeRef} style={style} role="presentation" {...listeners} className={rowClass(selected, isOver && draggingTape && !selected)}>
+    <div ref={setNodeRef} style={style} role="presentation" {...listeners} className={`dnd-sortable ${rowClass(selected, isOver && draggingTape && !selected)}`}>
       {/* A non-focusable option (the listbox container owns focus and the keys). */}
       <div
         id={optionId}
