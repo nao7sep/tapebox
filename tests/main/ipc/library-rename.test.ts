@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 
@@ -16,11 +16,13 @@ vi.mock('electron', () => ({
 
 const state = vi.hoisted(() => ({ tape: null as Tape | null, libraryDir: '' }))
 const upsertTape = vi.hoisted(() => vi.fn((tape: Tape) => { state.tape = tape }))
+const renameTapeDurably = vi.hoisted(() => vi.fn())
 vi.mock('@main/store/session', () => ({
   getTape: (id: string) => state.tape?.id === id ? state.tape : undefined,
   getTapes: () => state.tape ? [state.tape] : [],
   getBoxes: () => [],
   upsertTape,
+  renameTapeDurably,
   removeTapes: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
@@ -38,26 +40,20 @@ vi.mock('@main/io/logger', () => ({
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 const rollbackMutation = vi.hoisted(() => ({
-  mode: null as null | 'committed-winner' | 'held-winner' | 'source-winner' | 'restore-failure' | 'final-cleanup',
+  mode: null as null | 'committed-winner' | 'final-cleanup',
+  durableFails: false,
   publishes: 0,
-  moves: 0,
   firstClaim: null as null | { path: string; identity: string },
   cleanupPath: '',
   dir: '',
+  order: [] as string[],
+  sourcesVisibleAtCommit: false,
+  destinationsVisibleAtCommit: false,
 }))
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
     ...actual,
-    moveClaimedFile: vi.fn(async (...args: Parameters<typeof actual.moveClaimedFile>) => {
-      rollbackMutation.moves += 1
-      if (rollbackMutation.mode === 'source-winner' && rollbackMutation.moves === 1) {
-        const winner = join(rollbackMutation.dir, 'external-source-winner.tmp')
-        await writeFile(winner, 'external source winner')
-        await rename(winner, args[0].path)
-      }
-      return actual.moveClaimedFile(...args)
-    }),
     publishFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.publishFileNoOverwrite>) => {
       rollbackMutation.publishes += 1
       if (rollbackMutation.mode === 'committed-winner' && rollbackMutation.publishes === 2) {
@@ -66,31 +62,14 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
         await rename(winner, rollbackMutation.firstClaim!.path)
         throw new Error('second publication failed')
       }
-      if (rollbackMutation.mode === 'held-winner' && rollbackMutation.publishes === 1) {
-        const heldNames = (await readdir(rollbackMutation.dir)).filter((name) => name.endsWith('.tmp.original'))
-        let held: string | undefined
-        for (const candidate of heldNames) {
-          if ((await readFile(join(rollbackMutation.dir, candidate), 'utf8')) === 'video') held = candidate
-        }
-        if (!held) throw new Error('held fixture not found')
-        const winner = join(rollbackMutation.dir, 'external-hold-winner.tmp')
-        await writeFile(winner, 'external hold winner')
-        await rename(winner, join(rollbackMutation.dir, held))
-        throw new Error('publication failed after hold replacement')
-      }
-      if (rollbackMutation.mode === 'restore-failure' && rollbackMutation.publishes === 1) {
-        throw new Error('publication failed before restoration')
-      }
       const claim = await actual.publishFileNoOverwrite(...args)
       rollbackMutation.firstClaim ??= claim
+      rollbackMutation.order.push(`publish:${basename(claim.path)}`)
       return claim
     }),
-    restoreClaimedFile: vi.fn(async (...args: Parameters<typeof actual.restoreClaimedFile>) => {
-      if (rollbackMutation.mode === 'restore-failure') return null
-      return actual.restoreClaimedFile(...args)
-    }),
     unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
-      if (rollbackMutation.mode === 'final-cleanup' && rollbackMutation.publishes === 3) {
+      rollbackMutation.order.push(state.tape?.name === 'renamed' ? 'cleanup:obsolete' : 'cleanup:rollback')
+      if (rollbackMutation.mode === 'final-cleanup' && state.tape?.name === 'renamed') {
         rollbackMutation.cleanupPath = args[0][0]!.path
         throw new AggregateError(
           [new Error(`Recovery claim remains at ${rollbackMutation.cleanupPath}`)],
@@ -109,14 +88,18 @@ let dir: string
 beforeEach(async () => {
   handlers.clear()
   upsertTape.mockClear()
+  renameTapeDurably.mockReset()
   dir = await mkdtemp(join(tmpdir(), 'tapebox-rename-'))
   state.libraryDir = dir
   rollbackMutation.mode = null
+  rollbackMutation.durableFails = false
   rollbackMutation.publishes = 0
-  rollbackMutation.moves = 0
   rollbackMutation.firstClaim = null
   rollbackMutation.cleanupPath = ''
   rollbackMutation.dir = dir
+  rollbackMutation.order = []
+  rollbackMutation.sourcesVisibleAtCommit = false
+  rollbackMutation.destinationsVisibleAtCommit = false
   state.tape = {
     id: 'Abc123_-xy', sourceUrl: 'https://example.test/watch', state: 'downloaded',
     addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
@@ -136,6 +119,18 @@ beforeEach(async () => {
       mediaFilename: 'Take.mp4', thumbnailFilename: 'Take.jpg',
     },
   }))
+  renameTapeDurably.mockImplementation(async (tape: Tape) => {
+    rollbackMutation.order.push('catalog:start')
+    rollbackMutation.sourcesVisibleAtCommit = await Promise.all(
+      ['Take.mp4', 'Take.json', 'Take.jpg'].map((name) => readFile(join(dir, name)).then(() => true, () => false)),
+    ).then((visible) => visible.every(Boolean))
+    rollbackMutation.destinationsVisibleAtCommit = await Promise.all(
+      ['renamed.mp4', 'renamed.json', 'renamed.jpg'].map((name) => readFile(join(dir, name)).then(() => true, () => false)),
+    ).then((visible) => visible.every(Boolean))
+    if (rollbackMutation.durableFails) throw new Error('catalog disk full')
+    state.tape = tape
+    rollbackMutation.order.push('catalog:committed')
+  })
   registerLibraryHandlers()
 })
 
@@ -144,16 +139,19 @@ afterEach(async () => {
 })
 
 describe('library:rename', () => {
-  it('preserves every bundle member during a case-only rename', async () => {
+  it('keeps physical filenames authoritative during a case-only logical rename', async () => {
     const rename = handlers.get('library:rename')
     if (!rename) throw new Error('library:rename was not registered')
 
     await rename({ tapeId: state.tape!.id, name: 'take' })
 
-    expect((await readdir(dir)).sort()).toEqual(['take.jpg', 'take.json', 'take.mp4'])
-    expect(await readFile(join(dir, 'take.mp4'), 'utf8')).toBe('video')
-    expect(await readFile(join(dir, 'take.jpg'), 'utf8')).toBe('poster')
-    expect(state.tape).toMatchObject({ name: 'take', filename: 'take.mp4', sidecarFilename: 'take.json' })
+    expect((await readdir(dir)).sort()).toEqual(['Take.jpg', 'Take.json', 'Take.mp4'])
+    expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('video')
+    expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
+    expect(state.tape).toMatchObject({ name: 'take', filename: 'Take.mp4', sidecarFilename: 'Take.json' })
+    const sidecar = JSON.parse(await readFile(join(dir, 'Take.json'), 'utf8')) as { tapebox: Record<string, unknown> }
+    expect(sidecar.tapebox).toMatchObject({ name: 'take', mediaFilename: 'Take.mp4', thumbnailFilename: 'Take.jpg' })
+    expect(rollbackMutation.publishes).toBe(0)
   })
 
   it('preserves every bundle member during a composed/decomposed rename', async () => {
@@ -173,13 +171,14 @@ describe('library:rename', () => {
 
     await invoke({ tapeId: state.tape.id, name: composed })
 
-    expect((await readdir(dir)).sort()).toEqual([`${composed}.jpg`, `${composed}.json`, `${composed}.mp4`])
-    expect(await readFile(join(dir, `${composed}.mp4`), 'utf8')).toBe('video')
+    expect((await readdir(dir)).sort()).toEqual([`${decomposed}.jpg`, `${decomposed}.json`, `${decomposed}.mp4`])
+    expect(await readFile(join(dir, `${decomposed}.mp4`), 'utf8')).toBe('video')
     expect(state.tape).toMatchObject({
       name: composed,
-      filename: `${composed}.mp4`,
-      sidecarFilename: `${composed}.json`,
+      filename: `${decomposed}.mp4`,
+      sidecarFilename: `${decomposed}.json`,
     })
+    expect(rollbackMutation.publishes).toBe(0)
   })
 
   it('preserves a replacement winner instead of deleting it during committed-member rollback', async () => {
@@ -192,63 +191,56 @@ describe('library:rename', () => {
     expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('video')
   })
 
-  it('does not restore or delete a held-original pathname replaced by an external winner', async () => {
-    rollbackMutation.mode = 'held-winner'
+  it('publishes all destinations while every old source is still visible, then commits before cleanup', async () => {
     const invoke = handlers.get('library:rename')!
 
-    await expect(invoke({ tapeId: state.tape!.id, name: 'take' })).rejects.toThrow(/hold replacement/)
+    await invoke({ tapeId: state.tape!.id, name: 'renamed' })
 
-    const heldNames = (await readdir(dir)).filter((name) => name.endsWith('.tmp.original'))
-    let held: string | undefined
-    for (const candidate of heldNames) {
-      if ((await readFile(join(dir, candidate), 'utf8')) === 'external hold winner') held = candidate
-    }
-    expect(held).toBeDefined()
-    expect(await readFile(join(dir, held!), 'utf8')).toBe('external hold winner')
-    expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
+    expect(rollbackMutation.sourcesVisibleAtCommit).toBe(true)
+    expect(rollbackMutation.destinationsVisibleAtCommit).toBe(true)
+    expect(rollbackMutation.order.slice(0, 3)).toEqual([
+      'publish:renamed.mp4', 'publish:renamed.json', 'publish:renamed.jpg',
+    ])
+    expect(rollbackMutation.order.indexOf('catalog:committed')).toBeLessThan(
+      rollbackMutation.order.indexOf('cleanup:obsolete'),
+    )
+    expect((await readdir(dir)).sort()).toEqual(['renamed.jpg', 'renamed.json', 'renamed.mp4'])
   })
 
-  it('restores a source winner that arrives at the exact case-only hold boundary', async () => {
-    rollbackMutation.mode = 'source-winner'
+  it('rolls back every destination and keeps the old catalog/sources when durable commit fails', async () => {
+    rollbackMutation.durableFails = true
     const invoke = handlers.get('library:rename')!
 
-    await expect(invoke({ tapeId: state.tape!.id, name: 'take' })).rejects.toThrow(/changed while being held/)
+    await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow(/catalog disk full/)
 
-    expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('external source winner')
+    expect(rollbackMutation.sourcesVisibleAtCommit).toBe(true)
+    expect(rollbackMutation.destinationsVisibleAtCommit).toBe(true)
+    expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('video')
     expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
     expect(state.tape?.name).toBe('Take')
-  })
-
-  it('surfaces failed restoration and the recoverable hold paths', async () => {
-    rollbackMutation.mode = 'restore-failure'
-    const invoke = handlers.get('library:rename')!
-
-    const failure = invoke({ tapeId: state.tape!.id, name: 'take' })
-    await expect(failure).rejects.toThrow(/publication failed before restoration/)
-    await expect(failure).rejects.toThrow(/Recovery claims: .*\.tmp\.original/)
-
-    const heldNames = (await readdir(dir)).filter((name) => name.endsWith('.tmp.original'))
-    expect(heldNames.length).toBe(3)
-    const heldContents = await Promise.all(heldNames.map((name) => readFile(join(dir, name), 'utf8')))
-    expect(heldContents).toContain('video')
+    await expect(readFile(join(dir, 'renamed.mp4'))).rejects.toThrow()
+    await expect(readFile(join(dir, 'renamed.json'))).rejects.toThrow()
+    await expect(readFile(join(dir, 'renamed.jpg'))).rejects.toThrow()
+    expect(rollbackMutation.order.at(-1)).toBe('cleanup:rollback')
   })
 
   it('keeps the committed catalog authoritative when final old-claim cleanup fails', async () => {
     rollbackMutation.mode = 'final-cleanup'
     const invoke = handlers.get('library:rename')!
 
-    const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'take' }))
+    const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'renamed' }))
     await expect(failure).rejects.toThrow(/Rename committed and the catalog points to the new bundle/)
-    expect(rollbackMutation.cleanupPath).toMatch(/\.tmp\.original$/)
+    expect(rollbackMutation.cleanupPath).toBe(join(dir, 'Take.mp4'))
     await expect(failure).rejects.toThrow(rollbackMutation.cleanupPath)
 
     expect(state.tape).toMatchObject({
-      name: 'take',
-      filename: 'take.mp4',
-      sidecarFilename: 'take.json',
-      thumbnailFilename: 'take.jpg',
+      name: 'renamed',
+      filename: 'renamed.mp4',
+      sidecarFilename: 'renamed.json',
+      thumbnailFilename: 'renamed.jpg',
     })
-    expect((await readdir(dir)).sort()).toEqual(expect.arrayContaining(['take.jpg', 'take.json', 'take.mp4']))
-    expect((await readdir(dir)).filter((name) => name.endsWith('.tmp.original')).length).toBe(3)
+    expect((await readdir(dir)).sort()).toEqual(expect.arrayContaining([
+      'Take.jpg', 'Take.json', 'Take.mp4', 'renamed.jpg', 'renamed.json', 'renamed.mp4',
+    ]))
   })
 })

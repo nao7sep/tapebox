@@ -1,5 +1,5 @@
 import { access, constants, copyFile, readFile, stat, unlink } from 'node:fs/promises'
-import { basename, dirname, extname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
@@ -12,9 +12,7 @@ import { describeError, errorMessage } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import {
   claimFile,
-  moveClaimedFile,
   publishFileNoOverwrite,
-  restoreClaimedFile,
   unlinkClaimedFiles,
   writeFileAtomicNoOverwriteVia,
   type FileClaim,
@@ -174,56 +172,89 @@ export function registerLibraryHandlers(): void {
     if (plan.status === 'error') throw new Error(plan.message)
     if (plan.status === 'noop') return tape
 
-    const { cleanName, newMediaName, newSidecarName, newThumbName } = plan
+    const { cleanName } = plan
     const libraryDir = getLibraryDir()
     const p = (rel: string) => join(libraryDir, rel)
     const nowUtc = nowUtcIso()
 
-    // Resolve the planned file ops to absolute paths. Re-stem a tape's files to the
-    // chosen name as one unit: media and (optional) thumbnail are plain copies, the
-    // sidecar is rewritten with the new name, timestamp, and thumbnail name. Stage
-    // every file under a nanoid `.tmp` sibling, then rename them all into place; the
-    // originals are untouched until the very end, so a failure mid-swap is undone by
-    // deleting just the new files — the session record still points at the intacts.
+    // Resolve the plan while retaining every old public claim until the durable
+    // catalog commits. A portable-equivalent spelling change keeps the existing
+    // physical filename (the only crash-safe representation on case-insensitive
+    // filesystems) while still applying the requested display name.
     const items = await Promise.all(plan.items.map(async (it) => {
       const old = p(it.old)
+      const equivalent = portableFilenameIdentity(it.fresh) === portableFilenameIdentity(it.old)
       return {
         artifact: it.artifact,
+        finalName: equivalent ? it.old : it.fresh,
         old,
         fresh: p(it.fresh),
         stage: p(it.stage),
-        hold: p(`${it.stage}.original`),
+        equivalent,
         original: await claimFile(old),
       }
     }))
 
-    // The tape's own current physical claims are the only portable aliases allowed
-    // during an equivalent-name rename. A second sibling with the same casefold/NFC
-    // identity remains a collision even if its spelling resembles an owned name.
-    for (const it of items) {
-      await assertMissing(it.fresh, [{ name: basename(it.old), identity: it.original.identity }])
+    const publishing = items.filter((item) => !item.equivalent)
+    for (const it of publishing) {
+      await assertMissing(it.fresh)
       await assertMissing(it.stage)
-      await assertMissing(it.hold)
     }
 
-    // Build every staging file, then atomically swap them into place. Both phases
-    // share one cleanup: the originals stay put (their unlink is the very last step),
-    // so undo is just removing any staging files plus any finals already swapped in —
-    // whether the failure was a copy, the sidecar validation, or a rename.
+    const byArtifact = (artifact: (typeof items)[number]['artifact']) =>
+      items.find((item) => item.artifact === artifact)
+    const mediaName = byArtifact('media')!.finalName
+    const sidecarName = byArtifact('sidecar')!.finalName
+    const thumbnailName = byArtifact('thumbnail')?.finalName ?? null
+    const sidecarItem = byArtifact('sidecar')!
+    const sidecar = JSON.parse(await readFile(sidecarItem.old, 'utf8')) as Record<string, unknown>
+    const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+    tb['name'] = cleanName
+    tb['renamedAtUtc'] = nowUtc
+    tb['mediaFilename'] = mediaName
+    tb['thumbnailFilename'] = thumbnailName
+    sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
+
+    const updated = {
+      ...tape,
+      filename: mediaName,
+      sidecarFilename: sidecarName,
+      thumbnailFilename: thumbnailName,
+      name: cleanName,
+      renamedAtUtc: nowUtc,
+    }
+
+    // Build and exclusively publish every genuinely new destination while the old
+    // public files remain intact. Until catalog.json commits, these destination
+    // claims are rollback-only and the persisted row still resolves every old file.
     const done: FileClaim[] = []
-    const held: { item: (typeof items)[number]; claim: FileClaim }[] = []
+    const rollbackBeforeCatalogCommit = async (initiatingError: unknown): Promise<never> => {
+      const rollbackErrors: unknown[] = []
+      try {
+        await unlinkClaimedFiles(done)
+      } catch (cleanupError) {
+        rollbackErrors.push(cleanupError)
+      }
+      for (const it of publishing) {
+        try {
+          await unlink(it.stage)
+        } catch (cleanupError) {
+          if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') rollbackErrors.push(cleanupError)
+        }
+      }
+      if (rollbackErrors.length > 0) {
+        throw new AggregateError(
+          [initiatingError, ...rollbackErrors],
+          `Rename failed before the catalog commit and destination rollback was incomplete. ` +
+            `Destination claims: ${done.map((claim) => claim.path).join(', ')}.`,
+        )
+      }
+      throw initiatingError
+    }
+
     try {
-      for (const it of items) {
+      for (const it of publishing) {
         if (it.artifact === 'sidecar') {
-          const sidecar = JSON.parse(await readFile(it.old, 'utf8')) as Record<string, unknown>
-          const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
-          tb['name'] = cleanName
-          tb['renamedAtUtc'] = nowUtc
-          tb['mediaFilename'] = newMediaName
-          tb['thumbnailFilename'] = newThumbName
-          // Validate the rewritten tapebox namespace so a rename can never downgrade
-          // the sidecar into something a later import would reject.
-          sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
           // not recorded: this sidecar lives in the library directory beside the tape's
           // media and thumbnail — a binary-bearing directory whose contents ride along
           // into exclusion (data-backup conventions). It uses the raw writeJsonAtomic,
@@ -236,94 +267,45 @@ export function registerLibraryHandlers(): void {
           await copyFile(it.old, it.stage)
         }
       }
-
-      // An equivalent-name rename targets the same portable directory entry as its
-      // original (case on Windows/macOS; canonical Unicode composition on macOS).
-      // Hold those originals under unique sibling names first; otherwise publication
-      // collides with the old entry and cannot commit the bundle.
-      for (const it of items) {
-        if (it.fresh !== it.old && portableFilenameIdentity(it.fresh) === portableFilenameIdentity(it.old)) {
-          const claim = await moveClaimedFile(it.original, it.hold)
-          if (!claim) {
-            throw Object.assign(new Error(`Original changed while being held: ${it.old}`), { code: 'EEXIST' })
-          }
-          held.push({ item: it, claim })
-        }
-      }
-
-      // Final-edge exclusive publication: an external creator after preflight wins
-      // with EEXIST and is never replaced. The completed stages remain rollback
-      // authority until every member has committed.
-      for (const it of items) {
+      for (const it of publishing) {
         done.push(await publishFileNoOverwrite(it.stage, it.fresh))
       }
     } catch (err) {
-      const rollbackErrors: unknown[] = []
-      try {
-        await unlinkClaimedFiles(done)
-      } catch (cleanupError) {
-        rollbackErrors.push(cleanupError)
-      }
-      const recoveryPaths: string[] = []
-      for (const { item, claim } of held.reverse()) {
-        try {
-          const restored = await restoreClaimedFile(claim, item.old)
-          if (!restored) {
-            recoveryPaths.push(claim.path)
-            rollbackErrors.push(new Error(`Original could not be restored from ${claim.path} to ${item.old}.`))
-          }
-        } catch (restoreError) {
-          recoveryPaths.push(claim.path)
-          rollbackErrors.push(
-            new AggregateError([restoreError], `Original restoration failed; recovery claim: ${claim.path}.`),
-          )
-        }
-      }
-      for (const it of items) {
-        try {
-          await unlink(it.stage)
-        } catch (cleanupError) {
-          if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') rollbackErrors.push(cleanupError)
-        }
-      }
-      if (rollbackErrors.length > 0) {
-        const recovery = recoveryPaths.length > 0 ? ` Recovery claims: ${recoveryPaths.join(', ')}.` : ''
-        throw new AggregateError(
-          [err, ...rollbackErrors],
-          `Rename failed: ${String(err)}. Rollback could not fully restore the bundle.${recovery}`,
-        )
-      }
-      throw err
+      await rollbackBeforeCatalogCommit(err)
     }
-    const updated = {
-      ...tape,
-      filename: newMediaName,
-      sidecarFilename: newSidecarName,
-      thumbnailFilename: newThumbName,
-      name: cleanName,
-      renamedAtUtc: nowUtc,
+
+    try {
+      await session.renameTapeDurably(updated)
+    } catch (catalogError) {
+      await rollbackBeforeCatalogCommit(catalogError)
     }
-    session.upsertTape(updated)
     emit('tapes:updated', updated)
 
-    // Every final member is committed, so the new bundle and catalog row are now
-    // authoritative. Old/held cleanup is a post-commit operation: if any exact
-    // claim cannot be removed, report the partial result honestly while keeping
-    // the catalog and renderer pointed at the complete new bundle.
-    const heldByItem = new Map(held.map(({ item, claim }) => [item, claim]))
-    const obsoleteClaims = items.flatMap((it) => {
-      const heldClaim = heldByItem.get(it)
-      if (heldClaim) return [heldClaim]
-      return it.fresh !== it.old ? [it.original] : []
-    })
+    // The durable catalog is the commit point. Equivalent-name sidecars retain
+    // their old physical path and are rewritten only now; genuinely renamed old
+    // files become obsolete only now. Any failure is an explicit partial success:
+    // catalog and renderer still name a complete, existing bundle.
+    const postCommitErrors: unknown[] = []
+    if (sidecarItem.equivalent) {
+      try {
+        await writeJsonAtomic(sidecarItem.old, sidecar)
+      } catch (sidecarError) {
+        postCommitErrors.push(
+          new AggregateError([sidecarError], `Committed sidecar could not be updated at ${sidecarItem.old}.`),
+        )
+      }
+    }
+    const obsoleteClaims = publishing.map((item) => item.original)
     try {
       await unlinkClaimedFiles(obsoleteClaims)
     } catch (cleanupError) {
-      const paths = obsoleteClaims.map((claim) => claim.path)
+      postCommitErrors.push(cleanupError)
+    }
+    if (postCommitErrors.length > 0) {
       throw new AggregateError(
-        [cleanupError],
-        `Rename committed and the catalog points to the new bundle, but old claims could not be fully cleaned up. ` +
-          `Held/old paths: ${paths.join(', ')}.`,
+        postCommitErrors,
+        `Rename committed and the catalog points to the new bundle, but post-commit sidecar/source cleanup was incomplete. ` +
+          `Old/sidecar paths: ${[...obsoleteClaims.map((claim) => claim.path), sidecarItem.old].join(', ')}.`,
       )
     }
     log.info('renamed', { tapeId: tape.id, name: cleanName })

@@ -20,6 +20,7 @@ const SAVE_DEBOUNCE_MS = 500
 let cache: Session = emptySession()
 let saveTimer: NodeJS.Timeout | null = null
 let loaded = false
+let persistChain: Promise<void> = Promise.resolve()
 
 function emptySession(): Session {
   return { tapes: [], boxes: [] }
@@ -124,6 +125,49 @@ export function upsertTape(tape: Tape): void {
   scheduleSave()
 }
 
+/** Commit one tape's rename fields to catalog.json before publishing them to the
+ * in-memory session. This is the transaction boundary for a filesystem rename:
+ * new paths must not become authoritative until the durable catalog names them.
+ * Ordinary queue/progress updates keep using the debounced upsert above. */
+export async function renameTapeDurably(tape: Tape): Promise<void> {
+  assertLoaded()
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  // Reserve the serialized position immediately. Computing the candidate outside
+  // the queued task would let an ordinary persist called while an older write is
+  // settling slip in ahead and make candidate paths durable before this transaction.
+  await enqueueCatalogWrite(async () => {
+    const idx = cache.tapes.findIndex((item) => item.id === tape.id)
+    if (idx < 0) throw new Error(`Tape not found during durable rename: ${tape.id}`)
+    const tapes = [...cache.tapes]
+    tapes[idx] = applyRenameFields(tapes[idx]!, tape)
+    const candidate = { ...cache, tapes }
+
+    await writeManagedJson(paths.catalog, candidate, SessionSchema)
+
+    // The durable rename is now authoritative. Preserve unrelated fields changed
+    // by queue/progress work while the write was in flight, and let its already-
+    // scheduled ordinary persist serialize the combined current state afterward.
+    const currentIdx = cache.tapes.findIndex((item) => item.id === tape.id)
+    if (currentIdx >= 0) {
+      cache.tapes[currentIdx] = applyRenameFields(cache.tapes[currentIdx]!, tape)
+    }
+  })
+}
+
+function applyRenameFields(current: Tape, renamed: Tape): Tape {
+  return {
+    ...current,
+    filename: renamed.filename,
+    sidecarFilename: renamed.sidecarFilename,
+    thumbnailFilename: renamed.thumbnailFilename,
+    name: renamed.name,
+    renamedAtUtc: renamed.renamedAtUtc,
+  }
+}
+
 export function removeTapes(ids: string[]): void {
   assertLoaded()
   const set = new Set(ids)
@@ -168,14 +212,24 @@ export async function persistNow(): Promise<void> {
     saveTimer = null
   }
   try {
-    // catalog.json is the app's most important durable managed text — the whole
-    // tape library structure — so it records on every save through the choke point
-    // (data-backup conventions).
-    await writeManagedJson(paths.catalog, cache, SessionSchema)
+    await enqueueCatalogWrite(async () => {
+      // Snapshot at execution, not enqueue time: a durable rename ahead of this
+      // write may either commit or roll back while this call is waiting its turn.
+      const snapshot = { tapes: [...cache.tapes], boxes: [...cache.boxes] }
+      // catalog.json is the app's most important durable managed text — the whole
+      // tape library structure — so it records on every save through the choke point.
+      await writeManagedJson(paths.catalog, snapshot, SessionSchema)
+    })
   } catch (err) {
     log.error('session persist failed', { error: describeError(err) })
     throw err
   }
+}
+
+function enqueueCatalogWrite(write: () => Promise<void>): Promise<void> {
+  const run = persistChain.then(write)
+  persistChain = run.catch(() => {})
+  return run
 }
 
 /**
