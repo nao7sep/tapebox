@@ -132,7 +132,7 @@ describe('relocateLibrary', () => {
     await seed(fromDir, 'a.json', '{"sidecar":true}')
 
     // Destination hard links look cross-device, so publication takes the bounded
-    // exclusive-copy fallback after the source has been held privately.
+    // exclusive-copy fallback while the public source remains readable.
     linkSpy.mockImplementation(async (src, dest) => {
       if (!String(dest).startsWith(`${toDir}/`)) return realFsPromises.link(src, dest)
       const err = new Error('EXDEV: cross-device link not permitted') as NodeJS.ErrnoException
@@ -162,6 +162,15 @@ describe('relocateLibrary', () => {
     expect(await readFile(join(fromDir, 'a.json'), 'utf8')).toBe('sidecar')
     expect(await readFile(join(toDir, 'a.json'), 'utf8')).toBe('PRE-EXISTING')
     expect(await exists(join(toDir, 'a.mp4'))).toBe(false)
+  })
+
+  it('rejects portable aliases in the incoming catalog before moving either entry', async () => {
+    await seed(fromDir, 'Take.mp4', 'video-a')
+
+    await expect(relocateLibrary(fromDir, toDir, ['Take.mp4', 'take.MP4'])).rejects.toThrow(/already contains/)
+
+    expect(await readFile(join(fromDir, 'Take.mp4'), 'utf8')).toBe('video-a')
+    expect(await names(toDir)).toEqual([])
   })
 
   it('rolls back exact claims when a late destination winner appears partway', async () => {

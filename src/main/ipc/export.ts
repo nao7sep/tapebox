@@ -7,7 +7,7 @@ import { getLibraryDir } from '@main/store/config'
 import { planExport } from '@main/core/export-plan'
 import { SidecarTapeBoxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
-import { unlinkClaimedFile, writeFileAtomicNoOverwriteVia, type FileClaim } from '@main/io/atomic-file'
+import { unlinkClaimedFiles, writeFileAtomicNoOverwriteVia, type FileClaim } from '@main/io/atomic-file'
 
 /**
  * export:files — copy a tape out of the library, verbatim. No transcoding:
@@ -77,7 +77,14 @@ export function registerExportHandlers(): void {
       const sidecarBytes = Buffer.from(JSON.stringify(sidecar, null, 2) + '\n', 'utf8')
       committed.push(await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes)))
     } catch (err) {
-      await Promise.all(committed.map((claim) => unlinkClaimedFile(claim).catch(() => false)))
+      try {
+        await unlinkClaimedFiles(committed)
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [err, cleanupError],
+          `Export failed: ${String(err)}. Published files could not be fully cleaned up.`,
+        )
+      }
       throw err
     }
 

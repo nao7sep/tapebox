@@ -58,6 +58,7 @@ const COPY_CHUNK_BYTES = 256 * 1024
 export interface ExclusivePublishSource {
   read(buffer: Buffer, offset: number, length: number, position: number): Promise<{ bytesRead: number }>
   close(): Promise<void>
+  identity(): Promise<string>
 }
 
 export interface ExclusivePublishDestination {
@@ -82,7 +83,17 @@ type Publication = { claim: FileClaim; fallbackCode: string | null }
 const realPublishOperations: ExclusivePublishOperations = {
   link,
   rename,
-  openRead: (path) => open(path, 'r'),
+  openRead: async (path) => {
+    const handle = await open(path, 'r')
+    return {
+      read: (buffer, offset, length, position) => handle.read(buffer, offset, length, position),
+      close: () => handle.close(),
+      identity: async () => {
+        const stat = await handle.stat({ bigint: true })
+        return `${stat.dev}:${stat.ino}`
+      },
+    }
+  },
   openExclusive: async (path) => {
     const handle = await open(path, 'wx')
     return {
@@ -117,12 +128,14 @@ async function copyExclusive(
   tempPath: string,
   destPath: string,
   operations: ExclusivePublishOperations,
+  expectedSourceIdentity: string,
 ): Promise<string> {
   const source = await operations.openRead(tempPath)
   let destination: ExclusivePublishDestination | null = null
   let claimIdentity: string | null = null
   let committed = false
   try {
+    if ((await source.identity()) !== expectedSourceIdentity) throw destinationChanged(tempPath)
     destination = await operations.openExclusive(destPath)
     claimIdentity = await destination.identity()
     const buffer = Buffer.allocUnsafe(COPY_CHUNK_BYTES)
@@ -181,6 +194,7 @@ async function publishFileNoOverwriteDetailed(
   operations: ExclusivePublishOperations = realPublishOperations,
   expectedSourceIdentity?: string,
   syncSource = true,
+  removeSource = true,
 ): Promise<Publication> {
   if (syncSource) await fsyncFile(tempPath)
   const sourceIdentity = await operations.pathIdentity(tempPath)
@@ -197,12 +211,12 @@ async function publishFileNoOverwriteDetailed(
     const code = (err as NodeJS.ErrnoException).code
     if (!code || !LINK_UNSUPPORTED.has(code)) throw err
     fallbackCode = code
-    identity = await copyExclusive(tempPath, destPath, operations)
+    identity = await copyExclusive(tempPath, destPath, operations, sourceIdentity)
   }
   // Destination publication is the commit point. A stale temp is inert and can
   // be cleaned later; its unlink failure must not make callers roll back or
   // report a committed output as failed.
-  if ((await operations.pathIdentity(tempPath).catch(() => null)) === sourceIdentity) {
+  if (removeSource && (await operations.pathIdentity(tempPath).catch(() => null)) === sourceIdentity) {
     await operations.unlink(tempPath).catch(() => {})
   }
   await fsyncDirBestEffort(dirname(destPath))
@@ -282,34 +296,133 @@ export async function unlinkClaimedFile(
 ): Promise<boolean> {
   const held = await moveClaimedFile(claim, defaultTempPath(claim.path), operations)
   if (!held) return false
-  await operations.unlink(held.path)
+  try {
+    await operations.unlink(held.path)
+  } catch (unlinkError) {
+    try {
+      // Put the public source name back before reporting cleanup failure. Keep the
+      // private claim too: deletion already failed, and it remains a recoverable
+      // path instead of making the only accessible copy disappear.
+      await publishFileNoOverwriteDetailed(held.path, claim.path, operations, held.identity, false, false)
+    } catch (restoreError) {
+      throw new AggregateError(
+        [unlinkError, restoreError],
+        `Claim cleanup failed and the file could not be restored to ${claim.path}; recovery claim: ${held.path}.`,
+      )
+    }
+    throw new AggregateError(
+      [unlinkError],
+      `Claim cleanup failed; the source was restored and a recovery claim remains at ${held.path}.`,
+    )
+  }
   return true
 }
 
-/** Relocate a claim without overwriting a late destination winner. The source is
- * first bound under a private sibling, so cross-device copy and cleanup never act
- * on a public pathname that another writer can replace. */
+/** Remove a group of exact claims and surface every false or thrown cleanup.
+ * Rollback callers must never turn a partial cleanup into apparent success. */
+export async function unlinkClaimedFiles(
+  claims: readonly FileClaim[],
+  operations: ExclusivePublishOperations = realPublishOperations,
+): Promise<void> {
+  const failures: unknown[] = []
+  for (const claim of claims) {
+    try {
+      if (!(await unlinkClaimedFile(claim, operations))) {
+        failures.push(new Error(`Claim changed before cleanup and was preserved: ${claim.path}`))
+      }
+    } catch (err) {
+      failures.push(err)
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, 'One or more claimed files could not be cleaned up.')
+  }
+}
+
+/** Relocate a claim without overwriting a late destination winner. The public
+ * source remains in place throughout destination publication (including a long
+ * cross-device copy). Only after the destination is durable is the exact source
+ * claim removed, so a crash cannot strand the sole catalog-visible copy in a
+ * private temp path. */
 export async function relocateClaimedFileNoOverwrite(
   claim: FileClaim,
   destPath: string,
   operations: ExclusivePublishOperations = realPublishOperations,
 ): Promise<{ claim: FileClaim; crossDevice: boolean } | null> {
-  const held = await moveClaimedFile(claim, defaultTempPath(claim.path), operations)
-  if (!held) return null
+  const sourceIdentity = await operations.pathIdentity(claim.path)
+  if (sourceIdentity !== claim.identity) return null
+
+  // Bind a same-filesystem source to an inert destination sibling first. This
+  // preserves hard-link speed without linking a mutable public pathname directly
+  // to the final name. If hard links are unavailable/cross-device, the verified
+  // source handle in the exclusive-copy fallback provides the same binding.
+  let publicationSource = claim
+  let boundStage: FileClaim | null = null
+  const stagePath = defaultTempPath(destPath)
   try {
-    const published = await publishFileNoOverwriteDetailed(held.path, destPath, operations, held.identity, false)
-    return { claim: published.claim, crossDevice: published.fallbackCode === 'EXDEV' }
+    await operations.link(claim.path, stagePath)
+    const stageIdentity = await operations.pathIdentity(stagePath)
+    if (stageIdentity !== claim.identity) {
+      if (stageIdentity !== null) {
+        await unlinkClaimedFile({ path: stagePath, identity: stageIdentity }, operations)
+      }
+      return null
+    }
+    boundStage = { path: stagePath, identity: stageIdentity }
+    publicationSource = boundStage
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (!code || !LINK_UNSUPPORTED.has(code)) throw err
+  }
+
+  let published: Publication
+  try {
+    published = await publishFileNoOverwriteDetailed(
+      publicationSource.path,
+      destPath,
+      operations,
+      publicationSource.identity,
+      false,
+      boundStage !== null,
+    )
   } catch (publishError) {
-    try {
-      await publishFileNoOverwriteDetailed(held.path, claim.path, operations, held.identity, false)
-    } catch (restoreError) {
-      throw new AggregateError(
-        [publishError, restoreError],
-        `File publication failed and the source could not be restored to ${claim.path}.`,
-      )
+    if (boundStage !== null) {
+      try {
+        const cleaned = await unlinkClaimedFile(boundStage, operations)
+        if (!cleaned && (await operations.pathIdentity(boundStage.path)) !== null) {
+          throw new Error(`Bound relocation stage changed before cleanup: ${boundStage.path}`)
+        }
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [publishError, cleanupError],
+          `File publication failed and its bound source stage could not be cleaned up: ${boundStage.path}.`,
+        )
+      }
     }
     throw publishError
   }
+
+  try {
+    // A false result means the public source was replaced or removed after the
+    // destination committed. Preserve that winner; the original bytes are already
+    // durable at the destination, so the relocation itself is complete.
+    await unlinkClaimedFile(claim, operations)
+  } catch (cleanupError) {
+    try {
+      const removedDestination = await unlinkClaimedFile(published.claim, operations)
+      if (!removedDestination) {
+        throw new Error(`Published destination changed before rollback and was preserved: ${destPath}`)
+      }
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [cleanupError, rollbackError],
+        `File relocation committed but source cleanup failed, and the destination could not be rolled back: ${destPath}.`,
+      )
+    }
+    throw cleanupError
+  }
+
+  return { claim: published.claim, crossDevice: published.fallbackCode === 'EXDEV' }
 }
 
 /** Restore an original held under a sibling name without replacing an external winner. */

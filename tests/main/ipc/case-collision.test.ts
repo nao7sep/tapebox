@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { caseInsensitiveSiblingExists } from '@main/ipc/library'
+import { claimFile } from '@main/io/atomic-file'
+import { hasPortableEntryCollision } from '@main/io/portable-directory'
 
 // The collision guard behind library:rename / library:import / export:files. macOS
 // and Windows are case-insensitive, so "Take.wav" and "take.wav" are one file there
@@ -53,10 +55,26 @@ describe('caseInsensitiveSiblingExists', () => {
     await seed('Take.wav') // the tape's own media, being renamed to "take.wav"
     await seed('take.mp4') // an unrelated sibling that must not block the rename
     // Own name excluded -> the only case-insensitive match for "take.wav" is itself, so no collision.
-    expect(await caseInsensitiveSiblingExists(join(dir, 'take.wav'), ['Take.wav'])).toBe(false)
+    expect(await caseInsensitiveSiblingExists(join(dir, 'take.wav'), [await claimFile(join(dir, 'Take.wav'))])).toBe(false)
     // But a sibling that case-clashes with a DIFFERENT target name is still caught.
     await seed('Clip.wav')
-    expect(await caseInsensitiveSiblingExists(join(dir, 'clip.wav'), ['Take.wav'])).toBe(true)
+    expect(await caseInsensitiveSiblingExists(join(dir, 'clip.wav'), [await claimFile(join(dir, 'Take.wav'))])).toBe(true)
+  })
+
+  it('allows one owned physical entry but rejects an unrelated portable alias', () => {
+    const entries = [
+      { name: 'Take.wav', identity: 'owned-inode' },
+      { name: 'TAKE.WAV', identity: 'unrelated-inode' },
+    ]
+    expect(hasPortableEntryCollision('take.wav', entries, [{ identity: 'owned-inode' }])).toBe(true)
+  })
+
+  it('does not let one physical claim exempt two hard-link aliases', () => {
+    const entries = [
+      { name: 'Take.wav', identity: 'same-inode' },
+      { name: 'take.WAV', identity: 'same-inode' },
+    ]
+    expect(hasPortableEntryCollision('take.wav', entries, [{ identity: 'same-inode' }])).toBe(true)
   })
 
   it('treats a missing directory as no collision', async () => {

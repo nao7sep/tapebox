@@ -5,6 +5,8 @@ import {
   relocateClaimedFileNoOverwrite,
   type FileClaim,
 } from '@main/io/atomic-file'
+import { portableSiblingExists } from '@main/io/portable-directory'
+import { portableFilenameIdentity } from '@shared/filename'
 
 /**
  * Move the library's flat contents from one folder to another when the user
@@ -24,9 +26,9 @@ import {
  *   3. Collision guard, up front: if ANY entry already exists at the destination we
  *      abort before moving a single file — a relocation must never overwrite a file
  *      already in the new folder, and aborting early means nothing has moved yet.
- *   4. Per file: claim its inode, move it to a private sibling, then publish to the
- *      destination without overwrite. Cross-device publication uses an exclusive,
- *      durable bounded copy while the public source name is already vacated.
+ *   4. Per file: claim its inode, publish to the destination without overwrite,
+ *      then remove only the exact source claim. Cross-device publication uses an
+ *      exclusive, durable bounded copy while the public source remains visible.
  *   5. If any file fails, roll back every exact destination claim. The returned
  *      claims also let the settings caller perform the same rollback if config save
  *      fails after the move.
@@ -102,10 +104,14 @@ export async function relocateLibrary(
 
   // Collision guard up front: bail before moving anything if any destination
   // already holds a file we'd otherwise overwrite. The destination must not contain
-  // conflicting library files.
+  // conflicting portable aliases. The incoming catalog itself must also be unique
+  // by the same casefold/NFC identity.
   const collisions: string[] = []
+  const incoming = new Set<string>()
   for (const name of entries) {
-    if (await pathExists(join(toDir, name))) collisions.push(name)
+    const identity = portableFilenameIdentity(name)
+    if (incoming.has(identity) || await portableSiblingExists(join(toDir, name))) collisions.push(name)
+    incoming.add(identity)
   }
   if (collisions.length > 0) {
     const shown = collisions.slice(0, 5).join(', ')

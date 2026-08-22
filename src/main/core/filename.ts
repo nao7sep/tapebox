@@ -33,12 +33,8 @@ const RESERVED_DOS_NAMES = new Set([
 
 const MAX_BYTES = 240
 
-/** Portable directory-entry identity for names the app assigns or compares.
- * macOS treats canonically equivalent Unicode spellings as one entry, while the
- * fleet also refuses case-only siblings so files remain portable to Windows. */
-export function portableFilenameIdentity(name: string): string {
-  return name.normalize('NFC').toLowerCase()
-}
+export { portableFilenameIdentity } from '@shared/filename'
+import { portableFilenameIdentity } from '@shared/filename'
 
 export function sanitizeFilename(input: string): string {
   let s = input.normalize('NFC')

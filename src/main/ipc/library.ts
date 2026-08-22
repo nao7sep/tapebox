@@ -1,5 +1,5 @@
-import { access, constants, copyFile, readdir, readFile, stat, unlink } from 'node:fs/promises'
-import { basename, dirname, extname, join } from 'node:path'
+import { access, constants, copyFile, readFile, stat, unlink } from 'node:fs/promises'
+import { dirname, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
@@ -16,9 +16,11 @@ import {
   publishFileNoOverwrite,
   restoreClaimedFile,
   unlinkClaimedFile,
+  unlinkClaimedFiles,
   writeFileAtomicNoOverwriteVia,
   type FileClaim,
 } from '@main/io/atomic-file'
+import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
@@ -196,18 +198,14 @@ export function registerLibraryHandlers(): void {
       }
     }))
 
-    // The tape's own current files are the ones about to be renamed, so they must not
-    // count as collisions — including when the change differs only by case or Unicode
-    // composition, which the portable-name scan would otherwise flag against itself.
-    // caseInsensitiveSiblingExists compares against bare readdir basenames, so the
-    // ignore list must be basenames too — not the absolute paths `it.old` holds.
-    const ownNames = items.map((it) => basename(it.old))
+    // The tape's own current physical claims are the only portable aliases allowed
+    // during an equivalent-name rename. A second sibling with the same casefold/NFC
+    // identity remains a collision even if its spelling resembles an owned name.
+    const ownClaims = items.map((it) => it.original)
     for (const it of items) {
-      if (portableFilenameIdentity(it.fresh) !== portableFilenameIdentity(it.old)) {
-        await assertMissing(it.fresh, ownNames)
-      }
-      await assertMissing(it.stage, ownNames)
-      await assertMissing(it.hold, ownNames)
+      await assertMissing(it.fresh, ownClaims)
+      await assertMissing(it.stage)
+      await assertMissing(it.hold)
     }
 
     // Build every staging file, then atomically swap them into place. Both phases
@@ -262,9 +260,41 @@ export function registerLibraryHandlers(): void {
         done.push(await publishFileNoOverwrite(it.stage, it.fresh))
       }
     } catch (err) {
-      for (const claim of done) await unlinkClaimedFile(claim).catch(() => false)
-      for (const { item, claim } of held.reverse()) await restoreClaimedFile(claim, item.old).catch(() => null)
-      for (const it of items) await unlink(it.stage).catch(() => {})
+      const rollbackErrors: unknown[] = []
+      try {
+        await unlinkClaimedFiles(done)
+      } catch (cleanupError) {
+        rollbackErrors.push(cleanupError)
+      }
+      const recoveryPaths: string[] = []
+      for (const { item, claim } of held.reverse()) {
+        try {
+          const restored = await restoreClaimedFile(claim, item.old)
+          if (!restored) {
+            recoveryPaths.push(claim.path)
+            rollbackErrors.push(new Error(`Original could not be restored from ${claim.path} to ${item.old}.`))
+          }
+        } catch (restoreError) {
+          recoveryPaths.push(claim.path)
+          rollbackErrors.push(
+            new AggregateError([restoreError], `Original restoration failed; recovery claim: ${claim.path}.`),
+          )
+        }
+      }
+      for (const it of items) {
+        try {
+          await unlink(it.stage)
+        } catch (cleanupError) {
+          if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') rollbackErrors.push(cleanupError)
+        }
+      }
+      if (rollbackErrors.length > 0) {
+        const recovery = recoveryPaths.length > 0 ? ` Recovery claims: ${recoveryPaths.join(', ')}.` : ''
+        throw new AggregateError(
+          [err, ...rollbackErrors],
+          `Rename failed: ${String(err)}. Rollback could not fully restore the bundle.${recovery}`,
+        )
+      }
       throw err
     }
     const heldByItem = new Map(held.map(({ item, claim }) => [item, claim]))
@@ -429,8 +459,16 @@ export function registerLibraryHandlers(): void {
           copied.push(await writeFileAtomicNoOverwriteVia(targetSidecar, (temp) => copyFile(sidecarPath, temp)))
         }
       } catch (err) {
-        await Promise.all(copied.map((claim) => unlinkClaimedFile(claim).catch(() => false)))
-        rejected.push({ path: sidecarPath, reason: `copy into library failed: ${String(err)}` })
+        try {
+          await unlinkClaimedFiles(copied)
+          rejected.push({ path: sidecarPath, reason: `copy into library failed: ${String(err)}` })
+        } catch (cleanupError) {
+          const failure = new AggregateError(
+            [err, cleanupError],
+            `Copy into library failed: ${String(err)}. Published files could not be fully cleaned up.`,
+          )
+          rejected.push({ path: sidecarPath, reason: String(failure) })
+        }
         continue
       }
 
@@ -554,28 +592,19 @@ async function discardFile(path: string, toTrash: boolean): Promise<void> {
 /**
  * True if `path`'s directory already holds a sibling with the same portable filename
  * identity: NFC-normalized and lowercased. These aliases collide on macOS/Windows
- * even when an exact `stat(path)` reports the requested spelling missing. `ignore`
- * names use the same identity so a file is not its own collision during an equivalent
- * rename. A missing directory means no sibling.
+ * even when an exact `stat(path)` reports the requested spelling missing. Exact
+ * physical claims may be allowed so a file is not its own collision during an
+ * equivalent rename. A missing directory means no sibling.
  */
-export async function caseInsensitiveSiblingExists(path: string, ignore: string[] = []): Promise<boolean> {
-  const target = portableFilenameIdentity(basename(path))
-  const skip = new Set(ignore.map(portableFilenameIdentity))
-  let entries: string[]
-  try {
-    entries = await readdir(dirname(path))
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw err
-  }
-  return entries.some((name) => {
-    const identity = portableFilenameIdentity(name)
-    return identity === target && !skip.has(identity)
-  })
+export async function caseInsensitiveSiblingExists(
+  path: string,
+  allowedClaims: readonly FileClaim[] = [],
+): Promise<boolean> {
+  return portableSiblingExists(path, allowedClaims)
 }
 
-async function assertMissing(path: string, ignore: string[] = []): Promise<void> {
-  if (await caseInsensitiveSiblingExists(path, ignore)) {
+async function assertMissing(path: string, allowedClaims: readonly FileClaim[] = []): Promise<void> {
+  if (await caseInsensitiveSiblingExists(path, allowedClaims)) {
     throw new Error(`Target already exists (case-insensitive): ${path}`)
   }
 }

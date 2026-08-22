@@ -76,4 +76,25 @@ describe('SessionSchema identities', () => {
       ],
     })).toThrow(/box names/)
   })
+
+  it('rejects portable filename aliases within one persisted tape bundle', () => {
+    expect(() => SessionSchema.parse({
+      tapes: [{
+        ...completeTape(),
+        filename: 'Caf\u00e9.MP4',
+        thumbnailFilename: 'Cafe\u0301.mp4',
+      }],
+      boxes: [],
+    })).toThrow(/tracked filenames must be unique by portable identity/)
+  })
+
+  it('rejects portable filename aliases across legacy persisted tape bundles', () => {
+    expect(() => SessionSchema.parse({
+      tapes: [
+        { ...completeTape(), filename: 'Archive.MP4' },
+        { ...completeTape(), id: 'def7654321', sourceUrl: 'https://example.com/watch?v=y', filename: 'archive.mp4' },
+      ],
+      boxes: [],
+    })).toThrow(/tracked filenames must be unique by portable identity/)
+  })
 })

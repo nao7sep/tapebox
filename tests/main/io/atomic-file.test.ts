@@ -54,6 +54,7 @@ function memoryPublishOperations(
       return { bytesRead }
     }),
     close: vi.fn().mockResolvedValue(undefined),
+    identity: vi.fn().mockResolvedValue('claim'),
   }
   const destination: ExclusivePublishDestination = {
     write: vi.fn(async (buffer, offset, length) => {
@@ -85,7 +86,17 @@ function realOperations(
   return {
     link,
     rename,
-    openRead: (path) => open(path, 'r'),
+    openRead: async (path) => {
+      const handle = await open(path, 'r')
+      return {
+        read: (buffer, offset, length, position) => handle.read(buffer, offset, length, position),
+        close: () => handle.close(),
+        identity: async () => {
+          const value = await handle.stat({ bigint: true })
+          return `${value.dev}:${value.ino}`
+        },
+      }
+    },
     openExclusive: async (path) => {
       const handle = await open(path, 'wx')
       return {
@@ -411,6 +422,32 @@ describe('physical claim transitions', () => {
 
     expect(await readFile(source, 'utf8')).toBe('source')
     expect(await readFile(destination, 'utf8')).toBe('winner')
+    expect((await readdir(dir)).filter((name) => name.endsWith('.tmp'))).toEqual([])
+  })
+
+  it('does not publish a source winner linked at the same-filesystem bind boundary', async () => {
+    const source = join(dir, 'source.bin')
+    const destination = join(dir, 'destination.bin')
+    const winner = join(dir, 'winner.bin')
+    await writeFile(source, 'original')
+    await writeFile(winner, 'replacement winner')
+    const claim = await claimFile(source)
+    let replaced = false
+    const operations = realOperations({
+      link: async (from, to) => {
+        if (!replaced && from === source) {
+          replaced = true
+          await rename(winner, source)
+        }
+        await link(from, to)
+      },
+    })
+
+    await expect(relocateClaimedFileNoOverwrite(claim, destination, operations)).resolves.toBeNull()
+
+    expect(await readFile(source, 'utf8')).toBe('replacement winner')
+    expect(await exists(destination)).toBe(false)
+    expect((await readdir(dir)).filter((name) => name.endsWith('.tmp'))).toEqual([])
   })
 
   it('never removes a late source winner during the cross-device copy fallback', async () => {
@@ -418,14 +455,18 @@ describe('physical claim transitions', () => {
     const destination = join(dir, 'destination.bin')
     await writeFile(source, 'source')
     const claim = await claimFile(source)
-    let published = false
     const operations = realOperations({
-      link: async (_from, to) => {
-        if (!published && to === destination) {
-          published = true
-          await writeFile(source, 'late source winner')
-        }
+      link: async () => {
         throw failure('EXDEV')
+      },
+      openRead: async (path) => {
+        const opened = await realOperations().openRead(path)
+        if (path === source) {
+          const winner = join(dir, 'late-source-winner.bin')
+          await writeFile(winner, 'late source winner')
+          await rename(winner, source)
+        }
+        return opened
       },
     })
 
@@ -434,5 +475,72 @@ describe('physical claim transitions', () => {
     expect(moved?.crossDevice).toBe(true)
     expect(await readFile(destination, 'utf8')).toBe('source')
     expect(await readFile(source, 'utf8')).toBe('late source winner')
+  })
+
+  it('refuses to copy a replacement opened after the original source claim changed', async () => {
+    const source = join(dir, 'source.bin')
+    const destination = join(dir, 'destination.bin')
+    const winner = join(dir, 'winner.bin')
+    await writeFile(source, 'original')
+    await writeFile(winner, 'replacement winner')
+    const claim = await claimFile(source)
+    const base = realOperations()
+    const operations = realOperations({
+      link: async () => {
+        await rename(winner, source)
+        throw failure('EXDEV')
+      },
+      openRead: (path) => base.openRead(path),
+    })
+
+    await expect(relocateClaimedFileNoOverwrite(claim, destination, operations)).rejects.toMatchObject({
+      code: 'EEXIST',
+    })
+
+    expect(await readFile(source, 'utf8')).toBe('replacement winner')
+    expect(await exists(destination)).toBe(false)
+  })
+
+  it('keeps the catalog-visible source readable throughout a cross-device copy', async () => {
+    const source = join(dir, 'source.bin')
+    const destination = join(dir, 'destination.bin')
+    await writeFile(source, Buffer.alloc(600_000, 0x51))
+    const base = realOperations()
+    let signalStarted!: () => void
+    let resumeCopy!: () => void
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const paused = new Promise<void>((resolve) => { resumeCopy = resolve })
+    let firstWrite = true
+    const operations = realOperations({
+      link: async () => {
+        throw failure('EXDEV')
+      },
+      openExclusive: async (path) => {
+        const opened = await base.openExclusive(path)
+        return {
+          ...opened,
+          write: async (buffer, offset, length, position) => {
+            if (firstWrite) {
+              firstWrite = false
+              signalStarted()
+              await paused
+            }
+            return opened.write(buffer, offset, length, position)
+          },
+        }
+      },
+    })
+
+    const relocation = relocateClaimedFileNoOverwrite(await claimFile(source), destination, operations)
+    await started
+
+    // This is the orchestration state that matters for crash safety: if the
+    // process stopped here, catalog.json would still resolve to the complete file.
+    expect((await readFile(source)).length).toBe(600_000)
+    resumeCopy()
+
+    await expect(relocation).resolves.toMatchObject({ crossDevice: true })
+    expect(await exists(source)).toBe(false)
+    expect((await readFile(destination)).length).toBe(600_000)
   })
 })

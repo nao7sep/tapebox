@@ -14,7 +14,9 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
 
-const state = vi.hoisted(() => ({ libraryDir: '', calls: 0, first: null as null | { path: string; identity: string } }))
+const state = vi.hoisted(() => ({
+  libraryDir: '', calls: 0, first: null as null | { path: string; identity: string }, cleanupThrows: false,
+}))
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
@@ -30,6 +32,10 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
       const claim = await actual.writeFileAtomicNoOverwriteVia(...args)
       state.first = claim
       return claim
+    }),
+    unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
+      if (state.cleanupThrows) throw new Error('cleanup permission denied')
+      return actual.unlinkClaimedFiles(...args)
     }),
   }
 })
@@ -61,6 +67,7 @@ beforeEach(async () => {
   handlers.clear()
   state.calls = 0
   state.first = null
+  state.cleanupThrows = false
   root = await mkdtemp(join(tmpdir(), 'tapebox-import-rollback-'))
   sourceDir = join(root, 'source')
   state.libraryDir = join(root, 'library')
@@ -90,7 +97,20 @@ describe('library:import rollback ownership', () => {
 
     expect(result.imported).toEqual([])
     expect(result.rejected[0]?.reason).toMatch(/sidecar publication failed/)
+    expect(result.rejected[0]?.reason).toMatch(/could not be fully cleaned up/)
     expect(await readFile(join(state.libraryDir, 'clip.mp4'), 'utf8')).toBe('external winner')
     expect(upsertTape).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a thrown rollback cleanup together with the initiating failure', async () => {
+    state.cleanupThrows = true
+    const result = await handlers.get('library:import')!({ sidecarPaths: [join(sourceDir, 'clip.json')] }) as {
+      imported: Tape[]
+      rejected: { reason: string }[]
+    }
+
+    expect(result.imported).toEqual([])
+    expect(result.rejected[0]?.reason).toMatch(/sidecar publication failed/)
+    expect(result.rejected[0]?.reason).toMatch(/could not be fully cleaned up/)
   })
 })

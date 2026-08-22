@@ -38,7 +38,7 @@ vi.mock('@main/io/logger', () => ({
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 const rollbackMutation = vi.hoisted(() => ({
-  mode: null as null | 'committed-winner' | 'held-winner' | 'source-winner',
+  mode: null as null | 'committed-winner' | 'held-winner' | 'source-winner' | 'restore-failure',
   publishes: 0,
   moves: 0,
   firstClaim: null as null | { path: string; identity: string },
@@ -77,9 +77,16 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
         await rename(winner, join(rollbackMutation.dir, held))
         throw new Error('publication failed after hold replacement')
       }
+      if (rollbackMutation.mode === 'restore-failure' && rollbackMutation.publishes === 1) {
+        throw new Error('publication failed before restoration')
+      }
       const claim = await actual.publishFileNoOverwrite(...args)
       rollbackMutation.firstClaim ??= claim
       return claim
+    }),
+    restoreClaimedFile: vi.fn(async (...args: Parameters<typeof actual.restoreClaimedFile>) => {
+      if (rollbackMutation.mode === 'restore-failure') return null
+      return actual.restoreClaimedFile(...args)
     }),
   }
 })
@@ -198,5 +205,19 @@ describe('library:rename', () => {
     expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('external source winner')
     expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
     expect(state.tape?.name).toBe('Take')
+  })
+
+  it('surfaces failed restoration and the recoverable hold paths', async () => {
+    rollbackMutation.mode = 'restore-failure'
+    const invoke = handlers.get('library:rename')!
+
+    const failure = invoke({ tapeId: state.tape!.id, name: 'take' })
+    await expect(failure).rejects.toThrow(/publication failed before restoration/)
+    await expect(failure).rejects.toThrow(/Recovery claims: .*\.tmp\.original/)
+
+    const heldNames = (await readdir(dir)).filter((name) => name.endsWith('.tmp.original'))
+    expect(heldNames.length).toBe(3)
+    const heldContents = await Promise.all(heldNames.map((name) => readFile(join(dir, name), 'utf8')))
+    expect(heldContents).toContain('video')
   })
 })

@@ -13,7 +13,9 @@ vi.mock('electron', () => ({
   },
 }))
 
-const state = vi.hoisted(() => ({ destinationDir: '', calls: 0, first: null as null | { path: string; identity: string } }))
+const state = vi.hoisted(() => ({
+  destinationDir: '', calls: 0, first: null as null | { path: string; identity: string }, cleanupThrows: false,
+}))
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
@@ -29,6 +31,10 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
       const claim = await actual.writeFileAtomicNoOverwriteVia(...args)
       state.first ??= claim
       return claim
+    }),
+    unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
+      if (state.cleanupThrows) throw new Error('cleanup permission denied')
+      return actual.unlinkClaimedFiles(...args)
     }),
   }
 })
@@ -61,6 +67,7 @@ beforeEach(async () => {
   handlers.clear()
   state.calls = 0
   state.first = null
+  state.cleanupThrows = false
   sessionState.tape = tape
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-rollback-'))
   libraryState.dir = join(root, 'library')
@@ -85,11 +92,23 @@ afterEach(async () => {
 
 describe('export:files rollback ownership', () => {
   it('preserves a replacement winner and removes only still-owned committed members', async () => {
-    await expect(handlers.get('export:files')!({
+    const failure = handlers.get('export:files')!({
       tapeId: tape.id, destinationDir: state.destinationDir, name: 'Exported', deleteFromApp: false,
-    })).rejects.toThrow(/sidecar publication failed/)
+    })
+    await expect(failure).rejects.toThrow(/sidecar publication failed/)
+    await expect(failure).rejects.toThrow(/could not be fully cleaned up/)
 
     expect(await readFile(join(state.destinationDir, 'Exported.mp4'), 'utf8')).toBe('external winner')
     await expect(readFile(join(state.destinationDir, 'Exported.jpg'))).rejects.toThrow()
+  })
+
+  it('surfaces a thrown rollback cleanup together with the initiating failure', async () => {
+    state.cleanupThrows = true
+    const failure = handlers.get('export:files')!({
+      tapeId: tape.id, destinationDir: state.destinationDir, name: 'Exported', deleteFromApp: false,
+    })
+
+    await expect(failure).rejects.toThrow(/sidecar publication failed/)
+    await expect(failure).rejects.toThrow(/could not be fully cleaned up/)
   })
 })

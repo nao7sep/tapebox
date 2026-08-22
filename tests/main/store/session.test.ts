@@ -9,6 +9,17 @@ import { loadSessionFile } from '@main/store/session'
 
 let dir: string
 
+function catalogTape(id: string, sourceUrl: string, filename: string): Record<string, unknown> {
+  return {
+    id, sourceUrl, state: 'downloaded', addedAtUtc: '2026-01-01T00:00:00.000Z',
+    sourceId: id, extractor: 'test', title: 'Tape', uploader: null, durationSeconds: 1,
+    chapterCount: 0, probedAtUtc: '2026-01-01T00:00:00.000Z', filename,
+    sidecarFilename: `${id}.json`, thumbnailFilename: null, downloadStartedAtUtc: null,
+    downloadedAtUtc: '2026-01-01T00:00:00.000Z', name: null, renamedAtUtc: null,
+    archivedAtUtc: null, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, lastError: null,
+  }
+}
+
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'tapebox-session-'))
 })
@@ -62,5 +73,25 @@ describe('loadSessionFile', () => {
     expect(result.status).toBe('recovered')
     const files = await readdir(dir)
     expect(files.some((f) => f.startsWith('catalog-') && f.endsWith('.invalid'))).toBe(true)
+  })
+
+  it('sets aside a legacy catalog whose tape bundles contain portable filename aliases', async () => {
+    const path = join(dir, 'catalog.json')
+    const legacy = JSON.stringify({
+      tapes: [
+        catalogTape('abc1234567', 'https://example.test/a', 'Caf\u00e9.MP4'),
+        catalogTape('def1234567', 'https://example.test/b', 'Cafe\u0301.mp4'),
+      ],
+      boxes: [],
+    })
+    await writeFile(path, legacy)
+
+    const { result, session } = await loadSessionFile(path)
+
+    expect(result.status).toBe('recovered')
+    expect(session).toEqual({ tapes: [], boxes: [] })
+    const quarantined = (await readdir(dir)).find((name) => name.endsWith('.invalid'))
+    expect(quarantined).toBeDefined()
+    expect(await readFile(join(dir, quarantined!), 'utf8')).toBe(legacy)
   })
 })
