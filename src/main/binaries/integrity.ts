@@ -8,9 +8,9 @@ import { fetchText } from '@main/io/fetch-json'
  * so they are checked against the source's published SHA-256 before install. How a
  * source publishes it differs, so each resolved asset declares:
  *
- *   - 'sums' : a `<sha256>  <file>` sums file to fetch and match this asset's line
- *              (yt-dlp's SHA2-256SUMS, deno's per-asset .sha256sum, martin-riedl's
- *              `ffmpeg.zip.sha256`, BtbN's combined `checksums.sha256`).
+ *   - 'sums' : a published sums file to fetch and bind to this asset. Most sources
+ *              use `<sha256>  <file>`; Deno's Windows releases historically use
+ *              PowerShell Get-FileHash output.
  * Every registered source publishes a checksum. A missing checksum asset is a
  * resolution failure, never permission to install executable bytes unverified.
  * verifyBinaryIntegrity throws on any failure so the install aborts.
@@ -19,7 +19,7 @@ export type AssetIntegrity = { kind: 'sums'; url: string; assetName: string }
 
 export type IntegrityResult = { verified: true; method: 'sha256' }
 
-/** Parse a `<sha256>  <filename>` sums file for `assetName`'s hash (lowercase hex), or null. */
+/** Parse a sums file for `assetName`'s SHA-256 (lowercase hex), or null. */
 export function parseSums(text: string, assetName: string): string | null {
   for (const line of text.split('\n')) {
     // 64 hex chars, whitespace, then the filename (a leading '*' marks binary mode
@@ -27,6 +27,24 @@ export function parseSums(text: string, assetName: string): string | null {
     const m = line.trim().match(/^([0-9a-fA-F]{64})\s+\*?(.+)$/)
     if (m && m[2] === assetName) return m[1].toLowerCase()
   }
+
+  // Deno's Windows release job publishes Get-FileHash's Format-List output
+  // instead of a GNU-style sums line. Bind the hash to both SHA-256 and the
+  // selected asset path so a checksum for a sibling release asset cannot pass.
+  const fields = new Map<string, string>()
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z]+)\s*:\s*(.*?)\s*$/)
+    if (m) fields.set(m[1].toLowerCase(), m[2])
+  }
+  const hash = fields.get('hash')
+  const path = fields.get('path')
+  const pathName = path?.split(/[\\/]/).at(-1)
+  if (
+    fields.get('algorithm')?.toUpperCase() === 'SHA256' &&
+    hash && /^[0-9a-fA-F]{64}$/.test(hash) &&
+    pathName === assetName
+  ) return hash.toLowerCase()
+
   return null
 }
 

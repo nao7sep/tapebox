@@ -31,6 +31,18 @@ describe('parseSums', () => {
     expect(parseSums(text, 'yt-dlp.exe')).toBe(C)
   })
 
+  it('handles Deno Windows Get-FileHash output and binds it to the asset', () => {
+    const windows = [
+      'Algorithm : SHA256',
+      `Hash      : ${A.toUpperCase()}`,
+      'Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip',
+    ].join('\r\n')
+    expect(parseSums(windows, 'deno-x86_64-pc-windows-msvc.zip')).toBe(A)
+    expect(parseSums(windows, 'deno-aarch64-pc-windows-msvc.zip')).toBeNull()
+    expect(parseSums(windows.replace('SHA256', 'SHA512'), 'deno-x86_64-pc-windows-msvc.zip')).toBeNull()
+    expect(parseSums(windows.replace(A.toUpperCase(), A.slice(1)), 'deno-x86_64-pc-windows-msvc.zip')).toBeNull()
+  })
+
   it('returns null when the asset is not listed', () => {
     expect(parseSums(text, 'not-present')).toBeNull()
   })

@@ -144,9 +144,8 @@ const denoSpec: BinarySpec = {
     const assetName = denoAssetName()
     const asset = release.assets.find((a) => a.name === assetName)
     if (!asset) throw new Error(`deno asset not found: ${assetName}`)
-    // Each zip ships a sibling `<asset>.sha256sum` holding a single `<hash>  <asset>`
-    // line — found in the already-fetched release (no extra request) and parsed at
-    // install time, identical in shape to yt-dlp's SHA2-256SUMS entries.
+    // Each zip ships a sibling `<asset>.sha256sum`, found in the already-fetched
+    // release. Unix assets use a sums line; Windows assets use Get-FileHash output.
     const sums = release.assets.find((a) => a.name === `${assetName}.sha256sum`)
     if (!sums) throw new Error(`Deno release has no ${assetName}.sha256sum`)
     return {
