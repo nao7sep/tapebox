@@ -125,6 +125,62 @@ export function upsertTape(tape: Tape): void {
   scheduleSave()
 }
 
+/** Persist one list's complete tape order before publishing it to the cache. */
+export async function reorderTapesDurably(orderedIds: readonly string[]): Promise<Tape[]> {
+  assertLoaded()
+  cancelScheduledSave()
+  let committed: Tape[] = []
+  await enqueueCatalogWrite(async () => {
+    const byId = new Map(cache.tapes.map((tape) => [tape.id, tape]))
+    const seen = new Set<string>()
+    const named = orderedIds
+      .filter((id) => !seen.has(id) && seen.add(id))
+      .map((id) => byId.get(id))
+      .filter((tape): tape is Tape => !!tape)
+    if (named.length === 0) {
+      await writeManagedJson(
+        paths.catalog,
+        { tapes: [...cache.tapes], boxes: [...cache.boxes] },
+        SessionSchema,
+      )
+      return
+    }
+
+    const listKey = (tape: Tape) =>
+      tape.archivedAtUtc ? `box:${tape.boxId ?? 'unboxed'}` : 'inbox'
+    const key = listKey(named[0]!)
+    const namedInList = named.filter((tape) => listKey(tape) === key)
+    const namedIds = new Set(namedInList.map((tape) => tape.id))
+    const sequence = [
+      ...namedInList.map((tape) => tape.id),
+      ...cache.tapes
+        .filter((tape) => listKey(tape) === key && !namedIds.has(tape.id))
+        .sort((a, b) => a.order - b.order)
+        .map((tape) => tape.id),
+    ]
+    const orderById = new Map(sequence.map((id, order) => [id, order]))
+    const candidateTapes = cache.tapes.map((tape) => {
+      const order = orderById.get(tape.id)
+      return order === undefined || order === tape.order ? tape : { ...tape, order }
+    })
+    const changedIds = new Set(
+      candidateTapes
+        .filter((tape, index) => tape !== cache.tapes[index])
+        .map((tape) => tape.id),
+    )
+
+    await writeManagedJson(paths.catalog, { ...cache, tapes: candidateTapes }, SessionSchema)
+
+    // Preserve unrelated fields changed while the durable write was in flight.
+    cache.tapes = cache.tapes.map((tape) => {
+      const order = orderById.get(tape.id)
+      return order === undefined || order === tape.order ? tape : { ...tape, order }
+    })
+    committed = cache.tapes.filter((tape) => changedIds.has(tape.id))
+  })
+  return committed
+}
+
 /** Commit one tape's rename fields to catalog.json before publishing them to the
  * in-memory session. This is the transaction boundary for a filesystem rename:
  * new paths must not become authoritative until the durable catalog names them.
@@ -188,6 +244,44 @@ export function upsertBox(box: Box): void {
   scheduleSave()
 }
 
+/** Persist the complete box order before publishing it to the cache. */
+export async function reorderBoxesDurably(orderedIds: readonly string[]): Promise<Box[]> {
+  assertLoaded()
+  cancelScheduledSave()
+  let committed: Box[] = []
+  await enqueueCatalogWrite(async () => {
+    const byId = new Map(cache.boxes.map((box) => [box.id, box]))
+    const seen = new Set<string>()
+    const namedIds = orderedIds.filter((id) => byId.has(id) && !seen.has(id) && seen.add(id))
+    const named = new Set(namedIds)
+    const sequence = [
+      ...namedIds,
+      ...cache.boxes
+        .filter((box) => !named.has(box.id))
+        .sort((a, b) => a.order - b.order)
+        .map((box) => box.id),
+    ]
+    const orderById = new Map(sequence.map((id, order) => [id, order]))
+    const candidateBoxes = cache.boxes.map((box) => {
+      const order = orderById.get(box.id)
+      return order === undefined || order === box.order ? box : { ...box, order }
+    })
+    const changedIds = new Set(
+      candidateBoxes
+        .filter((box, index) => box !== cache.boxes[index])
+        .map((box) => box.id),
+    )
+
+    await writeManagedJson(paths.catalog, { ...cache, boxes: candidateBoxes }, SessionSchema)
+    cache.boxes = cache.boxes.map((box) => {
+      const order = orderById.get(box.id)
+      return order === undefined || order === box.order ? box : { ...box, order }
+    })
+    committed = cache.boxes.filter((box) => changedIds.has(box.id))
+  })
+  return committed
+}
+
 export function removeBox(id: string): void {
   assertLoaded()
   cache.boxes = cache.boxes.filter((g) => g.id !== id)
@@ -197,6 +291,13 @@ export function removeBox(id: string): void {
 function scheduleSave(): void {
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => { void persistNow() }, SAVE_DEBOUNCE_MS)
+}
+
+function cancelScheduledSave(): void {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
 }
 
 /**

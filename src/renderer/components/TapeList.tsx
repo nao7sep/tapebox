@@ -11,12 +11,15 @@ import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
+import { useToastStore } from '@renderer/store/toast'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { useDragBodyCursor, useTapeDragSensors } from '@renderer/lib/dnd'
+import { settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
 import { selectTape } from '@renderer/lib/selectTape'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
+import { errorMessage } from '@shared/error'
 
 /**
  * The inbox: one continuous list in manual order. New tapes arrive at the top
@@ -74,8 +77,19 @@ export function TapeList() {
     if (from < 0 || to < 0 || to >= visible.length || from === to) return
     const reordered = arrayMove(visible, from, to)
     // Pointer and keyboard reorder share this one optimistic + durable operation.
-    useTapesStore.getState().upsertMany(reordered.map((t, i) => ({ ...t, order: i })))
-    void ipcInvoke('tapes:reorder', { orderedIds: reordered.map((t) => t.id) })
+    const optimistic = reordered.map((t, i) => ({ ...t, order: i }))
+    useTapesStore.getState().upsertMany(optimistic)
+    settleOptimisticOrder(
+      ipcInvoke('tapes:reorder', { orderedIds: reordered.map((t) => t.id) }),
+      () => {
+        const current = useTapesStore.getState().tapes
+        return optimistic.every((candidate) =>
+          current.some((tape) => tape.id === candidate.id && tape.order === candidate.order),
+        )
+      },
+      () => useTapesStore.getState().upsertMany(visible),
+      (error) => useToastStore.getState().notify(`Could not save tape order: ${errorMessage(error)}`, 'error'),
+    )
   }
 
   if (visible.length === 0) {

@@ -3,6 +3,31 @@ import { pathForFile } from '@renderer/ipc/client'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
 
 type Props = { children: ReactNode }
+type SidecarDragOffer = 'rejected' | 'delivery-only' | 'accepted'
+
+export function inspectSidecarDragOffer(
+  dataTransfer: Pick<DataTransfer, 'types' | 'items'>,
+): SidecarDragOffer {
+  const hasFilesType = Array.from(dataTransfer.types).includes('Files')
+  const items = Array.from(dataTransfer.items)
+  if (!hasFilesType && !items.some((item) => item.kind === 'file')) return 'rejected'
+  if (items.length === 0) return 'delivery-only'
+
+  let protectedFile = false
+  let sawFile = false
+  for (const item of items) {
+    if (item.kind !== 'file') continue
+    sawFile = true
+    try {
+      const file = item.getAsFile()
+      if (!file) protectedFile = true
+      else if (file.name.toLowerCase().endsWith('.json')) return 'accepted'
+    } catch {
+      protectedFile = true
+    }
+  }
+  return sawFile && protectedFile ? 'delivery-only' : 'rejected'
+}
 
 /**
  * Window-wide drop target for restoring exported tapes. It just resolves dropped
@@ -49,21 +74,27 @@ export function DropZone({ children }: Props) {
     }
   }, [])
 
-  function isFileDrag(e: DragEvent): boolean {
-    return Array.from(e.dataTransfer?.types ?? []).includes('Files')
-  }
-
   function onDragEnter(e: DragEvent<HTMLDivElement>) {
-    if (!isFileDrag(e)) return
     e.preventDefault()
+    e.stopPropagation()
+    if (inspectSidecarDragOffer(e.dataTransfer) !== 'accepted') {
+      clearActive()
+      return
+    }
     setActive(true)
     armIndependentReset()
   }
 
   function onDragOver(e: DragEvent<HTMLDivElement>) {
-    if (!isFileDrag(e)) return
     e.preventDefault()
-    e.dataTransfer!.dropEffect = 'copy'
+    e.stopPropagation()
+    const offer = inspectSidecarDragOffer(e.dataTransfer)
+    if (offer !== 'accepted') {
+      e.dataTransfer.dropEffect = 'none'
+      clearActive()
+      return
+    }
+    e.dataTransfer.dropEffect = 'copy'
     setActive(true)
     armIndependentReset()
   }
@@ -74,15 +105,18 @@ export function DropZone({ children }: Props) {
   }
 
   async function onDrop(e: DragEvent<HTMLDivElement>) {
-    if (!isFileDrag(e)) return
     e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'none'
     clearActive()
     // Hand every dropped file's path to importMedia — it keeps the .json sidecars
     // (and guides the user if there are none). The video/image dropped alongside a
     // sidecar are read from the sidecar, not from the drop.
-    const paths = Array.from(e.dataTransfer?.files ?? [])
+    const paths = Array.from(e.dataTransfer.files)
       .map((f) => pathForFile(f))
-      .filter((p): p is string => !!p)
+      .filter((p): p is string => !!p && p.toLowerCase().endsWith('.json'))
+    if (paths.length === 0) return
+    e.dataTransfer.dropEffect = 'copy'
     await importMedia(paths)
   }
 

@@ -7,7 +7,7 @@ const { importMedia } = vi.hoisted(() => ({ importMedia: vi.fn() }))
 vi.mock('@renderer/lib/useImportMedia', () => ({ useImportMedia: () => importMedia }))
 vi.mock('@renderer/ipc/client', () => ({ pathForFile: vi.fn() }))
 
-import { DropZone } from '@renderer/components/DropZone'
+import { DropZone, inspectSidecarDragOffer } from '@renderer/components/DropZone'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -29,10 +29,17 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function fileDrag(type: 'dragenter' | 'dragover'): Event {
+function fileDrag(type: 'dragenter' | 'dragover', inspectable = false): Event {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'dataTransfer', {
-    value: { types: ['Files'], files: [], dropEffect: 'none' },
+    value: {
+      types: ['Files'],
+      items: inspectable
+        ? [{ kind: 'file', getAsFile: () => new File(['{}'], 'tape.json') }]
+        : [],
+      files: [],
+      dropEffect: 'none',
+    },
   })
   return event
 }
@@ -40,7 +47,7 @@ function fileDrag(type: 'dragenter' | 'dragover'): Event {
 describe('DropZone external drag affordance', () => {
   it('uses sentence-case guidance and independently clears a cancelled OS drag', () => {
     const wrapper = host.firstElementChild!
-    act(() => wrapper.dispatchEvent(fileDrag('dragenter')))
+    act(() => wrapper.dispatchEvent(fileDrag('dragenter', true)))
     expect(document.body.textContent).toContain('Drop the .json sidecars')
 
     act(() => vi.advanceTimersByTime(1001))
@@ -49,8 +56,28 @@ describe('DropZone external drag affordance', () => {
 
   it('ignores non-file drags', () => {
     const event = new Event('dragenter', { bubbles: true, cancelable: true })
-    Object.defineProperty(event, 'dataTransfer', { value: { types: ['text/plain'] } })
+    Object.defineProperty(event, 'dataTransfer', { value: { types: ['text/plain'], items: [] } })
     act(() => host.firstElementChild!.dispatchEvent(event))
     expect(document.body.textContent).not.toContain('Drop to restore tapes')
+  })
+
+  it('keeps a protected Files offer delivery-only', () => {
+    const wrapper = host.firstElementChild!
+    const over = fileDrag('dragover')
+    act(() => wrapper.dispatchEvent(over))
+    expect(over.defaultPrevented).toBe(true)
+    expect((over as Event & { dataTransfer: { dropEffect: string } }).dataTransfer.dropEffect).toBe('none')
+    expect(document.body.textContent).not.toContain('Drop to restore tapes')
+  })
+
+  it('classifies only inspectable JSON file items as accepted', () => {
+    expect(inspectSidecarDragOffer({
+      types: ['Files'],
+      items: [] as unknown as DataTransferItemList,
+    })).toBe('delivery-only')
+    expect(inspectSidecarDragOffer({
+      types: ['Files'],
+      items: [{ kind: 'file', getAsFile: () => new File(['x'], 'clip.mp4') }] as unknown as DataTransferItemList,
+    })).toBe('rejected')
   })
 })

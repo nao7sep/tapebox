@@ -20,6 +20,9 @@ import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { useDragBodyCursor, useTapeDragSensors } from '@renderer/lib/dnd'
+import { settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
+import { useToastStore } from '@renderer/store/toast'
+import { errorMessage } from '@shared/error'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { BoxList, UNBOXED_DROP_ID } from './BoxList'
 import { ArchiveTapeList } from './ArchiveTapeList'
@@ -136,16 +139,38 @@ export function ArchiveOrganizer() {
     if (from < 0 || to < 0 || to >= ids.length || from === to) return
     const next = arrayMove(ids, from, to)
     const orderById = new Map(next.map((id, i) => [id, i]))
-    useBoxesStore.getState().setBoxes(boxes.map((box) => ({ ...box, order: orderById.get(box.id) ?? box.order })))
-    void ipcInvoke('boxes:reorder', { orderedIds: next })
+    const optimistic = boxes.map((box) => ({ ...box, order: orderById.get(box.id) ?? box.order }))
+    useBoxesStore.getState().setBoxes(optimistic)
+    settleOptimisticOrder(
+      ipcInvoke('boxes:reorder', { orderedIds: next }),
+      () => {
+        const current = useBoxesStore.getState().boxes
+        return optimistic.every((candidate) =>
+          current.some((box) => box.id === candidate.id && box.order === candidate.order),
+        )
+      },
+      () => useBoxesStore.getState().setBoxes(boxes),
+      (error) => useToastStore.getState().notify(`Could not save box order: ${errorMessage(error)}`, 'error'),
+    )
   }
 
   function reorderTape(activeId: string, to: number) {
     const from = tapes.findIndex((tape) => tape.id === activeId)
     if (from < 0 || to < 0 || to >= tapes.length || from === to) return
     const reordered = arrayMove(tapes, from, to)
-    useTapesStore.getState().upsertMany(reordered.map((tape, i) => ({ ...tape, order: i })))
-    void ipcInvoke('tapes:reorder', { orderedIds: reordered.map((tape) => tape.id) })
+    const optimistic = reordered.map((tape, i) => ({ ...tape, order: i }))
+    useTapesStore.getState().upsertMany(optimistic)
+    settleOptimisticOrder(
+      ipcInvoke('tapes:reorder', { orderedIds: reordered.map((tape) => tape.id) }),
+      () => {
+        const current = useTapesStore.getState().tapes
+        return optimistic.every((candidate) =>
+          current.some((tape) => tape.id === candidate.id && tape.order === candidate.order),
+        )
+      },
+      () => useTapesStore.getState().upsertMany(tapes),
+      (error) => useToastStore.getState().notify(`Could not save tape order: ${errorMessage(error)}`, 'error'),
+    )
   }
 
   return (

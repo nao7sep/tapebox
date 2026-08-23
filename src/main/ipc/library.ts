@@ -74,34 +74,7 @@ export function registerLibraryHandlers(): void {
   // any members the caller didn't name keep their place after the named ones. So a
   // partial or stale set can never collide orders with the rest of the same list.
   handle('tapes:reorder', async ({ orderedIds }) => {
-    const named = orderedIds
-      .map((id) => session.getTape(id))
-      .filter((t): t is Tape => !!t)
-    if (named.length === 0) return
-
-    const listKey = (t: Tape) => (t.archivedAtUtc ? `box:${t.boxId ?? 'unboxed'}` : 'inbox')
-    const key = listKey(named[0])
-    const namedInList = named.filter((t) => listKey(t) === key)
-    const namedIds = new Set(namedInList.map((t) => t.id))
-
-    const sequence = [
-      ...namedInList.map((t) => t.id),
-      ...session
-        .getTapes()
-        .filter((t) => listKey(t) === key && !namedIds.has(t.id))
-        .sort((a, b) => a.order - b.order)
-        .map((t) => t.id),
-    ]
-
-    const changed: Tape[] = []
-    sequence.forEach((id, order) => {
-      const tape = session.getTape(id)
-      if (tape && tape.order !== order) {
-        const updated = { ...tape, order }
-        session.upsertTape(updated)
-        changed.push(updated)
-      }
-    })
+    const changed = await session.reorderTapesDurably(orderedIds)
     if (changed.length > 0) emit('tapes:updatedMany', changed)
   })
 
