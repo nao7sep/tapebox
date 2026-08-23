@@ -18,6 +18,8 @@ export default defineConfig({
     // opt into jsdom per file via a `// @vitest-environment jsdom` pragma.
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // Keep filesystem and jsdom tests responsive on resource-constrained hosts.
+    maxWorkers: 1,
     coverage: {
       // V8's native coverage; `include` spans all source so the report flags
       // logic no test reaches, not just a score for what is reached.

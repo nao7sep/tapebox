@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Real filesystem (temp dirs) exercises claimed source holds, exclusive final
@@ -141,7 +141,7 @@ describe('relocateLibrary', () => {
     // Destination hard links look cross-device, so publication takes the bounded
     // exclusive-copy fallback while the public source remains readable.
     linkSpy.mockImplementation(async (src, dest) => {
-      if (!String(dest).startsWith(`${toDir}/`)) return realFsPromises.link(src, dest)
+      if (dirname(String(dest)) !== toDir) return realFsPromises.link(src, dest)
       const err = new Error('EXDEV: cross-device link not permitted') as NodeJS.ErrnoException
       err.code = 'EXDEV'
       throw err

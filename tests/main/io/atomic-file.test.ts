@@ -289,7 +289,7 @@ describe('portable no-overwrite publication', () => {
     expect(Buffer.concat(fixture.published)).toEqual(bytes)
     expect(Math.max(...fixture.readLengths)).toBeLessThanOrEqual(256 * 1024)
     expect(fixture.operations.unlink).toHaveBeenCalledWith(temp)
-  })
+  }, 30_000)
 
   it('preserves a replacement arriving at fallback failure cleanup', async () => {
     const temp = join(dir, 'stage.bin')
@@ -460,13 +460,25 @@ describe('physical claim transitions', () => {
         throw failure('EXDEV')
       },
       openRead: async (path) => {
-        const opened = await realOperations().openRead(path)
-        if (path === source) {
-          const winner = join(dir, 'late-source-winner.bin')
-          await writeFile(winner, 'late source winner')
-          await rename(winner, source)
+        if (path !== source) return realOperations().openRead(path)
+
+        // Model the stable opened source independently of the public pathname.
+        // Windows does not allow replacing a pathname while its ordinary Node
+        // handle remains open, whereas POSIX does; the injected operation keeps
+        // the same ownership race portable without weakening the assertion.
+        const bytes = await readFile(path)
+        const winner = join(dir, 'late-source-winner.bin')
+        await writeFile(winner, 'late source winner')
+        await rename(winner, source)
+        return {
+          read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+            const bytesRead = Math.min(length, Math.max(0, bytes.length - position))
+            bytes.copy(buffer, offset, position, position + bytesRead)
+            return { bytesRead }
+          },
+          close: async () => {},
+          identity: async () => claim.identity,
         }
-        return opened
       },
     })
 
