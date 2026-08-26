@@ -28,4 +28,9 @@ describe('globals.css window-chrome compliance', () => {
     expect(css).toMatch(/--font-sans:\s*system-ui/)
     expect(css).toMatch(/--font-mono:\s*[^;]+monospace/)
   })
+
+  it('keeps the normal UI tiers at 12px and 14px', () => {
+    expect(css).toMatch(/--text-xs:\s*0\.75rem/)
+    expect(css).toMatch(/--text-sm:\s*0\.875rem/)
+  })
 })

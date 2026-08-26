@@ -106,4 +106,20 @@ describe('BinariesModal check and acquisition outcomes', () => {
     expect(document.body.textContent).toContain('Version unreadable')
     expect(document.body.textContent).toContain('Checking…')
   })
+
+  it('shows rolling build dates without upstream marketing text', async () => {
+    useBinariesStore.setState({
+      statuses: [status({
+        name: 'ffmpeg',
+        present: true,
+        installedVersion: 'Latest Auto-Build (2026-08-23 13:03)',
+        latestKnownVersion: 'Latest Auto-Build (2026-08-24 14:04)',
+      })],
+    })
+    await mount()
+
+    expect(document.body.textContent).toContain('2026-08-23 13:03')
+    expect(document.body.textContent).toContain('2026-08-24 14:04')
+    expect(document.body.textContent).not.toContain('Latest Auto-Build')
+  })
 })

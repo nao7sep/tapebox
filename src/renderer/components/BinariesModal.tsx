@@ -239,7 +239,7 @@ function BinaryRow({
  *  says so — it is not absent, and it is not silently assumed current. */
 function installedText(status: BinaryStatus, d: DerivedStatus): string {
   if (d.state === 'not-installed') return 'Not installed'
-  return status.installedVersion ?? 'Version unreadable'
+  return displayArtifactIdentity(status.installedVersion) ?? 'Version unreadable'
 }
 
 /** Colour the installed cell by role so a to-do reads as amber at a glance. */
@@ -253,7 +253,11 @@ function installedClass(d: DerivedStatus): string {
  *  landed but the installed version could not be read. */
 function latestText(status: BinaryStatus, checking: boolean): string {
   if (checking) return 'Checking…'
-  return status.latestKnownVersion ?? 'Not checked'
+  return displayArtifactIdentity(status.latestKnownVersion) ?? 'Not checked'
+}
+
+function displayArtifactIdentity(identity: string | null): string | null {
+  return identity?.match(/^Latest Auto-Build \((.+)\)$/)?.[1] ?? identity
 }
 
 function phaseLabel(phase: string): string {

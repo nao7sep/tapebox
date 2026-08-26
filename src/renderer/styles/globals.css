@@ -49,9 +49,9 @@ body.dnd-dragging * {
      knob. */
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
-  --text-xs: 0.8125rem;
+  --text-xs: 0.75rem;
   --text-xs--line-height: 1.125rem;
-  --text-sm: 0.9375rem;
+  --text-sm: 0.875rem;
   --text-sm--line-height: 1.375rem;
 }
 
