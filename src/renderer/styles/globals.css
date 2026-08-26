@@ -35,10 +35,9 @@ body.dnd-dragging * {
      text-lg   headings: dialog titles, the detail-pane title
      text-xl   the app title (header)
      text-2xl  reserved for the one big display number (scan count)
-   text-base is intentionally unused — it sits a hair above text-sm with no
-   distinct role. The two smallest tiers are nudged up a notch below, since the
-   defaults read too small on this dark UI; applied centrally so the utility
-   classes don't change. */
+   text-base   emphasized current filename in the Rename dialog
+   Tailwind's stock text-xs/text-sm sizes are the intended 12/14 px roles. Only
+   their line heights are expanded here for this dark, information-dense UI. */
 @theme {
   /* Explicit default fonts — TapeBox otherwise inherited Tailwind's stacks
      (app-chrome-conventions: every app sets its fonts explicitly). --font-sans is
@@ -49,9 +48,7 @@ body.dnd-dragging * {
      knob. */
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
-  --text-xs: 0.75rem;
   --text-xs--line-height: 1.125rem;
-  --text-sm: 0.875rem;
   --text-sm--line-height: 1.375rem;
 }
 
@@ -103,6 +100,11 @@ body.dnd-dragging * {
      ::-webkit-scrollbar styling above (window-chrome-conventions). */
   :root {
     color-scheme: dark;
+  }
+  body {
+    /* Ordinary chrome owns the same 14 px size as the text-sm body/control role;
+       semantic utilities continue to opt out where their role requires it. */
+    font-size: 14px;
   }
   :focus {
     outline: none;
