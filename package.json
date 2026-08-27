@@ -2,6 +2,7 @@
   "name": "tapebox",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@12.0.2",
   "type": "module",
   "description": "A local media library with web-import.",
   "author": "Yoshinao Inoguchi <yoshinao@inoguchi.com>",
@@ -104,6 +105,6 @@
     "electron-winstaller@5.4.0": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.1": true,
-    "fsevents": false
+    "fsevents@2.3.3": false
   }
 }
