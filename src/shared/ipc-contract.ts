@@ -29,11 +29,10 @@ export type IpcCalls = {
   // user-chosen name — any filesystem-safe name, not just a slug. The AI can
   // suggest a slug, but the user may type a regular filename.
   'library:rename':          { req: { tapeId: string; name: string };                 res: Tape }
-  // Import is sidecar-driven: each path is a TapeBox .json sidecar, which names its
-  // own media + thumbnail files (sitting beside it). The app reads those from the
-  // sidecar — no guessing a media file by stem, no mistaking a thumbnail for the
-  // video. Anything that isn't a sidecar is ignored by the caller before this point.
-  'library:import':          { req: { sidecarPaths: string[] };                      res: ImportResult }
+  // Import is sidecar-driven, but the whole user selection crosses this boundary.
+  // Main can then read each sidecar and distinguish its referenced media/thumbnail
+  // companions from genuinely unsupported extras without guessing in the renderer.
+  'library:import':          { req: { paths: string[] };                             res: ImportResult }
   'library:archive':         { req: { tapeIds: string[] };                           res: void }
   'library:unarchive':       { req: { tapeIds: string[] };                           res: void }
   'library:getSidecar':      { req: { tapeId: string };                              res: SidecarRaw }
@@ -178,9 +177,15 @@ export type BinaryCheckResult =
   | { outcome: 'completed'; statuses: BinaryStatus[]; failures: BinaryCheckFailure[] }
   | { outcome: 'cancelled' }
 
+export type ImportIssue = {
+  path: string
+  reason: string
+  severity: 'information' | 'warning' | 'error'
+}
+
 export type ImportResult = {
   imported: Tape[]
-  rejected: { path: string; reason: string }[]
+  issues: ImportIssue[]
 }
 
 // Spelled out as a portable union (the member set of NodeJS.Platform) so this

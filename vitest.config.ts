@@ -17,7 +17,7 @@ export default defineConfig({
     // Node by default for the pure main/shared logic; the renderer's DOM helpers
     // opt into jsdom per file via a `// @vitest-environment jsdom` pragma.
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.{ts,tsx}'],
     // Keep filesystem and jsdom tests responsive on resource-constrained hosts.
     maxWorkers: 1,
     coverage: {

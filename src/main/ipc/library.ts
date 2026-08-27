@@ -21,13 +21,14 @@ import { portableSiblingExists, type AllowedPortableDirectoryEntry } from '@main
 import { planRename } from '@main/core/rename-plan'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
+import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
 import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
 import { SidecarTapeBoxSchema, type Tape } from '@shared/domain'
-import type { SidecarRaw } from '@shared/ipc-contract'
+import type { ImportIssue, SidecarRaw } from '@shared/ipc-contract'
 
 export function registerLibraryHandlers(): void {
   handle('library:list', async () => session.getTapes())
@@ -357,14 +358,15 @@ export function registerLibraryHandlers(): void {
     return updated
   })
 
-  // Sidecar-driven import: each path is a TapeBox .json that names its own media and
-  // thumbnail (sitting beside it). We read those names from the sidecar rather than
-  // guessing a media file by stem — which is what let a thumbnail get imported as the
-  // video. One sidecar = one tape, so a duplicate is reported once, not per file.
-  handle('library:import', async ({ sidecarPaths }) => {
+  // Sidecar-driven import: the whole selection arrives here so this filesystem-owning
+  // boundary can tell referenced bundle companions from unsupported extras. One
+  // sidecar = one tape, so a duplicate is reported once, not once per selected file.
+  handle('library:import', async ({ paths }) => {
     const libraryDir = getLibraryDir()
     const imported: Tape[] = []
-    const rejected: { path: string; reason: string }[] = []
+    const issues: ImportIssue[] = []
+    const sidecarPaths = paths.filter((path) => extname(path).toLowerCase() === '.json')
+    const claimedCompanionPaths: string[] = []
 
     // Reserve a front-of-inbox order window for the whole selection up front, then
     // hand them out one per successful import, so the batch lands on top in the
@@ -378,24 +380,43 @@ export function registerLibraryHandlers(): void {
       if (extname(sidecarPath).toLowerCase() !== '.json') continue
       const dir = dirname(sidecarPath)
 
+      let rawSidecar: string
+      try {
+        rawSidecar = await readFile(sidecarPath, 'utf8')
+      } catch (err) {
+        log.error('import sidecar read failed', { path: sidecarPath, error: describeError(err) })
+        issues.push({
+          path: sidecarPath,
+          reason: `sidecar could not be read: ${errorMessage(err)}`,
+          severity: 'error',
+        })
+        continue
+      }
+
       let sidecar: Record<string, unknown>
       try {
-        sidecar = JSON.parse(await readFile(sidecarPath, 'utf8'))
+        sidecar = JSON.parse(rawSidecar)
       } catch (err) {
-        rejected.push({ path: sidecarPath, reason: `sidecar parse failed: ${String(err)}` })
+        issues.push({
+          path: sidecarPath,
+          reason: `sidecar is not valid JSON: ${errorMessage(err)}`,
+          severity: 'warning',
+        })
         continue
       }
 
       const classification = classifyImport(sidecar)
       if (classification.status === 'reject') {
-        rejected.push({ path: sidecarPath, reason: classification.reason })
+        issues.push({ path: sidecarPath, reason: classification.reason, severity: 'warning' })
         continue
       }
       const { sourceUrl, mediaFilename, thumbnailFilename: tbThumb } = classification
+      claimedCompanionPaths.push(join(dir, mediaFilename))
+      if (tbThumb) claimedCompanionPaths.push(join(dir, tbThumb))
 
       const existing = session.getTapes().find((i) => i.sourceUrl === sourceUrl)
       if (existing) {
-        rejected.push({ path: sidecarPath, reason: `already in library (${existing.id})` })
+        issues.push({ path: sidecarPath, reason: 'already in library', severity: 'information' })
         continue
       }
 
@@ -403,7 +424,11 @@ export function registerLibraryHandlers(): void {
       try {
         await access(srcMedia, constants.R_OK)
       } catch {
-        rejected.push({ path: sidecarPath, reason: `media file is missing beside the sidecar: ${mediaFilename}` })
+        issues.push({
+          path: sidecarPath,
+          reason: `media file is missing beside the sidecar: ${mediaFilename}`,
+          severity: 'warning',
+        })
         continue
       }
 
@@ -428,13 +453,25 @@ export function registerLibraryHandlers(): void {
       } catch (err) {
         try {
           await unlinkClaimedFiles(copied)
-          rejected.push({ path: sidecarPath, reason: `copy into library failed: ${String(err)}` })
+          log.error('import bundle copy failed', {
+            path: sidecarPath,
+            error: describeError(err),
+          })
+          issues.push({
+            path: sidecarPath,
+            reason: `copy into library failed: ${errorMessage(err)}`,
+            severity: 'error',
+          })
         } catch (cleanupError) {
           const failure = new AggregateError(
             [err, cleanupError],
             `Copy into library failed: ${String(err)}. Published files could not be fully cleaned up.`,
           )
-          rejected.push({ path: sidecarPath, reason: errorMessage(failure) })
+          log.error('import bundle copy and rollback failed', {
+            path: sidecarPath,
+            error: describeError(failure),
+          })
+          issues.push({ path: sidecarPath, reason: errorMessage(failure), severity: 'error' })
         }
         continue
       }
@@ -455,7 +492,15 @@ export function registerLibraryHandlers(): void {
           }
           thumbnailFilename = tbThumb
         } catch (err) {
-          log.debug('import: thumbnail copy skipped', { path: srcThumb, error: describeError(err) })
+          log.error('import thumbnail copy failed', {
+            path: srcThumb,
+            error: describeError(err),
+          })
+          issues.push({
+            path: srcThumb,
+            reason: `thumbnail could not be copied into the library: ${errorMessage(err)}`,
+            severity: 'error',
+          })
         }
       }
 
@@ -473,8 +518,16 @@ export function registerLibraryHandlers(): void {
     }
 
     if (imported.length > 0) emit('tapes:added', imported)
-    log.info('library:import', { imported: imported.length, rejected: rejected.length })
-    return { imported, rejected }
+    for (const path of unsupportedSelectedPaths(paths, claimedCompanionPaths)) {
+      issues.push({
+        path,
+        reason: 'TapeBox imports .json sidecars together with the media and image files they name.',
+        severity: 'warning',
+      })
+    }
+
+    log.info('library:import', { imported: imported.length, issues: issues.length })
+    return { imported, issues }
   })
 }
 

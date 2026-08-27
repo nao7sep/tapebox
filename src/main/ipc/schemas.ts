@@ -45,7 +45,7 @@ export const ipcRequestSchemas = {
   'library:list':          z.undefined(),
   'library:remove':        z.object({ tapeIds: z.array(z.string()), deleteFiles: z.boolean() }),
   'library:rename':        z.object({ tapeId: z.string(), name: z.string() }),
-  'library:import':        z.object({ sidecarPaths: z.array(z.string()) }),
+  'library:import':        z.object({ paths: z.array(z.string()) }),
   'library:archive':       z.object({ tapeIds: z.array(z.string()) }),
   'library:unarchive':     z.object({ tapeIds: z.array(z.string()) }),
   'library:getSidecar':    z.object({ tapeId: z.string() }),

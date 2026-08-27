@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
-import { describeError } from '@shared/error'
+import { describeError, errorMessage } from '@shared/error'
 import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
@@ -20,6 +20,7 @@ import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useTapeRemoval } from '@renderer/lib/useTapeRemoval'
 import { useAppShortcuts } from '@renderer/lib/useAppShortcuts'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
+import { denyUnhandledExternalDrop } from '@renderer/lib/externalDrop'
 import { useUiFont } from '@renderer/lib/useUiFont'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { BinariesModal } from '@renderer/components/BinariesModal'
@@ -36,9 +37,7 @@ import { ShortcutsModal } from '@renderer/components/ShortcutsModal'
 import { HeaderMenu } from '@renderer/components/HeaderMenu'
 import { StatusBar } from '@renderer/components/StatusBar'
 import { Toaster } from '@renderer/components/Toaster'
-import { DropZone } from '@renderer/components/DropZone'
-import { ImportResultModal } from '@renderer/components/ImportResultModal'
-import { useImportResultStore } from '@renderer/store/importResult'
+import { TapeImportReceiver } from '@renderer/components/TapeImportReceiver'
 
 /** Skip the startup auto-check if any binary was checked within this window. */
 const AUTO_CHECK_STALE_MS = 24 * 60 * 60 * 1000
@@ -91,8 +90,6 @@ export default function App() {
   )
   const filter = useFilterStore((s) => s.filter)
   const importMedia = useImportMedia()
-  const importResult = useImportResultStore((s) => s.result)
-  const clearImportResult = useImportResultStore((s) => s.clear)
 
   function openScanPage(initialUrl = '') {
     setPageInitialUrl(initialUrl)
@@ -100,10 +97,24 @@ export default function App() {
   }
 
   async function importFiles() {
-    const picked = await ipcInvoke('dialog:pickFiles', { title: 'Import tapes — pick their .json sidecars' })
-    // Same shared path as drag-and-drop: importMedia keeps the .json sidecars (and
-    // guides the user if the selection has none, e.g. via the picker's "All files").
-    await importMedia(picked)
+    try {
+      const picked = await ipcInvoke('dialog:pickFiles', { title: 'Import tapes — pick their .json sidecars' })
+      if (picked.length === 0) return
+      // Imported tapes enter Inbox, so show the same receiving collection that owns
+      // the drop path before the shared admission/operation reports its result.
+      useFilterStore.getState().setFilter('inbox')
+      await importMedia(picked, [], {
+        operationKey: `picker:${JSON.stringify([...new Set(picked)].sort())}`,
+        entryKey: 'picker',
+      })
+    } catch (error) {
+      useFilterStore.getState().setFilter('inbox')
+      await importMedia(
+        [],
+        [{ path: 'Import files', reason: errorMessage(error), severity: 'error' }],
+        { operationKey: 'picker', entryKey: 'picker' },
+      )
+    }
   }
 
   useEffect(() => {
@@ -163,8 +174,11 @@ export default function App() {
   const selectedTape = tapes.find((i) => i.id === selectedId) ?? null
 
   return (
-    <DropZone>
-      <main className="flex h-screen flex-col">
+    <main
+      className="flex h-screen flex-col"
+      onDragOver={denyUnhandledExternalDrop}
+      onDrop={denyUnhandledExternalDrop}
+    >
         <header className="flex shrink-0 items-center gap-4 border-b border-zinc-700 px-4 py-2.5">
           <h1 className="shrink-0 text-xl font-medium tracking-tight">TapeBox</h1>
           <div className="flex min-w-0 flex-1 justify-center">
@@ -195,9 +209,11 @@ export default function App() {
             {filter === 'archived' ? (
               <ArchiveOrganizer />
             ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <TapeList />
-              </div>
+              <TapeImportReceiver>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <TapeList />
+                </div>
+              </TapeImportReceiver>
             )}
             <ResizeHandle
               edge="right"
@@ -248,13 +264,8 @@ export default function App() {
 
         {confirmModal}
 
-        {importResult && (
-          <ImportResultModal result={importResult} onClose={clearImportResult} />
-        )}
-
         <StatusBar />
         <Toaster />
-      </main>
-    </DropZone>
+    </main>
   )
 }
