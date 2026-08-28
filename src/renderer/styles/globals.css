@@ -20,14 +20,6 @@ button:disabled {
   cursor: grab;
 }
 
-/* While a tape/box drag is in progress the whole window shows the closed-hand
-   "grabbing" cursor, overriding the pointer the rows would otherwise show under
-   the roaming pointer. The body class is toggled by the DndContext drag handlers. */
-body.dnd-dragging,
-body.dnd-dragging * {
-  cursor: grabbing !important;
-}
-
 /* Type scale — one role per tier, used consistently across the app:
      text-xs   secondary / meta: status lines, captions, hints, table cells,
                detail rows, log output

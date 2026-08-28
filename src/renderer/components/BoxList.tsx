@@ -1,13 +1,18 @@
 import { useState } from 'react'
-import { useDndContext, useDroppable } from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { useDroppable } from '@dnd-kit/react'
+import { useSortable } from '@dnd-kit/react/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useArchiveStore } from '@renderer/store/archive'
 import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
+import {
+  BOX_DRAG_TYPE,
+  BOX_SORT_GROUP,
+  BOX_TARGET_TYPE,
+  TAPE_DRAG_TYPE,
+} from '@renderer/lib/dnd'
 import { boxNameError, UNBOXED_LABEL } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
 import { PlusIcon } from './Icon'
@@ -19,7 +24,7 @@ export const UNBOXED_DROP_ID = '__unboxed__'
  * Top list of the archive organizer: the boxes plus an always-present Unboxed
  * row, with counts, selection, create, inline rename, and delete. Boxes are
  * sortable (drag a header to reorder) and droppable (drag a tape onto a box to
- * file it); the parent DndContext owns the drag handling. Deleting a box only
+ * file it); the parent provider owns completion mapping. Deleting a box only
  * re-files its tapes to Unboxed — it never removes the tapes.
  */
 export function BoxList({ onReorder }: { onReorder: (activeId: string, offset: -1 | 1) => void }) {
@@ -111,49 +116,48 @@ export function BoxList({ onReorder }: { onReorder: (activeId: string, offset: -
           selected={selectedBoxId === null}
           onSelect={() => selectBox(null)}
         />
-        <SortableContext items={sorted.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-          {sorted.map((g) =>
-            editingId === g.id ? (
-              <div key={g.id}>
-                <input
-                  autoFocus
-                  value={draftName}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onChange={(e) => setDraftName(e.target.value)}
-                  onBlur={() => commitOrDiscard(g.id)}
-                  onCompositionStart={composing.onCompositionStart}
-                  onCompositionEnd={composing.onCompositionEnd}
-                  onKeyDown={(e) => {
-                    // Ignore Enter/Escape mid-IME-composition: Enter should commit the
-                    // candidate and Escape should cancel it, not act on the rename.
-                    if (isComposingKeyboardEvent(composingRef, e)) return
-                    if (e.key === 'Enter') void commitRename(g.id)
-                    else if (e.key === 'Escape') setEditingId(null)
-                  }}
-                  className={
-                    'w-full rounded border bg-zinc-900 px-2 py-1 text-sm focus:outline-hidden ' +
-                    (draftError
-                      ? 'border-red-700 focus:border-red-600'
-                      : 'border-zinc-700 focus:border-zinc-500')
-                  }
-                />
-                {draftError && <p className="mt-0.5 px-1 text-xs text-red-300">{draftError}</p>}
-              </div>
-            ) : (
-              <SortableBoxRow
-                key={g.id}
-                id={g.id}
-                optionId={kb.optionId(g.id)}
-                label={g.name}
-                count={countOf(g.id)}
-                selected={selectedBoxId === g.id}
-                onSelect={() => selectBox(g.id)}
-                onRename={() => { setDraftName(g.name); setEditingId(g.id) }}
-                onDelete={() => setConfirmDeleteId(g.id)}
+        {sorted.map((g, index) =>
+          editingId === g.id ? (
+            <div key={g.id}>
+              <input
+                autoFocus
+                value={draftName}
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => setDraftName(e.target.value)}
+                onBlur={() => commitOrDiscard(g.id)}
+                onCompositionStart={composing.onCompositionStart}
+                onCompositionEnd={composing.onCompositionEnd}
+                onKeyDown={(e) => {
+                  // Ignore Enter/Escape mid-IME-composition: Enter should commit the
+                  // candidate and Escape should cancel it, not act on the rename.
+                  if (isComposingKeyboardEvent(composingRef, e)) return
+                  if (e.key === 'Enter') void commitRename(g.id)
+                  else if (e.key === 'Escape') setEditingId(null)
+                }}
+                className={
+                  'w-full rounded border bg-zinc-900 px-2 py-1 text-sm focus:outline-hidden ' +
+                  (draftError
+                    ? 'border-red-700 focus:border-red-600'
+                    : 'border-zinc-700 focus:border-zinc-500')
+                }
               />
-            ),
-          )}
-        </SortableContext>
+              {draftError && <p className="mt-0.5 px-1 text-xs text-red-300">{draftError}</p>}
+            </div>
+          ) : (
+            <SortableBoxRow
+              key={g.id}
+              id={g.id}
+              index={index}
+              optionId={kb.optionId(g.id)}
+              label={g.name}
+              count={countOf(g.id)}
+              selected={selectedBoxId === g.id}
+              onSelect={() => selectBox(g.id)}
+              onRename={() => { setDraftName(g.name); setEditingId(g.id) }}
+              onDelete={() => setConfirmDeleteId(g.id)}
+            />
+          ),
+        )}
       </div>
 
       {confirmDeleteId && (
@@ -194,20 +198,18 @@ function rowClass(selected: boolean, dropTarget: boolean): string {
   )
 }
 
-/** True while a tape (not a box) is the active drag — i.e. boxes are drop targets. */
-function useDraggingTape(): boolean {
-  const { active } = useDndContext()
-  return active?.data.current?.type === 'tape'
-}
-
 function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: number; selected: boolean; onSelect: () => void }) {
-  const { setNodeRef, isOver } = useDroppable({ id: UNBOXED_DROP_ID })
-  const draggingTape = useDraggingTape()
+  const { ref, isDropTarget } = useDroppable({
+    id: UNBOXED_DROP_ID,
+    type: BOX_TARGET_TYPE,
+    accept: TAPE_DRAG_TYPE,
+    data: { type: BOX_TARGET_TYPE, boxId: null },
+  })
   // A non-focusable option — the box list container holds the single tab stop and
   // the keys, pointing aria-activedescendant at the selected row. The accent fill is
   // the only marker (a flat row, no ring).
   return (
-    <div ref={setNodeRef} role="presentation" className={rowClass(selected, isOver && draggingTape && !selected)}>
+    <div ref={ref} role="presentation" className={rowClass(selected, isDropTarget && !selected)}>
       <div
         id={id}
         role="option"
@@ -224,6 +226,7 @@ function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: numb
 
 function SortableBoxRow({
   id,
+  index,
   optionId,
   label,
   count,
@@ -233,6 +236,7 @@ function SortableBoxRow({
   onDelete,
 }: {
   id: string
+  index: number
   optionId: string
   label: string
   count: number
@@ -241,23 +245,33 @@ function SortableBoxRow({
   onRename: () => void
   onDelete: () => void
 }) {
-  // Spread dnd-kit's `listeners` (pointer drag) but NOT its `attributes`: those put
-  // role="button" and a tab index on the row wrapper, which would add a second tab
-  // stop and shadow the inner option. The listbox's Cmd/Ctrl+Shift+Arrow command
-  // supplies keyboard reorder through the same parent operation as pointer drag.
-  const { listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
+  // The current hook registers transport without projecting DOM attributes, so
+  // the inner option and the listbox remain the sole owners of semantics/focus.
+  const { ref: sortableRef } = useSortable({
     id,
-    data: { type: 'box' },
+    index,
+    type: BOX_DRAG_TYPE,
+    accept: BOX_DRAG_TYPE,
+    group: BOX_SORT_GROUP,
+    data: { type: BOX_DRAG_TYPE },
   })
-  const draggingTape = useDraggingTape()
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    // Hidden while dragging; the DragOverlay shows the moving copy.
-    opacity: isDragging ? 0 : 1,
-  }
+  // A distinct droppable on the same row accepts tapes without making dnd-kit's
+  // optimistic sorter treat the tape as a member of the box-order group.
+  const { ref: tapeTargetRef, isDropTarget } = useDroppable({
+    id: `box-target:${id}`,
+    type: BOX_TARGET_TYPE,
+    accept: TAPE_DRAG_TYPE,
+    data: { type: BOX_TARGET_TYPE, boxId: id },
+  })
   return (
-    <div ref={setNodeRef} style={style} role="presentation" {...listeners} className={`dnd-sortable ${rowClass(selected, isOver && draggingTape && !selected)}`}>
+    <div
+      ref={(element) => {
+        sortableRef(element)
+        tapeTargetRef(element)
+      }}
+      role="presentation"
+      className={`dnd-sortable ${rowClass(selected, isDropTarget && !selected)}`}
+    >
       {/* A non-focusable option (the listbox container owns focus and the keys). */}
       <div
         id={optionId}

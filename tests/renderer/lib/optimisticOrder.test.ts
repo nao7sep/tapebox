@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
+import { moveArrayItem, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
+
+describe('moveArrayItem', () => {
+  it('moves one stable item without mutating the source collection', () => {
+    const source = ['a', 'b', 'c']
+
+    expect(moveArrayItem(source, 0, 2)).toEqual(['b', 'c', 'a'])
+    expect(source).toEqual(['a', 'b', 'c'])
+  })
+})
 
 describe('settleOptimisticOrder', () => {
   it('rolls back and reports when the failed projection is still current', async () => {

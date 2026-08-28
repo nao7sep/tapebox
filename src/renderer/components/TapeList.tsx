@@ -1,20 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  type DragEndEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core'
-import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import type { DragEndEvent } from '@dnd-kit/react'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
 import { useToastStore } from '@renderer/store/toast'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
-import { useDragBodyCursor, useTapeDragSensors } from '@renderer/lib/dnd'
-import { settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
+import { ListboxDragProvider, planTapeListDrop } from '@renderer/lib/dnd'
+import { moveArrayItem, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
 import { selectTape } from '@renderer/lib/selectTape'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
@@ -33,9 +26,6 @@ export function TapeList() {
   const filter = useFilterStore((s) => s.filter)
   const visible = useVisibleTapes()
 
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const sensors = useTapeDragSensors()
-  const dragCursor = useDragBodyCursor()
   const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId, (id, offset) => {
     const from = visible.findIndex((t) => t.id === id)
     reorderTape(from, from + offset)
@@ -58,24 +48,18 @@ export function TapeList() {
     if (addTick > 0) topRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [addTick])
 
-  function onDragStart({ active }: DragStartEvent) {
-    setActiveId(String(active.id))
-    dragCursor.start()
-  }
-
-  function onDragEnd({ active, over }: DragEndEvent) {
-    setActiveId(null)
-    dragCursor.stop()
-    if (!over || active.id === over.id) return
-    const from = visible.findIndex((t) => t.id === active.id)
-    const to = visible.findIndex((t) => t.id === over.id)
-    if (from < 0 || to < 0) return
-    reorderTape(from, to)
+  function onDragEnd(event: DragEndEvent) {
+    const plan = planTapeListDrop(event)
+    if (plan) {
+      // Resolve the source by stable identity at commit time in case an IPC
+      // update changed the visible collection during the pointer session.
+      reorderTape(visible.findIndex((tape) => tape.id === plan.tapeId), plan.toIndex)
+    }
   }
 
   function reorderTape(from: number, to: number) {
     if (from < 0 || to < 0 || to >= visible.length || from === to) return
-    const reordered = arrayMove(visible, from, to)
+    const reordered = moveArrayItem(visible, from, to)
     // Pointer and keyboard reorder share this one optimistic + durable operation.
     const optimistic = reordered.map((t, i) => ({ ...t, order: i }))
     useTapesStore.getState().upsertMany(optimistic)
@@ -96,44 +80,29 @@ export function TapeList() {
     return <div className="p-6 text-sm text-zinc-300">{emptyMessageFor(filter)}</div>
   }
 
-  const activeTape = activeId ? visible.find((t) => t.id === activeId) : undefined
-
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragCancel={() => { setActiveId(null); dragCursor.stop() }}
-    >
+    <ListboxDragProvider onDragEnd={onDragEnd}>
       <div ref={topRef} />
-      <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <ul
-          ref={kb.ref}
-          {...kb.listboxProps}
-          role="listbox"
-          aria-label="Tapes"
-          className="space-y-1.5 p-3 outline-none"
-        >
-          {visible.map((tape) => (
-            <SortableTape key={tape.id} id={tape.id}>
-              <TapeRow
-                tape={tape}
-                progress={progress[tape.id]}
-                selected={tape.id === selectedId}
-                id={kb.optionId(tape.id)}
-                onSelect={() => selectTape(tape.id)}
-              />
-            </SortableTape>
-          ))}
-        </ul>
-      </SortableContext>
-      <DragOverlay>
-        {activeTape ? (
-          <TapeRow tape={activeTape} progress={progress[activeTape.id]} selected={false} onSelect={() => {}} />
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+      <ul
+        ref={kb.ref}
+        {...kb.listboxProps}
+        role="listbox"
+        aria-label="Tapes"
+        className="space-y-1.5 p-3 outline-none"
+      >
+        {visible.map((tape, index) => (
+          <SortableTape key={tape.id} id={tape.id} index={index}>
+            <TapeRow
+              tape={tape}
+              progress={progress[tape.id]}
+              selected={tape.id === selectedId}
+              id={kb.optionId(tape.id)}
+              onSelect={() => selectTape(tape.id)}
+            />
+          </SortableTape>
+        ))}
+      </ul>
+    </ListboxDragProvider>
   )
 }
 

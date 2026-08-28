@@ -1,12 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  type DragEndEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core'
-import { arrayMove } from '@dnd-kit/sortable'
+import { useEffect, useRef } from 'react'
+import type { DragEndEvent } from '@dnd-kit/react'
 import {
   LAYOUT_BOUNDS,
   archiveLowerListMin,
@@ -19,20 +12,19 @@ import { useArchiveStore } from '@renderer/store/archive'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
-import { useDragBodyCursor, useTapeDragSensors } from '@renderer/lib/dnd'
-import { settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
+import { ListboxDragProvider, planArchiveDrop } from '@renderer/lib/dnd'
+import { moveArrayItem, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
 import { useToastStore } from '@renderer/store/toast'
 import { errorMessage } from '@shared/error'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
-import { BoxList, UNBOXED_DROP_ID } from './BoxList'
+import { BoxList } from './BoxList'
 import { ArchiveTapeList } from './ArchiveTapeList'
 import { SearchResults } from './SearchResults'
 import { ResizeHandle } from './ResizeHandle'
-import { TapeRow } from './TapeRow'
 
 /**
  * The archived view's left-pane layout and drag handling: boxes on top, the
- * selected box's tapes below. One DndContext covers both lists so a tape can be
+ * selected box's tapes below. One provider covers both lists so a tape can be
  * dragged from the lower list onto a box in the upper one. Drags update the
  * stores optimistically, then persist via boxes:place / boxes:reorder /
  * tapes:reorder (the IPC re-emits the authoritative state).
@@ -44,7 +36,6 @@ export function ArchiveOrganizer() {
   const pendingSearchFocus = useArchiveStore((s) => s.pendingSearchFocus)
   const setPendingSearchFocus = useArchiveStore((s) => s.setPendingSearchFocus)
   const boxesIntent = useLayoutStore((s) => s.layout.archiveBoxesHeight)
-  const progress = useTapesStore((s) => s.progress)
   const tapes = useVisibleTapes()
   const searching = query.trim().length > 0
 
@@ -78,54 +69,19 @@ export function ArchiveOrganizer() {
     },
   )
 
-  // What's being dragged, so a DragOverlay can render a copy that follows the
-  // cursor unclipped — without it, dragging a tape up over the boxes list pulls
-  // it out of its scroll container and it visually vanishes.
-  const [activeDrag, setActiveDrag] = useState<{ type: 'tape' | 'box'; id: string } | null>(null)
-  const draggedTape = activeDrag?.type === 'tape' ? tapes.find((t) => t.id === activeDrag.id) : undefined
-  const draggedBox = activeDrag?.type === 'box' ? boxes.find((b) => b.id === activeDrag.id) : undefined
-
-  const sensors = useTapeDragSensors()
-  const dragCursor = useDragBodyCursor()
-
-  function onDragStart({ active }: DragStartEvent) {
-    dragCursor.start()
-    const type = active.data.current?.type
-    if (type === 'tape' || type === 'box') setActiveDrag({ type, id: String(active.id) })
-  }
-
-  function onDragEnd({ active, over }: DragEndEvent) {
-    if (!over) return
-    const activeType = active.data.current?.type
-    const overType = over.data.current?.type
-    const activeId = String(active.id)
-    const overId = String(over.id)
-
-    if (activeType === 'box') {
-      if (activeId === overId) return
-      reorderBox(activeId, sortedBoxIds().indexOf(overId))
-      return
-    }
-
-    if (activeType === 'tape') {
-      // Dropped onto a box header (or Unboxed) → file it there. Drag uses the 'list'
-      // policy: the tape leaves the current list (optimistically, so it doesn't snap
-      // back then vanish) and selection advances to a neighbor if it was selected.
-      // Dropping on its own box is a no-op (moveTapeToBox guards it).
-      if (overType === 'box' || overId === UNBOXED_DROP_ID) {
-        const boxId = overId === UNBOXED_DROP_ID ? null : overId
-        const moving = tapes.find((t) => t.id === activeId)
-        if (moving) moveTapeToBox(moving, boxId, 'list')
-        return
-      }
-      // Dropped onto another tape → reorder within the current box. Optimistically
-      // reindex the visible list, then persist the whole new sequence.
-      if (overType === 'tape' && activeId !== overId) {
-        const from = tapes.findIndex((t) => t.id === activeId)
-        const to = tapes.findIndex((t) => t.id === overId)
-        if (from < 0 || to < 0) return
-        reorderTape(activeId, to)
-      }
+  function onDragEnd(event: DragEndEvent) {
+    const plan = planArchiveDrop(event)
+    if (!plan) return
+    if (plan.kind === 'reorder-box') {
+      reorderBox(plan.boxId, plan.toIndex)
+    } else if (plan.kind === 'reorder-tape') {
+      reorderTape(plan.tapeId, plan.toIndex)
+    } else {
+      // Moving to a box uses the list policy: the tape leaves this list and
+      // selection advances to its neighbor. The durable operation guards a
+      // release onto the tape's current box as a no-op.
+      const moving = tapes.find((tape) => tape.id === plan.tapeId)
+      if (moving) moveTapeToBox(moving, plan.boxId, 'list')
     }
   }
 
@@ -137,7 +93,7 @@ export function ArchiveOrganizer() {
     const ids = sortedBoxIds()
     const from = ids.indexOf(activeId)
     if (from < 0 || to < 0 || to >= ids.length || from === to) return
-    const next = arrayMove(ids, from, to)
+    const next = moveArrayItem(ids, from, to)
     const orderById = new Map(next.map((id, i) => [id, i]))
     const optimistic = boxes.map((box) => ({ ...box, order: orderById.get(box.id) ?? box.order }))
     useBoxesStore.getState().setBoxes(optimistic)
@@ -157,7 +113,7 @@ export function ArchiveOrganizer() {
   function reorderTape(activeId: string, to: number) {
     const from = tapes.findIndex((tape) => tape.id === activeId)
     if (from < 0 || to < 0 || to >= tapes.length || from === to) return
-    const reordered = arrayMove(tapes, from, to)
+    const reordered = moveArrayItem(tapes, from, to)
     const optimistic = reordered.map((tape, i) => ({ ...tape, order: i }))
     useTapesStore.getState().upsertMany(optimistic)
     settleOptimisticOrder(
@@ -174,13 +130,7 @@ export function ArchiveOrganizer() {
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={onDragStart}
-      onDragEnd={(e) => { onDragEnd(e); setActiveDrag(null); dragCursor.stop() }}
-      onDragCancel={() => { setActiveDrag(null); dragCursor.stop() }}
-    >
+    <ListboxDragProvider onDragEnd={onDragEnd}>
       <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 px-3 py-2">
           <input
@@ -221,15 +171,6 @@ export function ArchiveOrganizer() {
           )}
         </div>
       </div>
-      <DragOverlay>
-        {draggedTape ? (
-          <TapeRow tape={draggedTape} progress={progress[draggedTape.id]} selected={false} onSelect={() => {}} />
-        ) : draggedBox ? (
-          <div className="rounded bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 shadow-lg">
-            {draggedBox.name}
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+    </ListboxDragProvider>
   )
 }
