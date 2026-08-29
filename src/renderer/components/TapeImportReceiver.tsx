@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type DragEvent, type ReactNode } from 'react'
 import { pathForFile } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { useImportMedia } from '@renderer/lib/useImportMedia'
@@ -13,22 +13,15 @@ import { CloseIcon } from './Icon'
 
 export function TapeImportReceiver({ children }: { children: ReactNode }) {
   const [deliveryActive, setDeliveryActive] = useState(false)
-  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const importMedia = useImportMedia()
 
   const clearActive = useCallback(() => {
-    if (resetTimer.current !== null) clearTimeout(resetTimer.current)
-    resetTimer.current = null
     setDeliveryActive(false)
   }, [])
 
   const showDelivery = useCallback(() => {
-    if (resetTimer.current !== null) clearTimeout(resetTimer.current)
     setDeliveryActive(true)
-    // Native drags may end without leave/drop/dragend. This clears pixels only;
-    // the receiver remains authoritative if a later drop arrives here.
-    resetTimer.current = setTimeout(clearActive, 1000)
-  }, [clearActive])
+  }, [])
 
   useEffect(() => {
     window.addEventListener('blur', clearActive)
@@ -36,7 +29,6 @@ export function TapeImportReceiver({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener('blur', clearActive)
       window.removeEventListener('dragend', clearActive)
-      if (resetTimer.current !== null) clearTimeout(resetTimer.current)
     }
   }, [clearActive])
 

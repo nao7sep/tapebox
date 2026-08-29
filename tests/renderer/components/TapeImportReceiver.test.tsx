@@ -55,7 +55,7 @@ function fileEvent(type: 'dragover' | 'drop', files: File[]): Event {
 }
 
 describe('TapeImportReceiver', () => {
-  it('highlights only its collection and independently clears stale presentation', () => {
+  it('highlights only its collection until a terminal event clears presentation', () => {
     const receiver = host.querySelector<HTMLElement>('[data-drop-receiver="tape-collection"]')!
     const over = fileEvent('dragover', [new File(['{}'], 'sample.json')])
     act(() => receiver.dispatchEvent(over))
@@ -65,6 +65,9 @@ describe('TapeImportReceiver', () => {
     expect(document.body.textContent).not.toContain('Drop to check for tape sidecars')
 
     act(() => vi.advanceTimersByTime(1001))
+    expect(receiver.className).toContain('ring-amber-400')
+
+    act(() => receiver.dispatchEvent(new Event('dragleave', { bubbles: true })))
     expect(receiver.className).not.toContain('ring-amber-400')
   })
 
