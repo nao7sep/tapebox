@@ -10,7 +10,7 @@ import {
 import { useSettingsStore } from '@renderer/store/settings'
 import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { Modal } from '@renderer/components/Modal'
-import { Button, Spinner, Toggle } from '@renderer/components/ui'
+import { Button, InlineError, Spinner, Toggle } from '@renderer/components/ui'
 
 /**
  * The management surface for yt-dlp / ffmpeg / Deno (managed-runtime-dependencies-
@@ -175,11 +175,11 @@ export function BinariesModal() {
       </table>
 
       {(error || (checkFailures && checkFailures.length > 0)) && (
-        <p className="mt-5 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+        <InlineError className="mt-5">
           {error ?? `Check incomplete — ${checkFailures!
             .map((failure) => `${failure.name}: ${failure.message}`)
             .join('; ')}`}
-        </p>
+        </InlineError>
       )}
     </Modal>
   )

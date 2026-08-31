@@ -81,3 +81,13 @@ export function PlusIcon({ className }: IconProps) {
     </IconBase>
   )
 }
+
+export function ErrorIcon({ className }: IconProps) {
+  return (
+    <IconBase className={className}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 7.5V13" />
+      <path d="M12 16.5H12.01" />
+    </IconBase>
+  )
+}

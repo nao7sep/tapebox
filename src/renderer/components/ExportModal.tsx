@@ -5,7 +5,7 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { releaseVideo } from '@renderer/lib/video'
 import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
-import { Button, Field, Toggle } from '@renderer/components/ui'
+import { Button, Field, InlineError, Toggle } from '@renderer/components/ui'
 
 type Props = { tape: Tape; videoRef: RefObject<HTMLVideoElement | null>; onClose: () => void }
 
@@ -124,9 +124,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
         />
       </div>
 
-      {error && (
-        <p className="mt-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
-      )}
+      {error && <InlineError className="mt-4">{error}</InlineError>}
     </Modal>
   )
 }

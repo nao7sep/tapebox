@@ -6,7 +6,7 @@ import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import { useToastStore } from '@renderer/store/toast'
 import { Modal } from './Modal'
-import { Button, Spinner } from './ui'
+import { Button, InlineError, Spinner } from './ui'
 import { CheckIcon } from './Icon'
 
 /**
@@ -130,9 +130,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
               : 'Your saved metadata is shown below. It’s almost always fine — check the source only if you have reason to think the page now has better data. Nothing is fetched or changed until you do.'}
           </p>
         )}
-        {error && (
-          <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
-        )}
+        {error && <InlineError>{error}</InlineError>}
         {/* One grid for the header and every row, so the three columns line up. The
             label column is auto-sized (tight to the widest label), making the gap to
             "Current" match the gap between "Current" and "New" rather than dwarfing it. */}

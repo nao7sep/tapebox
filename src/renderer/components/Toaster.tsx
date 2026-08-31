@@ -1,5 +1,5 @@
 import { useToastStore } from '@renderer/store/toast'
-import { CloseIcon } from './Icon'
+import { CloseIcon, ErrorIcon } from './Icon'
 
 /**
  * Floating stack of error toasts, bottom-right above the status bar. Errors
@@ -20,8 +20,14 @@ export function Toaster() {
       {errors.map((t) => (
         <div
           key={t.id}
+          role="alert"
+          aria-atomic="true"
           className="pointer-events-auto flex items-start gap-3 rounded-lg border border-red-800 bg-red-950/95 px-4 py-3 text-sm text-red-200 shadow-lg"
         >
+          <strong className="inline-flex shrink-0 items-center gap-1 font-semibold">
+            <ErrorIcon />
+            Error
+          </strong>
           <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{t.text}</span>
           <button
             onClick={() => dismiss(t.id)}

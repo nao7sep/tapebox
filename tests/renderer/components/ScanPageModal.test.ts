@@ -3,14 +3,11 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScanResult } from '@shared/ipc-contract'
-import { useToastStore } from '@renderer/store/toast'
 
 // The modal's IPC surface is mocked so a scan can be driven to a selectable entry
 // and the bulk-add then made to fail/succeed deterministically. ipcOn listeners
 // are captured per channel in a Set, and off() removes only the specific listener
 // — mirroring ipcRenderer.on so the mock can't paper over a subscribe/cleanup bug.
-// The toast store is the real one (reset per test); the modal reports add failures
-// through it, so the test reads its state rather than the DOM.
 const { ipcInvoke, listeners } = vi.hoisted(() => ({
   ipcInvoke: vi.fn(),
   listeners: new Map<string, Set<(payload: unknown) => void>>(),
@@ -50,7 +47,6 @@ beforeEach(() => {
   // Default: any call without an explicit per-call result resolves, so the
   // unmount-time scan:cancel has a real promise to .catch on.
   ipcInvoke.mockResolvedValue(undefined)
-  useToastStore.setState({ toasts: [] })
 })
 
 afterEach(async () => {
@@ -107,15 +103,8 @@ async function scanOneEntry(): Promise<void> {
   })
 }
 
-function errorToasts(): string[] {
-  return useToastStore
-    .getState()
-    .toasts.filter((t) => t.kind === 'error')
-    .map((t) => t.text)
-}
-
 describe('ScanPageModal bulk add', () => {
-  it('raises an error toast and keeps the modal open when addBulk fails', async () => {
+  it('keeps an inline alert and retry state in the modal when addBulk fails', async () => {
     const onClose = vi.fn()
     await mount(onClose)
     await scanOneEntry()
@@ -127,12 +116,14 @@ describe('ScanPageModal bulk add', () => {
     await flush()
 
     expect(onClose).not.toHaveBeenCalled()
-    expect(errorToasts().join('\n')).toContain('disk on fire')
+    const alert = document.querySelector('[role="dialog"] [role="alert"]')
+    expect(alert?.textContent).toContain('Error')
+    expect(alert?.textContent).toContain('disk on fire')
     // Not stuck on "Adding…": the button is interactive again for a retry.
     expect(buttonByText('Add 1 tape')).toBeTruthy()
   })
 
-  it('closes and raises no error toast when addBulk succeeds', async () => {
+  it('closes without an error result when addBulk succeeds', async () => {
     const onClose = vi.fn()
     await mount(onClose)
     await scanOneEntry()
@@ -144,6 +135,6 @@ describe('ScanPageModal bulk add', () => {
     await flush()
 
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(errorToasts()).toHaveLength(0)
+    expect(document.querySelector('[role="alert"]')).toBeNull()
   })
 })

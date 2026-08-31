@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { Tape } from '@shared/domain'
 import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
-import { Button } from '@renderer/components/ui'
+import { Button, InlineError } from '@renderer/components/ui'
 
 type Props = {
   tape: Tape
@@ -68,9 +68,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
         label="New name"
       />
 
-      {error && (
-        <p className="mt-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
-      )}
+      {error && <InlineError className="mt-4">{error}</InlineError>}
     </Modal>
   )
 }

@@ -2,14 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ScanResult } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
-import { useToastStore } from '@renderer/store/toast'
 import { describeError, errorMessage } from '@shared/error'
 import { formatTime } from '@renderer/lib/format'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { Modal } from '@renderer/components/Modal'
 import { IndeterminateBar } from '@renderer/components/Progress'
-import { Button, INPUT_CLASS } from '@renderer/components/ui'
+import { Button, InlineError, INPUT_CLASS } from '@renderer/components/ui'
 
 type Props = { onClose: () => void; initialUrl?: string }
 
@@ -25,7 +24,6 @@ type Props = { onClose: () => void; initialUrl?: string }
 export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const { url, setUrl, onPaste } = useClipboardUrl(true, initialUrl)
   const { composingRef, handlers: composing } = useComposing()
-  const notify = useToastStore((s) => s.notify)
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [entries, setEntries] = useState<ScanResult[]>([])
@@ -120,15 +118,12 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     const urls = Array.from(selected)
     if (urls.length === 0) return
     setAdding(true)
+    setError(null)
     try {
       await ipcInvoke('downloads:addBulk', { urls })
       onClose()
     } catch (err) {
-      // Route through the app's error toast — the same convention TopBar uses for
-      // a single add. It persists until dismissed and outlives the modal, so a
-      // failed add can't be missed; the modal stays open with the selection intact
-      // for a retry. (The inline `error` slot below is reserved for scan errors.)
-      notify(errorMessage(err), 'error')
+      setError(errorMessage(err))
     } finally {
       setAdding(false)
     }
@@ -186,7 +181,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
               <IndeterminateBar />
             </div>
           )}
-          {error && <p className="mt-1.5 text-xs text-red-300">{error}</p>}
+          {error && <InlineError className="mt-1.5 text-left">{error}</InlineError>}
         </div>
       )}
 
