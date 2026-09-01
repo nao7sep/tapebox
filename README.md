@@ -1,6 +1,6 @@
 # TapeBox
 
-TapeBox is a local media library: download videos with `yt-dlp`, keep them as **tapes**, and watch, rename, and organize them offline. It's a thin wrapper around `yt-dlp` — it does nothing yt-dlp can't, it just keeps each video, its poster, and its metadata together and easy to browse, all under `~/.tapebox` with no account and no cloud. It's deliberately a calm *collection* rather than a feed: no autoplay-next, no repeat. A desktop app for macOS and Windows (also runnable from source on Linux), built on Electron; it downloads and manages `yt-dlp`, `ffmpeg`, and `deno` for you.
+TapeBox is a local media library: download videos with `yt-dlp`, keep them as **tapes**, and watch, rename, and organize them offline. It keeps each video, its poster, and its metadata together and easy to browse under `~/.tapebox` by default, or in a library folder you choose. Core library and playback use need no account or cloud; optional AI-assisted filename suggestions send only the metadata fields you select to an OpenAI-compatible endpoint you configure. It's deliberately a calm *collection* rather than a feed: no autoplay-next, no repeat. A desktop app for macOS and Windows (also runnable from source on Linux), built on Electron; it downloads and manages `yt-dlp`, `ffmpeg`, and `deno` for you.
 
 ## Features
 
