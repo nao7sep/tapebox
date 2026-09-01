@@ -30,7 +30,9 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
   return (
     <Menu
       label="Move to box"
-      contentClassName="absolute bottom-full right-0 z-40 mb-1 max-h-64 w-52 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl"
+      placement="top"
+      maxHeight={256}
+      contentClassName="w-52 rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl"
       trigger={({ ref, ...props }) => (
         <button
           {...props}

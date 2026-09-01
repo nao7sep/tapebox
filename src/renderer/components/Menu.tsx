@@ -2,11 +2,13 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { nextIndex } from '@renderer/lib/nextIndex'
 
 /**
@@ -33,14 +35,34 @@ type Props = {
   trigger: (props: TriggerProps) => ReactNode
   children: ReactNode
   align?: 'left' | 'right'
-  /** Overrides the default popup container classes. */
+  placement?: 'top' | 'bottom'
+  maxHeight?: number
+  /** Overrides the default popup surface classes. Positioning stays with Menu. */
   contentClassName?: string
 }
 
 const MenuContext = createContext<{ close: () => void } | null>(null)
 
-export function Menu({ label, trigger, children, align = 'right', contentClassName }: Props) {
+const VIEWPORT_PADDING = 8
+const TRIGGER_GAP = 4
+
+type PopupPosition = {
+  left: number
+  top: number
+  maxHeight: number
+}
+
+export function Menu({
+  label,
+  trigger,
+  children,
+  align = 'right',
+  placement = 'bottom',
+  maxHeight,
+  contentClassName,
+}: Props) {
   const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<PopupPosition | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
 
@@ -51,8 +73,70 @@ export function Menu({ label, trigger, children, align = 'right', contentClassNa
 
   const close = (focusTrigger = true) => {
     setOpen(false)
+    setPosition(null)
     if (focusTrigger) triggerRef.current?.focus()
   }
+
+  // The popup is portalled to the viewport so no pane scroller can clip it.
+  // Position after the surface is rendered, then keep it attached to its trigger
+  // while a window resize or ancestor scroll changes the available space.
+  useLayoutEffect(() => {
+    if (!open) return
+
+    const updatePosition = () => {
+      const triggerEl = triggerRef.current
+      const contentEl = contentRef.current
+      if (!triggerEl || !contentEl) return
+
+      const triggerRect = triggerEl.getBoundingClientRect()
+      const contentRect = contentEl.getBoundingClientRect()
+      const desiredHeight = Math.min(
+        contentEl.scrollHeight || contentRect.height,
+        maxHeight ?? Number.POSITIVE_INFINITY,
+      )
+      const above = Math.max(0, triggerRect.top - TRIGGER_GAP - VIEWPORT_PADDING)
+      const below = Math.max(
+        0,
+        window.innerHeight - triggerRect.bottom - TRIGGER_GAP - VIEWPORT_PADDING,
+      )
+      const preferredSpace = placement === 'top' ? above : below
+      const oppositeSpace = placement === 'top' ? below : above
+      const actualPlacement =
+        desiredHeight > preferredSpace && oppositeSpace > preferredSpace
+          ? placement === 'top'
+            ? 'bottom'
+            : 'top'
+          : placement
+      const availableHeight = actualPlacement === 'top' ? above : below
+      const renderedHeight = Math.min(desiredHeight, availableHeight)
+      const unclampedLeft =
+        align === 'right' ? triggerRect.right - contentRect.width : triggerRect.left
+      const maxLeft = Math.max(
+        VIEWPORT_PADDING,
+        window.innerWidth - contentRect.width - VIEWPORT_PADDING,
+      )
+      const left = Math.min(Math.max(unclampedLeft, VIEWPORT_PADDING), maxLeft)
+      const top =
+        actualPlacement === 'top'
+          ? triggerRect.top - TRIGGER_GAP - renderedHeight
+          : triggerRect.bottom + TRIGGER_GAP
+
+      setPosition({ left, top, maxHeight: availableHeight })
+    }
+
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    document.addEventListener('scroll', updatePosition, true)
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition)
+    if (triggerRef.current) observer?.observe(triggerRef.current)
+    if (contentRef.current) observer?.observe(contentRef.current)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      document.removeEventListener('scroll', updatePosition, true)
+      observer?.disconnect()
+    }
+  }, [align, maxHeight, open, placement])
 
   // On open, move focus into the menu (first item). On a re-render while open
   // (the item set changed), leave focus where it is.
@@ -69,6 +153,7 @@ export function Menu({ label, trigger, children, align = 'right', contentClassNa
       const t = e.target as Node
       if (contentRef.current?.contains(t) || triggerRef.current?.contains(t)) return
       setOpen(false)
+      setPosition(null)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
@@ -108,9 +193,12 @@ export function Menu({ label, trigger, children, align = 'right', contentClassNa
         },
         'aria-haspopup': 'menu',
         'aria-expanded': open,
-        onClick: () => setOpen((v) => !v),
+        onClick: () => {
+          setPosition(null)
+          setOpen((v) => !v)
+        },
       })}
-      {open && (
+      {open && createPortal(
         <div
           ref={contentRef}
           role="menu"
@@ -118,13 +206,24 @@ export function Menu({ label, trigger, children, align = 'right', contentClassNa
           onKeyDown={onKeyDown}
           className={
             contentClassName ??
-            `absolute z-40 mt-1 w-48 overflow-hidden rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl ${
-              align === 'right' ? 'right-0' : 'left-0'
-            }`
+            'w-48 rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl'
           }
+          style={{
+            position: 'fixed',
+            zIndex: 40,
+            left: position?.left ?? 0,
+            top: position?.top ?? 0,
+            maxHeight: position
+              ? Math.min(position.maxHeight, maxHeight ?? Number.POSITIVE_INFINITY)
+              : maxHeight,
+            maxWidth: `calc(100vw - ${VIEWPORT_PADDING * 2}px)`,
+            overflowY: 'auto',
+            visibility: position ? 'visible' : 'hidden',
+          }}
         >
           <MenuContext.Provider value={{ close }}>{children}</MenuContext.Provider>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

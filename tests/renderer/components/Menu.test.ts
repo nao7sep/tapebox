@@ -81,6 +81,58 @@ describe('Menu', () => {
     expect(items().every((i) => i.getAttribute('tabindex') === '-1')).toBe(true)
   })
 
+  it('portals and clamps an upward right-aligned menu outside its clipping ancestor', async () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    const originalInnerWidth = window.innerWidth
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 640 })
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this.matches('[data-testid="trigger"]')) {
+        return DOMRect.fromRect({ x: 17, y: 580, width: 95, height: 28 })
+      }
+      if (this.matches('[role="menu"]')) {
+        return DOMRect.fromRect({ width: 208, height: 120 })
+      }
+      return originalRect.call(this)
+    }
+
+    try {
+      container = document.createElement('div')
+      container.style.overflow = 'hidden'
+      document.body.append(container)
+      root = createRoot(container)
+      await act(async () => {
+        root!.render(
+          React.createElement(Menu, {
+            label: 'Move to box',
+            placement: 'top',
+            align: 'right',
+            trigger: (props: Record<string, unknown>) =>
+              React.createElement('button', { ...props, 'data-testid': 'trigger' }, 'Move to box'),
+            children: React.createElement(MenuItem, { onSelect: vi.fn(), children: 'Unboxed' }),
+          }),
+        )
+      })
+      await click(trigger())
+
+      const popup = menu()!
+      const left = Number.parseFloat(popup.style.left)
+      const top = Number.parseFloat(popup.style.top)
+      expect(popup.parentElement).toBe(document.body)
+      expect(popup.style.position).toBe('fixed')
+      expect(left).toBe(8)
+      expect(left + 208).toBeLessThanOrEqual(window.innerWidth - 8)
+      expect(top).toBe(456)
+      expect(top).toBeGreaterThanOrEqual(8)
+      expect(popup.style.visibility).toBe('visible')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight })
+    }
+  })
+
   it('moves focus with Down/Up (stopping at the ends) and Home/End', async () => {
     await mountMenu({ a: vi.fn(), b: vi.fn(), c: vi.fn() })
     await click(trigger())
@@ -105,6 +157,26 @@ describe('Menu', () => {
     await key(items()[0], 'Escape')
     expect(menu()).toBeNull()
     expect(document.activeElement).toBe(trigger())
+  })
+
+  it('keeps portalled menu interactions inside and closes on an outside click', async () => {
+    await mountMenu({ a: vi.fn(), b: vi.fn(), c: vi.fn() })
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    await click(trigger())
+
+    await act(async () => {
+      items()[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    expect(menu()).not.toBeNull()
+
+    outside.focus()
+    await act(async () => {
+      outside.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    expect(menu()).toBeNull()
+    expect(document.activeElement).toBe(outside)
+    outside.remove()
   })
 
   it('activating an item runs its action and closes the menu', async () => {
