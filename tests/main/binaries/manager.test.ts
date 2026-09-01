@@ -77,8 +77,10 @@ import {
   checkForUpdates,
   downloadTempPath,
   installOrUpdate,
+  shutdownInstalls,
 } from '@main/binaries/manager'
 import { binarySpecs } from '@main/binaries/registry'
+import { mutateDependencies } from '@main/store/dependencies'
 import { freshBinaryEntry } from '@shared/dependencies'
 import { UnsafeUrlError } from '@main/io/network'
 
@@ -184,7 +186,12 @@ describe('install download cleanup', () => {
       throw new UnsafeUrlError('refusing downgraded response')
     })
 
-    await expect(installOrUpdate('yt-dlp')).rejects.toThrow('refusing downgraded response')
+    await expect(installOrUpdate('yt-dlp', 'op-download-failure')).resolves.toMatchObject({
+      outcome: 'failed',
+      operationId: 'op-download-failure',
+      error: 'refusing downgraded response',
+      status: { name: 'yt-dlp', present: false },
+    })
     expect(await readdir(join(testRoot, 'temp'))).toEqual([])
   })
 
@@ -194,9 +201,36 @@ describe('install download cleanup', () => {
       new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
     )
 
-    await expect(installOrUpdate('yt-dlp')).rejects.toMatchObject({ name: 'TimeoutError' })
+    await expect(installOrUpdate('yt-dlp', 'op-timeout')).resolves.toMatchObject({
+      outcome: 'failed',
+      operationId: 'op-timeout',
+      error: 'The operation was aborted due to timeout',
+    })
   })
 
+})
+
+describe('install terminal facts', () => {
+  it('returns refreshed present-but-unreadable facts when persistence fails after publication', async () => {
+    seed()
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue(resolved('2026.08.21'))
+    downloadWithProgress.mockImplementation(async ({ destPath }: { destPath: string }) => {
+      await writeFile(destPath, 'verified binary bytes')
+    })
+    verifyBinaryIntegrity.mockResolvedValue({ verified: true, method: 'sha256' })
+    execCapture.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
+    assertArm64Slice.mockResolvedValue(undefined)
+    vi.mocked(mutateDependencies).mockRejectedValueOnce(new Error('facts save failed'))
+
+    await expect(installOrUpdate('yt-dlp', 'op-post-publish-failure')).resolves.toMatchObject({
+      outcome: 'failed',
+      operationId: 'op-post-publish-failure',
+      error: 'facts save failed',
+      status: { name: 'yt-dlp', present: true, installedVersion: null },
+    })
+    expect(await readdir(join(testRoot, 'bin'))).toEqual(['yt-dlp.exe'])
+  })
 })
 
 describe('install final-preparation cancellation', () => {
@@ -210,8 +244,11 @@ describe('install final-preparation cancellation', () => {
     verifyBinaryIntegrity.mockResolvedValue({ verified: true, method: 'sha256' })
   }
 
-  async function expectNoPublishedArtifact(install: ReturnType<typeof installOrUpdate>): Promise<void> {
-    await expect(install).resolves.toEqual({ outcome: 'cancelled' })
+  async function expectNoPublishedArtifact(
+    install: ReturnType<typeof installOrUpdate>,
+    operationId: string,
+  ): Promise<void> {
+    await expect(install).resolves.toMatchObject({ outcome: 'cancelled', operationId })
     expect(await readdir(join(testRoot, 'bin'))).toEqual([])
     expect(await readdir(join(testRoot, 'temp'))).toEqual([])
   }
@@ -223,7 +260,8 @@ describe('install final-preparation cancellation', () => {
         rejectWhenAborted(opts.signal),
     )
 
-    const install = installOrUpdate('yt-dlp')
+    const operationId = 'op-xattr'
+    const install = installOrUpdate('yt-dlp', operationId)
     await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce(), { timeout: 10_000 })
     expect(execCapture).toHaveBeenCalledWith(
       'xattr',
@@ -231,8 +269,8 @@ describe('install final-preparation cancellation', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal), idleTimeoutMs: 5_000 }),
     )
 
-    cancelInstall('yt-dlp')
-    await expectNoPublishedArtifact(install)
+    cancelInstall('yt-dlp', operationId)
+    await expectNoPublishedArtifact(install, operationId)
     expect(assertArm64Slice).not.toHaveBeenCalled()
   })
 
@@ -243,12 +281,13 @@ describe('install final-preparation cancellation', () => {
       rejectWhenAborted(signal),
     )
 
-    const install = installOrUpdate('yt-dlp')
+    const operationId = 'op-arch'
+    const install = installOrUpdate('yt-dlp', operationId)
     await vi.waitFor(() => expect(assertArm64Slice).toHaveBeenCalledOnce(), { timeout: 10_000 })
     expect(assertArm64Slice).toHaveBeenCalledWith(expect.any(String), expect.any(AbortSignal))
 
-    cancelInstall('yt-dlp')
-    await expectNoPublishedArtifact(install)
+    cancelInstall('yt-dlp', operationId)
+    await expectNoPublishedArtifact(install, operationId)
   })
 
   it('passes cancellation into zip extraction and removes both partial and stage', async () => {
@@ -266,7 +305,8 @@ describe('install final-preparation cancellation', () => {
         rejectWhenAborted(signal),
     )
 
-    const install = installOrUpdate('yt-dlp')
+    const operationId = 'op-zip'
+    const install = installOrUpdate('yt-dlp', operationId)
     await vi.waitFor(() => expect(extractFileFromZip).toHaveBeenCalledOnce(), { timeout: 10_000 })
     expect(extractFileFromZip).toHaveBeenCalledWith(
       expect.any(String),
@@ -276,7 +316,23 @@ describe('install final-preparation cancellation', () => {
       expect.any(AbortSignal),
     )
 
-    expect(cancelInstall('yt-dlp')).toEqual({ outcome: 'cancel-requested' })
-    await expectNoPublishedArtifact(install)
+    expect(cancelInstall('yt-dlp', 'older-op')).toEqual({ outcome: 'not-running' })
+    expect(cancelInstall('yt-dlp', operationId)).toEqual({ outcome: 'cancel-requested' })
+    await expectNoPublishedArtifact(install, operationId)
+  })
+
+  it('cancels and joins active acquisition cleanup during application shutdown', async () => {
+    arrangeInstall()
+    execCapture.mockImplementation(
+      (_command: string, _args: readonly string[], opts: { signal: AbortSignal }) =>
+        rejectWhenAborted(opts.signal),
+    )
+    const operationId = 'op-shutdown'
+    const install = installOrUpdate('yt-dlp', operationId)
+    await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce(), { timeout: 10_000 })
+
+    await shutdownInstalls()
+    await expectNoPublishedArtifact(install, operationId)
+    expect(cancelInstall('yt-dlp', operationId)).toEqual({ outcome: 'not-running' })
   })
 })

@@ -105,12 +105,12 @@ function NoticeZone() {
 function ToolsZone() {
   const statuses = useBinariesStore((s) => s.statuses)
   const checking = useBinariesStore((s) => s.checking)
-  const progress = useBinariesStore((s) => s.progress)
+  const active = useBinariesStore((s) => s.active)
   const openModal = useBinariesStore((s) => s.openModal)
 
   if (statuses.length === 0) return <Busy>Loading…</Busy>
   if (checking) return <Busy>Checking for updates…</Busy>
-  if (Object.keys(progress).length > 0) return <Busy>Working on tools…</Busy>
+  if (Object.keys(active).length > 0) return <Busy>Working on tools…</Busy>
 
   const { role, text, actionable } = summarizeBinaries(statuses)
   if (role === 'none') return <Plain>{text}</Plain>

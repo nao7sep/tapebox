@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BinaryStatus } from '@shared/ipc-contract'
+
+const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
+vi.mock('@renderer/ipc/client', () => ({ ipcInvoke }))
+
 import {
   requiredBinariesUsable,
-  applyBinaryCheckResult,
   binariesNeedAttention,
   derivedOf,
   summarizeBinaries,
@@ -28,6 +31,29 @@ const unchecked = status({ latestKnownVersion: null, lastCheckedAtUtc: null })
 // Present, and a check DID succeed — but the binary would not report its own
 // version, so there is nothing to compare it against.
 const unreadable = status({ installedVersion: null, latestKnownVersion: '2.0.0' })
+
+beforeEach(() => {
+  ipcInvoke.mockReset()
+  useBinariesStore.setState({
+    statuses: [],
+    progress: {},
+    active: {},
+    errors: {},
+    terminalOutcomes: {},
+    statusRevisions: {},
+    modalOpen: false,
+    checking: false,
+    checkCancelling: false,
+    checkError: null,
+    checkFailures: null,
+  })
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
 
 describe('derivedOf', () => {
   it('maps a wire status to its derived four-state via the shared rule', () => {
@@ -123,13 +149,174 @@ describe('requiredBinariesUsable', () => {
   })
 })
 
-describe('applyBinaryCheckResult', () => {
-  it('retains partial launch/manual failures beside the returned statuses', () => {
-    const statuses = [status()]
-    const failures = [{ name: 'ffmpeg' as const, message: 'offline' }]
+describe('application-owned acquisition lifecycle', () => {
+  it('applies authoritative readiness before making the row idle', async () => {
+    useBinariesStore.setState({ statuses: [absent] })
+    ipcInvoke.mockImplementationOnce((_channel, request: { operationId: string }) =>
+      Promise.resolve({
+        outcome: 'installed',
+        operationId: request.operationId,
+        status: status(),
+      }),
+    )
 
-    applyBinaryCheckResult({ outcome: 'completed', statuses, failures })
+    await useBinariesStore.getState().install('yt-dlp')
 
-    expect(useBinariesStore.getState()).toMatchObject({ statuses, checkFailures: failures })
+    const state = useBinariesStore.getState()
+    expect(state.active['yt-dlp']).toBeUndefined()
+    expect(state.statuses[0]).toEqual(status())
+    expect(derivedOf(state.statuses[0]!).state).toBe('up-to-date')
+  })
+
+  it('retains a failed terminal result and refreshed partial facts across modal replacement', async () => {
+    useBinariesStore.setState({ statuses: [absent], modalOpen: true })
+    const terminal = deferred<{
+      outcome: 'failed'
+      operationId: string
+      status: BinaryStatus
+      error: string
+    }>()
+    ipcInvoke.mockImplementationOnce((_channel, request: { operationId: string }) => {
+      terminal.promise.then((result) => expect(result.operationId).toBe(request.operationId))
+      return terminal.promise
+    })
+
+    const install = useBinariesStore.getState().install('yt-dlp')
+    const operationId = useBinariesStore.getState().active['yt-dlp']!.operationId
+    useBinariesStore.getState().closeModal()
+    terminal.resolve({
+      outcome: 'failed',
+      operationId,
+      status: status({ installedVersion: null, latestKnownVersion: '2.0.0' }),
+      error: 'sidecar write failed',
+    })
+    await install
+    useBinariesStore.getState().openModal()
+
+    expect(useBinariesStore.getState()).toMatchObject({
+      modalOpen: true,
+      active: {},
+      errors: { 'yt-dlp': 'sidecar write failed' },
+    })
+    expect(useBinariesStore.getState().statuses[0]).toMatchObject({
+      present: true,
+      installedVersion: null,
+    })
+  })
+
+  it('ignores progress from a different or already-settled attempt', async () => {
+    useBinariesStore.setState({ statuses: [absent] })
+    const terminal = deferred<{
+      outcome: 'cancelled'
+      operationId: string
+      status: BinaryStatus
+    }>()
+    ipcInvoke.mockReturnValueOnce(terminal.promise)
+
+    const install = useBinariesStore.getState().install('yt-dlp')
+    const operationId = useBinariesStore.getState().active['yt-dlp']!.operationId
+    useBinariesStore.getState().setProgress('yt-dlp', 'older-attempt', 90, 'install')
+    expect(useBinariesStore.getState().progress['yt-dlp']).toBeUndefined()
+
+    useBinariesStore.getState().setProgress('yt-dlp', operationId, 25, 'download')
+    expect(useBinariesStore.getState().progress['yt-dlp']).toEqual({ percent: 25, phase: 'download' })
+    terminal.resolve({ outcome: 'cancelled', operationId, status: absent })
+    await install
+    useBinariesStore.getState().setProgress('yt-dlp', operationId, 100, 'install')
+    expect(useBinariesStore.getState().progress['yt-dlp']).toBeUndefined()
+    expect(useBinariesStore.getState().terminalOutcomes['yt-dlp']).toBe('cancelled')
+  })
+
+  it('retains cancellation across modal replacement until retry supersedes it', async () => {
+    useBinariesStore.setState({ statuses: [absent], modalOpen: true })
+    ipcInvoke.mockImplementationOnce((_channel, request: { operationId: string }) =>
+      Promise.resolve({ outcome: 'cancelled', operationId: request.operationId, status: absent }),
+    )
+
+    await useBinariesStore.getState().install('yt-dlp')
+    useBinariesStore.getState().closeModal()
+    useBinariesStore.getState().openModal()
+
+    expect(useBinariesStore.getState().terminalOutcomes['yt-dlp']).toBe('cancelled')
+
+    const retry = deferred<{
+      outcome: 'installed'
+      operationId: string
+      status: BinaryStatus
+    }>()
+    ipcInvoke.mockReturnValueOnce(retry.promise)
+    const installing = useBinariesStore.getState().install('yt-dlp')
+    expect(useBinariesStore.getState().terminalOutcomes['yt-dlp']).toBeUndefined()
+    const operationId = useBinariesStore.getState().active['yt-dlp']!.operationId
+    retry.resolve({ outcome: 'installed', operationId, status: status() })
+    await installing
+  })
+
+  it('keeps independent rows active and settles them in either order', async () => {
+    const ffmpegAbsent = status({ name: 'ffmpeg', present: false, installedVersion: null })
+    useBinariesStore.setState({ statuses: [absent, ffmpegAbsent] })
+    const terminals = new Map<string, ReturnType<typeof deferred>>()
+    ipcInvoke.mockImplementation((_channel, request: { name: string; operationId: string }) => {
+      const terminal = deferred()
+      terminals.set(request.name, terminal)
+      return terminal.promise
+    })
+
+    const ytInstall = useBinariesStore.getState().install('yt-dlp')
+    const ffmpegInstall = useBinariesStore.getState().install('ffmpeg')
+    const ytOperationId = useBinariesStore.getState().active['yt-dlp']!.operationId
+    const ffmpegOperationId = useBinariesStore.getState().active.ffmpeg!.operationId
+    terminals.get('ffmpeg')!.resolve({
+      outcome: 'installed',
+      operationId: ffmpegOperationId,
+      status: status({ name: 'ffmpeg' }),
+    })
+    await ffmpegInstall
+    expect(useBinariesStore.getState().active['yt-dlp']).toBeDefined()
+    terminals.get('yt-dlp')!.resolve({
+      outcome: 'installed',
+      operationId: ytOperationId,
+      status: status(),
+    })
+    await ytInstall
+
+    expect(useBinariesStore.getState().active).toEqual({})
+    expect(useBinariesStore.getState().statuses.every((entry) => entry.present)).toBe(true)
+  })
+
+  it('does not let a concurrent check snapshot overwrite a newer install result', async () => {
+    useBinariesStore.setState({ statuses: [absent] })
+    const check = deferred<{
+      outcome: 'completed'
+      statuses: BinaryStatus[]
+      failures: []
+    }>()
+    ipcInvoke.mockImplementation((channel, request: { operationId?: string } | undefined) => {
+      if (channel === 'binaries:checkUpdates') return check.promise
+      return Promise.resolve({
+        outcome: 'installed',
+        operationId: request!.operationId,
+        status: status(),
+      })
+    })
+
+    const checking = useBinariesStore.getState().checkUpdates()
+    await useBinariesStore.getState().install('yt-dlp')
+    check.resolve({
+      outcome: 'completed',
+      statuses: [status({
+        present: false,
+        installedVersion: null,
+        latestKnownVersion: '2.0.0',
+        lastCheckedAtUtc: '2026-09-01T00:00:00.000Z',
+      })],
+      failures: [],
+    })
+    await checking
+
+    expect(useBinariesStore.getState().statuses[0]).toEqual(status({
+      latestKnownVersion: '2.0.0',
+      lastCheckedAtUtc: '2026-09-01T00:00:00.000Z',
+    }))
   })
 })

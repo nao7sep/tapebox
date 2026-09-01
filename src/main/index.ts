@@ -10,6 +10,7 @@ import { loadDependencies } from './store/dependencies.js'
 import { loadSession, persistNow, persistNowSync } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
+import { shutdownBinaryOperations } from './ipc/binaries.js'
 import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
@@ -135,6 +136,7 @@ function shutdown(reason: string): Promise<void> {
     // The renderer can't report a final pause once we're tearing down, so drop any
     // held playback wake lock up front.
     releaseWakeLock()
+    await shutdownBinaryOperations()
     try {
       await persistNow()
     } catch {

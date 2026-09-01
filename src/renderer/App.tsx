@@ -9,7 +9,6 @@ import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
 import {
-  applyBinaryCheckResult,
   useBinariesStore,
   binariesNeedAttention,
 } from '@renderer/store/binaries'
@@ -139,16 +138,10 @@ export default function App() {
         // times from a status snapshot rather than from settings.
         const statuses = await ipcInvoke('binaries:status')
         if (!lastCheckedStale(statuses)) return
-        // Best-effort background check the user didn't trigger: main logs the
-        // authoritative per-binary + summary outcome, so here we only note at debug
-        // that the call rejected — never an error toast that interrupts them.
-        const store = useBinariesStore.getState()
-        store.setCheckFailures(null)
-        store.setChecking(true)
-        void ipcInvoke('binaries:checkUpdates')
-          .then(applyBinaryCheckResult)
-          .catch((err) => log.debug('background binary check rejected', { error: describeError(err) }))
-          .finally(() => useBinariesStore.getState().setChecking(false))
+        // Best-effort background check the user didn't trigger. The application
+        // store owns the complete check lifecycle; a failure remains available in
+        // Managed tools without interrupting launch with a toast.
+        void useBinariesStore.getState().checkUpdates()
       })
       .catch((err) => log.debug('settings hydrate failed', { error: describeError(err) }))
     return stop

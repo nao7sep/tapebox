@@ -33,8 +33,14 @@ beforeEach(() => {
   useBinariesStore.setState({
     statuses: [status()],
     progress: {},
+    active: {},
+    errors: {},
+    terminalOutcomes: {},
+    statusRevisions: {},
     modalOpen: true,
     checking: false,
+    checkCancelling: false,
+    checkError: null,
     checkFailures: null,
   })
 })
@@ -61,6 +67,28 @@ function button(text: string): HTMLButtonElement {
 }
 
 describe('BinariesModal check and acquisition outcomes', () => {
+  it('immediately replaces Install from the authoritative terminal row', async () => {
+    ipcInvoke.mockImplementationOnce((_channel, request: { operationId: string }) =>
+      Promise.resolve({
+        outcome: 'installed',
+        operationId: request.operationId,
+        status: status({
+          present: true,
+          installedVersion: '2026.09.01',
+          latestKnownVersion: '2026.09.01',
+        }),
+      }),
+    )
+    await mount()
+
+    await act(async () => button('Install').click())
+
+    expect(document.body.textContent).toContain('2026.09.01')
+    expect(Array.from(document.querySelectorAll('button')).some(
+      (candidate) => candidate.textContent?.trim() === 'Install',
+    )).toBe(false)
+  })
+
   it('shows failures retained from the launch check', async () => {
     useBinariesStore.setState({
       checkFailures: [{ name: 'ffmpeg', message: 'release host offline' }],
@@ -80,6 +108,14 @@ describe('BinariesModal check and acquisition outcomes', () => {
     await act(async () => button('Install').click())
 
     expect(document.body.textContent).toContain('The operation was aborted due to timeout')
+  })
+
+  it('shows a retained cancellation beside the next valid action', async () => {
+    useBinariesStore.setState({ terminalOutcomes: { 'yt-dlp': 'cancelled' } })
+    await mount()
+
+    expect(document.body.textContent).toContain('Cancelled')
+    expect(button('Install').disabled).toBe(false)
   })
 
   it('lets the user cancel an in-progress update check', async () => {

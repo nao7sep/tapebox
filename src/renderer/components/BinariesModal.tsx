@@ -3,7 +3,6 @@ import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
 import type { DependencyState, DerivedStatus } from '@shared/binary-status'
 import { ipcInvoke } from '@renderer/ipc/client'
 import {
-  applyBinaryCheckResult,
   useBinariesStore,
   derivedOf,
 } from '@renderer/store/binaries'
@@ -29,88 +28,39 @@ import { Button, InlineError, Spinner, Toggle } from '@renderer/components/ui'
 export function BinariesModal() {
   const statuses = useBinariesStore((s) => s.statuses)
   const progress = useBinariesStore((s) => s.progress)
+  const active = useBinariesStore((s) => s.active)
+  const errors = useBinariesStore((s) => s.errors)
+  const terminalOutcomes = useBinariesStore((s) => s.terminalOutcomes)
   const checking = useBinariesStore((s) => s.checking)
+  const checkCancelling = useBinariesStore((s) => s.checkCancelling)
+  const checkError = useBinariesStore((s) => s.checkError)
   const checkFailures = useBinariesStore((s) => s.checkFailures)
-  const clearProgress = useBinariesStore((s) => s.clearProgress)
-  const setChecking = useBinariesStore((s) => s.setChecking)
-  const setCheckFailures = useBinariesStore((s) => s.setCheckFailures)
+  const install = useBinariesStore((s) => s.install)
+  const cancelInstall = useBinariesStore((s) => s.cancelInstall)
+  const checkUpdates = useBinariesStore((s) => s.checkUpdates)
+  const cancelCheck = useBinariesStore((s) => s.cancelCheck)
   const closeModal = useBinariesStore((s) => s.closeModal)
   const settings = useSettingsStore((s) => s.settings)
-  const [error, setError] = useState<string | null>(null)
-  const [launching, setLaunching] = useState<BinaryName[]>([])
-  const [cancelling, setCancelling] = useState<BinaryName[]>([])
+  const [settingsError, setSettingsError] = useState<string | null>(null)
 
   const checkUpdatesAtLaunch = settings?.checkUpdatesAtLaunch ?? true
 
   // Persist the one gate: whether to check for tool updates at launch. Nothing
   // auto-downloads — every install/update is the per-row action below.
   async function saveGate(check: boolean) {
-    setError(null)
+    setSettingsError(null)
     try {
       const next = await ipcInvoke('settings:update', { checkUpdatesAtLaunch: check })
       useSettingsStore.getState().setSettings(next)
     } catch (err) {
-      setError(String(err))
+      setSettingsError(String(err))
     }
   }
 
-  // A binary is busy from the moment we launch an operation until it resolves (it
-  // reports live progress in between). Other binaries stay free to act.
-  const isWorking = (name: BinaryName) => launching.includes(name) || progress[name] !== undefined
-
-  // Install / Update are the same acquire operation (download + verify + publish);
-  // the state it starts from differs, the action is the same.
-  async function install(name: BinaryName) {
-    if (isWorking(name)) return
-    setError(null)
-    setLaunching((prev) => [...prev, name])
-    try {
-      await ipcInvoke('binaries:update', { name })
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      clearProgress(name)
-      setLaunching((prev) => prev.filter((n) => n !== name))
-      setCancelling((prev) => prev.filter((n) => n !== name))
-    }
-  }
-
-  async function cancel(name: BinaryName) {
-    if (cancelling.includes(name)) return
-    setCancelling((prev) => [...prev, name])
-    try {
-      const result = await ipcInvoke('binaries:cancelUpdate', { name })
-      if (result.outcome === 'not-running') {
-        setCancelling((prev) => prev.filter((n) => n !== name))
-      }
-    } catch (err) {
-      setCancelling((prev) => prev.filter((n) => n !== name))
-      setError(String(err))
-    }
-  }
-
-  async function refresh() {
-    if (checking) return
-    setError(null)
-    setCheckFailures(null)
-    setChecking(true)
-    try {
-      const result = await ipcInvoke('binaries:checkUpdates')
-      applyBinaryCheckResult(result)
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setChecking(false)
-    }
-  }
-
-  async function cancelCheck() {
-    try {
-      await ipcInvoke('binaries:cancelCheck')
-    } catch (err) {
-      setError(String(err))
-    }
-  }
+  const acquisitionError = Object.entries(errors)
+    .map(([name, error]) => `${name}: ${error}`)
+    .join('; ')
+  const visibleError = (settingsError ?? checkError ?? acquisitionError) || null
 
   return (
     <Modal
@@ -141,9 +91,11 @@ export function BinariesModal() {
       <div className="mt-5 flex items-center justify-between text-xs text-zinc-300">
         <span>{lastCheckedHint(statuses, checking, checkFailures?.map((failure) => failure.name) ?? null)}</span>
         {checking ? (
-          <Button variant="ghost" size="sm" onClick={() => void cancelCheck()}>Cancel check</Button>
+          <Button variant="ghost" size="sm" disabled={checkCancelling} onClick={() => void cancelCheck()}>
+            {checkCancelling ? 'Cancelling…' : 'Cancel check'}
+          </Button>
         ) : (
-          <Button variant="secondary" size="sm" onClick={() => void refresh()}>Check for updates</Button>
+          <Button variant="secondary" size="sm" onClick={() => void checkUpdates()}>Check for updates</Button>
         )}
       </div>
 
@@ -164,19 +116,20 @@ export function BinariesModal() {
               key={s.name}
               status={s}
               progress={progress[s.name]}
-              pending={launching.includes(s.name)}
-              cancelling={cancelling.includes(s.name)}
+              pending={active[s.name] !== undefined}
+              cancelling={active[s.name]?.cancelling === true}
+              terminalOutcome={terminalOutcomes[s.name]}
               checking={checking}
               onInstall={() => void install(s.name)}
-              onCancel={() => void cancel(s.name)}
+              onCancel={() => void cancelInstall(s.name)}
             />
           ))}
         </tbody>
       </table>
 
-      {(error || (checkFailures && checkFailures.length > 0)) && (
+      {(visibleError || (checkFailures && checkFailures.length > 0)) && (
         <InlineError className="mt-5">
-          {error ?? `Check incomplete — ${checkFailures!
+          {visibleError ?? `Check incomplete — ${checkFailures!
             .map((failure) => `${failure.name}: ${failure.message}`)
             .join('; ')}`}
         </InlineError>
@@ -190,6 +143,7 @@ function BinaryRow({
   progress,
   pending,
   cancelling,
+  terminalOutcome,
   checking,
   onInstall,
   onCancel,
@@ -198,6 +152,7 @@ function BinaryRow({
   progress: { percent: number; phase: string } | undefined
   pending: boolean
   cancelling: boolean
+  terminalOutcome: 'cancelled' | undefined
   checking: boolean
   onInstall: () => void
   onCancel: () => void
@@ -226,9 +181,14 @@ function BinaryRow({
             </Button>
           </span>
         ) : label ? (
-          <Button variant="warm" size="sm" onClick={onInstall}>
-            {label}
-          </Button>
+          <span className="inline-flex items-center gap-2">
+            {terminalOutcome === 'cancelled' && (
+              <span className="text-xs text-zinc-300">Cancelled</span>
+            )}
+            <Button variant="warm" size="sm" onClick={onInstall}>
+              {label}
+            </Button>
+          </span>
         ) : null}
       </td>
     </tr>

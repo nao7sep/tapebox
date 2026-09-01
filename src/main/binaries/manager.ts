@@ -64,8 +64,18 @@ import { assertArm64Slice } from './arch'
  * cached read so the next status sees the binary it just published.
  */
 
-const inFlight = new Map<BinaryName, AbortController>()
+type ActiveInstall = {
+  operationId: string
+  controller: AbortController
+  settled: Promise<void>
+  settle: () => void
+}
+
+const inFlight = new Map<BinaryName, ActiveInstall>()
+let shuttingDown = false
 const FINAL_PREP_TIMEOUT_MS = 5_000
+
+class BinaryOperationUnavailableError extends Error {}
 
 /**
  * Serialize operations per binary (the convention's per-dependency rule): a second
@@ -73,27 +83,50 @@ const FINAL_PREP_TIMEOUT_MS = 5_000
  */
 async function withBinaryLock<T>(
   name: BinaryName,
+  operationId: string,
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
+  if (shuttingDown) {
+    throw new BinaryOperationUnavailableError('TapeBox is shutting down')
+  }
   if (inFlight.has(name)) {
-    throw new Error(`${name} operation already in progress`)
+    throw new BinaryOperationUnavailableError(`${name} operation already in progress`)
   }
   const controller = new AbortController()
-  inFlight.set(name, controller)
+  let settle!: () => void
+  const settled = new Promise<void>((resolve) => { settle = resolve })
+  const active = { operationId, controller, settled, settle }
+  inFlight.set(name, active)
   try {
     return await run(controller.signal)
   } finally {
-    if (inFlight.get(name) === controller) inFlight.delete(name)
+    if (inFlight.get(name) === active) inFlight.delete(name)
+    active.settle()
   }
 }
 
 /** Abort one user-started install/update. The original update IPC remains the
  * owner of settling and reporting the operation; this only delivers intent. */
-export function cancelInstall(name: BinaryName): BinaryCancelResult {
-  const controller = inFlight.get(name)
-  if (!controller) return { outcome: 'not-running' }
-  controller.abort(new DOMException(`${name} install cancelled`, 'AbortError'))
+export function cancelInstall(name: BinaryName, operationId: string): BinaryCancelResult {
+  const active = inFlight.get(name)
+  if (!active || active.operationId !== operationId) return { outcome: 'not-running' }
+  active.controller.abort(new DOMException(`${name} install cancelled`, 'AbortError'))
   return { outcome: 'cancel-requested' }
+}
+
+/** Cancel and join every application-owned acquisition before stores and logging
+ * shut down. The workers own staging cleanup; waiting for their settlement keeps
+ * quit from abandoning a partially prepared artifact or deleting temp underneath
+ * still-running work. */
+export async function shutdownInstalls(): Promise<void> {
+  shuttingDown = true
+  const active = [...inFlight.values()]
+  for (const operation of active) {
+    if (!operation.controller.signal.aborted) {
+      operation.controller.abort(new DOMException('TapeBox is shutting down', 'AbortError'))
+    }
+  }
+  await Promise.all(active.map((operation) => operation.settled))
 }
 
 /**
@@ -185,28 +218,60 @@ export async function checkForUpdates(signal?: AbortSignal): Promise<BinaryCheck
   return { outcome: 'completed', statuses: await getAllStatuses(), failures }
 }
 
-export async function installOrUpdate(name: BinaryName): Promise<BinaryUpdateResult> {
-  return withBinaryLock(name, async (cancelSignal) => {
-    const signal = AbortSignal.any([
-      cancelSignal,
-      AbortSignal.timeout(BINARY_ACQUIRE_TIMEOUT_MS),
-    ])
-    try {
-      await performInstall(name, signal)
-      return { outcome: 'installed' }
-    } catch (err) {
-      // Only this operation's own controller can classify a cancellation. Network
-      // TimeoutError also says "aborted" but leaves this signal live, so it remains
-      // a real failure and reaches the UI.
-      if (cancelSignal.aborted) return { outcome: 'cancelled' }
-      throw err
-    }
-  })
+export async function installOrUpdate(
+  name: BinaryName,
+  operationId: string,
+): Promise<BinaryUpdateResult> {
+  try {
+    return await withBinaryLock(name, operationId, async (cancelSignal) => {
+      const signal = AbortSignal.any([
+        cancelSignal,
+        AbortSignal.timeout(BINARY_ACQUIRE_TIMEOUT_MS),
+      ])
+      let outcome: 'installed' | 'cancelled' | 'failed' = 'installed'
+      let failure = ''
+      try {
+        await performInstall(name, operationId, signal)
+      } catch (err) {
+        // Only this operation's own controller can classify a cancellation. Network
+        // TimeoutError also says "aborted" but leaves this signal live, so it remains
+        // a real failure and reaches the UI.
+        if (cancelSignal.aborted) {
+          outcome = 'cancelled'
+        } else {
+          outcome = 'failed'
+          failure = errorMessage(err)
+          log.warn('binary install failed', { name, operationId, error: describeError(err) })
+        }
+      }
+
+      // The terminal payload owns the post-operation truth. In particular, a
+      // failure after publication can report present + version-unreadable rather
+      // than leaving the renderer's pre-operation Not installed snapshot in place.
+      const status = await getStatus(name)
+      if (outcome === 'failed') {
+        return { outcome, operationId, status, error: failure }
+      }
+      return { outcome, operationId, status }
+    })
+  } catch (err) {
+    if (!(err instanceof BinaryOperationUnavailableError)) throw err
+    // A second renderer or an unexpected caller can still race the per-tool claim.
+    // It receives a correlated terminal result and current facts; it never creates
+    // an unowned rejected promise in the management view.
+    const error = errorMessage(err)
+    log.warn('binary install request refused', { name, operationId, error: describeError(err) })
+    return { outcome: 'failed', operationId, status: await getStatus(name), error }
+  }
 }
 
-async function performInstall(name: BinaryName, signal: AbortSignal): Promise<void> {
-  log.info('binary install start', { name })
-  emit('binaries:progress', { name, percent: 0, phase: 'download' })
+async function performInstall(
+  name: BinaryName,
+  operationId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  log.info('binary install start', { name, operationId })
+  emit('binaries:progress', { name, operationId, percent: 0, phase: 'download' })
 
   const spec = binarySpecs[name]
   const resolved = await spec.resolveLatest(signal)
@@ -234,7 +299,7 @@ async function performInstall(name: BinaryName, signal: AbortSignal): Promise<vo
             const pct = total > 0 ? Math.floor((received / total) * 100) : 0
             if (pct !== lastEmittedPct) {
               lastEmittedPct = pct
-              emit('binaries:progress', { name, percent: pct, phase: 'download' })
+              emit('binaries:progress', { name, operationId, percent: pct, phase: 'download' })
             }
           },
         }),
@@ -242,7 +307,7 @@ async function performInstall(name: BinaryName, signal: AbortSignal): Promise<vo
     )
 
     const finalPath = binaryPath(name)
-    emit('binaries:progress', { name, percent: 0, phase: 'verify' })
+    emit('binaries:progress', { name, operationId, percent: 0, phase: 'verify' })
     // Integrity gate: verify the downloaded bytes against the vendor's published
     // SHA-256 sums file before making them executable. A failure throws and aborts
     // the install (the temp is cleaned in the finally below). Every registered
@@ -251,7 +316,7 @@ async function performInstall(name: BinaryName, signal: AbortSignal): Promise<vo
     log.info('binary integrity verified', { name, method: integrity.method })
     signal.throwIfAborted()
 
-    emit('binaries:progress', { name, percent: 0, phase: 'install' })
+    emit('binaries:progress', { name, operationId, percent: 0, phase: 'install' })
 
     // Prepare the complete, executable binary at a staging file, then publish it
     // with one atomic fsync'd rename. The chmod/de-quarantine happen on the stage
@@ -333,5 +398,4 @@ async function performInstall(name: BinaryName, signal: AbortSignal): Promise<vo
     [name]: recordLatest(d[name], resolved.version, nowUtcIso()),
   }))
 
-  emit('binaries:ready', { name, version: resolved.version })
 }

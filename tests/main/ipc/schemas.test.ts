@@ -23,11 +23,13 @@ describe('ipcRequestSchemas — validation at the IPC trust boundary', () => {
     ).toBe(false)
   })
 
-  it('rejects an unknown binary name but accepts a known one', () => {
-    expect(ipcRequestSchemas['binaries:update'].safeParse({ name: 'bogus' }).success).toBe(false)
-    expect(ipcRequestSchemas['binaries:update'].safeParse({ name: 'yt-dlp' }).success).toBe(true)
-    expect(ipcRequestSchemas['binaries:cancelUpdate'].safeParse({ name: 'bogus' }).success).toBe(false)
-    expect(ipcRequestSchemas['binaries:cancelUpdate'].safeParse({ name: 'ffmpeg' }).success).toBe(true)
+  it('requires a known binary and a nonempty correlated operation id', () => {
+    expect(ipcRequestSchemas['binaries:update'].safeParse({ name: 'bogus', operationId: 'op-1' }).success).toBe(false)
+    expect(ipcRequestSchemas['binaries:update'].safeParse({ name: 'yt-dlp' }).success).toBe(false)
+    expect(ipcRequestSchemas['binaries:update'].safeParse({ name: 'yt-dlp', operationId: 'op-1' }).success).toBe(true)
+    expect(ipcRequestSchemas['binaries:cancelUpdate'].safeParse({ name: 'bogus', operationId: 'op-1' }).success).toBe(false)
+    expect(ipcRequestSchemas['binaries:cancelUpdate'].safeParse({ name: 'ffmpeg', operationId: '' }).success).toBe(false)
+    expect(ipcRequestSchemas['binaries:cancelUpdate'].safeParse({ name: 'ffmpeg', operationId: 'op-1' }).success).toBe(true)
   })
 
   it('requires bare undefined for a no-argument channel', () => {

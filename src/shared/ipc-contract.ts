@@ -102,8 +102,8 @@ export type IpcCalls = {
 
   // ── Binaries ─────────────────────────────────────────────────────────────
   'binaries:status':       { req: undefined;                         res: BinaryStatus[] }
-  'binaries:update':       { req: { name: BinaryName };              res: BinaryUpdateResult }
-  'binaries:cancelUpdate': { req: { name: BinaryName };              res: BinaryCancelResult }
+  'binaries:update':       { req: { name: BinaryName; operationId: string }; res: BinaryUpdateResult }
+  'binaries:cancelUpdate': { req: { name: BinaryName; operationId: string }; res: BinaryCancelResult }
   'binaries:checkUpdates': { req: undefined;                         res: BinaryCheckResult }
   'binaries:cancelCheck':  { req: undefined;                         res: BinaryCancelResult }
 
@@ -136,8 +136,9 @@ export type IpcCalls = {
 export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
 
 export type BinaryUpdateResult =
-  | { outcome: 'installed' }
-  | { outcome: 'cancelled' }
+  | { outcome: 'installed'; operationId: string; status: BinaryStatus }
+  | { outcome: 'cancelled'; operationId: string; status: BinaryStatus }
+  | { outcome: 'failed'; operationId: string; status: BinaryStatus; error: string }
 
 export type BinaryCancelResult =
   | { outcome: 'cancel-requested' }
@@ -267,6 +268,5 @@ export type IpcEvents = {
   'scan:done':         { sessionId: string; totalCount: number }
   'scan:error':        { sessionId: string; error: string }
 
-  'binaries:progress':        { name: BinaryName; percent: number; phase: 'download' | 'verify' | 'install' }
-  'binaries:ready':           { name: BinaryName; version: string }
+  'binaries:progress':        { name: BinaryName; operationId: string; percent: number; phase: 'download' | 'verify' | 'install' }
 }

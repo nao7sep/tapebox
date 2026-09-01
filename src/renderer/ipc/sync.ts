@@ -44,15 +44,9 @@ export function startIpcSync(): () => void {
     ),
     ipcOn('tapes:logReset',  ({ tapeId }) => useDownloadLogStore.getState().reset(tapeId)),
 
-    ipcOn('binaries:progress', ({ name, percent, phase }) =>
-      useBinariesStore.getState().setProgress(name, percent, phase),
+    ipcOn('binaries:progress', ({ name, operationId, percent, phase }) =>
+      useBinariesStore.getState().setProgress(name, operationId, percent, phase),
     ),
-    // An install finished: clear its progress and re-pull the authoritative facts
-    // (scanned presence + the persisted versions) rather than patching a guess locally.
-    ipcOn('binaries:ready', ({ name }) => {
-      useBinariesStore.getState().clearProgress(name)
-      void ipcInvoke('binaries:status').then((s) => useBinariesStore.getState().setStatuses(s))
-    }),
   ]
   return () => offs.forEach((off) => off())
 }
