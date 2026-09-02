@@ -17,6 +17,8 @@ import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
 import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
+import { loadMainWindowContent } from './main-window-content.js'
+import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -36,8 +38,9 @@ app.on('second-instance', () => {
 
 let mainWindow: BrowserWindow | null = null
 let startupReady = false
+let terminalStartupFailure = false
 
-function createMainWindow(): BrowserWindow {
+async function createMainWindow(): Promise<BrowserWindow> {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow
   const win = new BrowserWindow(windowOptions(join(__dirname, '../preload/index.cjs')))
   mainWindow = win
@@ -58,19 +61,15 @@ function createMainWindow(): BrowserWindow {
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
-  let load: Promise<void>
-  if (devUrl) {
-    load = win.loadURL(devUrl)
-  } else {
-    load = win.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-  void load.catch(async (error) => {
+  try {
+    await loadMainWindowContent(win, devUrl, join(__dirname, '../renderer/index.html'))
+  } catch (error) {
     log.error('main window document failed to load', { error: describeError(error) })
-    if (!win.isDestroyed()) win.close()
-    await notifyStartupFailure().catch((dialogError) => {
-      log.error('window load failure dialog failed', { error: describeError(dialogError) })
-    })
-  })
+    // Keep the failed, never-shown owner alive until the terminal recovery
+    // surface settles; destroying the last window can begin normal shutdown
+    // before that surface is created.
+    throw error
+  }
 
   win.once('ready-to-show', () => win.show())
   return win
@@ -82,7 +81,7 @@ function showOrCreateMainWindow(): void {
   if (!startupReady) return
   const existing = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
   if (!existing) {
-    createMainWindow()
+    void createMainWindow().catch(handleTerminalStartupFailure)
     return
   }
   const win = existing
@@ -93,9 +92,6 @@ function showOrCreateMainWindow(): void {
 
 async function startup(): Promise<void> {
   await ensureDirs()
-  // Clear disposable download staging once at launch (a crash-interrupted download
-  // must not leave a stale partial). Best-effort — never blocks startup.
-  await resetTempDir().catch(() => {})
   const logPath = initLogger({ debug: isDebugEnabled(app.isPackaged, process.env) })
   log.info('startup', {
     version: app.getVersion(),
@@ -103,6 +99,14 @@ async function startup(): Promise<void> {
     platform: process.platform,
     arch: process.arch,
   })
+  // Clear disposable download staging once at launch (a crash-interrupted
+  // download must not leave a stale partial). It is optional startup cleanup,
+  // but its diagnostic must remain visible in this launch's log.
+  try {
+    await resetTempDir()
+  } catch (error) {
+    log.warn('temporary download staging could not be reset', { error: describeError(error) })
+  }
 
   const configResult = await loadSettings()
   await loadDependencies()
@@ -118,7 +122,7 @@ async function startup(): Promise<void> {
   // follows the OS theme and looks pasted-on-light against the app's #09090b body.
   nativeTheme.themeSource = 'dark'
   startupReady = true
-  const initialWindow = createMainWindow()
+  const initialWindow = await createMainWindow()
 
   // The just-in-case data backup (data-backup conventions) is write-through, not a
   // startup pass: every managed-text save records its exact bytes into
@@ -133,6 +137,16 @@ async function startup(): Promise<void> {
   if (configResult.status === 'recovered') {
     await notifyCorruptConfig(initialWindow)
   }
+}
+
+async function handleTerminalStartupFailure(error: unknown): Promise<void> {
+  if (terminalStartupFailure) return
+  terminalStartupFailure = true
+  await settleTerminalStartupFailure(error, {
+    log,
+    notify: notifyStartupFailure,
+    exit: (code) => app.exit(code),
+  })
 }
 
 /**
@@ -186,14 +200,7 @@ void app.whenReady().then(() => {
   // activation while stores/server/IPC are still loading. The handler defers;
   // startup creates the one owner window as soon as readiness is established.
   app.on('activate', showOrCreateMainWindow)
-  void startup().catch(async (err) => {
-    log.error('startup failed', { error: describeError(err) })
-    // Report before stopping so a failed launch — most visibly an unusable
-    // TAPEBOX_HOME that cannot be resolved or created — is never a silent
-    // no-window quit. The app is ready, so the native box is safe.
-    await notifyStartupFailure()
-    app.quit()
-  })
+  void startup().catch(handleTerminalStartupFailure)
 
 })
 
