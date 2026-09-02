@@ -31,6 +31,9 @@ import { MoveToBoxButton } from './MoveToBoxButton'
 import { CaptionedPanel } from './ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { downloadFailurePresentation } from '@renderer/lib/downloadFailure'
+import { runTapeAction } from '@renderer/lib/runTapeAction'
+import { TapeActionResults } from './TapeActionResults'
+import { LayoutWriteResult } from './LayoutWriteResult'
 
 /** How long the Copy URL button shows "Copied" before reverting to "Copy URL". */
 const COPIED_RESET_MS = 1500
@@ -84,7 +87,7 @@ export function DetailPane({
   // narrowing toward the pane min when the window shrinks and returning to the
   // intent when it grows. Display-only; only a splitter drag persists. The
   // far-side reserve is the media/action column's minimum.
-  const chaptersPaneIntent = useLayoutStore((s) => s.layout.chaptersPaneWidth)
+  const chaptersPaneIntent = useLayoutStore((s) => s.layout!.chaptersPaneWidth)
   const { containerRef: detailRowRef, displayed: chaptersPaneWidth } = usePaneSize<HTMLDivElement>(
     chaptersPaneIntent,
     false,
@@ -183,8 +186,42 @@ export function DetailPane({
   // video to where it lands (switch to Archive/Inbox, select + focus it there).
   function archive()         { archiveTape(tape, 'tape') }
   function unarchive()       { unarchiveTape(tape, 'tape') }
-  async function cancel()    { await ipcInvoke('downloads:cancel',  { tapeId: tape.id }) }
-  async function retry()     { await ipcInvoke('downloads:retry',   { tapeId: tape.id }) }
+  async function cancel() {
+    await runTapeAction(
+      tape.id,
+      'cancel',
+      'download cancellation failed',
+      'The download could not be cancelled. It may still be running; try again.',
+      () => ipcInvoke('downloads:cancel', { tapeId: tape.id }),
+    )
+  }
+  async function retry() {
+    await runTapeAction(
+      tape.id,
+      'retry',
+      'download retry failed',
+      'This tape could not be queued again. Its current state is unchanged; try again.',
+      () => ipcInvoke('downloads:retry', { tapeId: tape.id }),
+    )
+  }
+  async function openExternal() {
+    await runTapeAction(
+      tape.id,
+      'open',
+      'external player open failed',
+      'This tape could not be opened in the external player. Choose another player in Settings or try again.',
+      () => ipcInvoke('library:playExternal', { tapeId: tape.id }),
+    )
+  }
+  async function revealFile() {
+    await runTapeAction(
+      tape.id,
+      'reveal',
+      'tape reveal failed',
+      'This tape could not be shown in its folder. The tape is unchanged; try again.',
+      () => ipcInvoke('library:reveal', { tapeId: tape.id }),
+    )
+  }
 
 
   // Renaming while watching: the video keeps playing behind the modal, and only
@@ -280,7 +317,13 @@ export function DetailPane({
           onScanPage(tape.sourceUrl)
         } else if (tape.state === 'failed' || tape.state === 'paused') {
           e.preventDefault()
-          void ipcInvoke('downloads:retry', { tapeId: tape.id })
+          void runTapeAction(
+            tape.id,
+            'retry',
+            'download retry failed',
+            'This tape could not be queued again. Its current state is unchanged; try again.',
+            () => ipcInvoke('downloads:retry', { tapeId: tape.id }),
+          )
         }
         return
       }
@@ -473,6 +516,9 @@ export function DetailPane({
             grouped use → housekeep (refresh → rename → export) → archive, then
             the source-link reference actions that apply to any tape, and finally
             the destructive Remove, set apart on the right. */}
+        <TapeActionResults tapeId={tape.id} className="shrink-0 border-t border-zinc-700 px-4 pt-3" />
+        <LayoutWriteResult field="chaptersPaneWidth" className="mx-4 mt-3 shrink-0" />
+        <LayoutWriteResult field="volume" className="mx-4 mt-3 shrink-0" />
         <div className="mt-auto flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-700 px-4 pt-3">
           {/* Primary: re-engage / resolve the current state. */}
           {(tape.state === 'queued' || tape.state === 'probing' || tape.state === 'downloading') && (
@@ -490,8 +536,8 @@ export function DetailPane({
           {tape.state === 'downloaded' && (
             <>
               {/* Use the file. */}
-              <ActionButton onClick={() => void ipcInvoke('library:playExternal', { tapeId: tape.id })}>Open in player</ActionButton>
-              <ActionButton onClick={() => void ipcInvoke('library:reveal', { tapeId: tape.id })}>Show in folder</ActionButton>
+              <ActionButton onClick={() => void openExternal()}>Open in player</ActionButton>
+              <ActionButton onClick={() => void revealFile()}>Show in folder</ActionButton>
               {/* Housekeep: refresh first (rename and export both benefit from
                   up-to-date metadata), then rename, then export. */}
               <ActionButton onClick={() => setShowRefresh(true)}>Refresh metadata</ActionButton>
@@ -531,8 +577,8 @@ export function DetailPane({
             size={chaptersPaneWidth}
             min={LAYOUT_BOUNDS.chaptersPaneWidth.min}
             max={LAYOUT_BOUNDS.chaptersPaneWidth.max}
-            onResize={(w) => patchLayout({ chaptersPaneWidth: w }, false)}
-            onCommit={(w) => patchLayout({ chaptersPaneWidth: w }, true)}
+            onResize={(w) => void patchLayout({ chaptersPaneWidth: w }, false)}
+            onCommit={(w) => void patchLayout({ chaptersPaneWidth: w }, true)}
           />
           <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
           <div className="min-h-0 flex-1 overflow-y-auto">

@@ -21,6 +21,7 @@ import { BoxList } from './BoxList'
 import { ArchiveTapeList } from './ArchiveTapeList'
 import { SearchResults } from './SearchResults'
 import { ResizeHandle } from './ResizeHandle'
+import { LayoutWriteResult } from './LayoutWriteResult'
 
 /**
  * The archived view's left-pane layout and drag handling: boxes on top, the
@@ -36,7 +37,7 @@ export function ArchiveOrganizer() {
   const setQuery = useArchiveStore((s) => s.setQuery)
   const pendingSearchFocus = useArchiveStore((s) => s.pendingSearchFocus)
   const setPendingSearchFocus = useArchiveStore((s) => s.setPendingSearchFocus)
-  const boxesIntent = useLayoutStore((s) => s.layout.archiveBoxesHeight)
+  const boxesIntent = useLayoutStore((s) => s.layout!.archiveBoxesHeight)
   const tapes = useVisibleTapes()
   const searching = query.trim().length > 0
   const boxOrderError = useOrderFailuresStore((s) => s.boxes)
@@ -164,10 +165,11 @@ export function ArchiveOrganizer() {
             size={effectiveBoxesHeight}
             min={LAYOUT_BOUNDS.archiveBoxesHeight.min}
             max={LAYOUT_BOUNDS.archiveBoxesHeight.max}
-            onResize={(h) => patchLayout({ archiveBoxesHeight: h }, false)}
-            onCommit={(h) => patchLayout({ archiveBoxesHeight: h }, true)}
+            onResize={(h) => void patchLayout({ archiveBoxesHeight: h }, false)}
+            onCommit={(h) => void patchLayout({ archiveBoxesHeight: h }, true)}
           />
         </div>
+        <LayoutWriteResult field="archiveBoxesHeight" className="m-3 mb-0 shrink-0" />
         <div className="flex min-h-0 flex-1 flex-col">
           {searching ? (
             <SearchResults />

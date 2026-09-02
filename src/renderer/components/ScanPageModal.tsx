@@ -87,9 +87,18 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
 
   async function stopScan() {
     const sid = sessionIdRef.current
-    if (sid) await ipcInvoke('scan:cancel', { sessionId: sid }).catch((err) => log.debug('scan cancel failed', { error: describeError(err) }))
-    setScanning(false)
-    setScanned(true)
+    if (!sid) return
+    try {
+      await ipcInvoke('scan:cancel', { sessionId: sid })
+      setScanning(false)
+      setScanned(true)
+    } catch (err) {
+      setError(presentFailure(
+        err,
+        'The scan could not be stopped yet. It may still be running; try again.',
+        'page scan cancellation failed',
+      ))
+    }
   }
 
   const filtered = useMemo(() => {

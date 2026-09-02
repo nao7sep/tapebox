@@ -3,6 +3,7 @@ import type { ProgressEntry } from '@renderer/store/tapes'
 import { chapterCountLabel, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
+import { TapeActionResults } from './TapeActionResults'
 
 type Props = {
   tape: Tape
@@ -72,6 +73,7 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
           )}
         </div>
       )}
+      {!selected && <TapeActionResults tapeId={tape.id} className="mt-2" />}
     </div>
   )
 }

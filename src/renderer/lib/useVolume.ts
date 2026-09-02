@@ -28,9 +28,10 @@ export function useVolume(videoRef: RefObject<HTMLVideoElement | null>, srcKey: 
 
     // Apply the saved level to this source. Read once, before attaching the
     // listener, so this programmatic set never re-enters as a change to persist.
-    // The layout store is seeded with defaults (never null), so the level is
-    // always a concrete number.
-    const saved = useLayoutStore.getState().layout.volume
+    // HydratedApp mounts the player only after layout is available; keep the
+    // guard so the hook still refuses to invent a level if that invariant drifts.
+    const saved = useLayoutStore.getState().layout?.volume
+    if (saved == null) return
     if (saved !== video.volume) video.volume = saved
 
     let last = video.volume
@@ -39,13 +40,13 @@ export function useVolume(videoRef: RefObject<HTMLVideoElement | null>, srcKey: 
       const v = video.volume
       if (v === last) return
       last = v
-      patchLayout({ volume: v }, false) // mirror now: the next tape opens here
+      void patchLayout({ volume: v }, false) // mirror now: the next tape opens here
       clearTimeout(timer)
       // Debounce the disk write; clearing the ref on fire means the unmount flush
       // below only runs when a write is genuinely still outstanding.
       timer = setTimeout(() => {
         timer = undefined
-        patchLayout({ volume: v }, true)
+        void patchLayout({ volume: v }, true)
       }, PERSIST_DELAY_MS)
     }
     video.addEventListener('volumechange', onVolumeChange)
@@ -54,7 +55,7 @@ export function useVolume(videoRef: RefObject<HTMLVideoElement | null>, srcKey: 
       // Flush a still-pending debounced write so the final level reaches disk.
       if (timer) {
         clearTimeout(timer)
-        patchLayout({ volume: last }, true)
+        void patchLayout({ volume: last }, true)
       }
     }
   }, [videoRef, srcKey])

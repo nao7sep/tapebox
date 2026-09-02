@@ -48,22 +48,30 @@ export function SettingsModal({ onClose }: Props) {
   const [busy, setBusy] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [confirmMove, setConfirmMove] = useState<{ count: number } | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  useEffect(() => {
+  function load() {
+    setLoadError(null)
     void Promise.all([
       ipcInvoke('settings:get'),
-      // On failure (main logs it) degrade to "no key set" rather than block the
-      // form — a value fallback, not an ignored error.
-      ipcInvoke('settings:hasApiKey').catch(() => false),
-      // The default library folder, shown as the empty-field placeholder. On
-      // failure just fall back to no placeholder rather than block the form.
-      ipcInvoke('settings:defaultLibraryDir').catch(() => ''),
+      ipcInvoke('settings:hasApiKey'),
+      ipcInvoke('settings:defaultLibraryDir'),
     ]).then(([s, has, defaultLibDir]) => {
       setOriginal(s)
       setDraft(s)
       setHadApiKey(has)
       setDefaultLibraryDir(defaultLibDir)
+    }, (error) => {
+      setLoadError(presentFailure(
+        error,
+        'Settings could not be loaded. No values have been assumed; try again.',
+        'settings dialog hydration failed',
+      ))
     })
+  }
+
+  useEffect(() => {
+    load()
   }, [])
 
   function patchDraft(patch: Partial<Settings>) {
@@ -119,9 +127,11 @@ export function SettingsModal({ onClose }: Props) {
     setConfirmMove(null)
     setBusy(true)
     setError(null)
+    let settingsSaved = false
     try {
       const updated = await ipcInvoke('settings:update', pickEditable(draft))
-      useSettingsStore.getState().setSettings(updated)
+      useSettingsStore.getState().setHydratedSettings(updated)
+      settingsSaved = true
       if (apiKeyDraft.length > 0) {
         await ipcInvoke('settings:setApiKey', { apiKey: apiKeyDraft })
       } else if (wantsClearKey) {
@@ -129,7 +139,13 @@ export function SettingsModal({ onClose }: Props) {
       }
       onClose()
     } catch (err) {
-      setError(presentFailure(err, 'Settings could not be saved. Your changes are still shown; try again.', 'settings save failed'))
+      setError(presentFailure(
+        err,
+        settingsSaved
+          ? 'The settings were saved, but the API key change was not. Review the form and try again.'
+          : 'Settings could not be saved. Your changes are still shown; try again.',
+        settingsSaved ? 'API key save failed' : 'settings save failed',
+      ))
     } finally {
       setBusy(false)
     }
@@ -144,9 +160,16 @@ export function SettingsModal({ onClose }: Props) {
   if (!draft) {
     return (
       <Modal title="Settings" onClose={onClose} size="2xl">
-        <p className="flex items-center gap-2 text-sm text-zinc-300">
-          <Spinner /> Loading…
-        </p>
+        {loadError ? (
+          <div className="space-y-3">
+            <InlineError>{loadError}</InlineError>
+            <Button variant="secondary" onClick={load}>Try again</Button>
+          </div>
+        ) : (
+          <p className="flex items-center gap-2 text-sm text-zinc-300">
+            <Spinner /> Loading…
+          </p>
+        )}
       </Modal>
     )
   }
@@ -344,16 +367,33 @@ function GeneralTab({
   onPatch: (p: Partial<Settings>) => void
   defaultLibraryDir: string
 }) {
+  const [pickerError, setPickerError] = useState<string | null>(null)
+
   async function chooseExportDir() {
-    const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose default export folder' })
-    if (dir) onPatch({ defaultExportDir: dir })
+    setPickerError(null)
+    try {
+      const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose default export folder' })
+      if (dir) onPatch({ defaultExportDir: dir })
+    } catch (error) {
+      setPickerError(presentFailure(error, 'The folder picker could not be opened. Try again.', 'settings export folder picker failed'))
+    }
   }
   async function chooseLibraryDir() {
-    const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose library folder' })
-    if (dir) onPatch({ libraryDir: dir })
+    setPickerError(null)
+    try {
+      const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose library folder' })
+      if (dir) onPatch({ libraryDir: dir })
+    } catch (error) {
+      setPickerError(presentFailure(error, 'The folder picker could not be opened. Try again.', 'settings library folder picker failed'))
+    }
   }
   return (
     <div className="space-y-4">
+      {pickerError && (
+        <InlineError onDismiss={() => setPickerError(null)} closeLabel="Close folder picker result">
+          {pickerError}
+        </InlineError>
+      )}
       <div>
         <TextField
           label="UI font"

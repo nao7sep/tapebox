@@ -5,6 +5,7 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { releaseVideo } from '@renderer/lib/video'
 import { advanceSelection } from '@renderer/lib/tapeActions'
 import { RemoveTapeConfirmModal } from '@renderer/components/RemoveTapeConfirmModal'
+import { runTapeAction } from '@renderer/lib/runTapeAction'
 
 /**
  * The single removal flow, shared by the Remove button and the keyboard
@@ -27,8 +28,14 @@ export function useTapeRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
   async function perform(tape: Tape): Promise<void> {
     const advance = advanceSelection(tape) // captures the neighbor before removal
     releaseVideo(videoRef.current)
-    await ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })
-    advance()
+    const removed = await runTapeAction(
+      tape.id,
+      'remove',
+      'tape removal failed',
+      'This tape could not be removed. It remains in the library; try again.',
+      () => ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true }),
+    )
+    if (removed) advance()
   }
 
   function requestRemove(tape: Tape): void {

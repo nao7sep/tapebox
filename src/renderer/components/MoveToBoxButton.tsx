@@ -5,6 +5,8 @@ import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { Menu, MenuItem } from '@renderer/components/Menu'
 import { UNBOXED_LABEL } from '@shared/box-names'
 import { CheckIcon, PlusIcon } from './Icon'
+import { presentFailure } from '@renderer/lib/presentFailure'
+import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
 
 /**
  * Files an archived tape into a box (or Unboxed, or a brand-new box) via a small
@@ -23,8 +25,21 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
   }
 
   async function newBoxAndMove() {
-    const box = await ipcInvoke('boxes:create', { name: 'New box' })
-    moveTapeToBox(tape, box.id, 'tape')
+    useTapeActionResultsStore.getState().setResult(tape.id, 'placement', null)
+    try {
+      const box = await ipcInvoke('boxes:create', { name: 'New box' })
+      moveTapeToBox(tape, box.id, 'tape')
+    } catch (error) {
+      useTapeActionResultsStore.getState().setResult(
+        tape.id,
+        'placement',
+        presentFailure(
+          error,
+          'A new box could not be created, so this tape was not moved. Try again.',
+          'box creation for tape placement failed',
+        ),
+      )
+    }
   }
 
   return (

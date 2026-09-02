@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { log } from '@renderer/ipc/log'
-import { describeError } from '@shared/error'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
-import { startIpcSync } from '@renderer/ipc/sync'
+import { applyInitialSyncState, pullInitialSyncState, startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
@@ -13,7 +11,6 @@ import {
   useBinariesStore,
   binariesNeedAttention,
 } from '@renderer/store/binaries'
-import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
@@ -29,7 +26,7 @@ import { TapeList } from '@renderer/components/TapeList'
 import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
 import { DetailPane } from '@renderer/components/DetailPane'
 import { FilterChips } from '@renderer/components/FilterChips'
-import { PlaybackToggles } from '@renderer/components/PlaybackToggles'
+import { PlaybackSettingResults, PlaybackToggles } from '@renderer/components/PlaybackToggles'
 import { ScanPageModal } from '@renderer/components/ScanPageModal'
 import { SettingsModal } from '@renderer/components/SettingsModal'
 import { AboutModal } from '@renderer/components/AboutModal'
@@ -38,6 +35,8 @@ import { HeaderMenu } from '@renderer/components/HeaderMenu'
 import { StatusBar } from '@renderer/components/StatusBar'
 import { Toaster } from '@renderer/components/Toaster'
 import { TapeImportReceiver } from '@renderer/components/TapeImportReceiver'
+import { InlineError, Spinner } from '@renderer/components/ui'
+import { LayoutWriteResult } from '@renderer/components/LayoutWriteResult'
 
 /** Skip the startup auto-check if any binary was checked within this window. */
 const AUTO_CHECK_STALE_MS = 24 * 60 * 60 * 1000
@@ -55,6 +54,70 @@ function lastCheckedStale(statuses: BinaryStatus[]): boolean {
 }
 
 export default function App() {
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [ready, setReady] = useState(false)
+  const hydrationGeneration = useRef(0)
+  const loading = !ready && !loadError
+
+  function hydrate() {
+    const generation = ++hydrationGeneration.current
+    setLoadError(null)
+    void pullInitialSyncState().then(
+      (state) => {
+        if (hydrationGeneration.current !== generation) return
+        applyInitialSyncState(state)
+        setReady(true)
+      },
+      (error) => {
+        if (hydrationGeneration.current !== generation) return
+        setLoadError(presentFailure(
+          error,
+          'TapeBox could not load the library and settings. Nothing has been changed; try again.',
+          'application hydration failed',
+        ))
+      },
+    )
+  }
+
+  useEffect(() => {
+    const stop = startIpcSync()
+    hydrate()
+    return () => {
+      hydrationGeneration.current += 1
+      stop()
+    }
+  }, [])
+
+  if (!ready) {
+    return (
+      <main className="flex h-screen flex-col">
+        <header className="shrink-0 border-b border-zinc-700 px-4 py-3">
+          <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
+        </header>
+        <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+          {loading ? (
+            <p className="flex items-center gap-2 text-sm text-zinc-300"><Spinner /> Loading…</p>
+          ) : (
+            <div className="w-full max-w-xl space-y-3">
+              <InlineError>{loadError}</InlineError>
+              <button
+                type="button"
+                onClick={hydrate}
+                className="rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 hover:bg-zinc-700"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+      </main>
+    )
+  }
+
+  return <HydratedApp />
+}
+
+function HydratedApp() {
   const tapes = useTapesStore((s) => s.tapes)
   const selectedId = useSelectionStore((s) => s.selectedId)
   const select = useSelectionStore((s) => s.select)
@@ -66,8 +129,10 @@ export default function App() {
   const [showAbout, setShowAbout] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showScanPage, setShowScanPage] = useState(false)
+  const [revealLogError, setRevealLogError] = useState<string | null>(null)
   const [pageInitialUrl, setPageInitialUrl] = useState('')
   const decidedFirstRun = useRef(false)
+  const startedAutoCheck = useRef(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const { requestRemove, confirmModal } = useTapeRemoval(videoRef)
   useAppShortcuts(() => setShowShortcuts(true))
@@ -78,7 +143,7 @@ export default function App() {
   // the window shrinks and returning to the intent when it grows (display-only,
   // never persisted). The far-side reserve is the detail + chapters pane mins —
   // the same Σ the window minimum and the splitter clamp use.
-  const leftPaneIntent = useLayoutStore((s) => s.layout.leftPaneWidth)
+  const leftPaneIntent = useLayoutStore((s) => s.layout!.leftPaneWidth)
   const { containerRef: contentRowRef, displayed: leftPaneWidth } = usePaneSize<HTMLDivElement>(
     leftPaneIntent,
     false,
@@ -117,35 +182,25 @@ export default function App() {
     }
   }
 
+  async function revealLog() {
+    setRevealLogError(null)
+    try {
+      await ipcInvoke('app:revealLog')
+    } catch (error) {
+      setRevealLogError(presentFailure(
+        error,
+        'The session log could not be shown in its folder. Try again.',
+        'session log reveal failed',
+      ))
+    }
+  }
+
   useEffect(() => {
-    const stop = startIpcSync()
-    // Hydrate the loopback media server's base URL. Without it the player can't
-    // build a source; the server is already listening before this window loaded,
-    // so this resolves effectively immediately.
-    // Each hydrate handler logs the authoritative error in main (handle()
-    // re-throws); these renderer-side catches keep a rejected invoke from
-    // surfacing as an unhandledrejection and add the developer-only vantage.
-    void ipcInvoke('media:endpoint')
-      .then((e) => useMediaStore.getState().setBaseUrl(e.baseUrl))
-      .catch((err) => log.debug('media endpoint hydrate failed', { error: describeError(err) }))
-    void ipcInvoke('layout:get')
-      .then((l) => useLayoutStore.getState().setLayout(l))
-      .catch((err) => log.debug('layout hydrate failed', { error: describeError(err) }))
-    void ipcInvoke('settings:get')
-      .then(async (s) => {
-        useSettingsStore.getState().setSettings(s)
-        if (!s.checkUpdatesAtLaunch) return
-        // The recorded facts live in their own store now, so read the last-check
-        // times from a status snapshot rather than from settings.
-        const statuses = await ipcInvoke('binaries:status')
-        if (!lastCheckedStale(statuses)) return
-        // Best-effort background check the user didn't trigger. The application
-        // store owns the complete check lifecycle; a failure remains available in
-        // Managed tools without interrupting launch with a toast.
-        void useBinariesStore.getState().checkUpdates()
-      })
-      .catch((err) => log.debug('settings hydrate failed', { error: describeError(err) }))
-    return stop
+    if (startedAutoCheck.current || !settings?.checkUpdatesAtLaunch || !lastCheckedStale(binaryStatuses)) return
+    startedAutoCheck.current = true
+    // Best-effort background check the user didn't trigger. Managed tools owns
+    // its complete lifecycle and stable failure presentation.
+    void useBinariesStore.getState().checkUpdates()
   }, [])
 
   // Once both settings and the first status snapshot are in, do the one-shot startup
@@ -187,9 +242,19 @@ export default function App() {
             onTools={() => openBinariesModal()}
             onShortcuts={() => setShowShortcuts(true)}
             onAbout={() => setShowAbout(true)}
-            onRevealLog={() => void ipcInvoke('app:revealLog')}
+            onRevealLog={() => void revealLog()}
           />
         </header>
+
+        {revealLogError && (
+          <InlineError
+            className="mx-4 my-2 shrink-0"
+            onDismiss={() => setRevealLogError(null)}
+            closeLabel="Close session log result"
+          >
+            {revealLogError}
+          </InlineError>
+        )}
 
         <div ref={contentRowRef} className="flex flex-1 overflow-hidden">
           <aside
@@ -200,6 +265,8 @@ export default function App() {
               <FilterChips />
               <PlaybackToggles />
             </div>
+            <PlaybackSettingResults />
+            <LayoutWriteResult field="leftPaneWidth" className="m-3 mb-0 shrink-0" />
             {filter === 'archived' ? (
               <ArchiveOrganizer />
             ) : (
@@ -217,8 +284,8 @@ export default function App() {
               size={leftPaneWidth}
               min={LAYOUT_BOUNDS.leftPaneWidth.min}
               max={LAYOUT_BOUNDS.leftPaneWidth.max}
-              onResize={(w) => patchLayout({ leftPaneWidth: w }, false)}
-              onCommit={(w) => patchLayout({ leftPaneWidth: w }, true)}
+              onResize={(w) => void patchLayout({ leftPaneWidth: w }, false)}
+              onCommit={(w) => void patchLayout({ leftPaneWidth: w }, true)}
             />
           </aside>
           <section

@@ -8,6 +8,8 @@ import { useFilterStore } from '@renderer/store/filter'
 import { useArchiveStore } from '@renderer/store/archive'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
+import { runTapeAction } from '@renderer/lib/runTapeAction'
+import type { TapeAction } from '@renderer/store/tapeActionResults'
 
 /**
  * The selection layer for tape actions.
@@ -25,8 +27,9 @@ import { useSelectionStore } from '@renderer/store/selection'
  *
  * The CALLER picks the policy; the layer never inspects the event source, so there's
  * no fragile "was this a mouse or a key" guessing. Archive / unarchive / move are
- * local, can't-fail session writes, so we relocate optimistically — the item leaves
- * its list at once — and let the IPC re-emit settle the exact order. Removal lives
+ * local session writes, so we relocate optimistically — the item leaves its list
+ * at once — then roll back and retain a per-tape result if persistence rejects.
+ * The IPC re-emit settles the exact order on success. Removal lives
  * in useTapeRemoval (it needs the confirm modal and a video-handle release) but
  * reuses advanceSelection from here, so it follows the same 'list' policy.
  */
@@ -96,30 +99,58 @@ function relocate(
   patch: Partial<Tape>,
   dest: { archived: boolean; boxId: string | null },
   keep: Keep,
-  persist: () => void,
+  action: TapeAction,
+  operation: string,
+  userMessage: string,
+  persist: () => Promise<unknown>,
 ): void {
   const advance = keep === 'list' ? advanceSelection(tape) : null
   // Place it at the front of the destination optimistically so it doesn't flash at
   // its old order before boxes:place / library:archive re-emit the authoritative one.
-  useTapesStore.getState().upsert({ ...tape, ...patch, order: frontOrderFor(dest, tape.id) })
-  persist()
+  const optimistic = { ...tape, ...patch, order: frontOrderFor(dest, tape.id) }
+  useTapesStore.getState().upsert(optimistic)
   if (advance) advance()
   else revealTape(tape.id, dest)
+
+  void runTapeAction(tape.id, action, operation, userMessage, persist).then((succeeded) => {
+    if (succeeded) return
+    const current = useTapesStore.getState().tapes.find((candidate) => candidate.id === tape.id)
+    if (!current) return
+    if (current.archivedAtUtc !== optimistic.archivedAtUtc || current.boxId !== optimistic.boxId) return
+    useTapesStore.getState().upsert(tape)
+    if (keep === 'tape') {
+      revealTape(tape.id, { archived: !!tape.archivedAtUtc, boxId: tape.boxId })
+    }
+  })
 }
 
 /** Archive a downloaded tape — it goes to the top of Unboxed. No-op otherwise. */
 export function archiveTape(tape: Tape, keep: Keep): void {
   if (tape.state !== 'downloaded' || tape.archivedAtUtc) return
-  relocate(tape, { archivedAtUtc: nowUtcIso(), boxId: null }, { archived: true, boxId: null }, keep, () =>
-    void ipcInvoke('library:archive', { tapeIds: [tape.id] }),
+  relocate(
+    tape,
+    { archivedAtUtc: nowUtcIso(), boxId: null },
+    { archived: true, boxId: null },
+    keep,
+    'archive',
+    'tape archive failed',
+    'This tape could not be archived. It remains in the Inbox; try again.',
+    () => ipcInvoke('library:archive', { tapeIds: [tape.id] }),
   )
 }
 
 /** Unarchive a tape — it returns to the top of the inbox. No-op if not archived. */
 export function unarchiveTape(tape: Tape, keep: Keep): void {
   if (!tape.archivedAtUtc) return
-  relocate(tape, { archivedAtUtc: null, boxId: null }, { archived: false, boxId: null }, keep, () =>
-    void ipcInvoke('library:unarchive', { tapeIds: [tape.id] }),
+  relocate(
+    tape,
+    { archivedAtUtc: null, boxId: null },
+    { archived: false, boxId: null },
+    keep,
+    'unarchive',
+    'tape unarchive failed',
+    'This tape could not be moved to the Inbox. It remains archived; try again.',
+    () => ipcInvoke('library:unarchive', { tapeIds: [tape.id] }),
   )
 }
 
@@ -127,7 +158,14 @@ export function unarchiveTape(tape: Tape, keep: Keep): void {
  *  already there. */
 export function moveTapeToBox(tape: Tape, boxId: string | null, keep: Keep): void {
   if (!tape.archivedAtUtc || boxId === tape.boxId) return
-  relocate(tape, { boxId }, { archived: true, boxId }, keep, () =>
-    void ipcInvoke('boxes:place', { tapeIds: [tape.id], boxId }),
+  relocate(
+    tape,
+    { boxId },
+    { archived: true, boxId },
+    keep,
+    'placement',
+    'tape box placement failed',
+    'This tape could not be moved to that box. Its previous location remains in use; try again.',
+    () => ipcInvoke('boxes:place', { tapeIds: [tape.id], boxId }),
   )
 }

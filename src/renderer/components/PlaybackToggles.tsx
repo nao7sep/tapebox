@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { useSettingsStore, patchSettings } from '@renderer/store/settings'
+import { useSettingsStore, savePlaybackSettings } from '@renderer/store/settings'
+import { InlineError } from '@renderer/components/ui'
 
 /**
  * App-wide playback toggles, shown at the right of the Inbox/Archived row. Both
@@ -10,6 +11,8 @@ import { useSettingsStore, patchSettings } from '@renderer/store/settings'
 export function PlaybackToggles() {
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
+  const savingAutoplay = useSettingsStore((s) => !!s.saving.autoplay)
+  const savingSound = useSettingsStore((s) => !!s.saving.playSound)
 
   return (
     <div className="flex items-center gap-1.5">
@@ -17,16 +20,39 @@ export function PlaybackToggles() {
         on={autoplay}
         accent="text-sky-400"
         title={autoplay ? 'Autoplay: on' : 'Autoplay: off'}
-        onClick={() => patchSettings({ autoplay: !autoplay }, true)}
+        onClick={() => void savePlaybackSettings({ autoplay: !autoplay })}
+        disabled={savingAutoplay}
         icon={autoplay ? <AutoplayOn /> : <AutoplayOff />}
       />
       <ToggleButton
         on={playSound}
         accent="text-pink-400"
         title={playSound ? 'Sound: on' : 'Sound: off'}
-        onClick={() => patchSettings({ playSound: !playSound }, true)}
+        onClick={() => void savePlaybackSettings({ playSound: !playSound })}
+        disabled={savingSound}
         icon={playSound ? <SoundOn /> : <SoundOff />}
       />
+    </div>
+  )
+}
+
+export function PlaybackSettingResults() {
+  const autoplay = useSettingsStore((s) => s.writeErrors.autoplay)
+  const playSound = useSettingsStore((s) => s.writeErrors.playSound)
+  const setWriteError = useSettingsStore((s) => s.setWriteError)
+  if (!autoplay && !playSound) return null
+  return (
+    <div className="space-y-2 border-t border-zinc-700 px-3 py-2">
+      {autoplay && (
+        <InlineError onDismiss={() => setWriteError('autoplay', null)} closeLabel="Close autoplay save result">
+          {autoplay}
+        </InlineError>
+      )}
+      {playSound && (
+        <InlineError onDismiss={() => setWriteError('playSound', null)} closeLabel="Close sound save result">
+          {playSound}
+        </InlineError>
+      )}
     </div>
   )
 }
@@ -37,6 +63,7 @@ function ToggleButton({
   title,
   onClick,
   icon,
+  disabled,
 }: {
   on: boolean
   /** Vivid text color class shown when on (drives the icon via currentColor). */
@@ -44,13 +71,15 @@ function ToggleButton({
   title: string
   onClick: () => void
   icon: ReactNode
+  disabled: boolean
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={on}
       title={title}
-      className={'rounded p-1 -m-1 transition ' + (on ? accent : 'text-zinc-400 hover:text-zinc-300')}
+      className={'rounded p-1 -m-1 transition disabled:cursor-wait disabled:opacity-60 ' + (on ? accent : 'text-zinc-400 hover:text-zinc-300')}
     >
       {icon}
     </button>

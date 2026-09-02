@@ -34,8 +34,13 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   async function pickDir() {
-    const d = await ipcInvoke('dialog:pickDirectory', { title: 'Choose export destination' })
-    if (d) setDir(d)
+    setError(null)
+    try {
+      const d = await ipcInvoke('dialog:pickDirectory', { title: 'Choose export destination' })
+      if (d) setDir(d)
+    } catch (err) {
+      setError(presentFailure(err, 'The folder picker could not be opened. Try again.', 'export folder picker failed'))
+    }
   }
 
   async function run() {

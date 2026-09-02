@@ -17,6 +17,8 @@ import { boxNameError, UNBOXED_LABEL } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
 import { PlusIcon } from './Icon'
 import { InlineError } from './ui'
+import { presentFailure } from '@renderer/lib/presentFailure'
+import { useBoxActionResultsStore, type BoxAction } from '@renderer/store/boxActionResults'
 
 /** Droppable id for the Unboxed row (it is not a real box, so it has no box id). */
 export const UNBOXED_DROP_ID = '__unboxed__'
@@ -45,6 +47,8 @@ export function BoxList({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const actionErrors = useBoxActionResultsStore((state) => state.results)
+  const setActionResult = useBoxActionResultsStore((state) => state.setResult)
   const { composingRef, handlers: composing } = useComposing()
 
   const sorted = [...boxes].sort((a, b) => a.order - b.order)
@@ -74,10 +78,15 @@ export function BoxList({
     editingId !== null && trimmedDraft ? boxNameError(trimmedDraft, otherNames(editingId)) : null
 
   async function newBox() {
-    const box = await ipcInvoke('boxes:create', { name: 'New box' })
-    selectBox(box.id)
-    setDraftName(box.name)
-    setEditingId(box.id)
+    clearActionError('create')
+    try {
+      const box = await ipcInvoke('boxes:create', { name: 'New box' })
+      selectBox(box.id)
+      setDraftName(box.name)
+      setEditingId(box.id)
+    } catch (error) {
+      setActionResult('create', presentFailure(error, 'A new box could not be created. Try again.', 'box creation failed'))
+    }
   }
 
   // Enter: commit when valid, stay editing when invalid, cancel when empty.
@@ -86,7 +95,12 @@ export function BoxList({
     if (!name) { setEditingId(null); return }
     if (boxNameError(name, otherNames(id))) return
     setEditingId(null)
-    await ipcInvoke('boxes:rename', { boxId: id, name })
+    clearActionError('rename')
+    try {
+      await ipcInvoke('boxes:rename', { boxId: id, name })
+    } catch (error) {
+      setActionResult('rename', presentFailure(error, 'The box could not be renamed. Its previous name remains in use; try again.', 'box rename failed'))
+    }
   }
 
   // Blur: a focus loss can't keep editing, so commit only when valid, else discard.
@@ -99,7 +113,16 @@ export function BoxList({
   async function deleteBox(id: string) {
     setConfirmDeleteId(null)
     if (selectedBoxId === id) selectBox(null)
-    await ipcInvoke('boxes:delete', { boxId: id })
+    clearActionError('delete')
+    try {
+      await ipcInvoke('boxes:delete', { boxId: id })
+    } catch (error) {
+      setActionResult('delete', presentFailure(error, 'The box could not be deleted. It and its tapes are unchanged; try again.', 'box deletion failed'))
+    }
+  }
+
+  function clearActionError(action: BoxAction) {
+    setActionResult(action, null)
   }
 
   return (
@@ -117,6 +140,16 @@ export function BoxList({
           {orderError}
         </InlineError>
       )}
+      {(['create', 'rename', 'delete'] as const).map((action) => actionErrors[action] ? (
+        <InlineError
+          key={action}
+          className="mx-2 mb-2 shrink-0"
+          onDismiss={() => clearActionError(action)}
+          closeLabel={`Close box ${action} result`}
+        >
+          {actionErrors[action]}
+        </InlineError>
+      ) : null)}
 
       <div
         ref={kb.ref}

@@ -1,5 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 import { ipcInvoke } from '@renderer/ipc/client'
+import { log } from '@renderer/ipc/log'
+import { describeError } from '@shared/error'
 
 /**
  * Report the <video>'s play/pause state to the main process, which holds an OS
@@ -24,9 +26,9 @@ export function useKeepAwake(
 ): void {
   useEffect(() => {
     const report = (playing: boolean) => {
-      // Main logs the authoritative failure (handle() re-throws); swallow here so a
-      // rejected report never surfaces as an unhandledrejection.
-      void ipcInvoke('app:setVideoPlaying', { playing }).catch(() => {})
+      void ipcInvoke('app:setVideoPlaying', { playing }).catch((error) => {
+        log.warn('video playing state report failed', { playing, error: describeError(error) })
+      })
     }
 
     const video = videoRef.current
