@@ -106,7 +106,7 @@ async function startup(): Promise<void> {
   // follows the OS theme and looks pasted-on-light against the app's #09090b body.
   nativeTheme.themeSource = 'dark'
   startupReady = true
-  createMainWindow()
+  const initialWindow = createMainWindow()
 
   // The just-in-case data backup (data-backup conventions) is write-through, not a
   // startup pass: every managed-text save records its exact bytes into
@@ -116,10 +116,10 @@ async function startup(): Promise<void> {
   // If the library file was unreadable, it was set aside (never wiped); tell the
   // user at the app edge — the session store stays UI-free.
   if (sessionResult.status === 'recovered') {
-    await notifyCorruptSession()
+    await notifyCorruptSession(initialWindow)
   }
   if (configResult.status === 'recovered') {
-    await notifyCorruptConfig()
+    await notifyCorruptConfig(initialWindow)
   }
 }
 

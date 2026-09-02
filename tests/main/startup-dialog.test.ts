@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { BrowserWindow } from 'electron'
 
 const showPlainMessageDialog = vi.hoisted(() => vi.fn(async () => undefined))
 
@@ -10,9 +11,11 @@ beforeEach(() => showPlainMessageDialog.mockClear())
 
 describe('startup recovery dialogs', () => {
   it('keeps config quarantine paths in diagnostics only', async () => {
-    await notifyCorruptConfig()
+    const owner = {} as BrowserWindow
+    await notifyCorruptConfig(owner)
 
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
+      owner,
       title: 'Settings could not be read',
       detail: expect.stringContaining('recorded in the session log'),
     }))

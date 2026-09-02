@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 
 export interface PlainMessageDialogOptions {
+  owner?: BrowserWindow
   title: string
   message: string
   detail?: string
@@ -10,7 +11,7 @@ const CLOSE_URL = 'https://tapebox-dialog.invalid/close'
 
 /** App-authored message shell without native severity/application artwork. */
 export async function showPlainMessageDialog(options: PlainMessageDialogOptions): Promise<void> {
-  const parent = BrowserWindow.getFocusedWindow() ?? undefined
+  const parent = options.owner ?? BrowserWindow.getFocusedWindow() ?? undefined
   const win = new BrowserWindow({
     parent,
     modal: Boolean(parent),
