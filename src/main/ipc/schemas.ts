@@ -112,5 +112,6 @@ export const ipcRequestSchemas = {
   // ── Runtime info ──────────────────────────────────────────────────────────
   'app:runtimeInfo':       z.undefined(),
   'app:revealLog':         z.undefined(),
+  'app:openExternal':      z.object({ url: z.url() }),
   'app:setVideoPlaying':   z.object({ playing: z.boolean() }),
 } satisfies { [K in keyof IpcCalls]: z.ZodType<IpcCalls[K]['req']> }

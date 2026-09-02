@@ -1,12 +1,29 @@
 import { Modal } from '@renderer/components/Modal'
-import { Button } from '@renderer/components/ui'
+import { Button, InlineError } from '@renderer/components/ui'
 import { useRuntimeStore } from '@renderer/store/runtime'
 import { ExternalLinkIcon } from './Icon'
+import { ipcInvoke } from '@renderer/ipc/client'
+import { presentFailure } from '@renderer/lib/presentFailure'
+import { useState } from 'react'
 
 const GITHUB_URL = 'https://github.com/nao7sep/tapebox'
 
 export function AboutModal({ onClose }: { onClose: () => void }) {
   const version = useRuntimeStore((s) => s.info?.version)
+  const [linkError, setLinkError] = useState<string | null>(null)
+
+  async function openLink(url: string): Promise<void> {
+    setLinkError(null)
+    try {
+      await ipcInvoke('app:openExternal', { url })
+    } catch (error) {
+      setLinkError(presentFailure(
+        error,
+        'The link could not be opened in your browser. Try again.',
+        'About link open failed',
+      ))
+    }
+  }
   return (
     <Modal
       title="About TapeBox"
@@ -26,13 +43,14 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
           <p className="mt-1 text-zinc-300">A local media library with web import.</p>
         </div>
         <div className="flex gap-4">
-          <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="whitespace-nowrap text-zinc-300 hover:text-zinc-100">
+          <button type="button" onClick={() => void openLink(GITHUB_URL)} className="whitespace-nowrap bg-transparent p-0 text-zinc-300 hover:text-zinc-100">
             GitHub <ExternalLinkIcon />
-          </a>
-          <a href={`${GITHUB_URL}/issues`} target="_blank" rel="noreferrer" className="whitespace-nowrap text-zinc-300 hover:text-zinc-100">
+          </button>
+          <button type="button" onClick={() => void openLink(`${GITHUB_URL}/issues`)} className="whitespace-nowrap bg-transparent p-0 text-zinc-300 hover:text-zinc-100">
             Report an issue <ExternalLinkIcon />
-          </a>
+          </button>
         </div>
+        {linkError && <InlineError onDismiss={() => setLinkError(null)} closeLabel="Close link result">{linkError}</InlineError>}
         <p className="text-zinc-300">© 2026 Yoshinao Inoguchi — MIT License</p>
       </div>
     </Modal>

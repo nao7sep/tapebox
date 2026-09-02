@@ -1,4 +1,6 @@
 import { BrowserWindow } from 'electron'
+import { log } from './io/logger'
+import { describeError } from '@shared/error'
 
 export interface PlainMessageDialogOptions {
   owner?: BrowserWindow
@@ -39,6 +41,10 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
       resolve()
       if (!win.isDestroyed()) win.close()
     }
+    const settleLoadFailure = (phase: string, error: unknown): void => {
+      log.error(`message dialog ${phase} failed`, { error: describeError(error) })
+      close()
+    }
     win.on('closed', close)
     win.webContents.on('will-navigate', (event, url) => {
       if (url !== CLOSE_URL) return
@@ -62,8 +68,10 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
           win.show()
           return win.webContents.executeJavaScript("document.getElementById('close')?.focus()", true)
         })
+        .catch((error: unknown) => settleLoadFailure('measurement', error))
     })
     void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderPlainMessageDialogHtml(options))}`)
+      .catch((error: unknown) => settleLoadFailure('load', error))
   })
 }
 

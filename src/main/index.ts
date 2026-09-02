@@ -48,17 +48,29 @@ function createMainWindow(): BrowserWindow {
   // Open external links (About modal, etc.) in the OS browser, never a new
   // Electron window.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isImportableUrl(url)) void shell.openExternal(url)
+    if (isImportableUrl(url)) {
+      void shell.openExternal(url).catch((error) => {
+        log.error('external URL open failed', { error: describeError(error) })
+      })
+    }
     else log.warn('blocked external URL scheme')
     return { action: 'deny' }
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
+  let load: Promise<void>
   if (devUrl) {
-    void win.loadURL(devUrl)
+    load = win.loadURL(devUrl)
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
+    load = win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  void load.catch(async (error) => {
+    log.error('main window document failed to load', { error: describeError(error) })
+    if (!win.isDestroyed()) win.close()
+    await notifyStartupFailure().catch((dialogError) => {
+      log.error('window load failure dialog failed', { error: describeError(dialogError) })
+    })
+  })
 
   win.once('ready-to-show', () => win.show())
   return win

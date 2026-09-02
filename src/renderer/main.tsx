@@ -2,12 +2,13 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles/globals.css'
+import { RendererErrorBoundary } from './components/RendererErrorBoundary'
 
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Renderer root element missing')
 
 createRoot(rootEl).render(
   <React.StrictMode>
-    <App />
+    <RendererErrorBoundary><App /></RendererErrorBoundary>
   </React.StrictMode>,
 )

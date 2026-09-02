@@ -2,6 +2,7 @@ import { app, shell } from 'electron'
 import { handle } from './handle'
 import { getCurrentLogPath } from '@main/io/logger'
 import { setVideoPlaying } from '@main/power-blocker'
+import { isImportableUrl } from '@shared/url'
 
 /**
  * Read-only facts about the current process, revealing this launch's log, and the
@@ -17,6 +18,11 @@ export function registerAppHandlers(): void {
   handle('app:revealLog', async () => {
     const path = getCurrentLogPath()
     if (path) shell.showItemInFolder(path)
+  })
+
+  handle('app:openExternal', async ({ url }) => {
+    if (!isImportableUrl(url)) throw new Error('External URL scheme is not allowed')
+    await shell.openExternal(url)
   })
 
   handle('app:setVideoPlaying', async ({ playing }) => {
