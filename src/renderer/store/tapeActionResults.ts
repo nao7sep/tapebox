@@ -8,6 +8,8 @@ export type TapeAction =
   | 'cancel'
   | 'open'
   | 'reveal'
+  | 'open-url'
+  | 'copy-url'
   | 'remove'
 
 type TapeActionResultsState = {

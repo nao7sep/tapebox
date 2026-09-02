@@ -11,7 +11,7 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { releaseVideo } from '@renderer/lib/video'
-import { archiveTape, unarchiveTape } from '@renderer/lib/tapeActions'
+import { archiveTape, copyTapeSourceUrl, openTapeSourceUrl, unarchiveTape } from '@renderer/lib/tapeActions'
 import { isShortcutBlocked } from '@renderer/lib/dom'
 import { log } from '@renderer/ipc/log'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
@@ -175,11 +175,15 @@ export function DetailPane({
   }
 
   async function copyUrl() {
-    try {
-      await navigator.clipboard.writeText(tape.sourceUrl)
+    const copied = await copyTapeSourceUrl(tape.id, tape.sourceUrl)
+    if (copied) {
       setCopied(true)
       setTimeout(() => setCopied(false), COPIED_RESET_MS)
-    } catch { /* clipboard unavailable; nothing actionable to show */ }
+    }
+  }
+
+  async function openSourceUrl() {
+    await openTapeSourceUrl(tape.id, tape.sourceUrl)
   }
 
   // Archive / unarchive from the detail pane use the 'tape' policy: follow the
@@ -402,14 +406,13 @@ export function DetailPane({
                 // self-evident from their shape and position.
                 <div className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
                   {tape.title && (
-                    <a
-                      href={tape.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block select-text break-all hover:text-zinc-100"
+                    <button
+                      type="button"
+                      onClick={() => void openSourceUrl()}
+                      className="block w-full select-text break-all bg-transparent p-0 text-left hover:text-zinc-100"
                     >
                       {tape.sourceUrl}
-                    </a>
+                    </button>
                   )}
                   {tape.filename && <div className="select-text break-all">{tape.filename}</div>}
                   {tape.uploader && (
@@ -431,17 +434,16 @@ export function DetailPane({
                     <DetailRow label="Duration">{formatTime(tape.durationSeconds)}</DetailRow>
                   )}
                   {/* Source is the heading already when there's no title, so only show it
-                      here (as a link) when a title occupies the heading. */}
+                      here as an opening action when a title occupies the heading. */}
                   {tape.title && (
                     <DetailRow label="Source">
-                      <a
-                        href={tape.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="select-text break-all hover:text-zinc-100"
+                      <button
+                        type="button"
+                        onClick={() => void openSourceUrl()}
+                        className="select-text break-all bg-transparent p-0 text-left hover:text-zinc-100"
                       >
                         {tape.sourceUrl}
-                      </a>
+                      </button>
                     </DetailRow>
                   )}
                   {tape.name && (
@@ -555,8 +557,8 @@ export function DetailPane({
             </>
           )}
           {/* Source link — available for any tape, in every state. */}
-          <ActionButton onClick={() => { window.open(tape.sourceUrl, '_blank', 'noopener') }}>Open URL</ActionButton>
-          <ActionButton onClick={copyUrl}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
+          <ActionButton onClick={() => void openSourceUrl()}>Open URL</ActionButton>
+          <ActionButton onClick={() => void copyUrl()}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
           {/* Destructive: always last, pushed to the far right. */}
           <ActionButton onClick={() => onRequestRemove(tape)} danger className="ml-auto">Remove</ActionButton>
         </div>

@@ -169,3 +169,23 @@ export function moveTapeToBox(tape: Tape, boxId: string | null, keep: Keep): voi
     () => ipcInvoke('boxes:place', { tapeIds: [tape.id], boxId }),
   )
 }
+
+export function copyTapeSourceUrl(tapeId: string, sourceUrl: string): Promise<boolean> {
+  return runTapeAction(
+    tapeId,
+    'copy-url',
+    'source URL copy failed',
+    'The source URL could not be copied. Try Copy URL again.',
+    () => navigator.clipboard.writeText(sourceUrl),
+  )
+}
+
+export function openTapeSourceUrl(tapeId: string, sourceUrl: string): Promise<boolean> {
+  return runTapeAction(
+    tapeId,
+    'open-url',
+    'source URL open failed',
+    'The source URL could not be opened in your browser. Try Open URL again.',
+    () => ipcInvoke('app:openExternal', { url: sourceUrl }),
+  )
+}

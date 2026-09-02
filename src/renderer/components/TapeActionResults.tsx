@@ -6,6 +6,8 @@ const ACTION_ORDER: TapeAction[] = [
   'cancel',
   'open',
   'reveal',
+  'open-url',
+  'copy-url',
   'archive',
   'unarchive',
   'placement',
