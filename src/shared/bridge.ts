@@ -17,6 +17,7 @@ import type { LogMessage } from './log'
 export interface TapeBoxApi {
   invoke(channel: string, req: unknown): Promise<unknown>
   on(channel: string, listener: (payload: unknown) => void): () => void
+  onWindowActivityChanged(listener: (active: boolean) => void): () => void
   pathForFile(file: File): string
   log(message: LogMessage): void
   isDebugEnabled: boolean

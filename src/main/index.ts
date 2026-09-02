@@ -19,6 +19,7 @@ import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
 import { loadMainWindowContent } from './main-window-content.js'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
+import { configureWindowActivity } from './window-activity.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -44,6 +45,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow
   const win = new BrowserWindow(windowOptions(join(__dirname, '../preload/index.cjs')))
   mainWindow = win
+  configureWindowActivity(app, win)
   win.once('closed', () => {
     if (mainWindow === win) mainWindow = null
   })

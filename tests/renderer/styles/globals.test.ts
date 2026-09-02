@@ -35,4 +35,9 @@ describe('globals.css window-chrome compliance', () => {
     expect(css).toMatch(/--text-sm--line-height:\s*1\.375rem/)
     expect(css).not.toMatch(/--text-(?:xs|sm):/)
   })
+
+  it('mutes focus accents while the native application is inactive', () => {
+    expect(css).toMatch(/\[data-window-inactive\] :focus-visible\s*{[^}]*outline-color:\s*var\(--color-zinc-700/s)
+    expect(css).toMatch(/\[data-window-inactive\] :focus-visible\s*{[^}]*--tw-ring-color:\s*var\(--color-zinc-700/s)
+  })
 })

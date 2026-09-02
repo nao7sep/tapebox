@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import type { LogMessage } from '@shared/log'
 import type { TapeBoxApi } from '@shared/bridge'
+import { WINDOW_ACTIVITY_CHANNEL } from '@shared/window-activity'
 
 /**
  * Generic bridge. The renderer wraps these in typed helpers
@@ -25,6 +26,13 @@ const api = {
     const wrapped = (_event: IpcRendererEvent, payload: unknown) => listener(payload)
     ipcRenderer.on(channel, wrapped)
     return () => ipcRenderer.off(channel, wrapped)
+  },
+  onWindowActivityChanged(listener: (active: boolean) => void): () => void {
+    const wrapped = (_event: IpcRendererEvent, active: unknown) => {
+      if (typeof active === 'boolean') listener(active)
+    }
+    ipcRenderer.on(WINDOW_ACTIVITY_CHANNEL, wrapped)
+    return () => ipcRenderer.off(WINDOW_ACTIVITY_CHANNEL, wrapped)
   },
   pathForFile(file: File): string {
     return webUtils.getPathForFile(file)

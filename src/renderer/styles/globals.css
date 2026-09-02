@@ -107,6 +107,15 @@ button:disabled {
   }
 }
 
+/* Native application inactivity is distinct from DOM focus on macOS. Keep the
+   keyboard target legible, but mute the active-window accent while another app
+   owns the menu bar. This is intentionally unlayered so it also overrides
+   control-specific focus utilities in the utilities layer. */
+[data-window-inactive] :focus-visible {
+  outline-color: var(--color-zinc-700, #3f3f46);
+  --tw-ring-color: var(--color-zinc-700, #3f3f46);
+}
+
 /* Indeterminate "still working" bar: a short segment sweeping left to right. */
 @keyframes tapebox-indeterminate {
   0% { transform: translateX(-100%); }
