@@ -134,7 +134,11 @@ describe('listbox drag configuration', () => {
     const host = document.createElement('div')
     document.body.append(host)
     root = createRoot(host)
-    act(() => root!.render(createElement(BoxList, { onReorder: vi.fn() })))
+    act(() => root!.render(createElement(BoxList, {
+      onReorder: vi.fn(),
+      orderError: null,
+      onDismissOrderError: vi.fn(),
+    })))
 
     expect(dnd.sortables).toEqual([{
       id: 'box-a',
@@ -160,6 +164,25 @@ describe('listbox drag configuration', () => {
     ])
     expect(host.querySelectorAll('[role="listbox"][tabindex="0"]')).toHaveLength(1)
     expect(host.querySelectorAll('[role="option"][tabindex]')).toHaveLength(0)
+  })
+
+  it('keeps a reorder failure inside the owning box list and dismisses it there', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const dismiss = vi.fn()
+    root = createRoot(host)
+    act(() => root!.render(createElement(BoxList, {
+      onReorder: vi.fn(),
+      orderError: 'Could not save box order: disk full',
+      onDismissOrderError: dismiss,
+    })))
+
+    const list = host.querySelector<HTMLElement>('[role="listbox"][aria-label="Boxes"]')!
+    const alert = host.querySelector<HTMLElement>('[role="alert"]')!
+    expect(list.parentElement?.contains(alert)).toBe(true)
+    expect(alert.textContent).toContain('Could not save box order: disk full')
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="Dismiss box order error"]')!.click())
+    expect(dismiss).toHaveBeenCalledOnce()
   })
 })
 

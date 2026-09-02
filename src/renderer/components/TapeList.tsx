@@ -4,7 +4,7 @@ import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
-import { useToastStore } from '@renderer/store/toast'
+import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { ListboxDragProvider, planTapeListDrop } from '@renderer/lib/dnd'
 import { moveArrayItem, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
@@ -13,6 +13,7 @@ import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
 import { errorMessage } from '@shared/error'
+import { InlineError } from './ui'
 
 /**
  * The inbox: one continuous list in manual order. New tapes arrive at the top
@@ -25,6 +26,8 @@ export function TapeList() {
   const selectedId = useSelectionStore((s) => s.selectedId)
   const filter = useFilterStore((s) => s.filter)
   const visible = useVisibleTapes()
+  const orderError = useOrderFailuresStore((s) => s.inbox)
+  const setOrderError = useOrderFailuresStore((s) => s.setInbox)
 
   const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId, (id, offset) => {
     const from = visible.findIndex((t) => t.id === id)
@@ -72,37 +75,47 @@ export function TapeList() {
         )
       },
       () => useTapesStore.getState().upsertMany(visible),
-      (error) => useToastStore.getState().notify(`Could not save tape order: ${errorMessage(error)}`, 'error'),
+      () => setOrderError(null),
+      (error) => setOrderError(`Could not save tape order: ${errorMessage(error)}`),
     )
   }
 
-  if (visible.length === 0) {
-    return <div className="p-6 text-sm text-zinc-300">{emptyMessageFor(filter)}</div>
-  }
-
   return (
-    <ListboxDragProvider onDragEnd={onDragEnd}>
-      <div ref={topRef} />
-      <ul
-        ref={kb.ref}
-        {...kb.listboxProps}
-        role="listbox"
-        aria-label="Tapes"
-        className="space-y-1.5 p-3 outline-none"
-      >
-        {visible.map((tape, index) => (
-          <SortableTape key={tape.id} id={tape.id} index={index}>
-            <TapeRow
-              tape={tape}
-              progress={progress[tape.id]}
-              selected={tape.id === selectedId}
-              id={kb.optionId(tape.id)}
-              onSelect={() => selectTape(tape.id)}
-            />
-          </SortableTape>
-        ))}
-      </ul>
-    </ListboxDragProvider>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {orderError && (
+        <InlineError className="m-3 mb-0 shrink-0" onDismiss={() => setOrderError(null)} dismissLabel="Dismiss tape order error">
+          {orderError}
+        </InlineError>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {visible.length === 0 ? (
+          <div className="p-6 text-sm text-zinc-300">{emptyMessageFor(filter)}</div>
+        ) : (
+          <ListboxDragProvider onDragEnd={onDragEnd}>
+            <div ref={topRef} />
+            <ul
+              ref={kb.ref}
+              {...kb.listboxProps}
+              role="listbox"
+              aria-label="Tapes"
+              className="space-y-1.5 p-3 outline-none"
+            >
+              {visible.map((tape, index) => (
+                <SortableTape key={tape.id} id={tape.id} index={index}>
+                  <TapeRow
+                    tape={tape}
+                    progress={progress[tape.id]}
+                    selected={tape.id === selectedId}
+                    id={kb.optionId(tape.id)}
+                    onSelect={() => selectTape(tape.id)}
+                  />
+                </SortableTape>
+              ))}
+            </ul>
+          </ListboxDragProvider>
+        )}
+      </div>
+    </div>
   )
 }
 

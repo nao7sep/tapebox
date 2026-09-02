@@ -16,6 +16,7 @@ import {
 import { boxNameError, UNBOXED_LABEL } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
 import { PlusIcon } from './Icon'
+import { InlineError } from './ui'
 
 /** Droppable id for the Unboxed row (it is not a real box, so it has no box id). */
 export const UNBOXED_DROP_ID = '__unboxed__'
@@ -27,7 +28,15 @@ export const UNBOXED_DROP_ID = '__unboxed__'
  * file it); the parent provider owns completion mapping. Deleting a box only
  * re-files its tapes to Unboxed — it never removes the tapes.
  */
-export function BoxList({ onReorder }: { onReorder: (activeId: string, offset: -1 | 1) => void }) {
+export function BoxList({
+  onReorder,
+  orderError,
+  onDismissOrderError,
+}: {
+  onReorder: (activeId: string, offset: -1 | 1) => void
+  orderError: string | null
+  onDismissOrderError: () => void
+}) {
   const boxes = useBoxesStore((s) => s.boxes)
   const tapes = useTapesStore((s) => s.tapes)
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
@@ -102,6 +111,12 @@ export function BoxList({ onReorder }: { onReorder: (activeId: string, offset: -
           New box
         </button>
       </div>
+
+      {orderError && (
+        <InlineError className="mx-2 mb-2 shrink-0" onDismiss={onDismissOrderError} dismissLabel="Dismiss box order error">
+          {orderError}
+        </InlineError>
+      )}
 
       <div
         ref={kb.ref}

@@ -68,6 +68,22 @@ describe('Modal accessibility', () => {
     expect(heading?.tagName).toBe('H2')
     expect(heading?.textContent).toBe('Settings')
   })
+
+  it('keeps its header and footer fixed while only the body may shrink and scroll', async () => {
+    await mountModal('Growing result', {
+      footer: React.createElement('button', null, 'Close'),
+    })
+    const d = dialog()
+    const header = d.querySelector('header')!
+    const body = header.nextElementSibling as HTMLElement
+    const footer = d.querySelector('footer')!
+
+    expect(d.className).toContain('max-h-[85vh]')
+    expect(header.className).toContain('shrink-0')
+    expect(body.className).toContain('min-h-0')
+    expect(body.className).toContain('overflow-y-auto')
+    expect(footer.className).toContain('shrink-0')
+  })
 })
 
 describe('Modal focus management', () => {

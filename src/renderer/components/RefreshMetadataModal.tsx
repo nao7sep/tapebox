@@ -4,7 +4,6 @@ import type { RefreshedMetadata } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
-import { useToastStore } from '@renderer/store/toast'
 import { Modal } from './Modal'
 import { Button, InlineError, Spinner } from './ui'
 import { CheckIcon } from './Icon'
@@ -28,7 +27,6 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   const [error, setError] = useState<string | null>(null)
   const [probing, setProbing] = useState(false)
   const [applying, setApplying] = useState(false)
-  const notify = useToastStore((s) => s.notify)
 
   const probed = candidate !== null
 
@@ -64,7 +62,6 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
     setError(null)
     try {
       await ipcInvoke('library:applyMetadata', { tapeId: tape.id, metadata: candidate })
-      notify('Metadata updated.', 'info')
       onClose()
     } catch (err) {
       setError(String(err))

@@ -13,7 +13,7 @@ import { ArrowDownIcon } from './Icon'
  * Footer split into three fixed zones, each owning one kind of information so
  * none evicts another:
  *   left   — live download activity, or an idle library summary
- *   center — the transient notice (import results, errors); empty when none
+ *   center — an eligible app-wide passing notice; empty when none
  *   right  — managed-tool / update state, click-through to the tools modal
  */
 export function StatusBar() {
@@ -84,9 +84,9 @@ function ActivityZone() {
 }
 
 /**
- * Passing info confirmations (replaces native alert()); empty when there's
- * nothing to say. Errors don't appear here — they float as dismissible cards
- * (see Toaster) so they can't scroll away before being read.
+ * Passing app-wide information; empty when there is nothing to say. Local
+ * operation results stay with their owner, while eligible app-wide errors use
+ * dismissible cards (see Toaster).
  */
 function NoticeZone() {
   const info = useToastStore((s) => s.toasts).filter((t) => t.kind === 'info').at(-1)

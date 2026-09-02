@@ -42,7 +42,7 @@ export function SearchResults() {
   }
 
   return (
-    <div ref={kb.ref} {...kb.listboxProps} role="listbox" aria-label="Search results" className="pb-3 outline-none">
+    <div ref={kb.ref} {...kb.listboxProps} role="listbox" aria-label="Search results" className="min-h-0 flex-1 overflow-y-auto pb-3 outline-none">
       {groups.map((group) => (
         <section
           key={group.boxId ?? '__unboxed__'}

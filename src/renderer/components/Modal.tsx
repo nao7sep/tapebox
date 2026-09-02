@@ -131,7 +131,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain p-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">{children}</div>
 
         {footer && (
           <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-700 p-4">

@@ -14,10 +14,20 @@ export function settleOptimisticOrder(
   persistence: Promise<unknown>,
   isStillCurrent: () => boolean,
   rollback: () => void,
-  report: (error: unknown) => void,
+  succeed: () => void,
+  fail: (error: unknown) => void,
 ): void {
-  void persistence.catch((error) => {
-    if (isStillCurrent()) rollback()
-    report(error)
-  })
+  void persistence.then(
+    () => {
+      if (isStillCurrent()) succeed()
+    },
+    (error) => {
+      // A superseded attempt no longer owns the rendered consequence: its newer
+      // order stays visible, and the main IPC boundary has already logged the old
+      // failure. Only the still-current projection reverts and reports locally.
+      if (!isStillCurrent()) return
+      rollback()
+      fail(error)
+    },
+  )
 }

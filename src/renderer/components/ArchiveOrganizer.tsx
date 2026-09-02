@@ -14,7 +14,7 @@ import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { ListboxDragProvider, planArchiveDrop } from '@renderer/lib/dnd'
 import { moveArrayItem, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
-import { useToastStore } from '@renderer/store/toast'
+import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { errorMessage } from '@shared/error'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { BoxList } from './BoxList'
@@ -32,12 +32,18 @@ import { ResizeHandle } from './ResizeHandle'
 export function ArchiveOrganizer() {
   const boxes = useBoxesStore((s) => s.boxes)
   const query = useArchiveStore((s) => s.query)
+  const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
   const setQuery = useArchiveStore((s) => s.setQuery)
   const pendingSearchFocus = useArchiveStore((s) => s.pendingSearchFocus)
   const setPendingSearchFocus = useArchiveStore((s) => s.setPendingSearchFocus)
   const boxesIntent = useLayoutStore((s) => s.layout.archiveBoxesHeight)
   const tapes = useVisibleTapes()
   const searching = query.trim().length > 0
+  const boxOrderError = useOrderFailuresStore((s) => s.boxes)
+  const setBoxOrderError = useOrderFailuresStore((s) => s.setBoxes)
+  const tapeListKey = selectedBoxId === null ? 'unboxed' : `box:${selectedBoxId}`
+  const tapeOrderError = useOrderFailuresStore((s) => s.archiveTapes[tapeListKey] ?? null)
+  const setTapeOrderError = useOrderFailuresStore((s) => s.setArchiveTapes)
 
   // Consume the one-shot focus request from the "/" shortcut: focus + select the
   // search box, then clear the flag. Runs on mount too (when "/" was pressed from
@@ -106,7 +112,8 @@ export function ArchiveOrganizer() {
         )
       },
       () => useBoxesStore.getState().setBoxes(boxes),
-      (error) => useToastStore.getState().notify(`Could not save box order: ${errorMessage(error)}`, 'error'),
+      () => setBoxOrderError(null),
+      (error) => setBoxOrderError(`Could not save box order: ${errorMessage(error)}`),
     )
   }
 
@@ -125,7 +132,8 @@ export function ArchiveOrganizer() {
         )
       },
       () => useTapesStore.getState().upsertMany(tapes),
-      (error) => useToastStore.getState().notify(`Could not save tape order: ${errorMessage(error)}`, 'error'),
+      () => setTapeOrderError(tapeListKey, null),
+      (error) => setTapeOrderError(tapeListKey, `Could not save tape order: ${errorMessage(error)}`),
     )
   }
 
@@ -145,6 +153,8 @@ export function ArchiveOrganizer() {
         <div className="relative flex shrink-0 flex-col border-b border-zinc-700" style={{ height: effectiveBoxesHeight }}>
           <BoxList
             onReorder={(id, offset) => reorderBox(id, sortedBoxIds().indexOf(id) + offset)}
+            orderError={boxOrderError}
+            onDismissOrderError={() => setBoxOrderError(null)}
           />
           <ResizeHandle
             edge="bottom"
@@ -158,11 +168,13 @@ export function ArchiveOrganizer() {
             onCommit={(h) => patchLayout({ archiveBoxesHeight: h }, true)}
           />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col">
           {searching ? (
             <SearchResults />
           ) : (
             <ArchiveTapeList
+              orderError={tapeOrderError}
+              onDismissOrderError={() => setTapeOrderError(tapeListKey, null)}
               onReorder={(id, offset) => {
                 const from = tapes.findIndex((tape) => tape.id === id)
                 reorderTape(id, from + offset)

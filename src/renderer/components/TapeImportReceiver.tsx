@@ -9,7 +9,7 @@ import {
 } from '@renderer/lib/externalDrop'
 import { useImportResultStore } from '@renderer/store/importResult'
 import { describeError } from '@shared/error'
-import { CloseIcon } from './Icon'
+import { CloseIcon, ErrorIcon, InformationIcon, WarningIcon } from './Icon'
 
 export function TapeImportReceiver({ children }: { children: ReactNode }) {
   const [deliveryActive, setDeliveryActive] = useState(false)
@@ -126,13 +126,19 @@ function ImportResultNotice() {
 
   return (
     <section
-      role="status"
+      role={severity === 'error' ? 'alert' : 'status'}
       aria-atomic="true"
-      className={`m-3 mt-0 rounded-md border px-3 py-2.5 shadow-sm ${palette}`}
+      className={`m-3 mt-0 max-h-[40%] shrink-0 overflow-y-auto rounded-md border px-3 py-2.5 shadow-sm ${palette}`}
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">{lead}</p>
+          <p className="flex items-start gap-1.5 text-sm font-semibold">
+            <strong className="inline-flex shrink-0 items-center gap-1">
+              {severity === 'error' ? <ErrorIcon /> : severity === 'warning' ? <WarningIcon /> : <InformationIcon />}
+              {severity === 'error' ? 'Error' : severity === 'warning' ? 'Warning' : 'Information'}
+            </strong>
+            <span>{lead}</span>
+          </p>
           <ul className={`mt-1.5 space-y-1 text-xs ${detailColor}`}>
             {result.issues.map((item, index) => (
               <li key={`${item.path}-${index}`}>
