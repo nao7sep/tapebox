@@ -28,14 +28,14 @@ export function useTapeRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
   async function perform(tape: Tape): Promise<void> {
     const advance = advanceSelection(tape) // captures the neighbor before removal
     releaseVideo(videoRef.current)
-    const removed = await runTapeAction(
+    const outcome = await runTapeAction(
       tape.id,
       'remove',
       'tape removal failed',
       'This tape could not be removed. It remains in the library; try again.',
       () => ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true }),
     )
-    if (removed) advance()
+    if (outcome === 'succeeded') advance()
   }
 
   function requestRemove(tape: Tape): void {

@@ -11,7 +11,8 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { releaseVideo } from '@renderer/lib/video'
-import { archiveTape, copyTapeSourceUrl, openTapeSourceUrl, unarchiveTape } from '@renderer/lib/tapeActions'
+import { archiveTape, openTapeSourceUrl, unarchiveTape } from '@renderer/lib/tapeActions'
+import { useCopyTapeSourceUrl } from '@renderer/lib/useCopyTapeSourceUrl'
 import { isShortcutBlocked } from '@renderer/lib/dom'
 import { log } from '@renderer/ipc/log'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
@@ -34,9 +35,6 @@ import { downloadFailurePresentation } from '@renderer/lib/downloadFailure'
 import { runTapeAction } from '@renderer/lib/runTapeAction'
 import { TapeActionResults } from './TapeActionResults'
 import { LayoutWriteResult } from './LayoutWriteResult'
-
-/** How long the Copy URL button shows "Copied" before reverting to "Copy URL". */
-const COPIED_RESET_MS = 1500
 
 /** Seconds the Left/Right arrows move the playhead. */
 const SEEK_STEP_SECONDS = 10
@@ -76,7 +74,7 @@ export function DetailPane({
   const [renaming, setRenaming] = useState(false)
   const resumeRef = useRef<{ at: number; play: boolean } | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const { copied, copy: copyUrl } = useCopyTapeSourceUrl(tape.id, tape.sourceUrl)
   const progress = useTapesStore((s) => s.progress[tape.id])
   const logEntries = useDownloadLogStore((s) => s.entries[tape.id]) ?? NO_ENTRIES
   const mediaBase = useMediaStore((s) => s.baseUrl)
@@ -172,14 +170,6 @@ export function DetailPane({
     // play() rejects as normal control flow (autoplay policy, or a play
     // interrupted by a new load) — an expected branch, not a logged incident.
     void v.play().catch(() => {})
-  }
-
-  async function copyUrl() {
-    const copied = await copyTapeSourceUrl(tape.id, tape.sourceUrl)
-    if (copied) {
-      setCopied(true)
-      setTimeout(() => setCopied(false), COPIED_RESET_MS)
-    }
   }
 
   async function openSourceUrl() {

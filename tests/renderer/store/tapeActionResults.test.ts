@@ -47,5 +47,23 @@ describe('direct tape action result ownership', () => {
     await olderAttempt
 
     expect(useTapeActionResultsStore.getState().byTape['tape-a']).toBeUndefined()
+    expect(logError).toHaveBeenCalledWith(
+      'open failed',
+      expect.objectContaining({ error: expect.objectContaining({ message: 'stale failure' }) }),
+    )
+  })
+
+  it('does not let an older success clear a newer rejection for the same action', async () => {
+    let resolveOlder!: () => void
+    const older = new Promise<void>((resolve) => { resolveOlder = resolve })
+    const olderAttempt = runTapeAction('tape-a', 'open', 'open failed', 'Older failure', () => older)
+    const newerOutcome = await runTapeAction('tape-a', 'open', 'open failed', 'Newer failure', async () => {
+      throw new Error('newer failed')
+    })
+    resolveOlder()
+
+    await expect(olderAttempt).resolves.toBe('superseded')
+    expect(newerOutcome).toBe('failed')
+    expect(useTapeActionResultsStore.getState().byTape['tape-a']).toEqual({ open: 'Newer failure' })
   })
 })

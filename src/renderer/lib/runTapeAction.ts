@@ -6,6 +6,8 @@ import {
 
 const attempts = new Map<string, number>()
 
+export type TapeActionOutcome = 'succeeded' | 'failed' | 'superseded'
+
 /** Settle one immediate tape command at the tape that owns its consequence. */
 export async function runTapeAction(
   tapeId: string,
@@ -13,7 +15,7 @@ export async function runTapeAction(
   operation: string,
   userMessage: string,
   invoke: () => Promise<unknown>,
-): Promise<boolean> {
+): Promise<TapeActionOutcome> {
   const attemptKey = `${tapeId}:${action}`
   const attempt = (attempts.get(attemptKey) ?? 0) + 1
   attempts.set(attemptKey, attempt)
@@ -21,16 +23,18 @@ export async function runTapeAction(
   results.setResult(tapeId, action, null)
   try {
     await invoke()
-    return true
+    return attempts.get(attemptKey) === attempt ? 'succeeded' : 'superseded'
   } catch (error) {
+    const message = presentFailure(error, userMessage, operation)
     // A later attempt for this same tape/action owns both presentation and any
-    // optimistic rollback. Its outcome must not be overwritten by this one.
-    if (attempts.get(attemptKey) !== attempt) return true
+    // optimistic rollback. Its outcome must not be overwritten by this one,
+    // while the stale failure still remains in diagnostics.
+    if (attempts.get(attemptKey) !== attempt) return 'superseded'
     useTapeActionResultsStore.getState().setResult(
       tapeId,
       action,
-      presentFailure(error, userMessage, operation),
+      message,
     )
-    return false
+    return 'failed'
   }
 }

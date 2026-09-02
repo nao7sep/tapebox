@@ -112,8 +112,8 @@ function relocate(
   if (advance) advance()
   else revealTape(tape.id, dest)
 
-  void runTapeAction(tape.id, action, operation, userMessage, persist).then((succeeded) => {
-    if (succeeded) return
+  void runTapeAction(tape.id, action, operation, userMessage, persist).then((outcome) => {
+    if (outcome !== 'failed') return
     const current = useTapesStore.getState().tapes.find((candidate) => candidate.id === tape.id)
     if (!current) return
     if (current.archivedAtUtc !== optimistic.archivedAtUtc || current.boxId !== optimistic.boxId) return
@@ -177,7 +177,7 @@ export function copyTapeSourceUrl(tapeId: string, sourceUrl: string): Promise<bo
     'source URL copy failed',
     'The source URL could not be copied. Try Copy URL again.',
     () => navigator.clipboard.writeText(sourceUrl),
-  )
+  ).then((outcome) => outcome === 'succeeded')
 }
 
 export function openTapeSourceUrl(tapeId: string, sourceUrl: string): Promise<boolean> {
@@ -187,5 +187,5 @@ export function openTapeSourceUrl(tapeId: string, sourceUrl: string): Promise<bo
     'source URL open failed',
     'The source URL could not be opened in your browser. Try Open URL again.',
     () => ipcInvoke('app:openExternal', { url: sourceUrl }),
-  )
+  ).then((outcome) => outcome === 'succeeded')
 }
