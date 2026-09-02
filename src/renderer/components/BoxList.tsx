@@ -113,7 +113,7 @@ export function BoxList({
       </div>
 
       {orderError && (
-        <InlineError className="mx-2 mb-2 shrink-0" onDismiss={onDismissOrderError} dismissLabel="Dismiss box order error">
+        <InlineError className="mx-2 mb-2 shrink-0" onDismiss={onDismissOrderError} closeLabel="Close box order result">
           {orderError}
         </InlineError>
       )}

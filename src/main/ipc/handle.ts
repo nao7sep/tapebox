@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
 import type { IpcCalls } from '@shared/ipc-contract'
-import { describeError, errorMessage } from '@shared/error'
+import { describeError } from '@shared/error'
 import { log } from '@main/io/logger'
 import { ipcRequestSchemas } from './schemas'
 
@@ -12,8 +12,9 @@ import { ipcRequestSchemas } from './schemas'
  * schemas.ts) — the type-only IpcCalls contract checks the wire shape at compile
  * time, but this is the boundary where a malformed payload from a compromised
  * renderer is actually rejected before it reaches privileged code. A rejected
- * request and a thrown handler are logged distinctly, then re-thrown so the
- * renderer's invoke promise rejects with a meaningful message.
+ * request and a thrown handler are logged distinctly. Only stable app-authored
+ * copy crosses back to the renderer; full exception diagnostics stay in main's
+ * structured log.
  */
 export function handle<K extends keyof IpcCalls>(
   channel: K,
@@ -29,17 +30,13 @@ export function handle<K extends keyof IpcCalls>(
       req = schema.parse(rawReq)
     } catch (err) {
       log.error('ipc request rejected', { channel, error: describeError(err) })
-      throw err
+      throw new Error('The request could not be completed.', { cause: err })
     }
     try {
       return await handler(req)
     } catch (err) {
       log.error('ipc handler failed', { channel, error: describeError(err) })
-      const visibleMessage = errorMessage(err)
-      if (err instanceof Error && visibleMessage !== err.message) {
-        throw new Error(visibleMessage, { cause: err })
-      }
-      throw err
+      throw new Error('The operation could not be completed.', { cause: err })
     }
   })
 }

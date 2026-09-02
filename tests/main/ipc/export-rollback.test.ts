@@ -16,6 +16,7 @@ vi.mock('electron', () => ({
 const state = vi.hoisted(() => ({
   destinationDir: '', calls: 0, first: null as null | { path: string; identity: string }, cleanupThrows: false,
 }))
+const logError = vi.hoisted(() => vi.fn())
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
@@ -62,7 +63,7 @@ vi.mock('@main/ipc/library', () => ({
   caseInsensitiveSiblingExists: vi.fn(async () => false),
   removeTapes: vi.fn(async () => ({ failed: [] })),
 }))
-vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
+vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() } }))
 
 const { registerExportHandlers } = await import('@main/ipc/export')
 
@@ -70,6 +71,7 @@ let root: string
 
 beforeEach(async () => {
   handlers.clear()
+  logError.mockClear()
   state.calls = 0
   state.first = null
   state.cleanupThrows = false
@@ -100,21 +102,20 @@ describe('export:files rollback ownership', () => {
     const failure = handlers.get('export:files')!({
       tapeId: tape.id, destinationDir: state.destinationDir, name: 'Exported', deleteFromApp: false,
     })
-    await expect(failure).rejects.toThrow(/sidecar publication failed/)
-    await expect(failure).rejects.toThrow(/could not be fully cleaned up/)
+    await expect(failure).rejects.toThrow('The operation could not be completed.')
 
     expect(await readFile(join(state.destinationDir, 'Exported.mp4'), 'utf8')).toBe('external winner')
     await expect(readFile(join(state.destinationDir, 'Exported.jpg'))).rejects.toThrow()
   })
 
-  it('surfaces a thrown rollback cleanup together with the initiating failure', async () => {
+  it('keeps rollback cleanup details in diagnostics while the rejection stays authored', async () => {
     state.cleanupThrows = true
     const failure = handlers.get('export:files')!({
       tapeId: tape.id, destinationDir: state.destinationDir, name: 'Exported', deleteFromApp: false,
     })
 
-    await expect(failure).rejects.toThrow(/sidecar publication failed/)
-    await expect(failure).rejects.toThrow(/could not be fully cleaned up/)
-    await expect(failure).rejects.toThrow(join(state.destinationDir, 'export-recovery.tmp'))
+    await expect(failure).rejects.toThrow('The operation could not be completed.')
+    expect(JSON.stringify(logError.mock.calls)).toContain('sidecar publication failed')
+    expect(JSON.stringify(logError.mock.calls)).toContain('export-recovery.tmp')
   })
 })

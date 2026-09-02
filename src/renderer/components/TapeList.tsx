@@ -83,7 +83,7 @@ export function TapeList() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {orderError && (
-        <InlineError className="m-3 mb-0 shrink-0" onDismiss={() => setOrderError(null)} dismissLabel="Dismiss tape order error">
+        <InlineError className="m-3 mb-0 shrink-0" onDismiss={() => setOrderError(null)} closeLabel="Close tape order result">
           {orderError}
         </InlineError>
       )}

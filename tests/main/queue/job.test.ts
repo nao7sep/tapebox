@@ -55,9 +55,11 @@ function makeDeps(opts: {
   initial?: Tape[]
   probe?: JobDeps['ytdlp']['probe']
   download?: JobDeps['ytdlp']['download']
-}): { deps: JobDeps; tapes: Map<string, Tape>; emits: string[] } {
+}): { deps: JobDeps; tapes: Map<string, Tape>; emits: string[]; payloads: unknown[]; errors: unknown[] } {
   const tapes = new Map<string, Tape>((opts.initial ?? []).map((t) => [t.id, t]))
   const emits: string[] = []
+  const payloads: unknown[] = []
+  const errors: unknown[] = []
   const noop = (): void => {}
 
   const deps: JobDeps = {
@@ -88,13 +90,14 @@ function makeDeps(opts: {
       },
     },
     getLibraryDir: () => LIBRARY_DIR,
-    emit: ((channel: string) => {
+    emit: ((channel: string, payload: unknown) => {
       emits.push(channel)
+      payloads.push(payload)
     }) as JobDeps['emit'],
-    log: { info: noop, warn: noop, error: noop },
+    log: { info: noop, warn: noop, error: ((_message: string, fields: unknown) => errors.push(fields)) as JobDeps['log']['error'] },
     now: () => T1,
   }
-  return { deps, tapes, emits }
+  return { deps, tapes, emits, payloads, errors }
 }
 
 describe('Job lifecycle (driven with fakes)', () => {
@@ -126,7 +129,8 @@ describe('Job lifecycle (driven with fakes)', () => {
     const { deps, tapes } = makeDeps({ initial: [existing, t], probe: async () => video })
     await new Job(t, deps).run()
     expect(tapes.get('t1')!.state).toBe('failed')
-    expect(tapes.get('t1')!.lastError).toMatch(/Duplicate/)
+    expect(tapes.get('t1')!.failureCode).toBe('duplicate')
+    expect(tapes.get('t1')!.lastError).toMatch(/already in the library/)
   })
 
   it('lands a cancelled run in paused, not failed', async () => {
@@ -143,5 +147,25 @@ describe('Job lifecycle (driven with fakes)', () => {
     await job.run() // probe sees the aborted signal, throws; the catch maps it to paused
     expect(tapes.get('t1')!.state).toBe('paused')
     expect(tapes.get('t1')!.lastError).toBeNull()
+  })
+
+  it('keeps hostile process diagnostics out of persisted and emitted presentation', async () => {
+    const hostile = 'EACCES Error invoking remote method IPC /private/tmp/HOSTILE-SENTINEL'
+    const t = tape({ id: 't1' })
+    const { deps, tapes, emits, payloads, errors } = makeDeps({
+      initial: [t],
+      probe: async () => { throw new Error(hostile, { cause: new TypeError('root cause') }) },
+    })
+
+    await new Job(t, deps).run()
+
+    const failed = tapes.get('t1')!
+    expect(failed.failureCode).toBe('download')
+    expect(failed.lastError).not.toContain('HOSTILE-SENTINEL')
+    const eventIndex = emits.lastIndexOf('tapes:failed')
+    expect(payloads[eventIndex]).toEqual({ tapeId: 't1', code: 'download' })
+    expect(JSON.stringify(payloads)).not.toContain('HOSTILE-SENTINEL')
+    expect(JSON.stringify(errors)).toContain('HOSTILE-SENTINEL')
+    expect(JSON.stringify(errors)).toContain('root cause')
   })
 })

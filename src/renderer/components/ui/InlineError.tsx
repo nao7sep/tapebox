@@ -6,7 +6,7 @@ type InlineErrorProps = {
   className?: string
   id?: string
   onDismiss?: () => void
-  dismissLabel?: string
+  closeLabel?: string
 }
 
 export function InlineError({
@@ -14,7 +14,7 @@ export function InlineError({
   className = '',
   id,
   onDismiss,
-  dismissLabel = 'Dismiss error',
+  closeLabel = 'Close result',
 }: InlineErrorProps) {
   return (
     <div
@@ -28,7 +28,7 @@ export function InlineError({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label={dismissLabel}
+          aria-label={closeLabel}
           className="absolute top-1.5 right-2 grid h-6 w-6 place-items-center rounded border-0 bg-transparent p-0 text-red-300/80 hover:bg-red-900 hover:text-red-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-300"
         >
           <CloseIcon />

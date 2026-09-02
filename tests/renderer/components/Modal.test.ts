@@ -84,6 +84,16 @@ describe('Modal accessibility', () => {
     expect(body.className).toContain('overflow-y-auto')
     expect(footer.className).toContain('shrink-0')
   })
+
+  it('draws a quiet header close control whose hit area appears on hover and focus', async () => {
+    await mountModal('Settings')
+    const close = dialog().querySelector<HTMLButtonElement>('header button[aria-label="Close"]')!
+
+    expect(close.className).toContain('border-0')
+    expect(close.className).toContain('bg-transparent')
+    expect(close.className).toContain('hover:bg-zinc-800')
+    expect(close.className).toContain('focus-visible:bg-zinc-800')
+  })
 })
 
 describe('Modal focus management', () => {

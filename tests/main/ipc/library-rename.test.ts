@@ -17,6 +17,7 @@ vi.mock('electron', () => ({
 const state = vi.hoisted(() => ({ tape: null as Tape | null, libraryDir: '' }))
 const upsertTape = vi.hoisted(() => vi.fn((tape: Tape) => { state.tape = tape }))
 const renameTapeDurably = vi.hoisted(() => vi.fn())
+const logError = vi.hoisted(() => vi.fn())
 vi.mock('@main/store/session', () => ({
   getTape: (id: string) => state.tape?.id === id ? state.tape : undefined,
   getTapes: () => state.tape ? [state.tape] : [],
@@ -35,7 +36,7 @@ vi.mock('@main/services/ytdlp', () => ({
 }))
 vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: vi.fn() }))
 vi.mock('@main/io/logger', () => ({
-  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  log: { info: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() },
 }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
@@ -87,6 +88,7 @@ let dir: string
 
 beforeEach(async () => {
   handlers.clear()
+  logError.mockClear()
   upsertTape.mockClear()
   renameTapeDurably.mockReset()
   dir = await mkdtemp(join(tmpdir(), 'tapebox-rename-'))
@@ -185,7 +187,7 @@ describe('library:rename', () => {
     rollbackMutation.mode = 'committed-winner'
     const invoke = handlers.get('library:rename')!
 
-    await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow(/publication failed/)
+    await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow('The operation could not be completed.')
 
     expect(await readFile(join(dir, 'renamed.mp4'), 'utf8')).toBe('external winner')
     expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('video')
@@ -211,7 +213,7 @@ describe('library:rename', () => {
     rollbackMutation.durableFails = true
     const invoke = handlers.get('library:rename')!
 
-    await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow(/catalog disk full/)
+    await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow('The operation could not be completed.')
 
     expect(rollbackMutation.sourcesVisibleAtCommit).toBe(true)
     expect(rollbackMutation.destinationsVisibleAtCommit).toBe(true)
@@ -224,14 +226,14 @@ describe('library:rename', () => {
     expect(rollbackMutation.order.at(-1)).toBe('cleanup:rollback')
   })
 
-  it('keeps the committed catalog authoritative when final old-claim cleanup fails', async () => {
+  it('keeps committed cleanup paths diagnostic-only while the catalog stays authoritative', async () => {
     rollbackMutation.mode = 'final-cleanup'
     const invoke = handlers.get('library:rename')!
 
     const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'renamed' }))
-    await expect(failure).rejects.toThrow(/Rename committed and the catalog points to the new bundle/)
+    await expect(failure).rejects.toThrow('The operation could not be completed.')
     expect(rollbackMutation.cleanupPath).toBe(join(dir, 'Take.mp4'))
-    await expect(failure).rejects.toThrow(rollbackMutation.cleanupPath)
+    expect(JSON.stringify(logError.mock.calls)).toContain(rollbackMutation.cleanupPath)
 
     expect(state.tape).toMatchObject({
       name: 'renamed',

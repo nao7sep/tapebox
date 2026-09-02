@@ -30,7 +30,7 @@ export function planOrphanResets(tapes: readonly Tape[], autostart: boolean, now
     .filter((tape) => tape.state === 'probing' || tape.state === 'downloading')
     .map((tape) =>
       autostart
-        ? { ...tape, state: 'queued' as const }
-        : { ...tape, state: 'paused' as const, pausedAtUtc: now },
+        ? { ...tape, state: 'queued' as const, failureCode: null, lastError: null }
+        : { ...tape, state: 'paused' as const, failureCode: null, lastError: null, pausedAtUtc: now },
     )
 }

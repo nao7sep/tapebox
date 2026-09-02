@@ -6,10 +6,14 @@ import * as sidecar from '@main/core/sidecar'
 import * as session from '@main/store/session'
 import { getLibraryDir } from '@main/store/config'
 import { emit } from '@main/ipc/events'
-import { describeError, errorMessage } from '@shared/error'
+import { describeError } from '@shared/error'
 import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
+
+const DOWNLOAD_FAILURE_MESSAGE =
+  'The download could not be completed. Check the source and your connection, then try again.'
+const DUPLICATE_FAILURE_MESSAGE = 'This video is already in the library, so it was not downloaded again.'
 
 /**
  * Everything the job lifecycle reaches into the rest of the app for. Injected so
@@ -95,13 +99,17 @@ export class Job {
       await this.download()
     } catch (err) {
       if (this.cancelled) {
-        this.update({ state: 'paused', lastError: null, pausedAtUtc: this.d.now() })
+        this.update({ state: 'paused', failureCode: null, lastError: null, pausedAtUtc: this.d.now() })
         return
       }
-      const message = errorMessage(err)
       this.d.log.error('job failed', { tapeId: this.tapeId, error: describeError(err) })
-      this.update({ state: 'failed', lastError: message, failedAtUtc: this.d.now() })
-      this.d.emit('tapes:failed', { tapeId: this.tapeId, error: message })
+      this.update({
+        state: 'failed',
+        failureCode: 'download',
+        lastError: DOWNLOAD_FAILURE_MESSAGE,
+        failedAtUtc: this.d.now(),
+      })
+      this.d.emit('tapes:failed', { tapeId: this.tapeId, code: 'download' })
     }
   }
 
@@ -122,7 +130,7 @@ export class Job {
     this.update({ state: 'probing' })
     const result = await this.d.ytdlp.probe(this.current()!.sourceUrl, this.controller.signal)
     if (result.kind === 'page') {
-      this.update({ state: 'listing', lastError: null, probedAtUtc: this.d.now() })
+      this.update({ state: 'listing', failureCode: null, lastError: null, probedAtUtc: this.d.now() })
       return false
     }
     // Two URLs can resolve to the same video (e.g. a short share link and the
@@ -139,14 +147,17 @@ export class Job {
       this.d.log.info('job rejected: duplicate', { tapeId: this.tapeId, extractor: result.extractor, sourceId: result.id, duplicateOf: duplicate.id })
       this.update({
         state: 'failed',
-        lastError: `Duplicate of an existing tape (same video). Not downloaded again.`,
+        failureCode: 'duplicate',
+        lastError: DUPLICATE_FAILURE_MESSAGE,
         failedAtUtc: this.d.now(),
         probedAtUtc: this.d.now(),
       })
+      this.d.emit('tapes:failed', { tapeId: this.tapeId, code: 'duplicate' })
       return false
     }
     this.update({
       state: 'ready',
+      failureCode: null,
       sourceId: result.id,
       extractor: result.extractor,
       title: result.title,
@@ -238,6 +249,7 @@ export class Job {
 
     this.update({
       state: 'downloaded',
+      failureCode: null,
       filename: mediaBasename,
       sidecarFilename,
       thumbnailFilename,

@@ -4,6 +4,7 @@ import { useBoxesStore } from '@renderer/store/boxes'
 import { useBinariesStore } from '@renderer/store/binaries'
 import { useRuntimeStore } from '@renderer/store/runtime'
 import { useDownloadLogStore } from '@renderer/store/downloadLog'
+import { downloadFailurePresentation } from '@renderer/lib/downloadFailure'
 
 /**
  * Wire renderer stores to main's IPC.
@@ -34,10 +35,10 @@ export function startIpcSync(): () => void {
       // Success: the player takes over, so the live log is no longer needed.
       useDownloadLogStore.getState().reset(tapeId)
     }),
-    ipcOn('tapes:failed',    ({ tapeId, error }) => {
+    ipcOn('tapes:failed',    ({ tapeId, code }) => {
       useTapesStore.getState().clearProgress(tapeId)
       // The error caps the log as its newest (top) entry.
-      useDownloadLogStore.getState().prepend(tapeId, { kind: 'error', text: error })
+      useDownloadLogStore.getState().prepend(tapeId, { kind: 'error', text: downloadFailurePresentation(code) })
     }),
     ipcOn('tapes:log',       ({ tapeId, line }) =>
       useDownloadLogStore.getState().prepend(tapeId, { kind: 'line', text: line }),

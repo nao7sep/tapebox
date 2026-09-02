@@ -30,6 +30,7 @@ import { ResizeHandle } from './ResizeHandle'
 import { MoveToBoxButton } from './MoveToBoxButton'
 import { CaptionedPanel } from './ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { downloadFailurePresentation } from '@renderer/lib/downloadFailure'
 
 /** How long the Copy URL button shows "Copied" before reverting to "Copy URL". */
 const COPIED_RESET_MS = 1500
@@ -595,7 +596,8 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
  * The body shown while a tape is queued/probing/downloading or after it failed:
  * yt-dlp's live output, newest line first. On failure the error sits at the top
  * (the store prepends it); after an app restart the live buffer is empty, so a
- * failed tape falls back to its persisted lastError. A successful download flips
+ * failed tape falls back to renderer-authored copy selected by its structured
+ * failure code. A successful download flips
  * the tape to 'downloaded' and the player replaces this panel.
  */
 function DownloadLogPanel({
@@ -609,8 +611,9 @@ function DownloadLogPanel({
 }) {
   const failed = tape.state === 'failed'
   const downloading = progress?.phase === 'downloading'
-  const fallback =
-    entries.length === 0 && failed ? (tape.lastError ?? 'No details available.') : null
+  const fallback = entries.length === 0 && failed
+    ? downloadFailurePresentation(tape.failureCode)
+    : null
 
   return (
     <CaptionedPanel

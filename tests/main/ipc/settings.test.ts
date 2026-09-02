@@ -47,6 +47,7 @@ const { completeLibraryRelocation, relocateLibrary, rollbackLibraryRelocation } 
   relocateLibrary: vi.fn(),
   rollbackLibraryRelocation: vi.fn(),
 }))
+const logError = vi.hoisted(() => vi.fn())
 vi.mock('@main/store/library-move', () => ({
   completeLibraryRelocation,
   relocateLibrary,
@@ -64,7 +65,7 @@ vi.mock('@main/paths', () => ({
   paths: { library: '/mock/.tapebox/library' },
 }))
 vi.mock('@main/io/logger', () => ({
-  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  log: { info: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() },
 }))
 
 const { registerSettingsHandlers } = await import('@main/ipc/settings')
@@ -98,14 +99,14 @@ afterEach(() => {
 
 describe('settings:update — normalizeUserDir at the boundary', () => {
   it('rejects a relative typed library folder (it must never reach a path join)', async () => {
-    await expect(update({ libraryDir: 'relative/library' })).rejects.toThrow(/absolute path/)
+    await expect(update({ libraryDir: 'relative/library' })).rejects.toThrow('The operation could not be completed.')
     // The relative value must not have been stored, and no relocation attempted.
     expect(updateSettings).not.toHaveBeenCalled()
     expect(relocateLibrary).not.toHaveBeenCalled()
   })
 
   it('rejects a relative typed default export folder', async () => {
-    await expect(update({ defaultExportDir: 'exports/here' })).rejects.toThrow(/absolute path/)
+    await expect(update({ defaultExportDir: 'exports/here' })).rejects.toThrow('The operation could not be completed.')
     expect(updateSettings).not.toHaveBeenCalled()
   })
 
@@ -140,9 +141,7 @@ describe('settings:update — relocation refused while downloads run', () => {
   it('throws and moves nothing when the library dir changes during active downloads', async () => {
     activeCount.mockReturnValue(2)
     // A real change: from the current resolved dir to a new absolute custom folder.
-    await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow(
-      /downloads are running/i,
-    )
+    await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('The operation could not be completed.')
     // The safety guard fires BEFORE the move and BEFORE the commit.
     expect(relocateLibrary).not.toHaveBeenCalled()
     expect(updateSettings).not.toHaveBeenCalled()
@@ -175,14 +174,14 @@ describe('settings:update — relocation refused while downloads run', () => {
     relocateLibrary.mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false, files })
     updateSettings.mockRejectedValueOnce(new Error('config disk full'))
 
-    await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('config disk full')
+    await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('The operation could not be completed.')
 
     expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [])
     expect(rollbackLibraryRelocation).toHaveBeenCalledWith(files)
     expect(completeLibraryRelocation).not.toHaveBeenCalled()
   })
 
-  it('surfaces an exact recovery path when settings rollback is incomplete', async () => {
+  it('keeps an exact rollback recovery path in diagnostics, not the rejection copy', async () => {
     const recoveryPath = '/data/new-library/a-rollback-recovery.tmp'
     const files = [
       {
@@ -198,11 +197,11 @@ describe('settings:update — relocation refused while downloads run', () => {
     )
 
     const failure = update({ libraryDir: '/data/new-library' })
-    await expect(failure).rejects.toThrow(/Settings could not be saved/)
-    await expect(failure).rejects.toThrow(recoveryPath)
+    await expect(failure).rejects.toThrow('The operation could not be completed.')
+    expect(JSON.stringify(logError.mock.calls)).toContain(recoveryPath)
   })
 
-  it('reports post-commit source cleanup as partial success without rolling back the destination', async () => {
+  it('keeps post-commit cleanup details diagnostic-only without rolling back the destination', async () => {
     const sourcePath = '/current/library/a.mp4'
     const files = [{
       name: 'a.mp4',
@@ -215,8 +214,8 @@ describe('settings:update — relocation refused while downloads run', () => {
     )
 
     const failure = update({ libraryDir: '/data/new-library' })
-    await expect(failure).rejects.toThrow(/Settings were saved and the new library is authoritative/)
-    await expect(failure).rejects.toThrow(sourcePath)
+    await expect(failure).rejects.toThrow('The operation could not be completed.')
+    expect(JSON.stringify(logError.mock.calls)).toContain(sourcePath)
     expect(updateSettings).toHaveBeenCalledOnce()
     expect(rollbackLibraryRelocation).not.toHaveBeenCalled()
   })

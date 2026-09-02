@@ -181,7 +181,7 @@ describe('listbox drag configuration', () => {
     const alert = host.querySelector<HTMLElement>('[role="alert"]')!
     expect(list.parentElement?.contains(alert)).toBe(true)
     expect(alert.textContent).toContain('Could not save box order: disk full')
-    act(() => host.querySelector<HTMLButtonElement>('[aria-label="Dismiss box order error"]')!.click())
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="Close box order result"]')!.click())
     expect(dismiss).toHaveBeenCalledOnce()
   })
 })

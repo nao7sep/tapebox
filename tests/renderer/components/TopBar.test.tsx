@@ -91,7 +91,7 @@ describe('TopBar Add URL result ownership', () => {
 
     ipcInvoke.mockRejectedValueOnce(new Error('Second failure'))
     await add()
-    const dismiss = host.querySelector<HTMLButtonElement>('[aria-label="Dismiss Add URL error"]')!
+    const dismiss = host.querySelector<HTMLButtonElement>('[aria-label="Close Add URL result"]')!
     await act(async () => dismiss.click())
     expect(host.querySelector('[role="alert"]')).toBeNull()
 

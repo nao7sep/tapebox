@@ -125,7 +125,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
             onClick={onClose}
             disabled={closeDisabled}
             aria-label="Close"
-            className="text-lg leading-none text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+            className="grid h-8 w-8 place-items-center rounded border-0 bg-transparent p-0 text-lg leading-none text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-300 disabled:opacity-40"
           >
             <CloseIcon />
           </button>

@@ -44,6 +44,10 @@ export const tapeStates = [
 
 export type TapeState = (typeof tapeStates)[number]
 
+/** Stable failure classes persisted with a failed tape and sent over IPC. */
+export const tapeFailureCodes = ['download', 'duplicate'] as const
+export type TapeFailureCode = (typeof tapeFailureCodes)[number]
+
 export const TapeSchema = z.object({
   // Required at insertion.
   id: EntityIdSchema,              // internal nanoid; stable for the Tape's lifetime
@@ -88,6 +92,9 @@ export const TapeSchema = z.object({
   // State-transition markers.
   pausedAtUtc: z.string().nullable(),          // when state → 'paused'
   failedAtUtc: z.string().nullable(),          // when state → 'failed'
+  // Optional for catalogs written before failure codes were introduced. The
+  // renderer treats a missing/unknown legacy value as a generic download failure.
+  failureCode: z.enum(tapeFailureCodes).nullable().optional(),
   lastError: z.string().nullable(),
 })
 export type Tape = z.infer<typeof TapeSchema>

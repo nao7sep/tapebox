@@ -52,7 +52,7 @@ export function tick(): void {
 export function resumePaused(): void {
   for (const tape of session.getTapes()) {
     if (tape.state !== 'paused') continue
-    const next = { ...tape, state: 'queued' as const, lastError: null }
+    const next = { ...tape, state: 'queued' as const, failureCode: null, lastError: null }
     session.upsertTape(next)
     emit('tapes:updated', next)
   }

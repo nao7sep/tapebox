@@ -30,7 +30,7 @@ export function ArchiveTapeList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {orderError && (
-        <InlineError className="m-3 mb-0 shrink-0" onDismiss={onDismissOrderError} dismissLabel="Dismiss box tape order error">
+        <InlineError className="m-3 mb-0 shrink-0" onDismiss={onDismissOrderError} closeLabel="Close box tape order result">
           {orderError}
         </InlineError>
       )}

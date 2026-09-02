@@ -8,7 +8,7 @@ import { emit } from './events'
 import * as session from '@main/store/session'
 import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
-import { describeError, errorMessage } from '@shared/error'
+import { describeError } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import {
   claimFile,
@@ -86,9 +86,7 @@ export function registerLibraryHandlers(): void {
     // files (and the catalog entry) actually remain.
     if (failed.length > 0) {
       const noun = failed.length === 1 ? 'tape' : 'tapes'
-      throw new Error(
-        `Couldn't remove the files for ${failed.length} ${noun}: ${failed.map((f) => f.error).join('; ')}`,
-      )
+      throw new Error(`The files for ${failed.length} ${noun} could not be removed. The library entries were kept.`)
     }
   })
 
@@ -547,11 +545,11 @@ export function registerLibraryHandlers(): void {
 export async function removeTapes(
   tapeIds: string[],
   deleteFiles: boolean,
-): Promise<{ removed: string[]; failed: { tapeId: string; error: string }[] }> {
+): Promise<{ removed: string[]; failed: string[] }> {
   const settings = getSettings()
   const libraryDir = getLibraryDir()
   const removed: string[] = []
-  const failed: { tapeId: string; error: string }[] = []
+  const failed: string[] = []
 
   for (const id of tapeIds) {
     const tape = session.getTape(id)
@@ -579,7 +577,8 @@ export async function removeTapes(
       } catch (err) {
         // The files couldn't be discarded — keep the catalog entry so the tape never
         // vanishes from the list while its files are left orphaned on disk.
-        failed.push({ tapeId: id, error: errorMessage(err) })
+        log.error('library removal failed', { tapeId: id, error: describeError(err) })
+        failed.push(id)
         continue
       }
     }

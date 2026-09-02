@@ -1,4 +1,4 @@
-import type { Box, Tape } from './domain'
+import type { Box, Tape, TapeFailureCode } from './domain'
 import type { Settings } from './settings'
 import type { Layout } from './layout'
 
@@ -251,7 +251,7 @@ export type IpcEvents = {
     etaSec?: number
   }
   'tapes:completed':   { tapeId: string }
-  'tapes:failed':      { tapeId: string; error: string }
+  'tapes:failed':      { tapeId: string; code: TapeFailureCode }
   'tapes:removed':     { tapeIds: string[] }
   // Live yt-dlp output for an in-progress download, one meaningful line at a
   // time, so the detail pane can show what's happening instead of a bare
@@ -266,7 +266,7 @@ export type IpcEvents = {
 
   'scan:entry':        { sessionId: string; entry: ScanResult }
   'scan:done':         { sessionId: string; totalCount: number }
-  'scan:error':        { sessionId: string; error: string }
+  'scan:error':        { sessionId: string; code: 'scan-failed' }
 
   'binaries:progress':        { name: BinaryName; operationId: string; percent: number; phase: 'download' | 'verify' | 'install' }
 }

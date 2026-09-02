@@ -46,7 +46,7 @@ describe('box-name canonical identity', () => {
   it('rejects a rename that differs from an existing name only by Unicode composition', async () => {
     await expect(
       invoke('boxes:rename', { boxId: 'box7654321', name: 'Cafe\u0301' }),
-    ).rejects.toThrow(/already exists/)
+    ).rejects.toThrow('The operation could not be completed.')
   })
 
   it('creates an NFC-normalized unique name when the requested identity is taken', async () => {

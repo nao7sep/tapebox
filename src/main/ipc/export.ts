@@ -96,7 +96,7 @@ export function registerExportHandlers(): void {
     if (deleteFromApp) {
       const { failed } = await removeTapes([tapeId], true)
       if (failed.length > 0) {
-        throw new Error(`Exported, but couldn't remove the original from the library: ${failed[0].error}`)
+        throw new Error('The tape was exported, but its original files could not be removed from the library.')
       }
     }
 

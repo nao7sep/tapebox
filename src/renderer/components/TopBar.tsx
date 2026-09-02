@@ -68,7 +68,7 @@ export function TopBar({ clipboardEnabled }: Props) {
         </Button>
       </div>
       {error && (
-        <InlineError id={errorId} onDismiss={() => setError(null)} dismissLabel="Dismiss Add URL error">
+        <InlineError id={errorId} onDismiss={() => setError(null)} closeLabel="Close Add URL result">
           {error}
         </InlineError>
       )}

@@ -101,6 +101,7 @@ export function tapeFromSidecar(
     order: params.order,
     pausedAtUtc: null,
     failedAtUtc: null,
+    failureCode: null,
     lastError: null,
   }
 }

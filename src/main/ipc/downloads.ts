@@ -78,7 +78,7 @@ export function registerDownloadHandlers(): void {
   handle('downloads:retry', async ({ tapeId }) => {
     // The download clears any stale .part at the start of every attempt, so
     // retry and resume both just re-queue.
-    transition(tapeId, { state: 'queued', lastError: null })
+    transition(tapeId, { state: 'queued', failureCode: null, lastError: null })
     queue.tick()
   })
 }
@@ -121,6 +121,7 @@ async function makeQueuedTape(url: string, order: number): Promise<Tape> {
     order,
     pausedAtUtc: autostart ? null : now,
     failedAtUtc: null,
+    failureCode: null,
     lastError: null,
   }
 }
