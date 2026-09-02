@@ -3,6 +3,7 @@ import type { Tape } from '@shared/domain'
 import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
 import { Button, InlineError } from '@renderer/components/ui'
+import { presentFailure } from '@renderer/lib/presentFailure'
 
 type Props = {
   tape: Tape
@@ -32,7 +33,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
       await onRename(name)
       onClose()
     } catch (err) {
-      setError(String(err))
+      setError(presentFailure(err, 'The tape could not be renamed. Existing filenames are unchanged; try another name or close apps using the files.', 'tape rename failed'))
       setApplying(false)
     }
   }

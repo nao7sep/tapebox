@@ -7,7 +7,7 @@ import { emit } from '@main/ipc/events'
 import { getDependencies, mutateDependencies } from '@main/store/dependencies'
 import { execCapture } from '@main/io/spawn'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
-import { describeError, errorMessage } from '@shared/error'
+import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
 import { recordLatest } from '@shared/binary-status'
 import { withRetry } from '@main/io/retry'
@@ -199,7 +199,7 @@ export async function checkForUpdates(signal?: AbortSignal): Promise<BinaryCheck
         // A failed check writes NOTHING (managed-runtime-dependencies-conventions):
         // no version, no timestamp, no error state — the displayed wording stays at
         // the last successful knowledge. Log it and move on.
-        failures.push({ name, message: errorMessage(err) })
+        failures.push({ name, message: `${name} could not be checked. Its installed version and last known update status are unchanged.` })
         log.warn('binary update check failed', { name, error: describeError(err) })
       }
     }),
@@ -240,7 +240,7 @@ export async function installOrUpdate(
           outcome = 'cancelled'
         } else {
           outcome = 'failed'
-          failure = errorMessage(err)
+          failure = `${name} could not be installed or updated. The existing tool, if any, is unchanged; try again.`
           log.warn('binary install failed', { name, operationId, error: describeError(err) })
         }
       }
@@ -259,7 +259,7 @@ export async function installOrUpdate(
     // A second renderer or an unexpected caller can still race the per-tool claim.
     // It receives a correlated terminal result and current facts; it never creates
     // an unowned rejected promise in the management view.
-    const error = errorMessage(err)
+    const error = `${name} is already being installed or updated. Wait for that operation to finish.`
     log.warn('binary install request refused', { name, operationId, error: describeError(err) })
     return { outcome: 'failed', operationId, status: await getStatus(name), error }
   }

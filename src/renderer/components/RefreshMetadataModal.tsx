@@ -7,6 +7,7 @@ import { describeError } from '@shared/error'
 import { Modal } from './Modal'
 import { Button, InlineError, Spinner } from './ui'
 import { CheckIcon } from './Icon'
+import { presentFailure } from '@renderer/lib/presentFailure'
 
 /**
  * Review-then-apply metadata refresh, and a rarely-needed one: saved metadata is
@@ -50,7 +51,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
     try {
       setCandidate(await ipcInvoke('library:probeMetadata', { tapeId: tape.id }))
     } catch (err) {
-      setError(String(err))
+      setError(presentFailure(err, 'The source metadata could not be checked. Saved metadata is unchanged; try again later.', 'metadata source check failed'))
     } finally {
       setProbing(false)
     }
@@ -64,7 +65,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
       await ipcInvoke('library:applyMetadata', { tapeId: tape.id, metadata: candidate })
       onClose()
     } catch (err) {
-      setError(String(err))
+      setError(presentFailure(err, 'The refreshed metadata could not be saved. Existing metadata is unchanged; try again.', 'metadata apply failed'))
       setApplying(false)
     }
   }

@@ -15,7 +15,7 @@ import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { ListboxDragProvider, planArchiveDrop } from '@renderer/lib/dnd'
 import { moveArrayItem, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
-import { errorMessage } from '@shared/error'
+import { presentFailure } from '@renderer/lib/presentFailure'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { BoxList } from './BoxList'
 import { ArchiveTapeList } from './ArchiveTapeList'
@@ -113,7 +113,7 @@ export function ArchiveOrganizer() {
       },
       () => useBoxesStore.getState().setBoxes(boxes),
       () => setBoxOrderError(null),
-      (error) => setBoxOrderError(`Could not save box order: ${errorMessage(error)}`),
+      (error) => setBoxOrderError(presentFailure(error, 'The box order was not saved. The previous order remains in use; try again.', 'box order save failed')),
     )
   }
 
@@ -133,7 +133,7 @@ export function ArchiveOrganizer() {
       },
       () => useTapesStore.getState().upsertMany(tapes),
       () => setTapeOrderError(tapeListKey, null),
-      (error) => setTapeOrderError(tapeListKey, `Could not save tape order: ${errorMessage(error)}`),
+      (error) => setTapeOrderError(tapeListKey, presentFailure(error, 'The tape order was not saved. The previous order remains in use; try again.', 'archive tape order save failed')),
     )
   }
 

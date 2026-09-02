@@ -99,7 +99,7 @@ describe('BinariesModal check and acquisition outcomes', () => {
     expect(document.body.textContent).toContain('ffmpeg: release host offline')
   })
 
-  it('shows a TimeoutError instead of mistaking its aborted wording for Cancel', async () => {
+  it('shows an authored failure instead of mistaking a TimeoutError for Cancel', async () => {
     ipcInvoke.mockRejectedValueOnce(
       new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
     )
@@ -107,7 +107,10 @@ describe('BinariesModal check and acquisition outcomes', () => {
 
     await act(async () => button('Install').click())
 
-    expect(document.body.textContent).toContain('The operation was aborted due to timeout')
+    expect(document.body.textContent).toContain(
+      'yt-dlp could not be installed or updated. The existing tool, if any, is unchanged; try again.',
+    )
+    expect(document.body.textContent).not.toContain('aborted due to timeout')
   })
 
   it('shows a retained cancellation beside the next valid action', async () => {

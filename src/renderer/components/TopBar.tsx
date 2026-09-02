@@ -3,7 +3,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useBinariesStore, requiredBinariesUsable } from '@renderer/store/binaries'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
-import { errorMessage } from '@shared/error'
+import { presentFailure } from '@renderer/lib/presentFailure'
 import { Button, InlineError } from '@renderer/components/ui'
 
 type Props = {
@@ -35,7 +35,7 @@ export function TopBar({ clipboardEnabled }: Props) {
       setError(null)
       consume()
     } catch (err) {
-      setError(errorMessage(err))
+      setError(presentFailure(err, 'The URL could not be added. Check it and try again.', 'add URL failed'))
     }
   }
 

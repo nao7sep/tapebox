@@ -387,7 +387,7 @@ export function registerLibraryHandlers(): void {
         log.error('import sidecar read failed', { path: sidecarPath, error: describeError(err) })
         issues.push({
           path: sidecarPath,
-          reason: `sidecar could not be read: ${errorMessage(err)}`,
+          reason: 'The sidecar could not be read. Check that the file is still available and try again.',
           severity: 'error',
         })
         continue
@@ -399,7 +399,7 @@ export function registerLibraryHandlers(): void {
       } catch (err) {
         issues.push({
           path: sidecarPath,
-          reason: `sidecar is not valid JSON: ${errorMessage(err)}`,
+          reason: 'The sidecar is not valid TapeBox JSON.',
           severity: 'warning',
         })
         continue
@@ -459,7 +459,7 @@ export function registerLibraryHandlers(): void {
           })
           issues.push({
             path: sidecarPath,
-            reason: `copy into library failed: ${errorMessage(err)}`,
+            reason: 'The tape files could not be copied into the library. Check that the library folder is available and try again.',
             severity: 'error',
           })
         } catch (cleanupError) {
@@ -471,7 +471,11 @@ export function registerLibraryHandlers(): void {
             path: sidecarPath,
             error: describeError(failure),
           })
-          issues.push({ path: sidecarPath, reason: errorMessage(failure), severity: 'error' })
+          issues.push({
+            path: sidecarPath,
+            reason: 'The tape files could not be copied completely. Check the library folder and the log before trying again.',
+            severity: 'error',
+          })
         }
         continue
       }
@@ -498,7 +502,7 @@ export function registerLibraryHandlers(): void {
           })
           issues.push({
             path: srcThumb,
-            reason: `thumbnail could not be copied into the library: ${errorMessage(err)}`,
+            reason: 'The thumbnail could not be copied into the library. The tape was imported without it.',
             severity: 'error',
           })
         }

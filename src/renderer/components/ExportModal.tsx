@@ -6,6 +6,7 @@ import { releaseVideo } from '@renderer/lib/video'
 import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
 import { Button, Field, InlineError, Toggle } from '@renderer/components/ui'
+import { presentFailure } from '@renderer/lib/presentFailure'
 
 type Props = { tape: Tape; videoRef: RefObject<HTMLVideoElement | null>; onClose: () => void }
 
@@ -49,7 +50,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
       await ipcInvoke('export:files', { tapeId: tape.id, destinationDir: dir, name, deleteFromApp })
       onClose()
     } catch (err) {
-      setError(String(err))
+      setError(presentFailure(err, 'The tape could not be exported. Existing library files are unchanged; check the destination and try again.', 'tape export failed'))
       setExporting(false)
     }
   }

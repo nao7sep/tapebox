@@ -18,6 +18,7 @@ import {
   Toggle,
   InlineError,
 } from '@renderer/components/ui'
+import { presentFailure } from '@renderer/lib/presentFailure'
 
 type Props = { onClose: () => void }
 type Tab = 'general' | 'ai' | 'ytdlp'
@@ -128,7 +129,7 @@ export function SettingsModal({ onClose }: Props) {
       }
       onClose()
     } catch (err) {
-      setError(String(err))
+      setError(presentFailure(err, 'Settings could not be saved. Your changes are still shown; try again.', 'settings save failed'))
     } finally {
       setBusy(false)
     }

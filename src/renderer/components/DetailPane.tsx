@@ -13,6 +13,7 @@ import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { releaseVideo } from '@renderer/lib/video'
 import { archiveTape, unarchiveTape } from '@renderer/lib/tapeActions'
 import { isShortcutBlocked } from '@renderer/lib/dom'
+import { log } from '@renderer/ipc/log'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { useKeepAwake } from '@renderer/lib/useKeepAwake'
 import { useVolume } from '@renderer/lib/useVolume'
@@ -28,6 +29,7 @@ import { ExportModal } from './ExportModal'
 import { ResizeHandle } from './ResizeHandle'
 import { MoveToBoxButton } from './MoveToBoxButton'
 import { CaptionedPanel } from './ui'
+import { presentFailure } from '@renderer/lib/presentFailure'
 
 /** How long the Copy URL button shows "Copied" before reverting to "Copy URL". */
 const COPIED_RESET_MS = 1500
@@ -99,7 +101,7 @@ export function DetailPane({
     let cancelled = false
     ipcInvoke('library:getSidecar', { tapeId: tape.id })
       .then((s) => { if (!cancelled) setSidecar(s) })
-      .catch((err) => { if (!cancelled) setSidecarError(String(err)) })
+      .catch((err) => { if (!cancelled) setSidecarError(presentFailure(err, 'Tape details could not be loaded. The media file is unchanged; select the tape again to retry.', 'tape sidecar load failed')) })
     return () => { cancelled = true }
   }, [tape.id, tape.state, tape.sidecarFilename])
 
@@ -708,8 +710,7 @@ function ActionButton({
   )
 }
 
-/** Everything the <video> element can report about a failed playback, as plain
- *  text. There's no richer source, so the app surfaces this verbatim. */
+/** Present stable playback copy while preserving browser diagnostics in the log. */
 function describeMediaError(v: HTMLVideoElement): string {
   const labels: Record<number, string> = {
     1: 'Playback aborted',
@@ -717,15 +718,13 @@ function describeMediaError(v: HTMLVideoElement): string {
     3: 'Decode error — the file may be corrupt or use an unsupported encoding',
     4: 'Source not supported — the container or codec can’t be played here',
   }
-  const lines: string[] = []
   const err = v.error
-  if (err) {
-    lines.push(`${labels[err.code] ?? 'Unknown media error'} (code ${err.code})`)
-    if (err.message) lines.push(err.message)
-  } else {
-    lines.push('The player reported an error with no further detail.')
-  }
-  lines.push(`source: ${v.currentSrc || v.src}`)
-  lines.push(`networkState: ${v.networkState} · readyState: ${v.readyState}`)
-  return lines.join('\n')
+  log.error('media playback failed', {
+    code: err?.code ?? null,
+    message: err?.message ?? null,
+    source: v.currentSrc || v.src,
+    networkState: v.networkState,
+    readyState: v.readyState,
+  })
+  return err ? (labels[err.code] ?? 'This media could not be played.') : 'This media could not be played.'
 }

@@ -12,7 +12,7 @@ import { selectTape } from '@renderer/lib/selectTape'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
-import { errorMessage } from '@shared/error'
+import { presentFailure } from '@renderer/lib/presentFailure'
 import { InlineError } from './ui'
 
 /**
@@ -76,7 +76,7 @@ export function TapeList() {
       },
       () => useTapesStore.getState().upsertMany(visible),
       () => setOrderError(null),
-      (error) => setOrderError(`Could not save tape order: ${errorMessage(error)}`),
+      (error) => setOrderError(presentFailure(error, 'The tape order was not saved. The previous order remains in use; try again.', 'tape order save failed')),
     )
   }
 

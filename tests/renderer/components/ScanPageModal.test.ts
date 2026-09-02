@@ -109,7 +109,7 @@ describe('ScanPageModal bulk add', () => {
     await mount(onClose)
     await scanOneEntry()
 
-    ipcInvoke.mockRejectedValueOnce(new Error('disk on fire')) // downloads:addBulk
+    ipcInvoke.mockRejectedValueOnce(new Error('EACCES /private/tmp/TAPEBOX_SCAN_SENTINEL')) // downloads:addBulk
     await act(async () => {
       buttonByText('Add 1 tape').click()
     })
@@ -117,8 +117,10 @@ describe('ScanPageModal bulk add', () => {
 
     expect(onClose).not.toHaveBeenCalled()
     const alert = document.querySelector('[role="dialog"] [role="alert"]')
-    expect(alert?.textContent).toContain('Error')
-    expect(alert?.textContent).toContain('disk on fire')
+    expect(alert?.textContent).toContain(
+      'The selected tapes could not be added. The library is unchanged; try again.',
+    )
+    expect(alert?.textContent).not.toMatch(/EACCES|private\/tmp|TAPEBOX_SCAN_SENTINEL/)
     // Not stuck on "Adding…": the button is interactive again for a retry.
     expect(buttonByText('Add 1 tape')).toBeTruthy()
   })

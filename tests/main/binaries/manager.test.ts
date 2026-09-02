@@ -141,7 +141,10 @@ describe('checkForUpdates — a failed check writes nothing (I3)', () => {
     expect(b.ffmpeg.lastCheckedAtUtc).toBeNull()
     expect(result).toMatchObject({
       outcome: 'completed',
-      failures: [{ name: 'ffmpeg', message: 'offline' }],
+      failures: [{
+        name: 'ffmpeg',
+        message: 'ffmpeg could not be checked. Its installed version and last known update status are unchanged.',
+      }],
     })
     if (result.outcome === 'completed') expect(result.statuses).toHaveLength(3)
   })
@@ -189,7 +192,7 @@ describe('install download cleanup', () => {
     await expect(installOrUpdate('yt-dlp', 'op-download-failure')).resolves.toMatchObject({
       outcome: 'failed',
       operationId: 'op-download-failure',
-      error: 'refusing downgraded response',
+      error: 'yt-dlp could not be installed or updated. The existing tool, if any, is unchanged; try again.',
       status: { name: 'yt-dlp', present: false },
     })
     expect(await readdir(join(testRoot, 'temp'))).toEqual([])
@@ -204,7 +207,7 @@ describe('install download cleanup', () => {
     await expect(installOrUpdate('yt-dlp', 'op-timeout')).resolves.toMatchObject({
       outcome: 'failed',
       operationId: 'op-timeout',
-      error: 'The operation was aborted due to timeout',
+      error: 'yt-dlp could not be installed or updated. The existing tool, if any, is unchanged; try again.',
     })
   })
 
@@ -226,7 +229,7 @@ describe('install terminal facts', () => {
     await expect(installOrUpdate('yt-dlp', 'op-post-publish-failure')).resolves.toMatchObject({
       outcome: 'failed',
       operationId: 'op-post-publish-failure',
-      error: 'facts save failed',
+      error: 'yt-dlp could not be installed or updated. The existing tool, if any, is unchanged; try again.',
       status: { name: 'yt-dlp', present: true, installedVersion: null },
     })
     expect(await readdir(join(testRoot, 'bin'))).toEqual(['yt-dlp.exe'])

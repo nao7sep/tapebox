@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ScanResult } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
-import { describeError, errorMessage } from '@shared/error'
+import { describeError } from '@shared/error'
+import { presentFailure } from '@renderer/lib/presentFailure'
 import { formatTime } from '@renderer/lib/format'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
@@ -53,7 +54,11 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
         if (e.sessionId === sessionIdRef.current) { setScanning(false); setScanned(true) }
       }),
       ipcOn('scan:error', (e) => {
-        if (e.sessionId === sessionIdRef.current) { setScanning(false); setScanned(true); setError(e.error) }
+        if (e.sessionId === sessionIdRef.current) {
+          setScanning(false)
+          setScanned(true)
+          setError('The page could not be scanned. Check the URL and try again later.')
+        }
       }),
     ]
     return () => {
@@ -77,7 +82,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     setScanning(true)
     void ipcInvoke('scan:start', { url: v })
       .then((r) => { sessionIdRef.current = r.sessionId })
-      .catch((err) => { setError(errorMessage(err)); setScanning(false); setScanned(true) })
+      .catch((err) => { setError(presentFailure(err, 'The page could not be scanned. Check the URL and try again later.', 'page scan start failed')); setScanning(false); setScanned(true) })
   }
 
   async function stopScan() {
@@ -123,7 +128,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
       await ipcInvoke('downloads:addBulk', { urls })
       onClose()
     } catch (err) {
-      setError(errorMessage(err))
+      setError(presentFailure(err, 'The selected tapes could not be added. The library is unchanged; try again.', 'bulk tape add failed'))
     } finally {
       setAdding(false)
     }

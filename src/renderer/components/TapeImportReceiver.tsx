@@ -9,7 +9,7 @@ import {
 } from '@renderer/lib/externalDrop'
 import { useImportResultStore } from '@renderer/store/importResult'
 import { describeError } from '@shared/error'
-import { CloseIcon, ErrorIcon, InformationIcon, WarningIcon } from './Icon'
+import { CloseIcon } from './Icon'
 
 export function TapeImportReceiver({ children }: { children: ReactNode }) {
   const [deliveryActive, setDeliveryActive] = useState(false)
@@ -128,17 +128,10 @@ function ImportResultNotice() {
     <section
       role={severity === 'error' ? 'alert' : 'status'}
       aria-atomic="true"
-      className={`m-3 mt-0 max-h-[40%] shrink-0 overflow-y-auto rounded-md border px-3 py-2.5 shadow-sm ${palette}`}
+      className={`relative m-3 mt-0 max-h-[40%] shrink-0 overflow-y-auto rounded-md border py-2.5 pr-11 pl-3 shadow-sm ${palette}`}
     >
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="flex items-start gap-1.5 text-sm font-semibold">
-            <strong className="inline-flex shrink-0 items-center gap-1">
-              {severity === 'error' ? <ErrorIcon /> : severity === 'warning' ? <WarningIcon /> : <InformationIcon />}
-              {severity === 'error' ? 'Error' : severity === 'warning' ? 'Warning' : 'Information'}
-            </strong>
-            <span>{lead}</span>
-          </p>
+      <div className="min-w-0">
+          <p className="text-sm font-semibold">{lead}</p>
           <ul className={`mt-1.5 space-y-1 text-xs ${detailColor}`}>
             {result.issues.map((item, index) => (
               <li key={`${item.path}-${index}`}>
@@ -146,12 +139,11 @@ function ImportResultNotice() {
               </li>
             ))}
           </ul>
-        </div>
         <button
           type="button"
           onClick={clear}
-          aria-label="Dismiss import result"
-          className={`shrink-0 rounded p-1 ${dismissColor}`}
+          aria-label="Close import result"
+          className={`absolute top-1.5 right-2 grid h-7 w-7 place-items-center rounded border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-1 ${dismissColor}`}
         >
           <CloseIcon />
         </button>

@@ -1,31 +1,31 @@
-import { dialog } from 'electron'
+import { showPlainMessageDialog } from './plain-message-dialog.js'
 
 /**
- * Native error surfaces shown during startup, before the renderer (and its named
- * React modal host) exists. These are the main-process fatal-halt boxes the
- * modal-dialog conventions allow for a launch that cannot proceed — kept here,
- * named and greppable in a *-dialog file, rather than inline in the bootstrap.
+ * App-authored recovery surfaces shown during startup. They deliberately avoid
+ * framework message boxes, whose platform artwork can reintroduce a redundant
+ * severity or application icon.
  */
 
-export function notifyCorruptConfig(quarantinePath: string): void {
-  dialog.showErrorBox(
-    'Settings could not be read',
-    'Your TapeBox settings file was unreadable and has been set aside so nothing is lost:\n\n' +
-      `${quarantinePath}\n\n` +
-      'TapeBox has started with default settings. Your library and media files are untouched.',
-  )
+export async function notifyCorruptConfig(quarantinePath: string): Promise<void> {
+  await showPlainMessageDialog({
+    title: 'Settings could not be read',
+    message: 'Your TapeBox settings file was unreadable and has been set aside so nothing is lost.',
+    detail: `Saved copy: ${quarantinePath}\n\nTapeBox has started with default settings. Your library and media files are untouched.`,
+  })
 }
 
-export function notifyCorruptSession(quarantinePath: string): void {
-  dialog.showErrorBox(
-    'Library could not be opened',
-    'Your TapeBox library file was unreadable and has been set aside so nothing is lost:\n\n' +
-      `${quarantinePath}\n\n` +
-      'TapeBox has started with an empty library. Your downloaded media files are untouched.',
-  )
+export async function notifyCorruptSession(quarantinePath: string): Promise<void> {
+  await showPlainMessageDialog({
+    title: 'Library could not be opened',
+    message: 'Your TapeBox library file was unreadable and has been set aside so nothing is lost.',
+    detail: `Saved copy: ${quarantinePath}\n\nTapeBox has started with an empty library. Your downloaded media files are untouched.`,
+  })
 }
 
-export function notifyStartupFailure(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error)
-  dialog.showErrorBox('TapeBox could not start', `${message}\n\nTapeBox will now quit.`)
+export async function notifyStartupFailure(): Promise<void> {
+  await showPlainMessageDialog({
+    title: 'TapeBox could not start',
+    message: 'TapeBox could not finish opening its settings and library.',
+    detail: 'Nothing was changed. Check the session log, then start TapeBox again.',
+  })
 }

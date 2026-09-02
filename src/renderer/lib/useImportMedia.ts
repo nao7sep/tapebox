@@ -1,6 +1,6 @@
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useImportResultStore, type ImportAttempt } from '@renderer/store/importResult'
-import { errorMessage } from '@shared/error'
+import { presentFailure } from './presentFailure'
 import type { ImportIssue } from '@shared/ipc-contract'
 
 /**
@@ -34,7 +34,7 @@ export function useImportMedia(): (
       settle(attempt, {
         imported: [],
         issues: [
-          { path: 'Selected files', reason: errorMessage(err), severity: 'error' },
+          { path: 'Selected files', reason: presentFailure(err, 'The selected files could not be imported. Check that they are still available and try again.', 'library import failed'), severity: 'error' },
           ...preliminaryIssues,
         ],
       })

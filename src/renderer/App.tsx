@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
-import { describeError, errorMessage } from '@shared/error'
+import { describeError } from '@shared/error'
+import { presentFailure } from '@renderer/lib/presentFailure'
 import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
 import { startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
@@ -110,7 +111,7 @@ export default function App() {
       useFilterStore.getState().setFilter('inbox')
       await importMedia(
         [],
-        [{ path: 'Import files', reason: errorMessage(error), severity: 'error' }],
+        [{ path: 'Import files', reason: presentFailure(error, 'The file picker could not be opened. Try importing again.', 'import file picker failed'), severity: 'error' }],
         { operationKey: 'picker', entryKey: 'picker' },
       )
     }

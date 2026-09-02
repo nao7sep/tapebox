@@ -10,6 +10,7 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { Modal } from '@renderer/components/Modal'
 import { Button, InlineError, Spinner, Toggle } from '@renderer/components/ui'
+import { presentFailure } from '@renderer/lib/presentFailure'
 
 /**
  * The management surface for yt-dlp / ffmpeg / Deno (managed-runtime-dependencies-
@@ -53,7 +54,7 @@ export function BinariesModal() {
       const next = await ipcInvoke('settings:update', { checkUpdatesAtLaunch: check })
       useSettingsStore.getState().setSettings(next)
     } catch (err) {
-      setSettingsError(String(err))
+      setSettingsError(presentFailure(err, 'The update-check setting was not saved. The previous setting remains in use; try again.', 'tool update setting save failed'))
     }
   }
 

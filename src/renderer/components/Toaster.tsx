@@ -1,5 +1,5 @@
 import { useToastStore } from '@renderer/store/toast'
-import { CloseIcon, ErrorIcon } from './Icon'
+import { CloseIcon } from './Icon'
 
 /**
  * Floating stack of error toasts, bottom-right above the status bar. Errors
@@ -22,17 +22,13 @@ export function Toaster() {
           key={t.id}
           role="alert"
           aria-atomic="true"
-          className="pointer-events-auto flex items-start gap-3 rounded-lg border border-red-800 bg-red-950/95 px-4 py-3 text-sm text-red-200 shadow-lg"
+          className="pointer-events-auto relative rounded-lg border border-red-800 bg-red-950/95 py-3 pr-11 pl-4 text-sm text-red-200 shadow-lg"
         >
-          <strong className="inline-flex shrink-0 items-center gap-1 font-semibold">
-            <ErrorIcon />
-            Error
-          </strong>
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{t.text}</span>
+          <div className="min-w-0 whitespace-pre-wrap break-words">{t.text}</div>
           <button
             onClick={() => dismiss(t.id)}
-            aria-label="Dismiss"
-            className="shrink-0 rounded px-1 leading-none text-red-300/80 hover:text-red-100"
+            aria-label="Close notification"
+            className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded border-0 bg-transparent p-0 leading-none text-red-300/80 hover:bg-red-900 hover:text-red-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-300"
           >
             <CloseIcon />
           </button>

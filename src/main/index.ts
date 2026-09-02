@@ -116,10 +116,10 @@ async function startup(): Promise<void> {
   // If the library file was unreadable, it was set aside (never wiped); tell the
   // user at the app edge — the session store stays UI-free.
   if (sessionResult.status === 'recovered') {
-    notifyCorruptSession(sessionResult.quarantinePath)
+    await notifyCorruptSession(sessionResult.quarantinePath)
   }
   if (configResult.status === 'recovered') {
-    notifyCorruptConfig(configResult.quarantinePath)
+    await notifyCorruptConfig(configResult.quarantinePath)
   }
 }
 
@@ -174,12 +174,12 @@ void app.whenReady().then(() => {
   // activation while stores/server/IPC are still loading. The handler defers;
   // startup creates the one owner window as soon as readiness is established.
   app.on('activate', showOrCreateMainWindow)
-  void startup().catch((err) => {
+  void startup().catch(async (err) => {
     log.error('startup failed', { error: describeError(err) })
     // Report before stopping so a failed launch — most visibly an unusable
     // TAPEBOX_HOME that cannot be resolved or created — is never a silent
     // no-window quit. The app is ready, so the native box is safe.
-    notifyStartupFailure(err)
+    await notifyStartupFailure()
     app.quit()
   })
 

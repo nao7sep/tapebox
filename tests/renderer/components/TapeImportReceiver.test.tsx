@@ -95,7 +95,7 @@ describe('TapeImportReceiver', () => {
     expect(status.className).toContain('border-sky-500')
     expect(status.className).toContain('max-h-[40%]')
     expect(status.className).toContain('overflow-y-auto')
-    expect(status.querySelector('button')?.getAttribute('aria-label')).toBe('Dismiss import result')
+    expect(status.querySelector('button')?.getAttribute('aria-label')).toBe('Close import result')
   })
 
   it('uses warning styling only for recoverable attention', () => {
@@ -106,7 +106,7 @@ describe('TapeImportReceiver', () => {
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!
     expect(status.className).toContain('border-amber-500')
-    expect(status.textContent).toContain('Warning')
+    expect(status.textContent).not.toContain('Warning')
   })
 
   it('announces an import error assertively with structural severity', () => {
@@ -116,7 +116,7 @@ describe('TapeImportReceiver', () => {
     }))
 
     const alert = host.querySelector<HTMLElement>('[role="alert"]')!
-    expect(alert.textContent).toContain('Error')
+    expect(alert.textContent).not.toContain('Error')
     expect(alert.textContent).toContain('The import failed.')
     expect(alert.className).toContain('border-red-500')
   })
@@ -129,7 +129,7 @@ describe('TapeImportReceiver', () => {
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!
     expect(status.textContent).toContain('Added 1 new tape; 1 was already in the library.')
-    expect(status.textContent).toContain('Information')
+    expect(status.textContent).not.toContain('Information')
     expect(status.textContent).not.toContain('not added')
     expect(status.className).toContain('border-sky-500')
   })

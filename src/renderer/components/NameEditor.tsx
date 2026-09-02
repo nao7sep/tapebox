@@ -4,6 +4,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import { Button, Field, INPUT_CLASS } from '@renderer/components/ui'
+import { presentFailure } from '@renderer/lib/presentFailure'
 
 /** The source fields an AI name suggestion can draw on. */
 type SourceField = 'title' | 'uploader' | 'description'
@@ -90,7 +91,7 @@ export function NameEditor({
       const result = await ipcInvoke('ai:generateSlug', { tapeId: tape.id, include })
       onChange(result.slug)
     } catch (err) {
-      setError(String(err))
+      setError(presentFailure(err, 'A name could not be suggested. Check the AI settings and try again.', 'AI name suggestion failed'))
     } finally {
       setGenerating(false)
       onGeneratingChange?.(false)

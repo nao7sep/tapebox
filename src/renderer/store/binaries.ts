@@ -7,7 +7,7 @@ import type {
   BinaryUpdateResult,
 } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { errorMessage } from '@shared/error'
+import { presentFailure } from '@renderer/lib/presentFailure'
 import {
   deriveStatus,
   rollupRole,
@@ -153,7 +153,7 @@ export const useBinariesStore = create<BinariesState>((set, get) => ({
         return {
           active: withoutKey(state.active, name),
           progress: withoutKey(state.progress, name),
-          errors: { ...state.errors, [name]: errorMessage(error) },
+          errors: { ...state.errors, [name]: presentFailure(error, `${name} could not be installed or updated. The existing tool, if any, is unchanged; try again.`, 'managed tool update failed') },
           terminalOutcomes: withoutKey(state.terminalOutcomes, name),
         }
       })
@@ -197,7 +197,7 @@ export const useBinariesStore = create<BinariesState>((set, get) => ({
                 ...state.active,
                 [name]: { ...active, cancelling: false },
               },
-              errors: { ...state.errors, [name]: errorMessage(error) },
+              errors: { ...state.errors, [name]: presentFailure(error, `${name} cancellation could not be confirmed. Wait for the operation to settle, then try again.`, 'managed tool cancellation failed') },
             }
           : state,
       )
@@ -224,7 +224,7 @@ export const useBinariesStore = create<BinariesState>((set, get) => ({
         }))
       }
     } catch (error) {
-      set({ checkError: errorMessage(error) })
+      set({ checkError: presentFailure(error, 'Tool updates could not be checked. Installed tools are unchanged; try again later.', 'managed tool update check failed') })
     } finally {
       set({ checking: false, checkCancelling: false })
     }
@@ -236,7 +236,7 @@ export const useBinariesStore = create<BinariesState>((set, get) => ({
       const result = await ipcInvoke('binaries:cancelCheck')
       if (result.outcome === 'not-running') set({ checkCancelling: false })
     } catch (error) {
-      set({ checkCancelling: false, checkError: errorMessage(error) })
+      set({ checkCancelling: false, checkError: presentFailure(error, 'The update check could not be cancelled yet. Wait for it to finish.', 'managed tool check cancellation failed') })
     }
   },
   openModal: () => set({ modalOpen: true }),

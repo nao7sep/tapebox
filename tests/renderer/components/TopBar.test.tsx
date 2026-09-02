@@ -3,8 +3,9 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
+const { ipcInvoke, logError } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), logError: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke }))
+vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
 import { TopBar } from '@renderer/components/TopBar'
 import { useBinariesStore } from '@renderer/store/binaries'
@@ -28,6 +29,7 @@ function ready(name: BinaryStatus['name']): BinaryStatus {
 beforeEach(async () => {
   vi.useFakeTimers()
   ipcInvoke.mockReset()
+  logError.mockReset()
   useBinariesStore.setState({ statuses: [ready('yt-dlp'), ready('ffmpeg')] })
   host = document.createElement('div')
   document.body.append(host)
@@ -58,12 +60,21 @@ async function add(): Promise<void> {
 
 describe('TopBar Add URL result ownership', () => {
   it('retains a failed value and associates the local alert with its input', async () => {
-    ipcInvoke.mockRejectedValueOnce(new Error('Library is read-only'))
+    ipcInvoke.mockRejectedValueOnce(new Error(
+      "Error invoking remote method 'downloads:add': EACCES /private/tmp/TAPEBOX_SENTINEL",
+    ))
     const input = await enter('https://example.test/watch')
     await add()
 
     const alert = host.querySelector<HTMLElement>('[role="alert"]')!
-    expect(alert.textContent).toContain('Library is read-only')
+    expect(alert.textContent).toContain('The URL could not be added. Check it and try again.')
+    expect(alert.textContent).not.toMatch(/EACCES|private\/tmp|TAPEBOX_SENTINEL|invoking remote method/i)
+    expect(logError).toHaveBeenCalledWith(
+      'add URL failed',
+      expect.objectContaining({
+        error: expect.objectContaining({ message: expect.stringContaining('TAPEBOX_SENTINEL') }),
+      }),
+    )
     expect(input.value).toBe('https://example.test/watch')
     expect(input.getAttribute('aria-invalid')).toBe('true')
     expect(input.getAttribute('aria-describedby')).toBe(alert.id)

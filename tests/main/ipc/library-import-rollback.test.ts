@@ -114,8 +114,9 @@ describe('library:import rollback ownership', () => {
 
     expect(result.imported).toEqual([])
     expect(result.issues).toHaveLength(1)
-    expect(result.issues[0]?.reason).toMatch(/sidecar publication failed/)
-    expect(result.issues[0]?.reason).toMatch(/could not be fully cleaned up/)
+    expect(result.issues[0]?.reason).toBe(
+      'The tape files could not be copied completely. Check the library folder and the log before trying again.',
+    )
     expect(await readFile(join(state.libraryDir, 'clip.mp4'), 'utf8')).toBe('external winner')
     expect(upsertTape).not.toHaveBeenCalled()
     expect(mainLog.error).toHaveBeenCalledWith(
@@ -132,9 +133,16 @@ describe('library:import rollback ownership', () => {
     }
 
     expect(result.imported).toEqual([])
-    expect(result.issues[0]?.reason).toMatch(/sidecar publication failed/)
-    expect(result.issues[0]?.reason).toMatch(/could not be fully cleaned up/)
-    expect(result.issues[0]?.reason).toContain(join(state.libraryDir, 'import-recovery.tmp'))
+    expect(result.issues[0]?.reason).toBe(
+      'The tape files could not be copied completely. Check the library folder and the log before trying again.',
+    )
+    expect(result.issues[0]?.reason).not.toMatch(/sidecar|private|import-recovery/)
+    expect(mainLog.error).toHaveBeenCalledWith(
+      'import bundle copy and rollback failed',
+      expect.objectContaining({
+        error: expect.objectContaining({ stack: expect.stringContaining('sidecar publication failed') }),
+      }),
+    )
   })
 
   it('imports the tape but accounts for and logs a referenced thumbnail copy failure', async () => {

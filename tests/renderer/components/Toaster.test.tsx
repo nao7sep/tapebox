@@ -17,7 +17,7 @@ afterEach(async () => {
 })
 
 describe('Toaster error results', () => {
-  it('stacks persistent errors as labelled alerts and dismisses only the chosen result', async () => {
+  it('stacks persistent results as alerts without redundant severity labels', async () => {
     useToastStore.getState().notify('First failure', 'error')
     useToastStore.getState().notify('Second failure', 'error')
     const container = document.createElement('div')
@@ -28,7 +28,7 @@ describe('Toaster error results', () => {
 
     const alerts = document.querySelectorAll('[role="alert"]')
     expect(alerts).toHaveLength(2)
-    expect(alerts[0]?.textContent).toContain('Error')
+    expect(alerts[0]?.textContent).not.toContain('Error')
     expect(alerts[0]?.textContent).toContain('First failure')
 
     await act(async () => {
