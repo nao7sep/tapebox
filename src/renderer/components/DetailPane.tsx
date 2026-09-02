@@ -508,9 +508,11 @@ export function DetailPane({
             grouped use → housekeep (refresh → rename → export) → archive, then
             the source-link reference actions that apply to any tape, and finally
             the destructive Remove, set apart on the right. */}
-        <TapeActionResults tapeId={tape.id} className="shrink-0 border-t border-zinc-700 px-4 pt-3" />
-        <LayoutWriteResult field="chaptersPaneWidth" className="mx-4 mt-3 shrink-0" />
-        <LayoutWriteResult field="volume" className="mx-4 mt-3 shrink-0" />
+        <div className="detail-result-shelf shrink-0 space-y-2 border-t border-zinc-700 px-4 py-3 empty:hidden">
+          <TapeActionResults tapeId={tape.id} />
+          <LayoutWriteResult field="chaptersPaneWidth" />
+          <LayoutWriteResult field="volume" />
+        </div>
         <div className="mt-auto flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-700 px-4 pt-3">
           {/* Primary: re-engage / resolve the current state. */}
           {(tape.state === 'queued' || tape.state === 'probing' || tape.state === 'downloading') && (
