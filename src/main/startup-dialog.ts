@@ -6,19 +6,19 @@ import { showPlainMessageDialog } from './plain-message-dialog.js'
  * severity or application icon.
  */
 
-export async function notifyCorruptConfig(quarantinePath: string): Promise<void> {
+export async function notifyCorruptConfig(): Promise<void> {
   await showPlainMessageDialog({
     title: 'Settings could not be read',
     message: 'Your TapeBox settings file was unreadable and has been set aside so nothing is lost.',
-    detail: `Saved copy: ${quarantinePath}\n\nTapeBox has started with default settings. Your library and media files are untouched.`,
+    detail: 'TapeBox has started with default settings. Your library and media files are untouched. The saved copy location is recorded in the session log.',
   })
 }
 
-export async function notifyCorruptSession(quarantinePath: string): Promise<void> {
+export async function notifyCorruptSession(): Promise<void> {
   await showPlainMessageDialog({
     title: 'Library could not be opened',
     message: 'Your TapeBox library file was unreadable and has been set aside so nothing is lost.',
-    detail: `Saved copy: ${quarantinePath}\n\nTapeBox has started with an empty library. Your downloaded media files are untouched.`,
+    detail: 'TapeBox has started with an empty library. Your downloaded media files are untouched. The saved copy location is recorded in the session log.',
   })
 }
 

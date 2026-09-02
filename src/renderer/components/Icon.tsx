@@ -81,33 +81,3 @@ export function PlusIcon({ className }: IconProps) {
     </IconBase>
   )
 }
-
-export function ErrorIcon({ className }: IconProps) {
-  return (
-    <IconBase className={className}>
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 7.5V13" />
-      <path d="M12 16.5H12.01" />
-    </IconBase>
-  )
-}
-
-export function WarningIcon({ className }: IconProps) {
-  return (
-    <IconBase className={className}>
-      <path d="M12 4.5L20 19H4L12 4.5Z" />
-      <path d="M12 9V13.5" />
-      <path d="M12 16.5H12.01" />
-    </IconBase>
-  )
-}
-
-export function InformationIcon({ className }: IconProps) {
-  return (
-    <IconBase className={className}>
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 10.5V16.5" />
-      <path d="M12 7.5H12.01" />
-    </IconBase>
-  )
-}

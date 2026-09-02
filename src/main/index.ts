@@ -116,10 +116,10 @@ async function startup(): Promise<void> {
   // If the library file was unreadable, it was set aside (never wiped); tell the
   // user at the app edge — the session store stays UI-free.
   if (sessionResult.status === 'recovered') {
-    await notifyCorruptSession(sessionResult.quarantinePath)
+    await notifyCorruptSession()
   }
   if (configResult.status === 'recovered') {
-    await notifyCorruptConfig(configResult.quarantinePath)
+    await notifyCorruptConfig()
   }
 }
 

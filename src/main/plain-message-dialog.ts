@@ -50,7 +50,10 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
       close()
     })
     win.webContents.once('dom-ready', () => {
-      void win.webContents.executeJavaScript('document.documentElement.scrollHeight', true)
+      void win.webContents.executeJavaScript(
+        "document.getElementById('dialog-header').offsetHeight + document.getElementById('dialog-body').scrollHeight + document.getElementById('dialog-footer').offsetHeight",
+        true,
+      )
         .then((height: number) => {
           if (win.isDestroyed()) return
           const displayHeight = parent?.getBounds().height ?? 900
@@ -59,17 +62,18 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
           return win.webContents.executeJavaScript("document.getElementById('close')?.focus()", true)
         })
     })
-    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderHtml(options))}`)
+    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderPlainMessageDialogHtml(options))}`)
   })
 }
 
-function renderHtml(options: PlainMessageDialogOptions): string {
+export function renderPlainMessageDialogHtml(options: PlainMessageDialogOptions): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     :root{color-scheme:dark;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#09090b;color:#f4f4f5}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:24px;display:flex;flex-direction:column;gap:12px}
+    *{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}.dialog{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+    .header{padding:24px 24px 12px}.body{min-height:0;overflow:auto;padding:0 24px;display:flex;flex-direction:column;gap:12px}
     h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:#a1a1aa}
-    .actions{display:flex;justify-content:flex-end;margin-top:auto;padding-top:12px}.button{color:#f4f4f5;border:1px solid #3f3f46;border-radius:6px;padding:7px 16px;background:#27272a;font:inherit}.button:hover,.button:focus{background:#3f3f46;outline:2px solid #a1a1aa;outline-offset:2px}
-  </style></head><body><h1>${escapeHtml(options.title)}</h1><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ''}<div class="actions"><button id="close" class="button" type="button" onclick="location.href='${CLOSE_URL}'">OK</button></div></body></html>`
+    .actions{display:flex;justify-content:flex-end;padding:12px 24px 24px}.button{color:#f4f4f5;border:1px solid #3f3f46;border-radius:6px;padding:7px 16px;background:#27272a;font:inherit}.button:hover,.button:focus{background:#3f3f46;outline:2px solid #a1a1aa;outline-offset:2px}
+  </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ''}</section><footer class="actions" id="dialog-footer"><button id="close" class="button" type="button" onclick="location.href='${CLOSE_URL}'">OK</button></footer></main></body></html>`
 }
 
 function escapeHtml(value: string): string {
