@@ -17,7 +17,6 @@ import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
 import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
-import { loadMainWindowContent } from './main-window-content.js'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
 
@@ -64,7 +63,8 @@ async function createMainWindow(): Promise<BrowserWindow> {
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   try {
-    await loadMainWindowContent(win, devUrl, join(__dirname, '../renderer/index.html'))
+    if (devUrl) await win.loadURL(devUrl)
+    else await win.loadFile(join(__dirname, '../renderer/index.html'))
   } catch (error) {
     log.error('main window document failed to load', { error: describeError(error) })
     // Keep the failed, never-shown owner alive until the terminal recovery
