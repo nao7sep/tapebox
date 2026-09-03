@@ -233,7 +233,12 @@ describe('library:rename', () => {
     const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'renamed' }))
     await expect(failure).rejects.toThrow('The operation could not be completed.')
     expect(rollbackMutation.cleanupPath).toBe(join(dir, 'Take.mp4'))
-    expect(JSON.stringify(logError.mock.calls)).toContain(rollbackMutation.cleanupPath)
+    expect(logError).toHaveBeenCalledWith(
+      'ipc handler failed',
+      expect.objectContaining({
+        error: expect.objectContaining({ message: expect.stringContaining(rollbackMutation.cleanupPath) }),
+      }),
+    )
 
     expect(state.tape).toMatchObject({
       name: 'renamed',
