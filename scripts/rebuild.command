@@ -71,6 +71,7 @@ node_modules/.bin/electron-vite build
 # generic "Electron".
 log_step "Packaging the app bundle"
 node_modules/.bin/electron-builder --dir
+npm run check:package
 
 APP_BUNDLE="$(find "$OUT_DIR" -maxdepth 2 -name "$APP_NAME.app" -type d 2>/dev/null | head -1 || true)"
 if [[ -z "$APP_BUNDLE" ]]; then

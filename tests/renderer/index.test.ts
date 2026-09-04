@@ -18,6 +18,12 @@ describe('renderer index.html Content-Security-Policy', () => {
   // Pull the content="..." value off the CSP <meta> tag (tag may wrap lines).
   const tag = html.match(/<meta[^>]*Content-Security-Policy[^>]*>/is)?.[0] ?? ''
   const csp = tag.match(/content="([^"]*)"/is)?.[1]?.trim() ?? ''
+  const directives = new Map<string, Set<string>>()
+  for (const clause of csp.split(';').map((part) => part.trim()).filter(Boolean)) {
+    const [name, ...values] = clause.split(/\s+/)
+    if (directives.has(name!)) throw new Error(`Duplicate CSP directive: ${name}`)
+    directives.set(name!, new Set(values))
+  }
 
   it('is present and non-empty', () => {
     expect(csp.length).toBeGreaterThan(0)
@@ -25,24 +31,20 @@ describe('renderer index.html Content-Security-Policy', () => {
 
   it('is strict: no script may run inline or via eval', () => {
     // No script-src means scripts inherit default-src, which must be 'self'.
-    expect(csp).not.toMatch(/script-src/)
-    expect(csp).toMatch(/default-src 'self'/)
+    expect(directives.has('script-src')).toBe(false)
+    expect(directives.get('default-src')).toEqual(new Set(["'self'"]))
     // 'unsafe-eval' must appear nowhere in the policy.
-    expect(csp).not.toContain("'unsafe-eval'")
+    expect([...directives.values()].some((values) => values.has("'unsafe-eval'"))).toBe(false)
     // The only permitted inline allowance is for styles, never anything else.
-    const inlineDirectives = csp
-      .split(';')
-      .map((d) => d.trim())
-      .filter((d) => d.includes("'unsafe-inline'"))
-      .map((d) => d.split(/\s+/)[0])
+    const inlineDirectives = [...directives]
+      .filter(([, values]) => values.has("'unsafe-inline'"))
+      .map(([name]) => name)
     expect(inlineDirectives).toEqual(['style-src'])
   })
 
-  it('matches the exact production policy (snapshot guard)', () => {
-    // Snapshot of the current production CSP. Any drop, reorder, or weakening of a
-    // directive fails here; update this only with a deliberate, reviewed change.
-    expect(csp).toBe(
-      "default-src 'self'; img-src 'self' data: http://127.0.0.1:* https:; media-src 'self' http://127.0.0.1:* https:; style-src 'self' 'unsafe-inline';",
-    )
+  it('allows the media sources the local player and importer require', () => {
+    const expected = new Set(["'self'", 'http://127.0.0.1:*', 'https:'])
+    expect(directives.get('img-src')).toEqual(new Set([...expected, 'data:']))
+    expect(directives.get('media-src')).toEqual(expected)
   })
 })

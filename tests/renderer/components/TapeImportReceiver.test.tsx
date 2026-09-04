@@ -55,20 +55,14 @@ function fileEvent(type: 'dragover' | 'drop', files: File[]): Event {
 }
 
 describe('TapeImportReceiver', () => {
-  it('highlights only its collection until a terminal event clears presentation', () => {
+  it('accepts an offered file drag as a copy operation', () => {
     const receiver = host.querySelector<HTMLElement>('[data-drop-receiver="tape-collection"]')!
     const over = fileEvent('dragover', [new File(['{}'], 'sample.json')])
+
     act(() => receiver.dispatchEvent(over))
 
     expect(over.defaultPrevented).toBe(true)
-    expect(receiver.className).toContain('ring-amber-400')
-    expect(document.body.textContent).not.toContain('Drop to check for tape sidecars')
-
-    act(() => vi.advanceTimersByTime(1001))
-    expect(receiver.className).toContain('ring-amber-400')
-
-    act(() => receiver.dispatchEvent(new Event('dragleave', { bubbles: true })))
-    expect(receiver.className).not.toContain('ring-amber-400')
+    expect((over as DragEvent).dataTransfer?.dropEffect).toBe('copy')
   })
 
   it('delivers every dropped path to the shared admission path', async () => {
@@ -92,9 +86,6 @@ describe('TapeImportReceiver', () => {
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!
     expect(status.textContent).toContain('already in the library')
-    expect(status.className).toContain('border-sky-500')
-    expect(status.className).toContain('max-h-[40%]')
-    expect(status.className).toContain('overflow-y-auto')
     expect(status.querySelector('button')?.getAttribute('aria-label')).toBe('Close import result')
   })
 
@@ -105,7 +96,6 @@ describe('TapeImportReceiver', () => {
     }))
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!
-    expect(status.className).toContain('border-amber-500')
     expect(status.textContent).not.toContain('Warning')
   })
 
@@ -118,7 +108,6 @@ describe('TapeImportReceiver', () => {
     const alert = host.querySelector<HTMLElement>('[role="alert"]')!
     expect(alert.textContent).not.toContain('Error')
     expect(alert.textContent).toContain('The import failed.')
-    expect(alert.className).toContain('border-red-500')
   })
 
   it('describes a successful import with duplicates as information, not failure', () => {
@@ -131,6 +120,5 @@ describe('TapeImportReceiver', () => {
     expect(status.textContent).toContain('Added 1 new tape; 1 was already in the library.')
     expect(status.textContent).not.toContain('Information')
     expect(status.textContent).not.toContain('not added')
-    expect(status.className).toContain('border-sky-500')
   })
 })

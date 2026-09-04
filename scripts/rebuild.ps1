@@ -90,6 +90,7 @@ try {
     # icon) instead of running under the generic Electron runtime.
     Write-Step "Packaging the app bundle"
     Invoke-Native -FilePath "node_modules/.bin/electron-builder.cmd" -ArgumentList @("--dir")
+    Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "check:package")
 
     if (-not (Test-Path $exePath)) {
         throw "Packaging did not produce $appName.exe under $outDir/win-unpacked/."

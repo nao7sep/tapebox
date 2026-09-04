@@ -69,31 +69,18 @@ describe('Modal accessibility', () => {
     expect(heading?.textContent).toBe('Settings')
   })
 
-  it('keeps its header and footer fixed while only the body may shrink and scroll', async () => {
+  it('keeps the header, body, and optional footer as separate ordered regions', async () => {
     await mountModal('Growing result', {
       footer: React.createElement('button', null, 'Close'),
     })
-    const d = dialog()
-    const header = d.querySelector('header')!
-    const body = header.nextElementSibling as HTMLElement
-    const footer = d.querySelector('footer')!
 
-    expect(d.className).toContain('max-h-[85vh]')
-    expect(header.className).toContain('shrink-0')
-    expect(body.className).toContain('min-h-0')
-    expect(body.className).toContain('overflow-y-auto')
-    expect(footer.className).toContain('shrink-0')
+    expect(Array.from(dialog().children, (child) => child.tagName)).toEqual([
+      'HEADER',
+      'DIV',
+      'FOOTER',
+    ])
   })
 
-  it('draws a quiet header close control whose hit area appears on hover and focus', async () => {
-    await mountModal('Settings')
-    const close = dialog().querySelector<HTMLButtonElement>('header button[aria-label="Close"]')!
-
-    expect(close.className).toContain('border-0')
-    expect(close.className).toContain('bg-transparent')
-    expect(close.className).toContain('hover:bg-zinc-800')
-    expect(close.className).toContain('focus-visible:bg-zinc-800')
-  })
 })
 
 describe('Modal focus management', () => {

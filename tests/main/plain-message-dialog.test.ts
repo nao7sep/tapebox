@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ BrowserWindow: {} }))
@@ -5,13 +7,19 @@ vi.mock('electron', () => ({ BrowserWindow: {} }))
 import { renderPlainMessageDialogHtml } from '@main/plain-message-dialog'
 
 describe('plain message dialog', () => {
-  it('keeps header and footer fixed while only the body scrolls', () => {
-    const html = renderPlainMessageDialogHtml({ title: 'Title', message: 'Message', detail: 'Detail' })
+  it('keeps its measured shell IDs and renders caller text without creating markup', () => {
+    const html = renderPlainMessageDialogHtml({
+      title: '<img src=x onerror=alert(1)>',
+      message: 'Save & close',
+      detail: '<script>alert(1)</script>',
+    })
+    const document = new DOMParser().parseFromString(html, 'text/html')
 
-    expect(html).toContain('id="dialog-header"')
-    expect(html).toContain('id="dialog-body"')
-    expect(html).toContain('id="dialog-footer"')
-    expect(html).toContain('.body{min-height:0;overflow:auto')
-    expect(html).toContain('body{margin:0;height:100vh;overflow:hidden}')
+    expect(document.getElementById('dialog-header')?.textContent).toBe('<img src=x onerror=alert(1)>')
+    expect(document.getElementById('dialog-body')?.textContent).toBe('Save & close<script>alert(1)</script>')
+    expect(document.getElementById('dialog-footer')).not.toBeNull()
+    expect(document.getElementById('close')).not.toBeNull()
+    expect(document.querySelector('img')).toBeNull()
+    expect(document.querySelector('script')).toBeNull()
   })
 })
