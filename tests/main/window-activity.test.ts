@@ -3,6 +3,34 @@ import { configureWindowActivity } from '../../src/main/window-activity'
 import { WINDOW_ACTIVITY_CHANNEL } from '../../src/shared/window-activity'
 
 describe('native window activity transport', () => {
+  it('uses window focus when the platform has no application activity API', () => {
+    const contentListeners = new Map<string, () => void>()
+    const send = vi.fn()
+    const application = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    }
+    const window = {
+      on: vi.fn(() => window),
+      once: vi.fn(() => window),
+      isFocused: () => true,
+      webContents: {
+        on: vi.fn((event: string, listener: () => void) => contentListeners.set(event, listener)),
+        isDestroyed: () => false,
+        send,
+      },
+    }
+
+    expect(() =>
+      configureWindowActivity(
+        application as unknown as Electron.App,
+        window as unknown as Electron.BrowserWindow,
+      ),
+    ).not.toThrow()
+    contentListeners.get('did-finish-load')?.()
+    expect(send).toHaveBeenLastCalledWith(WINDOW_ACTIVITY_CHANNEL, true)
+  })
+
   it('requires both application activation and owner-window focus', () => {
     const applicationListeners = new Map<string, () => void>()
     const windowListeners = new Map<string, () => void>()

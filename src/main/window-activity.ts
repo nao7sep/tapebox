@@ -7,7 +7,11 @@ import { WINDOW_ACTIVITY_CHANNEL } from '@shared/window-activity'
  * active status, so neither BrowserWindow nor DOM focus is sufficient alone.
  */
 export function configureWindowActivity(application: App, window: BrowserWindow): void {
-  let applicationActive = application.isActive()
+  const isApplicationActive = application.isActive
+  // Electron exposes app.isActive() on macOS only. On Windows/Linux, window
+  // focus is the complete activity signal, so keep the application half true.
+  let applicationActive =
+    typeof isApplicationActive === 'function' ? isApplicationActive.call(application) : true
   let windowFocused = window.isFocused()
 
   const send = (): void => {
