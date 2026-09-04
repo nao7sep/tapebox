@@ -278,7 +278,7 @@ describe('writeFileAtomicNoOverwriteVia', () => {
 describe('portable no-overwrite publication', () => {
   it('uses a bounded exclusive copy when the filesystem rejects hard links', async () => {
     const temp = join(dir, 'stage.bin')
-    const bytes = Buffer.alloc(600_000, 0x5a)
+    const bytes = Buffer.alloc(256 * 1024 + 1, 0x5a)
     await writeFile(temp, bytes)
     const fixture = memoryPublishOperations(bytes, {
       link: vi.fn().mockRejectedValue(failure('ENOTSUP')),
@@ -289,7 +289,7 @@ describe('portable no-overwrite publication', () => {
     expect(Buffer.concat(fixture.published)).toEqual(bytes)
     expect(Math.max(...fixture.readLengths)).toBeLessThanOrEqual(256 * 1024)
     expect(fixture.operations.unlink).toHaveBeenCalledWith(temp)
-  }, 30_000)
+  })
 
   it('preserves a replacement arriving at fallback failure cleanup', async () => {
     const temp = join(dir, 'stage.bin')
