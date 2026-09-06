@@ -62,7 +62,7 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
         </div>
         {linkErrors.repository && <InlineError onDismiss={() => setLinkErrors((current) => ({ ...current, repository: undefined }))} closeLabel="Close GitHub result">{linkErrors.repository}</InlineError>}
         {linkErrors.issues && <InlineError onDismiss={() => setLinkErrors((current) => ({ ...current, issues: undefined }))} closeLabel="Close Report an issue result">{linkErrors.issues}</InlineError>}
-        <p className="text-zinc-300">© 2026 Yoshinao Inoguchi — MIT License</p>
+        <p className="text-zinc-300">© 2026 Yoshinao Inoguchi — GNU GPL v3 or later</p>
       </div>
     </Modal>
   )

@@ -6,7 +6,7 @@
   "type": "module",
   "description": "A local media library with web-import.",
   "author": "Yoshinao Inoguchi <yoshinao@inoguchi.com>",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "main": "out/main/index.js",
   "build": {
     "appId": "io.github.nao7sep.tapebox",
