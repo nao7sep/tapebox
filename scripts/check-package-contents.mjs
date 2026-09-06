@@ -44,4 +44,11 @@ if (unexpected.length > 0) {
   throw new Error(`Packaged app contains unexpected files:\n${unexpected.slice(0, 20).join('\n')}`)
 }
 
+const developmentMetadata = entries.filter((entry) =>
+  entry.endsWith('.map') || entry.endsWith('.d.ts') || entry.endsWith('.d.mts') || entry.endsWith('.d.cts')
+)
+if (developmentMetadata.length > 0) {
+  throw new Error(`Packaged app contains development metadata:\n${developmentMetadata.slice(0, 20).join('\n')}`)
+}
+
 console.log(`Verified ${entries.length} app.asar entries in ${archive}`)
