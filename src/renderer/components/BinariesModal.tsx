@@ -77,9 +77,7 @@ export function BinariesModal() {
     >
       <p className="text-sm text-zinc-300">
         yt-dlp downloads media and ffmpeg processes it; Deno is the JavaScript runtime
-        yt-dlp uses for sites that need it. The standalone yt-dlp downloads and selected
-        FFmpeg builds contain GPLv3-or-later code; Deno is MIT-licensed. They remain separate
-        programs in your app-data folder.
+        yt-dlp uses for sites that need it.
       </p>
 
       <div className="mt-5">
