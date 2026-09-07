@@ -67,6 +67,13 @@ function button(text: string): HTMLButtonElement {
 }
 
 describe('BinariesModal check and acquisition outcomes', () => {
+  it('discloses the managed tools licence boundary before installation', async () => {
+    await mount()
+
+    expect(document.body.textContent).toContain('FFmpeg builds contain GPLv3-or-later code')
+    expect(document.body.textContent).toContain('Deno is MIT-licensed')
+  })
+
   it('immediately replaces Install from the authoritative terminal row', async () => {
     ipcInvoke.mockImplementationOnce((_channel, request: { operationId: string }) =>
       Promise.resolve({
