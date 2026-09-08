@@ -20,6 +20,7 @@ import { useImportMedia } from '@renderer/lib/useImportMedia'
 import { denyUnhandledExternalDrop } from '@renderer/lib/externalDrop'
 import { useUiFont } from '@renderer/lib/useUiFont'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
+import { PassiveScrollRegion } from '@renderer/components/PassiveScrollRegion'
 import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
 import { TapeList } from '@renderer/components/TapeList'
@@ -288,7 +289,9 @@ function HydratedApp() {
               onCommit={(w) => void patchLayout({ leftPaneWidth: w }, true)}
             />
           </aside>
-          <section
+          <PassiveScrollRegion
+            as="section"
+            label="Tape details"
             className="flex-1 overflow-y-auto min-w-0"
             style={{ minWidth: detailPaneWidth.min }}
           >
@@ -304,7 +307,7 @@ function HydratedApp() {
                 Select a tape from the list.
               </div>
             )}
-          </section>
+          </PassiveScrollRegion>
         </div>
 
         {showScanPage && (

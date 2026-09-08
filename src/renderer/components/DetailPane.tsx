@@ -35,6 +35,7 @@ import { downloadFailurePresentation } from '@renderer/lib/downloadFailure'
 import { runTapeAction } from '@renderer/lib/runTapeAction'
 import { TapeActionResults } from './TapeActionResults'
 import { LayoutWriteResult } from './LayoutWriteResult'
+import { PassiveScrollRegion } from './PassiveScrollRegion'
 
 /** Seconds the Left/Right arrows move the playhead. */
 const SEEK_STEP_SECONDS = 10
@@ -449,9 +450,12 @@ export function DetailPane({
                 empty space above it. */}
             {twoColumnHeader && (
               <div className="min-w-0">
-                <div className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap break-words pr-1 text-xs text-zinc-300">
+                <PassiveScrollRegion
+                  label="Tape description"
+                  className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap break-words pr-1 text-xs text-zinc-300"
+                >
                   {description}
-                </div>
+                </PassiveScrollRegion>
               </div>
             )}
           </div>
@@ -464,12 +468,15 @@ export function DetailPane({
         {tape.state === 'downloaded' ? (
           playbackError ? (
             <CaptionedPanel kind="error" caption="This tape couldn’t be played" fill>
-              <div className="min-h-0 flex-1 overflow-auto p-4">
+              <PassiveScrollRegion
+                label="Playback error details"
+                className="min-h-0 flex-1 overflow-auto p-4"
+              >
                 <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300">{playbackError}</pre>
                 <p className="mt-3 text-xs text-zinc-400">
                   Try “Open in player” below for the system player, or reveal the session log from the menu for the full record.
                 </p>
-              </div>
+              </PassiveScrollRegion>
             </CaptionedPanel>
           ) : (
             <div className="my-3 flex min-h-[200px] min-w-0 flex-1 items-center justify-center px-4">
@@ -575,17 +582,22 @@ export function DetailPane({
             onCommit={(w) => void patchLayout({ chaptersPaneWidth: w }, true)}
           />
           <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {sidecarError
-              ? <p className="text-xs text-red-300">{sidecarError}</p>
-              : (
-                <ChapterList
-                  chapters={chapters}
-                  currentIndex={currentChapterIndex}
-                  onActivate={(i) => seek(chapters[i].start_time)}
-                />
-              )}
-          </div>
+          {sidecarError ? (
+            <PassiveScrollRegion
+              label="Chapter error details"
+              className="min-h-0 flex-1 overflow-y-auto"
+            >
+              <p className="text-xs text-red-300">{sidecarError}</p>
+            </PassiveScrollRegion>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ChapterList
+                chapters={chapters}
+                currentIndex={currentChapterIndex}
+                onActivate={(i) => seek(chapters[i].start_time)}
+              />
+            </div>
+          )}
         </aside>
       )}
 
@@ -670,7 +682,10 @@ function DownloadLogPanel({
           )}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs">
+      <PassiveScrollRegion
+        label="Download log"
+        className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs"
+      >
         {fallback != null ? (
           <pre className="whitespace-pre-wrap break-words text-zinc-300">{fallback}</pre>
         ) : entries.length > 0 ? (
@@ -690,7 +705,7 @@ function DownloadLogPanel({
         ) : (
           <p className="text-zinc-500">{WORKING_PLACEHOLDER[tape.state] ?? 'Working…'}</p>
         )}
-      </div>
+      </PassiveScrollRegion>
     </CaptionedPanel>
   )
 }

@@ -5,6 +5,7 @@ import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import { Button, Field, INPUT_CLASS } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { PassiveScrollRegion } from './PassiveScrollRegion'
 
 /** The source fields an AI name suggestion can draw on. */
 type SourceField = 'title' | 'uploader' | 'description'
@@ -189,9 +190,12 @@ function SourceRow({
       </dt>
       <dd className="min-w-0">
         {scrollable ? (
-          <div className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded border border-zinc-800 p-2 text-xs text-zinc-300">
+          <PassiveScrollRegion
+            label={`${label} source value`}
+            className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded border border-zinc-800 p-2 text-xs text-zinc-300"
+          >
             {value}
-          </div>
+          </PassiveScrollRegion>
         ) : (
           <span className="select-text break-words text-zinc-200">{value}</span>
         )}

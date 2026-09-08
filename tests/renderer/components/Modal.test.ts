@@ -81,6 +81,14 @@ describe('Modal accessibility', () => {
     ])
   })
 
+  it('makes the passive scroll body the single labelled keyboard owner', async () => {
+    await mountModal('Activity')
+
+    const body = dialog().querySelector<HTMLElement>('[data-passive-scroll-region]')
+    expect(body?.tabIndex).toBe(0)
+    expect(body?.getAttribute('aria-label')).toBe('Activity content')
+  })
+
 })
 
 describe('Modal focus management', () => {

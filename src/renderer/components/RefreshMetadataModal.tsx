@@ -7,6 +7,7 @@ import { describeError } from '@shared/error'
 import { Modal } from './Modal'
 import { Button, InlineError, Spinner } from './ui'
 import { CheckIcon } from './Icon'
+import { PassiveScrollRegion } from './PassiveScrollRegion'
 import { presentFailure } from '@renderer/lib/presentFailure'
 
 /**
@@ -216,8 +217,11 @@ function DescBox({ text, losing, probing }: { text: string | null; losing?: bool
     return <div className={losing ? 'text-amber-300' : 'text-zinc-500'}>—</div>
   }
   return (
-    <div className="max-h-28 min-w-0 overflow-y-auto whitespace-pre-wrap break-words rounded border border-zinc-800 p-2 text-zinc-300">
+    <PassiveScrollRegion
+      label="Description"
+      className="max-h-28 min-w-0 overflow-y-auto whitespace-pre-wrap break-words rounded border border-zinc-800 p-2 text-zinc-300"
+    >
       {text}
-    </div>
+    </PassiveScrollRegion>
   )
 }

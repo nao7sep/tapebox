@@ -3,6 +3,7 @@ import { trapTabFocus } from '@renderer/lib/focusTrap'
 import { acquireScrollLock, releaseScrollLock } from '@renderer/lib/scrollLock'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { CloseIcon } from './Icon'
+import { PassiveScrollRegion } from './PassiveScrollRegion'
 
 /**
  * Three tiers, by content:
@@ -131,7 +132,12 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">{children}</div>
+        <PassiveScrollRegion
+          label={`${title} content`}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6"
+        >
+          {children}
+        </PassiveScrollRegion>
 
         {footer && (
           <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-700 p-4">

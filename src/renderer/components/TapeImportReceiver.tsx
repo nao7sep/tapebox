@@ -10,6 +10,7 @@ import {
 import { useImportResultStore } from '@renderer/store/importResult'
 import { describeError } from '@shared/error'
 import { CloseIcon } from './Icon'
+import { PassiveScrollRegion } from './PassiveScrollRegion'
 
 export function TapeImportReceiver({ children }: { children: ReactNode }) {
   const [deliveryActive, setDeliveryActive] = useState(false)
@@ -125,7 +126,9 @@ function ImportResultNotice() {
       : 'text-sky-200 hover:bg-sky-900 hover:text-sky-50'
 
   return (
-    <section
+    <PassiveScrollRegion
+      as="section"
+      label="Import result"
       role={severity === 'error' ? 'alert' : 'status'}
       aria-atomic="true"
       className={`relative m-3 mt-0 max-h-[40%] shrink-0 overflow-y-auto rounded-md border py-2.5 pr-11 pl-3 shadow-sm ${palette}`}
@@ -148,7 +151,7 @@ function ImportResultNotice() {
           <CloseIcon />
         </button>
       </div>
-    </section>
+    </PassiveScrollRegion>
   )
 }
 
