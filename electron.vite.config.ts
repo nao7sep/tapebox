@@ -42,6 +42,11 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react(), tailwindcss()],
+    server: {
+      host: '127.0.0.1',
+      port: 27143,
+      strictPort: true,
+    },
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),

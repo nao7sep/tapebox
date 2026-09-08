@@ -47,6 +47,9 @@ function Invoke-Native {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
+$runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
+$runtimeToken = [guid]::NewGuid().ToString("N")
+$rendererUrl = "http://127.0.0.1:27143"
 
 try {
     Set-Utf8Console
@@ -54,6 +57,11 @@ try {
     Require-Command npm
 
     Set-Location $repoDir
+
+    Write-Step "Replacing any existing TapeBox runtime"
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", "electron", "TapeBox", "TapeBox")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "check-endpoint", "127.0.0.1", "27143")
 
     Write-Step "Installing dependencies"
     Invoke-Native -FilePath "npm" -ArgumentList @("install")
@@ -66,7 +74,14 @@ try {
     }
 
     Write-Step "Starting TapeBox in development mode"
-    Invoke-Native -FilePath "npm" -ArgumentList @("run", "dev") -AllowedExitCodes @(0, 130, -1073741510)
+    $devProcess = Start-Process -FilePath (Get-Command "npm.cmd").Source -ArgumentList @("run", "dev") -NoNewWindow -PassThru
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-http", $rendererUrl, "60000")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", (Join-Path $repoDir "node_modules/electron/dist/electron.exe"), "60000")
+    Write-Step "TapeBox is ready at $rendererUrl"
+    $devProcess.WaitForExit()
+    if ($devProcess.ExitCode -notin @(0, 130, -1073741510)) {
+        throw "TapeBox development runtime failed with exit code $($devProcess.ExitCode)."
+    }
 }
 catch {
     Write-Host ""
@@ -74,7 +89,11 @@ catch {
     $scriptExitCode = 1
 }
 finally {
-    Read-Host "Press Enter to close" | Out-Null
+    & node $runtimeHelper is-owner $runtimeToken *> $null
+    if ($LASTEXITCODE -eq 0) {
+        & node $runtimeHelper stop-if-owner $runtimeToken electron "TapeBox" "TapeBox" *> $null
+        Read-Host "Press Enter to close" | Out-Null
+    }
 }
 
 exit $scriptExitCode
