@@ -88,6 +88,28 @@ describe('volume as self-healing layout state', () => {
   })
 })
 
+describe('window placement as self-healing layout state', () => {
+  it('defaults missing placement state without disturbing existing layout', () => {
+    const { windowPlacements: _windowPlacements, ...legacy } = defaultLayout
+    expect(LayoutSchema.parse({ ...legacy, leftPaneWidth: 400 })).toMatchObject({
+      leftPaneWidth: 400,
+      windowPlacements: { main: null },
+    })
+  })
+
+  it('keeps valid placement and heals malformed placement fields independently', () => {
+    const bounds = { x: 20, y: 30, width: 1200, height: 800 }
+    expect(LayoutSchema.parse({
+      ...defaultLayout,
+      windowPlacements: { main: { normalBounds: bounds, mode: 'normal' } },
+    }).windowPlacements.main).toEqual({ normalBounds: bounds, mode: 'normal' })
+    expect(LayoutSchema.parse({
+      ...defaultLayout,
+      windowPlacements: { main: { normalBounds: { ...bounds, width: 'wide' }, mode: 'tilted' } },
+    }).windowPlacements.main).toEqual({ normalBounds: null, mode: 'maximized' })
+  })
+})
+
 // The pure splitter clamp shared by every resize handle. The contract: a drag
 // never exceeds the live container minus the summed sibling minimums, and never
 // drops below the pane's own minimum (window-chrome-conventions: splitters

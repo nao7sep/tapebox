@@ -130,11 +130,38 @@ const dim = (b: { min: number; max: number; default: number }) =>
  */
 export const VOLUME_DEFAULT = 1
 
+export type WindowPlacementMode = 'normal' | 'maximized'
+export interface WindowBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+export interface WindowPlacementRecord {
+  normalBounds: WindowBounds | null
+  mode: WindowPlacementMode
+}
+
+const WindowBoundsSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().finite(),
+  height: z.number().finite(),
+})
+
+const WindowPlacementSchema = z.object({
+  normalBounds: WindowBoundsSchema.nullable().default(null).catch(null),
+  mode: z.enum(['normal', 'maximized']).default('maximized').catch('maximized'),
+})
+
 export const LayoutSchema = z.object({
   leftPaneWidth: dim(LAYOUT_BOUNDS.leftPaneWidth),
   chaptersPaneWidth: dim(LAYOUT_BOUNDS.chaptersPaneWidth),
   archiveBoxesHeight: dim(LAYOUT_BOUNDS.archiveBoxesHeight),
   volume: z.number().min(0).max(1).default(VOLUME_DEFAULT).catch(VOLUME_DEFAULT),
+  windowPlacements: z.object({
+    main: WindowPlacementSchema.nullable().default(null).catch(null),
+  }).default({ main: null }).catch({ main: null }),
 })
 export type Layout = z.infer<typeof LayoutSchema>
 
@@ -143,4 +170,5 @@ export const defaultLayout: Layout = {
   chaptersPaneWidth: LAYOUT_BOUNDS.chaptersPaneWidth.default,
   archiveBoxesHeight: LAYOUT_BOUNDS.archiveBoxesHeight.default,
   volume: VOLUME_DEFAULT,
+  windowPlacements: { main: null },
 }

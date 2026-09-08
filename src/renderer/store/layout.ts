@@ -8,7 +8,9 @@ import { presentFailure } from '@renderer/lib/presentFailure'
  * required app hydration commits, so a load rejection cannot turn defaults into
  * an apparently authoritative saved layout.
  */
-export type LayoutField = keyof Layout
+// Main owns window placement; renderer persistence is limited to fields with a
+// user-facing rollback message at their control surface.
+export type LayoutField = Exclude<keyof Layout, 'windowPlacements'>
 
 type LayoutState = {
   layout: Layout | null

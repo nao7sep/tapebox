@@ -18,6 +18,7 @@ const SAVE_DEBOUNCE_MS = 500
 
 let cache: Layout = { ...defaultLayout }
 let saveTimer: NodeJS.Timeout | null = null
+let writeQueue: Promise<void> = Promise.resolve()
 
 export async function loadLayout(): Promise<void> {
   let raw: unknown
@@ -60,13 +61,19 @@ export async function persistNow(): Promise<void> {
     clearTimeout(saveTimer)
     saveTimer = null
   }
-  try {
+  const write = writeQueue.then(async () => {
+    // Snapshot inside the serialized turn so a newer cache always wins after an
+    // older in-flight write. Window drag persistence shares this store with
+    // renderer layout updates, so overlapping atomic renames must not race.
+    const snapshot = structuredClone(cache)
     // layout.json is durable managed TEXT: it records on every save through the
     // choke point. Window geometry churns, but the store's per-path content dedup
     // absorbs that — an unchanged geometry save writes no row (data-backup
     // conventions: managed text is recorded; there is no "exclude volatile" rule).
-    await writeManagedJson(paths.layout, cache, LayoutSchema)
-  } catch (err) {
+    await writeManagedJson(paths.layout, snapshot, LayoutSchema)
+  })
+  writeQueue = write.catch(() => {})
+  try { await write } catch (err) {
     log.error('layout persist failed', { error: describeError(err) })
   }
 }

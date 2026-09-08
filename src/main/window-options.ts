@@ -3,8 +3,8 @@ import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 /**
  * The main window's BrowserWindow options, isolated in its own module so the
  * sizing can be asserted in a unit test without importing index.ts (which boots
- * Electron at module load). The default size is the designed launch size
- * (persistence is off — window-chrome-conventions); the minimums are DERIVED in
+ * Electron at module load). The default size is the safe fallback when a saved
+ * placement is absent or unusable; the minimums are DERIVED in
  * @shared/layout from the pane minimums plus fixed chrome, so the OS floor can
  * never let a pane be squeezed out and there is no hand-typed magic minimum to
  * drift. `preload` is injected because it depends on the caller's resolved

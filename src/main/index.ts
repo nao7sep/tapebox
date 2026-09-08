@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, screen, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs, resetTempDir } from './paths.js'
@@ -19,6 +19,12 @@ import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
+import {
+  applyRestoredBounds,
+  configureWindowPlacement,
+  resolveWindowRestoration,
+} from './window-placement.js'
+import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -37,6 +43,7 @@ app.on('second-instance', () => {
 })
 
 let mainWindow: BrowserWindow | null = null
+let flushMainWindowPlacement: (() => Promise<void>) | null = null
 let startupReady = false
 let terminalStartupFailure = false
 
@@ -45,7 +52,47 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const win = new BrowserWindow(windowOptions(join(__dirname, '../preload/index.cjs')))
   mainWindow = win
   configureWindowActivity(app, win)
+  let workAreas: Electron.Rectangle[] = []
+  try {
+    workAreas = screen.getAllDisplays().map((display) => display.workArea)
+  } catch (error) {
+    log.warn('display work areas unavailable; using opening window bounds', { error: describeError(error) })
+  }
+  const restoration = resolveWindowRestoration(
+    layout.getLayout().windowPlacements.main,
+    { width: WINDOW_MIN_WIDTH, height: WINDOW_MIN_HEIGHT },
+    workAreas,
+  )
+  if (restoration.normalBounds) {
+    applyRestoredBounds(win, restoration.normalBounds, (error) => {
+      log.warn('saved window bounds rejected; using opening bounds', { error: describeError(error) })
+    })
+  }
+  const placement = configureWindowPlacement(
+    win,
+    { normalBounds: win.getBounds(), mode: restoration.mode },
+    async (record) => {
+      layout.updateLayout({ windowPlacements: { main: record } })
+      await layout.persistNow()
+    },
+    (error) => log.warn('window placement operation failed', { error: describeError(error) }),
+  )
+  const flushThisWindowPlacement = () => placement.flush()
+  flushMainWindowPlacement = flushThisWindowPlacement
+  let closeAllowed = false
+  win.on('close', (event) => {
+    if (closeAllowed) return
+    event.preventDefault()
+    void placement.flush().finally(() => {
+      if (win.isDestroyed()) return
+      closeAllowed = true
+      win.close()
+    })
+  })
+  win.on('session-end', () => { void placement.flush() })
   win.once('closed', () => {
+    placement.dispose()
+    if (flushMainWindowPlacement === flushThisWindowPlacement) flushMainWindowPlacement = null
     if (mainWindow === win) mainWindow = null
   })
 
@@ -73,7 +120,21 @@ async function createMainWindow(): Promise<BrowserWindow> {
     throw error
   }
 
-  win.once('ready-to-show', () => win.show())
+  if (restoration.mode === 'maximized') {
+    try { win.maximize() } catch (error) {
+      placement.setInitialMode('normal')
+      log.warn('window could not be maximized during restoration', { error: describeError(error) })
+    }
+  }
+  win.show()
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  if (!win.isDestroyed()) {
+    if (restoration.mode === 'maximized' && !win.isMaximized()) {
+      placement.setInitialMode('normal')
+      log.warn('window manager rejected maximized restoration')
+    }
+    placement.start()
+  }
   return win
 }
 
@@ -165,6 +226,7 @@ function shutdown(reason: string): Promise<void> {
     // held playback wake lock up front.
     releaseWakeLock()
     await shutdownBinaryOperations()
+    await flushMainWindowPlacement?.()
     try {
       await persistNow()
     } catch {
