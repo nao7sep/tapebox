@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { presentFailure } from '@renderer/lib/presentFailure'
-import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
+import { LAYOUT_BOUNDS, detailPaneWidth, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT, CONTENT_MIN_HEIGHT } from '@shared/layout'
 import { applyInitialSyncState, pullInitialSyncState, startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -224,8 +224,10 @@ function HydratedApp() {
   const selectedTape = tapes.find((i) => i.id === selectedId) ?? null
 
   return (
+    <div className="h-screen overflow-auto">
     <main
-      className="flex h-screen flex-col"
+      className="flex h-full flex-col"
+      style={{ minWidth: WINDOW_MIN_WIDTH, minHeight: WINDOW_MIN_HEIGHT }}
       onDragOver={denyUnhandledExternalDrop}
       onDrop={denyUnhandledExternalDrop}
     >
@@ -257,7 +259,7 @@ function HydratedApp() {
           </InlineError>
         )}
 
-        <div ref={contentRowRef} className="flex flex-1 overflow-hidden">
+        <div ref={contentRowRef} className="flex flex-1 overflow-hidden" style={{ minHeight: CONTENT_MIN_HEIGHT }}>
           <aside
             style={{ width: leftPaneWidth }}
             className="relative flex shrink-0 flex-col border-r border-zinc-700"
@@ -329,5 +331,6 @@ function HydratedApp() {
         <StatusBar />
         <Toaster />
     </main>
+    </div>
   )
 }

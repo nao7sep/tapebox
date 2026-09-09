@@ -1,3 +1,4 @@
+import { normalizeWindowsNormalBounds, type WindowsNormalBounds } from "./windows-placement";
 import { z } from 'zod'
 
 /**
@@ -138,6 +139,7 @@ export interface WindowBounds {
   height: number
 }
 export interface WindowPlacementRecord {
+  windowsNormalBounds?: WindowsNormalBounds | null
   normalBounds: WindowBounds | null
   mode: WindowPlacementMode
 }
@@ -150,6 +152,7 @@ const WindowBoundsSchema = z.object({
 })
 
 const WindowPlacementSchema = z.object({
+  windowsNormalBounds: z.unknown().transform(normalizeWindowsNormalBounds).optional(),
   normalBounds: WindowBoundsSchema.nullable().default(null).catch(null),
   mode: z.enum(['normal', 'maximized']).default('maximized').catch('maximized'),
 })

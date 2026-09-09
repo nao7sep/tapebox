@@ -15,12 +15,13 @@ import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
+import { configureWindowMinimum } from './window-minimum.js'
 import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
 import {
-  applyRestoredBounds,
+  initializeWindowPlacement,
   configureWindowPlacement,
   resolveWindowRestoration,
 } from './window-placement.js'
@@ -58,24 +59,27 @@ async function createMainWindow(): Promise<BrowserWindow> {
   } catch (error) {
     log.warn('display work areas unavailable; using opening window bounds', { error: describeError(error) })
   }
+  const savedPlacement = layout.getLayout().windowPlacements.main
+  const placementError = (error: unknown): void => {
+    log.warn('window placement operation failed', { error: describeError(error) })
+  }
   const restoration = resolveWindowRestoration(
-    layout.getLayout().windowPlacements.main,
+    savedPlacement,
     { width: WINDOW_MIN_WIDTH, height: WINDOW_MIN_HEIGHT },
     workAreas,
   )
-  if (restoration.normalBounds) {
-    applyRestoredBounds(win, restoration.normalBounds, (error) => {
-      log.warn('saved window bounds rejected; using opening bounds', { error: describeError(error) })
-    })
-  }
+  configureWindowMinimum(win, () => ({ width: WINDOW_MIN_WIDTH, height: WINDOW_MIN_HEIGHT }),
+    (error) => log.warn('window minimum could not be updated', { error: describeError(error) }))
+  const { initial, windows: windowsPlacement } = initializeWindowPlacement(win, savedPlacement, restoration, placementError)
   const placement = configureWindowPlacement(
     win,
-    { normalBounds: win.getBounds(), mode: restoration.mode },
+    initial,
     async (record) => {
       layout.updateLayout({ windowPlacements: { main: record } })
       await layout.persistNow()
     },
-    (error) => log.warn('window placement operation failed', { error: describeError(error) }),
+    placementError,
+    windowsPlacement,
   )
   const flushThisWindowPlacement = () => placement.flush()
   flushMainWindowPlacement = flushThisWindowPlacement
@@ -120,21 +124,16 @@ async function createMainWindow(): Promise<BrowserWindow> {
     throw error
   }
 
-  if (restoration.mode === 'maximized') {
-    try { win.maximize() } catch (error) {
-      placement.setInitialMode('normal')
-      log.warn('window could not be maximized during restoration', { error: describeError(error) })
+  win.show();
+  // Windows requires a native event-loop turn between show and maximize.
+  setTimeout(() => {
+    if (win.isDestroyed()) return;
+    placement.start();
+    if (restoration.mode === "maximized") {
+      try { win.maximize(); }
+      catch (error) { log.warn('window could not be maximized during restoration', { error: describeError(error) }); }
     }
-  }
-  win.show()
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  if (!win.isDestroyed()) {
-    if (restoration.mode === 'maximized' && !win.isMaximized()) {
-      placement.setInitialMode('normal')
-      log.warn('window manager rejected maximized restoration')
-    }
-    placement.start()
-  }
+  }, 0);
   return win
 }
 
