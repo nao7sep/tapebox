@@ -14,7 +14,7 @@ TapeBox is a local media library: download videos with `yt-dlp`, keep them as **
 
 ## Requirements
 
-- macOS or Windows (Linux runs from source)
+- macOS 13 or later on Apple silicon, or 64-bit Windows (64-bit Linux runs from source)
 - On Linux, install `ffmpeg` yourself at `~/.tapebox/bin/ffmpeg` (auto-install is macOS/Windows only)
 - Node.js 22.5+ and npm — only to build or run from source
 

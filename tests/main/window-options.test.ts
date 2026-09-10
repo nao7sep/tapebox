@@ -16,7 +16,13 @@ describe('windowOptions', () => {
     expect(opts.minHeight).not.toBe(600)
   })
 
-  it('opens at the designed default size (persistence is off)', () => {
+  it('uses Electron bounds persistence without restoring display mode', () => {
+    const opts = windowOptions('/preload.cjs')
+    expect(opts.name).toBe('main')
+    expect(opts.windowStatePersistence).toEqual({ bounds: true, displayMode: false })
+  })
+
+  it('keeps the designed default size as the restoration fallback', () => {
     const opts = windowOptions('/preload.cjs')
     expect(opts.width).toBe(1280)
     expect(opts.height).toBe(800)
