@@ -35,21 +35,20 @@ describe("native content minimum", () => {
     expect(fitNativeMinimum(floor, { width: 1920, height: 1040 }, { width: 16, height: 39 }))
       .toEqual({ width: 1216, height: 939 });
   });
-  it("fits the designed opening to a constrained work area", () => {
+  it("does not force the opening size or position on a constrained work area", () => {
     monitor.workAreaSize = { width: 1000, height: 700 };
     const win = new FakeWindow();
     configureWindowMinimum(win as never, () => floor, vi.fn());
     expect(win.minimum).toEqual([1000, 700]);
-    expect(win.size).toEqual([1000, 700]);
-    expect(win.center).toHaveBeenCalledOnce();
+    expect(win.size).toEqual([1000, 800]);
+    expect(win.setSize).not.toHaveBeenCalled();
+    expect(win.center).not.toHaveBeenCalled();
   });
-  it("prepares useful opening bounds, then restores the full floor without recentering", () => {
+  it("restores the full minimum when the active work area can contain it", () => {
     monitor.workAreaSize = { width: 1000, height: 700 };
     const win = new FakeWindow();
     const refresh = configureWindowMinimum(win as never, () => floor, vi.fn());
-    expect(win.size).toEqual([1000, 700]);
-    expect(win.center).toHaveBeenCalledOnce();
-    win.center.mockClear();
+    expect(win.size).toEqual([1000, 800]);
     monitor.workAreaSize = { width: 1920, height: 1040 };
     refresh();
     expect(win.minimum).toEqual([1200, 900]);
@@ -58,7 +57,6 @@ describe("native content minimum", () => {
     refresh();
     expect(win.setMinimumSize).not.toHaveBeenCalled();
     win.emit("move");
-    expect(win.center).not.toHaveBeenCalled();
   });
   it.each(["maximized", "minimized", "fullScreen"] as const)("defers sizing while %s", (mode) => {
     const win = new FakeWindow();

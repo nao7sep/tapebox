@@ -4,13 +4,11 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { presentFailure } from '@renderer/lib/presentFailure'
 
 /**
- * Renderer-side mirror of persisted window geometry. It stays null until the
- * required app hydration commits, so a load rejection cannot turn defaults into
- * an apparently authoritative saved layout.
+ * Renderer-side mirror of persisted view state. It stays null until the required
+ * app hydration commits, so a load rejection cannot turn defaults into an
+ * apparently authoritative saved layout.
  */
-// Main owns window placement; renderer persistence is limited to fields with a
-// user-facing rollback message at their control surface.
-export type LayoutField = Exclude<keyof Layout, 'windowPlacements'>
+export type LayoutField = keyof Layout
 
 type LayoutState = {
   layout: Layout | null

@@ -6,12 +6,10 @@ import { describeError } from '@shared/error'
 import { LayoutSchema, defaultLayout, type Layout } from '@shared/layout'
 
 /**
- * In-memory layout cache + debounced atomic persistence to layout.json.
- *
- * Window geometry the user drags. Self-healing on load (a missing or invalid
- * file falls back to defaults) because it holds no data worth protecting — the
- * opposite policy from the session store. Writes are debounced so a drag that
- * fires dozens of updates collapses to one disk write on release.
+ * In-memory view-state cache + debounced atomic persistence to layout.json.
+ * Self-healing on load (a missing or invalid file falls back to defaults)
+ * because it holds no data worth protecting — the opposite policy from the
+ * session store. Writes are debounced so rapid updates collapse into one write.
  */
 
 const SAVE_DEBOUNCE_MS = 500
@@ -63,13 +61,10 @@ export async function persistNow(): Promise<void> {
   }
   const write = writeQueue.then(async () => {
     // Snapshot inside the serialized turn so a newer cache always wins after an
-    // older in-flight write. Window drag persistence shares this store with
-    // renderer layout updates, so overlapping atomic renames must not race.
+    // older in-flight write. Overlapping renderer updates must not race.
     const snapshot = structuredClone(cache)
-    // layout.json is durable managed TEXT: it records on every save through the
-    // choke point. Window geometry churns, but the store's per-path content dedup
-    // absorbs that — an unchanged geometry save writes no row (data-backup
-    // conventions: managed text is recorded; there is no "exclude volatile" rule).
+    // layout.json is durable managed text: every save records through the shared
+    // choke point, whose per-path content dedup absorbs unchanged state.
     await writeManagedJson(paths.layout, snapshot, LayoutSchema)
   })
   writeQueue = write.catch(() => {})

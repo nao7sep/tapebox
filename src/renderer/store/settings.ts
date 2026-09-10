@@ -43,8 +43,7 @@ const FAILURE_COPY: Record<WritablePlaybackSetting, string> = {
  * Patch an app-chrome playback setting. Persisted changes are published only
  * after settings:update confirms them; a rejected write leaves the prior value
  * in use and retains a field-specific result beside the toggles.
- * (Window geometry and the live playback volume are view state, not settings, and
- * have their own store — see store/layout.ts.)
+ * (The live playback volume is view state, not a setting, and has its own store.)
  */
 export async function savePlaybackSettings(
   patch: Partial<Pick<Settings, WritablePlaybackSetting>>,
