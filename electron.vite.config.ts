@@ -55,6 +55,7 @@ export default defineConfig({
     },
     root: 'src/renderer',
     build: {
+      minify: true,
       rollupOptions: {
         input: resolve('src/renderer/index.html'),
       },

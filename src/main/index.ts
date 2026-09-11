@@ -15,6 +15,7 @@ import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
+import { createWindowWithUsablePersistedBounds } from './window-state-recovery.js'
 import { configureWindowMinimum } from './window-minimum.js'
 import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
@@ -44,7 +45,8 @@ let terminalStartupFailure = false
 
 async function createMainWindow(): Promise<BrowserWindow> {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow
-  const win = new BrowserWindow(windowOptions(join(__dirname, '../preload/index.cjs')))
+  const options = windowOptions(join(__dirname, '../preload/index.cjs'))
+  const win = createWindowWithUsablePersistedBounds('main', () => new BrowserWindow(options))
   mainWindow = win
   configureWindowActivity(app, win)
   configureWindowMinimum(win, () => ({ width: WINDOW_MIN_WIDTH, height: WINDOW_MIN_HEIGHT }),
