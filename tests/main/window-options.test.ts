@@ -16,10 +16,13 @@ describe('windowOptions', () => {
     expect(opts.minHeight).not.toBe(600)
   })
 
-  it('uses Electron bounds persistence without restoring display mode', () => {
+  it('uses Electron bounds persistence with Windows display mode', () => {
     const opts = windowOptions('/preload.cjs')
     expect(opts.name).toBe('main')
-    expect(opts.windowStatePersistence).toEqual({ bounds: true, displayMode: false })
+    expect(opts.windowStatePersistence).toEqual({
+      bounds: true,
+      displayMode: process.platform === 'win32',
+    })
   })
 
   it('keeps the designed default size as the restoration fallback', () => {

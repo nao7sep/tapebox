@@ -13,7 +13,7 @@ import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 export function windowOptions(preload: string): Electron.BrowserWindowConstructorOptions {
   return {
     name: 'main',
-    windowStatePersistence: { bounds: true, displayMode: false },
+    windowStatePersistence: { bounds: true, displayMode: process.platform === 'win32' },
     width: 1280,
     height: 800,
     minWidth: WINDOW_MIN_WIDTH,
