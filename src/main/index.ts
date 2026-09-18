@@ -1,11 +1,11 @@
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs, resetTempDir } from './paths.js'
 import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
 import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
 import { describeError } from '@shared/error'
-import { loadSettings } from './store/config.js'
+import { getSettings, loadSettings } from './store/config.js'
 import { loadDependencies } from './store/dependencies.js'
 import { loadSession, persistNow, persistNowSync } from './store/session.js'
 import * as layout from './store/layout.js'
@@ -15,6 +15,7 @@ import * as queue from './queue/manager.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
+import { applyThemePreference, followOsThemeChanges, windowBackground } from './theme.js'
 import { createWindowWithUsablePersistedBounds } from './window-state-recovery.js'
 import { configureWindowMinimum } from './window-minimum.js'
 import { closeBackupStore } from './store/backupStore.js'
@@ -45,7 +46,7 @@ let terminalStartupFailure = false
 
 async function createMainWindow(): Promise<BrowserWindow> {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow
-  const options = windowOptions(join(__dirname, '../preload/index.cjs'))
+  const options = windowOptions(join(__dirname, '../preload/index.cjs'), windowBackground())
   const win = createWindowWithUsablePersistedBounds('main', () => new BrowserWindow(options))
   mainWindow = win
   configureWindowActivity(app, win)
@@ -117,6 +118,11 @@ async function startup(): Promise<void> {
   }
 
   const configResult = await loadSettings()
+  // The saved theme reaches the title bar, the renderer's prefers-color-scheme,
+  // and the recovery dialogs before any window exists, so launch never shows the
+  // OS appearance and then switches. A failure before this point follows the OS.
+  applyThemePreference(getSettings().theme)
+  followOsThemeChanges()
   await loadDependencies()
   const sessionResult = await loadSession()
   await layout.loadLayout()
@@ -125,10 +131,6 @@ async function startup(): Promise<void> {
   registerIpcHandlers()
   queue.start()
 
-  // Force the native chrome — the window's title bar, menus, and native dialogs —
-  // dark to match the renderer, which is a dark-only UI. Without this the title bar
-  // follows the OS theme and looks pasted-on-light against the app's #09090b body.
-  nativeTheme.themeSource = 'dark'
   startupReady = true
   const initialWindow = await createMainWindow()
 

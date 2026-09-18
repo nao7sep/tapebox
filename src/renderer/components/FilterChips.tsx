@@ -30,10 +30,10 @@ export function FilterChips() {
           <label
             key={f}
             className={
-              'cursor-pointer rounded px-2.5 py-1 text-xs transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-zinc-400 ' +
+              'cursor-pointer rounded px-2.5 py-1 text-xs transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-fg-muted ' +
               (active
-                ? 'bg-zinc-100 text-zinc-950'
-                : 'border border-zinc-700 text-zinc-300 hover:border-zinc-600')
+                ? 'bg-inverse text-on-inverse'
+                : 'border border-line text-fg hover:border-line-strong')
             }
           >
             <input

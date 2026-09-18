@@ -10,7 +10,7 @@ import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
  * out and there is no hand-typed magic minimum to drift. `preload` is injected
  * because it depends on the caller's resolved __dirname.
  */
-export function windowOptions(preload: string): Electron.BrowserWindowConstructorOptions {
+export function windowOptions(preload: string, background: string): Electron.BrowserWindowConstructorOptions {
   return {
     name: 'main',
     windowStatePersistence: { bounds: true, displayMode: process.platform === 'win32' },
@@ -19,7 +19,8 @@ export function windowOptions(preload: string): Electron.BrowserWindowConstructo
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
     show: false,
-    backgroundColor: '#09090b',
+    // The resolved theme's --color-canvas, so the first frame matches the page.
+    backgroundColor: background,
     webPreferences: {
       preload,
       sandbox: true,

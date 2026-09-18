@@ -14,8 +14,8 @@ import type { Role } from '@shared/binary-status'
  * 'none' is the quiet baseline (Up to date) — it carries no emphasis.
  */
 export const ROLE_TEXT_CLASS: Record<Role, string> = {
-  none: 'text-zinc-300',
-  info: 'text-zinc-300',
-  warning: 'text-amber-300',
-  error: 'text-red-300',
+  none: 'text-fg',
+  info: 'text-fg',
+  warning: 'text-warning-fg',
+  error: 'text-danger-fg',
 }

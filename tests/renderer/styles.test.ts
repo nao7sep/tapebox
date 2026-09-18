@@ -12,8 +12,9 @@ describe('renderer scrollbar contract', () => {
     expect(compact).toContain('scrollbar-width:auto')
   })
 
-  it('uses readable zinc tokens and strengthens the whole owner in use', () => {
-    expect(compact).toContain('background-color:var(--color-zinc-500,#71717a)')
+  it('uses the theme scroll-bar tokens and strengthens the whole owner in use', () => {
+    expect(compact).toContain('background-color:var(--color-scrollbar-thumb)')
+    expect(compact).toContain('background-color:var(--color-scrollbar-thumb-hover)')
     expect(compact).toContain('*:hover::-webkit-scrollbar-thumb')
     expect(compact).toContain('*:focus-within::-webkit-scrollbar-thumb')
     expect(compact).toContain('scrollbar-gutter:stable')

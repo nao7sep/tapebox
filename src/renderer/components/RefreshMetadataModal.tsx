@@ -118,12 +118,12 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
           // A successful check that found nothing new. Said warmly, with a check
           // mark, so it reads as "all good" rather than a broken Apply button — and
           // it spells out that this is exactly why there's nothing to apply.
-          <div className="flex items-center gap-2.5 rounded-md border border-teal-800/60 bg-teal-950/30 px-3 py-2.5 text-sm text-zinc-200">
-            <CheckIcon className="shrink-0 text-teal-400" />
+          <div className="flex items-center gap-2.5 rounded-md border border-calm-line bg-calm-tint px-3 py-2.5 text-sm text-fg-emphasis">
+            <CheckIcon className="shrink-0 text-calm-fg" />
             <span>Up to date — the source matches your saved metadata, so there’s nothing to apply.</span>
           </div>
         ) : (
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-fg-muted">
             {probed
               ? 'Nothing changes unless you apply. A value shown in amber would replace existing data with nothing — cancel if that isn’t what you want.'
               : 'Your saved metadata is shown below. It’s almost always fine — check the source only if you have reason to think the page now has better data. Nothing is fetched or changed until you do.'}
@@ -135,8 +135,8 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
             "Current" match the gap between "Current" and "New" rather than dwarfing it. */}
         <div className="grid grid-cols-[auto_1fr_1fr] items-start gap-x-6 gap-y-2.5 text-xs">
           <div />
-          <div className="font-medium text-zinc-500">Current</div>
-          <div className="font-medium text-zinc-500">New</div>
+          <div className="font-medium text-fg-subtle">Current</div>
+          <div className="font-medium text-fg-subtle">New</div>
           <FieldDiff label="Title" probed={probed} probing={probing} current={nv(tape.title)} next={nv(candidate?.title ?? null)} />
           <FieldDiff label="Uploader" probed={probed} probing={probing} current={nv(tape.uploader)} next={nv(candidate?.uploader ?? null)} />
           {showDescription && (
@@ -175,9 +175,9 @@ function FieldDiff({
   const changed = probed && (current ?? '') !== (next ?? '')
   return (
     <>
-      <div className="text-zinc-500">{label}</div>
-      <div className="min-w-0 break-words text-zinc-400">{current ?? '—'}</div>
-      <div className={'min-w-0 break-words ' + (losing ? 'text-amber-300' : changed ? 'text-zinc-100' : 'text-zinc-400')}>
+      <div className="text-fg-subtle">{label}</div>
+      <div className="min-w-0 break-words text-fg-muted">{current ?? '—'}</div>
+      <div className={'min-w-0 break-words ' + (losing ? 'text-warning-fg' : changed ? 'text-fg-strong' : 'text-fg-muted')}>
         {probing ? <Spinner /> : next ?? '—'}
       </div>
     </>
@@ -204,7 +204,7 @@ function DescriptionDiff({
   const losing = probed && current !== null && next === null
   return (
     <>
-      <div className="text-zinc-500">Description</div>
+      <div className="text-fg-subtle">Description</div>
       <DescBox text={current} />
       <DescBox text={next} losing={losing} probing={probing} />
     </>
@@ -214,12 +214,12 @@ function DescriptionDiff({
 function DescBox({ text, losing, probing }: { text: string | null; losing?: boolean; probing?: boolean }) {
   if (probing) return <Spinner />
   if (text === null) {
-    return <div className={losing ? 'text-amber-300' : 'text-zinc-500'}>—</div>
+    return <div className={losing ? 'text-warning-fg' : 'text-fg-subtle'}>—</div>
   }
   return (
     <PassiveScrollRegion
       label="Description"
-      className="max-h-28 min-w-0 overflow-y-auto whitespace-pre-wrap break-words rounded border border-zinc-800 p-2 text-zinc-300"
+      className="max-h-28 min-w-0 overflow-y-auto whitespace-pre-wrap break-words rounded border border-line-subtle p-2 text-fg"
     >
       {text}
     </PassiveScrollRegion>

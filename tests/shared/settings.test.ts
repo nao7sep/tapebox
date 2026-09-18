@@ -160,3 +160,23 @@ describe('summarizeSettings', () => {
     expect(summarizeSettings(customized).promptsCustomized).toBe(true)
   })
 })
+
+describe('the theme setting', () => {
+  it('defaults to System and keeps each saved choice', () => {
+    expect(defaultSettings().theme).toBe('system')
+    for (const theme of ['system', 'light', 'dark'] as const) {
+      expect(SettingsSchema.parse({ ...defaultSettings(), theme }).theme).toBe(theme)
+    }
+  })
+
+  it('resolves a missing or unrecognized value to System without failing the file', () => {
+    const { theme: _theme, ...withoutTheme } = defaultSettings()
+    expect(SettingsSchema.parse(withoutTheme).theme).toBe('system')
+    expect(SettingsSchema.parse({ ...defaultSettings(), theme: 'sepia' }).theme).toBe('system')
+    expect(SettingsSchema.parse({ ...defaultSettings(), theme: 42 }).theme).toBe('system')
+  })
+
+  it('appears in the startup settings summary', () => {
+    expect(summarizeSettings({ ...defaultSettings(), theme: 'dark' }).theme).toBe('dark')
+  })
+})

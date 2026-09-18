@@ -8,7 +8,7 @@ import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 // drift from the pane minimums the layout reserves.
 describe('windowOptions', () => {
   it('uses the derived window minimums, not magic literals', () => {
-    const opts = windowOptions('/preload.cjs')
+    const opts = windowOptions('/preload.cjs', '#ffffff')
     expect(opts.minWidth).toBe(WINDOW_MIN_WIDTH)
     expect(opts.minHeight).toBe(WINDOW_MIN_HEIGHT)
     // The retired band-aids must be gone.
@@ -17,7 +17,7 @@ describe('windowOptions', () => {
   })
 
   it('uses Electron bounds persistence with Windows display mode', () => {
-    const opts = windowOptions('/preload.cjs')
+    const opts = windowOptions('/preload.cjs', '#ffffff')
     expect(opts.name).toBe('main')
     expect(opts.windowStatePersistence).toEqual({
       bounds: true,
@@ -26,13 +26,17 @@ describe('windowOptions', () => {
   })
 
   it('keeps the designed default size as the restoration fallback', () => {
-    const opts = windowOptions('/preload.cjs')
+    const opts = windowOptions('/preload.cjs', '#ffffff')
     expect(opts.width).toBe(1280)
     expect(opts.height).toBe(800)
   })
 
+  it("paints the background it is given (the resolved theme's canvas)", () => {
+    expect(windowOptions('/preload.cjs', '#09090b').backgroundColor).toBe('#09090b')
+  })
+
   it('threads the preload path through to webPreferences', () => {
-    const opts = windowOptions('/some/preload.cjs')
+    const opts = windowOptions('/some/preload.cjs', '#ffffff')
     expect(opts.webPreferences?.preload).toBe('/some/preload.cjs')
   })
 })

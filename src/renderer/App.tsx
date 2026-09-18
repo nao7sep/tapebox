@@ -92,19 +92,19 @@ export default function App() {
   if (!ready) {
     return (
       <main className="flex h-screen flex-col">
-        <header className="shrink-0 border-b border-zinc-700 px-4 py-3">
+        <header className="shrink-0 border-b border-line px-4 py-3">
           <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
         </header>
         <div className="flex min-h-0 flex-1 items-center justify-center p-8">
           {loading ? (
-            <p className="flex items-center gap-2 text-sm text-zinc-300"><Spinner /> Loading…</p>
+            <p className="flex items-center gap-2 text-sm text-fg"><Spinner /> Loading…</p>
           ) : (
             <div className="w-full max-w-xl space-y-3">
               <InlineError>{loadError}</InlineError>
               <button
                 type="button"
                 onClick={hydrate}
-                className="rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 hover:bg-zinc-700"
+                className="rounded border border-line-strong bg-raised px-3 py-1.5 text-sm text-fg-strong hover:bg-raised-hover"
               >
                 Try again
               </button>
@@ -231,7 +231,7 @@ function HydratedApp() {
       onDragOver={denyUnhandledExternalDrop}
       onDrop={denyUnhandledExternalDrop}
     >
-        <header className="flex shrink-0 items-center gap-4 border-b border-zinc-700 px-4 py-2.5">
+        <header className="flex shrink-0 items-center gap-4 border-b border-line px-4 py-2.5">
           <h1 className="shrink-0 text-xl font-medium tracking-tight">TapeBox</h1>
           <div className="flex min-w-0 flex-1 justify-center">
             <div className="w-full max-w-5xl">
@@ -262,9 +262,9 @@ function HydratedApp() {
         <div ref={contentRowRef} className="flex flex-1 overflow-hidden" style={{ minHeight: CONTENT_MIN_HEIGHT }}>
           <aside
             style={{ width: leftPaneWidth }}
-            className="relative flex shrink-0 flex-col border-r border-zinc-700"
+            className="relative flex shrink-0 flex-col border-r border-line"
           >
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-700 px-3 py-2.5">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-2.5">
               <FilterChips />
               <PlaybackToggles />
             </div>
@@ -305,7 +305,7 @@ function HydratedApp() {
                 onScanPage={openScanPage}
               />
             ) : (
-              <div className="flex h-full items-center justify-center p-8 text-sm text-zinc-300">
+              <div className="flex h-full items-center justify-center p-8 text-sm text-fg">
                 Select a tape from the list.
               </div>
             )}

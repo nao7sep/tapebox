@@ -7,6 +7,7 @@ import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
 import { paths } from '@main/paths'
 import { reconcileWakeLock } from '@main/power-blocker'
+import { applyThemePreference } from '@main/theme'
 import {
   completeLibraryRelocation,
   relocateLibrary,
@@ -156,6 +157,8 @@ export function registerSettingsHandlers(): void {
       }
       throw saveError
     }
+    // Settings apply on Save, the theme included (app-chrome conventions, Theme).
+    applyThemePreference(next.theme)
     // Flipping autostart on should start anything already waiting.
     if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
     // Toggling keep-awake off mid-playback must release the held wake lock now

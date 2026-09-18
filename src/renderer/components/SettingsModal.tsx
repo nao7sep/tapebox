@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
-import type { AiSettings, Settings, SiteProfile } from '@shared/settings'
+import type { AiSettings, Settings, SiteProfile, ThemePreference } from '@shared/settings'
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useSettingsStore } from '@renderer/store/settings'
@@ -166,7 +166,7 @@ export function SettingsModal({ onClose }: Props) {
             <Button variant="secondary" onClick={load}>Try again</Button>
           </div>
         ) : (
-          <p className="flex items-center gap-2 text-sm text-zinc-300">
+          <p className="flex items-center gap-2 text-sm text-fg">
             <Spinner /> Loading…
           </p>
         )}
@@ -280,12 +280,19 @@ function pickEditable(s: Settings) {
     defaultExportDir: s.defaultExportDir,
     deleteAfterExport: s.deleteAfterExport,
     uiFontFamily: s.uiFontFamily,
+    theme: s.theme,
     ai: s.ai,
     prompts: s.prompts,
     ytdlpArgs: s.ytdlpArgs,
     siteProfiles: s.siteProfiles,
   }
 }
+
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string }> = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
@@ -340,10 +347,10 @@ function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
             data-tab-index={i}
             onClick={() => onTab(t.id)}
             className={
-              'block w-full rounded px-3 py-1.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 ' +
+              'block w-full rounded px-3 py-1.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-muted ' +
               (selected
-                ? 'bg-zinc-800 text-zinc-100'
-                : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100')
+                ? 'bg-raised text-fg-strong'
+                : 'text-fg hover:bg-hover hover:text-fg-strong')
             }
           >
             {t.label}
@@ -394,6 +401,26 @@ function GeneralTab({
           {pickerError}
         </InlineError>
       )}
+      {/* A native radio group: one tab stop, arrow keys move and select. Staged in
+          the draft and applied on Save with the rest of Settings. */}
+      <fieldset className="space-y-1.5" disabled={busy}>
+        <legend className="mb-1 text-xs font-medium text-fg">Theme</legend>
+        <div className="flex flex-wrap gap-x-5 gap-y-1">
+          {THEME_OPTIONS.map(({ value, label }) => (
+            <label key={value} className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="settings-theme"
+                value={value}
+                checked={draft.theme === value}
+                onChange={() => onPatch({ theme: value })}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-fg-muted">System follows the OS appearance.</p>
+      </fieldset>
       <div>
         <TextField
           label="UI font"
@@ -402,7 +429,7 @@ function GeneralTab({
           disabled={busy}
           onChange={(v) => onPatch({ uiFontFamily: v })}
         />
-        <p className="mt-1 text-xs text-zinc-400">
+        <p className="mt-1 text-xs text-fg-muted">
           Comma-separated font families; the first one your system has is used. Blank uses the built-in default.
         </p>
       </div>
@@ -422,7 +449,7 @@ function GeneralTab({
         onChange={(v) => onPatch({ maxConcurrentDownloads: v })}
       />
       <div>
-        <div className="text-xs font-medium text-zinc-300">Library folder</div>
+        <div className="text-xs font-medium text-fg">Library folder</div>
         <div className="mt-1 flex items-center gap-2">
           <input
             type="text"
@@ -437,7 +464,7 @@ function GeneralTab({
             Choose…
           </Button>
         </div>
-        <p className="mt-1 text-xs text-zinc-400">
+        <p className="mt-1 text-xs text-fg-muted">
           Where tapes are saved. Changing this moves your existing tapes to the new
           folder. Not available while downloads are running.
         </p>
@@ -471,7 +498,7 @@ function GeneralTab({
         onChange={(v) => onPatch({ externalPlayer: v })}
       />
       <div>
-        <div className="text-xs font-medium text-zinc-300">Default export folder</div>
+        <div className="text-xs font-medium text-fg">Default export folder</div>
         <div className="mt-1 flex items-center gap-2">
           <input
             type="text"
@@ -486,7 +513,7 @@ function GeneralTab({
             Choose…
           </Button>
         </div>
-        <p className="mt-1 text-xs text-zinc-400">
+        <p className="mt-1 text-xs text-fg-muted">
           Where Export copies a tape's files. Blank means the export dialog asks each time.
         </p>
       </div>
@@ -545,7 +572,7 @@ function AiTab({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-zinc-300">
+      <p className="text-sm text-fg">
         Used to suggest a file slug from each tape&apos;s title. TapeBox currently supports OpenAI-compatible providers only.
       </p>
 
@@ -558,8 +585,8 @@ function AiTab({
       />
 
       <div>
-        <div className="text-xs font-medium text-zinc-300">API key</div>
-        {keyIsSet && <div className="mt-0.5 text-xs text-zinc-300">Key is set</div>}
+        <div className="text-xs font-medium text-fg">API key</div>
+        {keyIsSet && <div className="mt-0.5 text-xs text-fg">Key is set</div>}
         <div className="mt-1 flex items-center gap-2">
           <input
             type="password"
@@ -577,7 +604,7 @@ function AiTab({
           )}
         </div>
         {willClear && (
-          <p className="mt-1 text-xs text-amber-300">Key will be cleared on save.</p>
+          <p className="mt-1 text-xs text-warning-fg">Key will be cleared on save.</p>
         )}
       </div>
 
@@ -589,7 +616,7 @@ function AiTab({
         onChange={(v) => onAiPatch({ model: v })}
       />
 
-      <div className="border-t border-zinc-700 pt-4">
+      <div className="border-t border-line pt-4">
         <Field label="Slug prompt">
           <textarea
             value={prompts.slug}
@@ -600,7 +627,7 @@ function AiTab({
             className={`w-full resize-y ${INPUT_CLASS}`}
           />
           <div className="mt-1 flex items-center justify-between gap-2">
-            <p className="text-xs text-zinc-300">
+            <p className="text-xs text-fg">
               Tokens: <code>{'{title}'}</code>, <code>{'{uploader}'}</code>,{' '}
               <code>{'{description}'}</code>.
             </p>
@@ -643,12 +670,12 @@ function YtdlpTab({
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-fg-muted">
         TapeBox&apos;s own flags (output, info json) always win on conflict.
       </p>
 
       <div>
-        <div className="text-xs font-medium text-zinc-300">Global arguments</div>
+        <div className="text-xs font-medium text-fg">Global arguments</div>
         <div className="mt-1">
           <AutoTextarea
             value={draft.ytdlpArgs}
@@ -658,7 +685,7 @@ function YtdlpTab({
             mono
           />
         </div>
-        <p className="mt-1 text-xs text-zinc-400">
+        <p className="mt-1 text-xs text-fg-muted">
           One flag per line (or space-separated). Quote any value that contains
           spaces. Backslashes are literal — not line-continuations — so Windows
           paths work as written.
@@ -667,21 +694,21 @@ function YtdlpTab({
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-zinc-300">Site profiles</div>
+          <div className="text-xs font-medium text-fg">Site profiles</div>
           <Button variant="secondary" size="sm" onClick={addProfile} disabled={busy}>
             Add profile
           </Button>
         </div>
 
         {draft.siteProfiles.length === 0 && (
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-fg-muted">
             No site profiles yet. Add one to apply extra yt-dlp flags only to URLs that match a
             pattern — handy for a site that needs a specific header or format.
           </p>
         )}
 
         {draft.siteProfiles.map((p) => (
-          <div key={p.id} className="space-y-2 rounded border border-zinc-700 p-3">
+          <div key={p.id} className="space-y-2 rounded border border-line p-3">
             <div className="flex items-center gap-2">
               <input
                 value={p.name}
@@ -704,7 +731,7 @@ function YtdlpTab({
                 disabled={busy}
                 className={`flex-1 ${INPUT_CLASS}`}
               />
-              <label className="flex shrink-0 items-center gap-1.5 text-xs text-zinc-300">
+              <label className="flex shrink-0 items-center gap-1.5 text-xs text-fg">
                 <input
                   type="checkbox"
                   checked={p.isRegex}

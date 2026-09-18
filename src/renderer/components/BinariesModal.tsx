@@ -75,7 +75,7 @@ export function BinariesModal() {
         </Button>
       }
     >
-      <p className="text-sm text-zinc-300">
+      <p className="text-sm text-fg">
         yt-dlp downloads media and ffmpeg processes it; Deno is the JavaScript runtime
         yt-dlp uses for sites that need it.
       </p>
@@ -89,7 +89,7 @@ export function BinariesModal() {
         />
       </div>
 
-      <div className="mt-5 flex items-center justify-between text-xs text-zinc-300">
+      <div className="mt-5 flex items-center justify-between text-xs text-fg">
         <span>{lastCheckedHint(statuses, checking, checkFailures?.map((failure) => failure.name) ?? null)}</span>
         {checking ? (
           <Button variant="ghost" size="sm" disabled={checkCancelling} onClick={() => void cancelCheck()}>
@@ -104,7 +104,7 @@ export function BinariesModal() {
           instead of bunching at the left and leaving a gap before the action. */}
       <table className="mt-5 w-full table-fixed text-sm">
         <thead>
-          <tr className="text-left text-xs font-medium text-zinc-300">
+          <tr className="text-left text-xs font-medium text-fg">
             <th className="w-1/4 pb-3">Tool</th>
             <th className="w-1/4 pb-3">Installed</th>
             <th className="w-1/4 pb-3">Latest</th>
@@ -162,14 +162,14 @@ function BinaryRow({
   const label = acquireLabel(d.state, status.installedVersion)
 
   return (
-    <tr className="border-t border-zinc-700">
+    <tr className="border-t border-line">
       <td className="py-3 font-medium">{status.name}</td>
       <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d)}</td>
-      <td className="py-3 text-zinc-300">{latestText(status, checking)}</td>
+      <td className="py-3 text-fg">{latestText(status, checking)}</td>
       <td className="py-3 text-right">
         {progress || pending ? (
           <span className="inline-flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
+            <span className="inline-flex items-center gap-1.5 text-xs text-fg">
               <Spinner />
               {cancelling
                 ? 'Cancelling…'
@@ -184,7 +184,7 @@ function BinaryRow({
         ) : label ? (
           <span className="inline-flex items-center gap-2">
             {terminalOutcome === 'cancelled' && (
-              <span className="text-xs text-zinc-300">Cancelled</span>
+              <span className="text-xs text-fg">Cancelled</span>
             )}
             <Button variant="warm" size="sm" onClick={onInstall}>
               {label}
@@ -205,7 +205,7 @@ function installedText(status: BinaryStatus, d: DerivedStatus): string {
 
 /** Colour the installed cell by role so a to-do reads as amber at a glance. */
 function installedClass(d: DerivedStatus): string {
-  return d.role === 'warning' ? ROLE_TEXT_CLASS.warning : 'text-zinc-300'
+  return d.role === 'warning' ? ROLE_TEXT_CLASS.warning : 'text-fg'
 }
 
 /** The latest-version cell text; distinguishes an unchecked tool from a known

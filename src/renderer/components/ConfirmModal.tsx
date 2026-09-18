@@ -41,7 +41,7 @@ export function ConfirmModal({
 
   return (
     <Modal title={title} onClose={onCancel} size="md" footer={footer}>
-      <p className="text-sm text-zinc-300">{message}</p>
+      <p className="text-sm text-fg">{message}</p>
     </Modal>
   )
 }

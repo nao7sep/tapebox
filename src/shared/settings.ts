@@ -100,6 +100,9 @@ export const SiteProfileSchema = z.object({
 })
 export type SiteProfile = z.infer<typeof SiteProfileSchema>
 
+export const THEME_PREFERENCES = ['system', 'light', 'dark'] as const
+export type ThemePreference = (typeof THEME_PREFERENCES)[number]
+
 const SettingsObjectSchema = z.object({
   // Folder where the library lives — where tapes are saved and read from. Empty =
   // use the default library folder (~/.tapebox/library); main resolves it via
@@ -170,6 +173,13 @@ const SettingsObjectSchema = z.object({
   // back on its own (app-chrome-conventions: web fonts are engine-resolved, never
   // parsed here). Family only — there is deliberately no UI font-size knob.
   uiFontFamily: z.string(),
+
+  // The app theme (app-chrome conventions, Theme): System follows the OS
+  // appearance; Light and Dark force a theme. The main process hands it to
+  // nativeTheme.themeSource. A missing or unrecognized value resolves to System
+  // instead of failing the whole file, so a config from before this setting (or
+  // from a newer build) loads untouched.
+  theme: z.enum(THEME_PREFERENCES).catch('system'),
 })
 
 export const SettingsPatchSchema = SettingsObjectSchema.partial()
@@ -217,6 +227,7 @@ export function defaultSettings(): Settings {
     defaultExportDir: '',
     deleteAfterExport: true,
     uiFontFamily: '',
+    theme: 'system',
   }
 }
 
@@ -264,5 +275,6 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     ytdlpArgsSet: s.ytdlpArgs.trim().length > 0,
     siteProfileCount: s.siteProfiles.length,
     uiFontFamily: s.uiFontFamily,
+    theme: s.theme,
   }
 }

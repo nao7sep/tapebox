@@ -57,7 +57,7 @@ export function TopBar({ clipboardEnabled }: Props) {
           spellCheck={false}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? errorId : undefined}
-          className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm placeholder-zinc-500 focus:border-zinc-600 focus:outline-hidden"
+          className="flex-1 rounded border border-field-line bg-panel px-3 py-2 text-sm placeholder-fg-subtle focus:border-field-focus focus:outline-hidden"
         />
         <Button
           variant="primary"

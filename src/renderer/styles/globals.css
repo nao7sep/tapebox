@@ -44,18 +44,215 @@ button:disabled {
   --text-sm--line-height: 1.375rem;
 }
 
-/* Scrollbars — tuned to the dark palette so they don't read as a bright OS strip
-   against the near-black UI. Styled globally, so every overflow container (lists,
+/* Theme colors. Components use these semantic names (bg-panel, text-fg-muted,
+   border-danger-line, ...), never Tailwind's literal palette, so each theme is
+   one complete set: light values here, dark values in the prefers-color-scheme
+   block below, which Electron's nativeTheme.themeSource (Settings › General ›
+   Theme) decides. The dark values are the zinc, red, amber, sky, teal, and violet
+   steps the app has always used; light is the same neutral zinc and status hues
+   on white. A translucent value carries its alpha in its hex. */
+@theme {
+  /* The window: body, and the recessed fill of text fields. */
+  --color-canvas: #ffffff;
+  /* Modals, menus, and the search and filter fields. */
+  --color-panel: #f7f7f8;
+  /* Buttons, keycaps, progress tracks. */
+  --color-raised: #efeff1;
+  --color-raised-hover: #e4e4e7;
+  /* Row and item hover. */
+  --color-hover: #f1f1f3;
+  --color-hover-strong: #e4e4e7b3;
+  /* Sticky section headers. */
+  --color-sticky: #f4f4f5f2;
+  /* Behind a modal. */
+  --color-backdrop: #18181b66;
+  /* A settled tape row, an archived one, a neutral panel. */
+  --color-row: #fafafa;
+  --color-row-archived: #f4f4f5;
+  --color-neutral-tint: #fafafa;
+  /* A progress fill. */
+  --color-progress: #3f3f46;
+  /* The primary button and the active filter chip: the strongest contrast. */
+  --color-inverse: #18181b;
+  --color-inverse-hover: #3f3f46;
+  --color-on-inverse: #fafafa;
+  /* Text, strongest to quietest. */
+  --color-fg-strong: #09090b;
+  --color-fg-emphasis: #18181b;
+  --color-fg: #3f3f46;
+  --color-fg-muted: #52525b;
+  --color-fg-subtle: #66666f;
+  /* Borders. */
+  --color-line: #d4d4d8;
+  --color-line-strong: #a1a1aa;
+  --color-line-subtle: #e4e4e7;
+  --color-line-hover: #71717a;
+  /* The selected tape or chapter ring. */
+  --color-selected: #18181b;
+  /* A text field is identified by its outline alone, so it holds 3:1 against its fill and surroundings. */
+  --color-field-line: #8a8a93;
+  --color-field-focus: #3f3f46;
+  /* The keyboard focus ring. */
+  --color-focus: #0284c7;
+  --color-scrollbar-thumb: #8a8a93;
+  --color-scrollbar-thumb-hover: #52525b;
+  /* Danger (red): errors and failed tapes. */
+  --color-danger-fg: #b91c1c;
+  --color-danger-fg-strong: #7f1d1d;
+  --color-danger-line: #fecaca;
+  --color-danger-line-strong: #ef4444;
+  --color-danger-line-hover: #dc2626;
+  --color-danger-tint: #fef2f2;
+  --color-danger-banner: #fee2e2;
+  --color-danger-row: #fef2f2;
+  --color-danger-hover: #fecaca;
+  --color-danger-fill: #dc2626;
+  --color-danger-fill-hover: #b91c1c;
+  --color-on-danger: #ffffff;
+  /* Warning (amber): paused tapes, available actions, the drop target. */
+  --color-warning-fg: #a4500a;
+  --color-warning-fg-strong: #78350f;
+  --color-warning-line: #fde68a;
+  --color-warning-line-strong: #f59e0b;
+  --color-warning-line-hover: #d97706;
+  --color-warning-tint: #fffbeb;
+  --color-warning-banner: #fef3c7;
+  --color-warning-row: #fffbeb;
+  --color-warning-hover: #fde68a;
+  --color-warning-drop: #fbbf2426;
+  --color-warning-ring: #b45309;
+  --color-warm-fill: #f59e0b;
+  --color-warm-fill-hover: #fbbf24;
+  --color-on-warm: #09090b;
+  /* Info (sky): downloads, notices, the selected box. */
+  --color-info-fg: #0369a1;
+  --color-info-fg-strong: #0c4a6e;
+  --color-info-line-strong: #38bdf8;
+  --color-info-line-hover: #0284c7;
+  --color-info-banner: #e0f2fe;
+  --color-info-row: #f0f9ff;
+  --color-info-drop: #e0f2fe;
+  --color-info-hover: #bae6fd;
+  --color-info-selected: #e0f2fe;
+  --color-info-ring: #0284c7;
+  /* Calm (teal): queued and ready tapes, a clean refresh. */
+  --color-calm-fg: #0f766e;
+  --color-calm-line: #99f6e4;
+  --color-calm-line-strong: #2dd4bf;
+  --color-calm-line-hover: #0d9488;
+  --color-calm-tint: #f0fdfa;
+  --color-calm-row: #f0fdfa;
+  /* Note (violet): pages still to scan, informational panels. */
+  --color-note-fg: #6d28d9;
+  --color-note-line: #ddd6fe;
+  --color-note-line-strong: #a78bfa;
+  --color-note-line-hover: #7c3aed;
+  --color-note-tint: #f5f3ff;
+  --color-note-row: #f5f3ff;
+  /* The playback toggles when on. */
+  --color-autoplay-on: #0284c7;
+  --color-sound-on: #db2777;
+}
+
+@layer base {
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-canvas: #09090b;
+      --color-panel: #18181b;
+      --color-raised: #27272a;
+      --color-raised-hover: #3f3f46;
+      --color-hover: #27272a99;
+      --color-hover-strong: #3f3f4699;
+      --color-sticky: #27272af2;
+      --color-backdrop: #09090bcc;
+      --color-row: #18181b99;
+      --color-row-archived: #09090b66;
+      --color-neutral-tint: #18181b66;
+      --color-progress: #e4e4e7;
+      --color-inverse: #fafafa;
+      --color-inverse-hover: #e4e4e7;
+      --color-on-inverse: #09090b;
+      --color-fg-strong: #f4f4f5;
+      --color-fg-emphasis: #e4e4e7;
+      --color-fg: #d4d4d8;
+      --color-fg-muted: #a1a1aa;
+      --color-fg-subtle: #909099;
+      --color-line: #3f3f46;
+      --color-line-strong: #52525b;
+      --color-line-subtle: #27272a;
+      --color-line-hover: #71717a;
+      --color-selected: #f4f4f5;
+      --color-field-line: #71717a;
+      --color-field-focus: #d4d4d8;
+      --color-focus: #0ea5e9;
+      --color-scrollbar-thumb: #71717a;
+      --color-scrollbar-thumb-hover: #a1a1aa;
+      --color-danger-fg: #fca5a5;
+      --color-danger-fg-strong: #fee2e2;
+      --color-danger-line: #7f1d1d;
+      --color-danger-line-strong: #dc2626b3;
+      --color-danger-line-hover: #ef4444;
+      --color-danger-tint: #450a0a66;
+      --color-danger-banner: #450a0acc;
+      --color-danger-row: #7f1d1d4d;
+      --color-danger-hover: #7f1d1d;
+      --color-danger-fill: #dc2626;
+      --color-danger-fill-hover: #b91c1c;
+      --color-on-danger: #ffffff;
+      --color-warning-fg: #fcd34d;
+      --color-warning-fg-strong: #fef3c7;
+      --color-warning-line: #78350f;
+      --color-warning-line-strong: #d97706b3;
+      --color-warning-line-hover: #f59e0b;
+      --color-warning-tint: #451a0366;
+      --color-warning-banner: #451a03cc;
+      --color-warning-row: #78350f4d;
+      --color-warning-hover: #78350f;
+      --color-warning-drop: #fbbf241a;
+      --color-warning-ring: #fbbf24;
+      --color-warm-fill: #f59e0b;
+      --color-warm-fill-hover: #fbbf24;
+      --color-on-warm: #09090b;
+      --color-info-fg: #7dd3fc;
+      --color-info-fg-strong: #e0f2fe;
+      --color-info-line-strong: #0284c7b3;
+      --color-info-line-hover: #0ea5e9;
+      --color-info-banner: #082f49b3;
+      --color-info-row: #0c4a6e4d;
+      --color-info-drop: #0c4a6e66;
+      --color-info-hover: #0c4a6e;
+      --color-info-selected: #0ea5e933;
+      --color-info-ring: #38bdf8;
+      --color-calm-fg: #5eead4;
+      --color-calm-line: #115e5999;
+      --color-calm-line-strong: #0d9488b3;
+      --color-calm-line-hover: #14b8a6;
+      --color-calm-tint: #042f2e4d;
+      --color-calm-row: #134e4a4d;
+      --color-note-fg: #c4b5fd;
+      --color-note-line: #4c1d95;
+      --color-note-line-strong: #7c3aedb3;
+      --color-note-line-hover: #8b5cf6;
+      --color-note-tint: #2e106566;
+      --color-note-row: #4c1d954d;
+      --color-autoplay-on: #38bdf8;
+      --color-sound-on: #f472b6;
+    }
+  }
+}
+
+/* Scrollbars — tuned to the palette so they don't read as an OS strip pasted
+   onto the UI. Styled globally, so every overflow container (lists,
    modals, the log, description boxes) matches. WebKit pseudo-elements (Electron is
    Chromium) give the rounded, inset thumb; the track stays transparent so each
-   container's own dark background shows through, and the thumb brightens a notch
+   container's own background shows through, and the thumb strengthens a notch
    on hover.
 
-   The `color-scheme: dark` declaration in the base layer below is the other half
-   of this (window-chrome-conventions: a web UI needs both). The pseudo-element
-   styling shapes the scroll bar; color-scheme tells the platform the page is dark
-   so native form controls and the scroll-corner square render in the dark palette
-   rather than a pasted-on-light default. Neither alone is sufficient. */
+   The `color-scheme` declaration in the base layer below is the other half of
+   this (window-chrome-conventions: a web UI needs both). The pseudo-element
+   styling shapes the scroll bar; color-scheme tells the platform the page's theme
+   so native form controls and the scroll-corner square render in its palette.
+   Neither alone is sufficient. */
 ::-webkit-scrollbar {
   width: 16px;
   height: 16px;
@@ -65,7 +262,7 @@ button:disabled {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: var(--color-zinc-500, #71717a);
+  background-color: var(--color-scrollbar-thumb);
   border-radius: 9999px;
   /* A transparent border clipped to the padding box insets the thumb to a slim
      pill with breathing room, rather than a bar filling the gutter edge to edge. */
@@ -75,17 +272,17 @@ button:disabled {
 ::-webkit-scrollbar-thumb:hover,
 *:hover::-webkit-scrollbar-thumb,
 *:focus-within::-webkit-scrollbar-thumb {
-  background-color: var(--color-zinc-400, #a1a1aa);
+  background-color: var(--color-scrollbar-thumb-hover);
 }
 
 * {
   scrollbar-width: auto;
-  scrollbar-color: var(--color-zinc-500, #71717a) transparent;
+  scrollbar-color: var(--color-scrollbar-thumb) transparent;
 }
 
 *:hover,
 *:focus-within {
-  scrollbar-color: var(--color-zinc-400, #a1a1aa) transparent;
+  scrollbar-color: var(--color-scrollbar-thumb-hover) transparent;
 }
 
 /* Passive reading regions expose one focus target to the shared keyboard-scroll
@@ -96,7 +293,7 @@ button:disabled {
 }
 [data-passive-scroll-region]:focus::-webkit-scrollbar-thumb,
 [data-passive-scroll-region]:focus-within::-webkit-scrollbar-thumb {
-  background-color: var(--color-zinc-400, #a1a1aa);
+  background-color: var(--color-scrollbar-thumb-hover);
 }
 
 /* Focus ring — replace the browser default (a bright, theme-clashing outline) with
@@ -111,10 +308,10 @@ button:disabled {
    win and the opt-outs work. */
 @layer base {
   /* Declare the page's color scheme so the platform paints native form controls
-     and the scroll-corner square in the dark palette. Pairs with the
+     and the scroll-corner square in the theme's palette. Pairs with the
      ::-webkit-scrollbar styling above (window-chrome-conventions). */
   :root {
-    color-scheme: dark;
+    color-scheme: light dark;
   }
   body {
     /* Ordinary chrome owns the same 14 px size as the text-sm body/control role;
@@ -125,7 +322,7 @@ button:disabled {
     outline: none;
   }
   :focus-visible {
-    outline: 2px solid var(--color-sky-500, #0ea5e9);
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
 }
@@ -135,8 +332,8 @@ button:disabled {
    owns the menu bar. This is intentionally unlayered so it also overrides
    control-specific focus utilities in the utilities layer. */
 [data-window-inactive] :focus-visible {
-  outline-color: var(--color-zinc-700, #3f3f46);
-  --tw-ring-color: var(--color-zinc-700, #3f3f46);
+  outline-color: var(--color-line);
+  --tw-ring-color: var(--color-line);
 }
 
 /* Indeterminate "still working" bar: a short segment sweeping left to right. */

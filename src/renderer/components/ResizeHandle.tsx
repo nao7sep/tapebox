@@ -80,7 +80,7 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit }: Props
       role="separator"
       aria-orientation={alongY ? 'horizontal' : 'vertical'}
       className={
-        'absolute z-10 transition-colors hover:bg-zinc-600/70 ' +
+        'absolute z-10 transition-colors hover:bg-line-strong/70 ' +
         (alongY ? 'cursor-row-resize ' : 'cursor-col-resize ') +
         POSITION[edge]
       }

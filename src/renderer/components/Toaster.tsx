@@ -22,13 +22,13 @@ export function Toaster() {
           key={t.id}
           role="alert"
           aria-atomic="true"
-          className="pointer-events-auto relative rounded-lg border border-red-800 bg-red-950/95 py-3 pr-11 pl-4 text-sm text-red-200 shadow-lg"
+          className="pointer-events-auto relative rounded-lg border border-danger-line bg-danger-banner py-3 pr-11 pl-4 text-sm text-danger-fg-strong shadow-lg"
         >
           <div className="min-w-0 whitespace-pre-wrap break-words">{t.text}</div>
           <button
             onClick={() => dismiss(t.id)}
             aria-label="Close notification"
-            className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded border-0 bg-transparent p-0 leading-none text-red-300/80 hover:bg-red-900 hover:text-red-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-300"
+            className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded border-0 bg-transparent p-0 leading-none text-danger-fg/80 hover:bg-danger-hover hover:text-danger-fg-strong focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-danger-fg"
           >
             <CloseIcon />
           </button>

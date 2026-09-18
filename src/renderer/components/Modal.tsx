@@ -106,7 +106,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
       onMouseDown={(e) => {
         if (!closeDisabled && e.target === e.currentTarget) onClose()
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-backdrop backdrop-blur-sm"
     >
       <div
         ref={panelRef}
@@ -118,15 +118,15 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
         onKeyDown={onKeyDown}
         onCompositionStart={composing.handlers.onCompositionStart}
         onCompositionEnd={composing.handlers.onCompositionEnd}
-        className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl focus:outline-hidden`}
+        className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-line bg-panel shadow-xl focus:outline-hidden`}
       >
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-700 p-4">
+        <header className="flex shrink-0 items-center justify-between border-b border-line p-4">
           <h2 id={titleId} className="text-lg font-medium">{title}</h2>
           <button
             onClick={onClose}
             disabled={closeDisabled}
             aria-label="Close"
-            className="grid h-8 w-8 place-items-center rounded border-0 bg-transparent p-0 text-lg leading-none text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-300 disabled:opacity-40"
+            className="grid h-8 w-8 place-items-center rounded border-0 bg-transparent p-0 text-lg leading-none text-fg hover:bg-raised hover:text-fg-strong focus-visible:bg-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fg disabled:opacity-40"
           >
             <CloseIcon />
           </button>
@@ -140,7 +140,7 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
         </PassiveScrollRegion>
 
         {footer && (
-          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-700 p-4">
+          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-line p-4">
             {footer}
           </footer>
         )}

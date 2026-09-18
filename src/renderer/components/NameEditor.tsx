@@ -113,7 +113,7 @@ export function NameEditor({
             className={`w-full ${INPUT_CLASS}`}
           />
         </Field>
-        {hint && <p className="mt-1.5 text-xs text-zinc-400">{hint}</p>}
+        {hint && <p className="mt-1.5 text-xs text-fg-muted">{hint}</p>}
       </div>
 
       {availableFields.length > 0 && (
@@ -121,7 +121,7 @@ export function NameEditor({
           {/* Header row mirrors the Site profiles header: section label left, action
               right. The button reads naturally next to "Suggest with AI from …". */}
           <div className="flex items-center justify-between">
-            <div className="text-xs font-medium text-zinc-300">Suggest with AI from</div>
+            <div className="text-xs font-medium text-fg">Suggest with AI from</div>
             <Button
               variant="secondary"
               size="sm"
@@ -153,7 +153,7 @@ export function NameEditor({
       )}
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</p>
+        <p className="rounded border border-danger-line bg-danger-tint px-3 py-2 text-xs text-danger-fg">{error}</p>
       )}
     </div>
   )
@@ -185,19 +185,19 @@ function SourceRow({
       <dt>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-          <span className="text-zinc-300">{label}</span>
+          <span className="text-fg">{label}</span>
         </label>
       </dt>
       <dd className="min-w-0">
         {scrollable ? (
           <PassiveScrollRegion
             label={`${label} source value`}
-            className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded border border-zinc-800 p-2 text-xs text-zinc-300"
+            className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded border border-line-subtle p-2 text-xs text-fg"
           >
             {value}
           </PassiveScrollRegion>
         ) : (
-          <span className="select-text break-words text-zinc-200">{value}</span>
+          <span className="select-text break-words text-fg-emphasis">{value}</span>
         )}
       </dd>
     </>

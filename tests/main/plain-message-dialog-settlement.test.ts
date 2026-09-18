@@ -31,7 +31,7 @@ const electronMock = vi.hoisted(() => {
   }
 })
 const logError = vi.hoisted(() => vi.fn())
-vi.mock('electron', () => ({ BrowserWindow: electronMock.BrowserWindow }))
+vi.mock('electron', () => ({ BrowserWindow: electronMock.BrowserWindow, nativeTheme: { shouldUseDarkColors: false } }))
 vi.mock('@main/io/logger', () => ({ log: { error: logError } }))
 
 import { showPlainMessageDialog } from '@main/plain-message-dialog'

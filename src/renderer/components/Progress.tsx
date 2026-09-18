@@ -7,17 +7,17 @@
 export function ProgressBar({ percent }: { percent: number }) {
   const clamped = Math.max(0, Math.min(100, percent))
   return (
-    <div className="h-0.5 w-full overflow-hidden rounded bg-zinc-800">
-      <div className="h-full rounded bg-zinc-200 transition-all" style={{ width: `${clamped}%` }} />
+    <div className="h-0.5 w-full overflow-hidden rounded bg-raised">
+      <div className="h-full rounded bg-progress transition-all" style={{ width: `${clamped}%` }} />
     </div>
   )
 }
 
 export function IndeterminateBar() {
   return (
-    <div className="h-0.5 w-full overflow-hidden rounded bg-zinc-800">
+    <div className="h-0.5 w-full overflow-hidden rounded bg-raised">
       <div
-        className="h-full w-1/3 rounded bg-zinc-200"
+        className="h-full w-1/3 rounded bg-progress"
         style={{ animation: 'tapebox-indeterminate 1.15s ease-in-out infinite' }}
       />
     </div>

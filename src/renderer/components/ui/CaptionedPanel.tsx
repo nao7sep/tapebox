@@ -20,10 +20,10 @@ type Kind = 'error' | 'warning' | 'info' | 'neutral'
  * separator with no breathing room.
  */
 const KIND: Record<Kind, { box: string; divider: string; caption: string }> = {
-  error:   { box: 'border-red-900 bg-red-950/40',       divider: 'border-red-900',    caption: 'text-red-300' },
-  warning: { box: 'border-amber-900 bg-amber-950/40',   divider: 'border-amber-900',  caption: 'text-amber-300' },
-  info:    { box: 'border-violet-900 bg-violet-950/40', divider: 'border-violet-900', caption: 'text-violet-300' },
-  neutral: { box: 'border-zinc-700 bg-zinc-900/40',     divider: 'border-zinc-700',   caption: 'text-zinc-300' },
+  error:   { box: 'border-danger-line bg-danger-tint',       divider: 'border-danger-line',    caption: 'text-danger-fg' },
+  warning: { box: 'border-warning-line bg-warning-tint',   divider: 'border-warning-line',  caption: 'text-warning-fg' },
+  info:    { box: 'border-note-line bg-note-tint', divider: 'border-note-line', caption: 'text-note-fg' },
+  neutral: { box: 'border-line bg-neutral-tint',     divider: 'border-line',   caption: 'text-fg' },
 }
 
 export function CaptionedPanel({

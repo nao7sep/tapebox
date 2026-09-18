@@ -18,7 +18,7 @@ export function PlaybackToggles() {
     <div className="flex items-center gap-1.5">
       <ToggleButton
         on={autoplay}
-        accent="text-sky-400"
+        accent="text-autoplay-on"
         title={autoplay ? 'Autoplay: on' : 'Autoplay: off'}
         onClick={() => void savePlaybackSettings({ autoplay: !autoplay })}
         disabled={savingAutoplay}
@@ -26,7 +26,7 @@ export function PlaybackToggles() {
       />
       <ToggleButton
         on={playSound}
-        accent="text-pink-400"
+        accent="text-sound-on"
         title={playSound ? 'Sound: on' : 'Sound: off'}
         onClick={() => void savePlaybackSettings({ playSound: !playSound })}
         disabled={savingSound}
@@ -42,7 +42,7 @@ export function PlaybackSettingResults() {
   const setWriteError = useSettingsStore((s) => s.setWriteError)
   if (!autoplay && !playSound) return null
   return (
-    <div className="space-y-2 border-t border-zinc-700 px-3 py-2">
+    <div className="space-y-2 border-t border-line px-3 py-2">
       {autoplay && (
         <InlineError onDismiss={() => setWriteError('autoplay', null)} closeLabel="Close autoplay save result">
           {autoplay}
@@ -79,7 +79,7 @@ function ToggleButton({
       disabled={disabled}
       aria-pressed={on}
       title={title}
-      className={'rounded p-1 -m-1 transition disabled:cursor-wait disabled:opacity-60 ' + (on ? accent : 'text-zinc-400 hover:text-zinc-300')}
+      className={'rounded p-1 -m-1 transition disabled:cursor-wait disabled:opacity-60 ' + (on ? accent : 'text-fg-muted hover:text-fg')}
     >
       {icon}
     </button>

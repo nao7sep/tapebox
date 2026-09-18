@@ -35,7 +35,7 @@ export function ArchiveTapeList({
         </InlineError>
       )}
       {tapes.length === 0 ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-6 text-sm text-zinc-300">This box is empty.</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6 text-sm text-fg">This box is empty.</div>
       ) : (
         <ul
           ref={kb.ref}

@@ -128,8 +128,8 @@ export function BoxList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Boxes</span>
-        <button onClick={() => void newBox()} className="whitespace-nowrap text-xs text-zinc-300 transition hover:text-zinc-100">
+        <span className="text-xs font-medium uppercase tracking-wide text-fg-muted">Boxes</span>
+        <button onClick={() => void newBox()} className="whitespace-nowrap text-xs text-fg transition hover:text-fg-strong">
           <PlusIcon className="mr-1" />
           New box
         </button>
@@ -183,13 +183,13 @@ export function BoxList({
                   else if (e.key === 'Escape') setEditingId(null)
                 }}
                 className={
-                  'w-full rounded border bg-zinc-900 px-2 py-1 text-sm focus:outline-hidden ' +
+                  'w-full rounded border bg-panel px-2 py-1 text-sm focus:outline-hidden ' +
                   (draftError
-                    ? 'border-red-700 focus:border-red-600'
-                    : 'border-zinc-700 focus:border-zinc-500')
+                    ? 'border-danger-line-hover focus:border-danger-fg'
+                    : 'border-field-line focus:border-field-focus')
                 }
               />
-              {draftError && <p className="mt-0.5 px-1 text-xs text-red-300">{draftError}</p>}
+              {draftError && <p className="mt-0.5 px-1 text-xs text-danger-fg">{draftError}</p>}
             </div>
           ) : (
             <SortableBoxRow
@@ -241,8 +241,8 @@ export function BoxList({
 function rowClass(selected: boolean, dropTarget: boolean): string {
   return (
     'group flex items-center gap-1.5 rounded px-2 py-1.5 text-sm transition ' +
-    (selected ? 'bg-sky-500/20 font-medium text-zinc-50 ' : 'text-zinc-300 hover:bg-zinc-800/50 ') +
-    (dropTarget ? 'bg-sky-900/40 ring-2 ring-sky-400 ' : '')
+    (selected ? 'bg-info-selected font-medium text-fg-strong ' : 'text-fg hover:bg-hover ') +
+    (dropTarget ? 'bg-info-drop ring-2 ring-info-ring ' : '')
   )
 }
 
@@ -267,7 +267,7 @@ function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: numb
       >
         {UNBOXED_LABEL}
       </div>
-      <span className="shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
+      <span className="shrink-0 text-xs tabular-nums text-fg-muted">{count}</span>
     </div>
   )
 }
@@ -334,7 +334,7 @@ function SortableBoxRow({
         onClick={onRename}
         aria-label="Rename box"
         tabIndex={-1}
-        className="hidden shrink-0 items-center justify-center rounded p-1 text-zinc-400 transition hover:bg-zinc-700/60 hover:text-zinc-200 group-hover:inline-flex"
+        className="hidden shrink-0 items-center justify-center rounded p-1 text-fg-muted transition hover:bg-hover-strong hover:text-fg-emphasis group-hover:inline-flex"
       >
         <PencilGlyph />
       </button>
@@ -342,13 +342,13 @@ function SortableBoxRow({
         onClick={onDelete}
         aria-label="Delete box"
         tabIndex={-1}
-        className="hidden shrink-0 items-center justify-center rounded p-1 text-zinc-400 transition hover:bg-zinc-700/60 hover:text-red-300 group-hover:inline-flex"
+        className="hidden shrink-0 items-center justify-center rounded p-1 text-fg-muted transition hover:bg-hover-strong hover:text-danger-fg group-hover:inline-flex"
       >
         <TrashGlyph />
       </button>
       {/* Extra left margin keeps the count clear of the delete button when the
           actions are revealed on hover, so the two don't read as one cluster. */}
-      <span className="ml-1.5 shrink-0 text-xs tabular-nums text-zinc-400">{count}</span>
+      <span className="ml-1.5 shrink-0 text-xs tabular-nums text-fg-muted">{count}</span>
     </div>
   )
 }

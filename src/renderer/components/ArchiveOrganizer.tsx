@@ -148,10 +148,10 @@ export function ArchiveOrganizer() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search archived…"
             spellCheck={false}
-            className="w-full rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-sm placeholder-zinc-500 focus:border-zinc-600 focus:outline-hidden"
+            className="w-full rounded border border-field-line bg-panel px-2.5 py-1.5 text-sm placeholder-fg-subtle focus:border-field-focus focus:outline-hidden"
           />
         </div>
-        <div className="relative flex shrink-0 flex-col border-b border-zinc-700" style={{ height: effectiveBoxesHeight }}>
+        <div className="relative flex shrink-0 flex-col border-b border-line" style={{ height: effectiveBoxesHeight }}>
           <BoxList
             onReorder={(id, offset) => reorderBox(id, sortedBoxIds().indexOf(id) + offset)}
             orderError={boxOrderError}

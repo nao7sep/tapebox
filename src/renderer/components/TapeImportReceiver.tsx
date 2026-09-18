@@ -82,7 +82,7 @@ export function TapeImportReceiver({ children }: { children: ReactNode }) {
       onDrop={(event) => void onDrop(event)}
       className={
         'relative flex min-h-0 flex-1 flex-col overflow-hidden rounded ' +
-        (deliveryActive ? 'bg-amber-400/10 ring-2 ring-inset ring-amber-400' : '')
+        (deliveryActive ? 'bg-warning-drop ring-2 ring-inset ring-warning-ring' : '')
       }
     >
       {children}
@@ -112,18 +112,18 @@ function ImportResultNotice() {
       : severity === 'error' ? 'The import failed.' : 'The selection could not be imported.'
 
   const palette = severity === 'error'
-    ? 'border-red-500/90 bg-red-950/80 text-red-100'
+    ? 'border-danger-line-hover bg-danger-banner text-danger-fg-strong'
     : severity === 'warning'
-      ? 'border-amber-500/90 bg-amber-950/80 text-amber-100'
-      : 'border-sky-500/80 bg-sky-950/70 text-sky-100'
+      ? 'border-warning-line-hover bg-warning-banner text-warning-fg-strong'
+      : 'border-info-line-hover bg-info-banner text-info-fg-strong'
   const detailColor = severity === 'error'
-    ? 'text-red-100/90'
-    : severity === 'warning' ? 'text-amber-100/90' : 'text-sky-100/90'
+    ? 'text-danger-fg-strong/90'
+    : severity === 'warning' ? 'text-warning-fg-strong/90' : 'text-info-fg-strong/90'
   const dismissColor = severity === 'error'
-    ? 'text-red-200 hover:bg-red-900 hover:text-red-50'
+    ? 'text-danger-fg-strong hover:bg-danger-hover hover:text-danger-fg-strong'
     : severity === 'warning'
-      ? 'text-amber-200 hover:bg-amber-900 hover:text-amber-50'
-      : 'text-sky-200 hover:bg-sky-900 hover:text-sky-50'
+      ? 'text-warning-fg-strong hover:bg-warning-hover hover:text-warning-fg-strong'
+      : 'text-info-fg-strong hover:bg-info-hover hover:text-info-fg-strong'
 
   return (
     <PassiveScrollRegion

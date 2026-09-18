@@ -147,7 +147,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const footer = (
     <>
       {inLibraryCount > 0 && (
-        <span className="mr-auto text-xs text-zinc-400">{inLibraryCount} already in your library</span>
+        <span className="mr-auto text-xs text-fg-muted">{inLibraryCount} already in your library</span>
       )}
       <Button variant="ghost" onClick={onClose} disabled={adding}>Cancel</Button>
       <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0} loading={adding}>
@@ -181,13 +181,13 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
       </div>
 
       {!scanning && !scanned ? (
-        <p className="mt-3 text-center text-sm text-zinc-300">
+        <p className="mt-3 text-center text-sm text-fg">
           Paste the URL of a page that lists videos — a creator's uploads, search results, a category.
         </p>
       ) : (
         <div className="mt-3 text-center">
-          <div className="text-2xl font-semibold tabular-nums text-sky-300">{entries.length}</div>
-          <div className="mt-0.5 text-xs text-zinc-300">
+          <div className="text-2xl font-semibold tabular-nums text-info-fg">{entries.length}</div>
+          <div className="mt-0.5 text-xs text-fg">
             {scanning ? 'scanning…' : entries.length === 1 ? 'video found' : 'videos found'}
           </div>
           {scanning && (
@@ -222,7 +222,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
                   <label
                     className={
                       'flex items-center gap-3 rounded px-2 py-1.5 text-sm ' +
-                      (disabled ? 'opacity-50' : 'hover:bg-zinc-800/60')
+                      (disabled ? 'opacity-50' : 'hover:bg-hover')
                     }
                   >
                     <input
@@ -231,12 +231,12 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
                       onChange={() => toggle(e.sourceUrl)}
                       disabled={disabled}
                     />
-                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-zinc-400">In library</span>}
+                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-fg-muted">In library</span>}
                     <span className="min-w-0 flex-1 truncate">
                       {e.title ?? e.sourceUrl}
-                      {e.unavailable && <span className="ml-2 text-xs text-zinc-300">({e.unavailable.reason})</span>}
+                      {e.unavailable && <span className="ml-2 text-xs text-fg">({e.unavailable.reason})</span>}
                     </span>
-                    <span className="text-xs tabular-nums text-zinc-300">
+                    <span className="text-xs tabular-nums text-fg">
                       {e.durationSeconds != null ? formatTime(e.durationSeconds) : ''}
                     </span>
                   </label>

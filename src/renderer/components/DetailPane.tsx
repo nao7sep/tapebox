@@ -342,7 +342,7 @@ export function DetailPane({
           Horizontal padding lives on each row (not the column) so the title and
           button borders span full width and meet the side dividers. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col py-4">
-        <div className="shrink-0 border-b border-zinc-700 px-4 pb-3">
+        <div className="shrink-0 border-b border-line px-4 pb-3">
           {/* The header is purely informative — heading, live status, and the
               optional details below the fold. Every operation lives in the
               button row, so the header carries no actions. The chevron appears
@@ -365,7 +365,7 @@ export function DetailPane({
                       height="11"
                       viewBox="0 0 24 24"
                       className={
-                        'text-zinc-400 transition-transform group-hover:text-zinc-200 ' +
+                        'text-fg-muted transition-transform group-hover:text-fg-emphasis ' +
                         (infoOpen ? 'rotate-90' : '')
                       }
                       fill="none"
@@ -387,7 +387,7 @@ export function DetailPane({
                   </h2>
                   {/* Always visible: the media line for a downloaded tape (its "status"
                       is just "In library", which says nothing), otherwise the status. */}
-                  <p className="mt-0.5 truncate text-xs text-zinc-400">
+                  <p className="mt-0.5 truncate text-xs text-fg-muted">
                     {downloaded && mediaMeta ? mediaMeta : headerStatus(tape, progress)}
                   </p>
                 </div>
@@ -395,12 +395,12 @@ export function DetailPane({
               {expandable && infoOpen && (downloaded ? (
                 // Unlabeled by design: a URL, a filename, and the uploader are each
                 // self-evident from their shape and position.
-                <div className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
+                <div className="mt-2 space-y-1 pl-6 text-xs text-fg">
                   {tape.title && (
                     <button
                       type="button"
                       onClick={() => void openSourceUrl()}
-                      className="block w-full select-text break-all bg-transparent p-0 text-left hover:text-zinc-100"
+                      className="block w-full select-text break-all bg-transparent p-0 text-left hover:text-fg-strong"
                     >
                       {tape.sourceUrl}
                     </button>
@@ -409,16 +409,16 @@ export function DetailPane({
                   {tape.uploader && (
                     <div className="select-text break-words">
                       {tape.uploader}
-                      {chapterLabel && <span className="text-zinc-500"> · {chapterLabel}</span>}
+                      {chapterLabel && <span className="text-fg-subtle"> · {chapterLabel}</span>}
                     </div>
                   )}
                 </div>
               ) : (
-                <dl className="mt-2 space-y-1 pl-6 text-xs text-zinc-300">
+                <dl className="mt-2 space-y-1 pl-6 text-xs text-fg">
                   {tape.uploader && (
                     <DetailRow label="Uploader">
                       {tape.uploader}
-                      {chapterLabel && <span className="text-zinc-500"> · {chapterLabel}</span>}
+                      {chapterLabel && <span className="text-fg-subtle"> · {chapterLabel}</span>}
                     </DetailRow>
                   )}
                   {tape.durationSeconds != null && (
@@ -431,7 +431,7 @@ export function DetailPane({
                       <button
                         type="button"
                         onClick={() => void openSourceUrl()}
-                        className="select-text break-all bg-transparent p-0 text-left hover:text-zinc-100"
+                        className="select-text break-all bg-transparent p-0 text-left hover:text-fg-strong"
                       >
                         {tape.sourceUrl}
                       </button>
@@ -452,7 +452,7 @@ export function DetailPane({
               <div className="min-w-0">
                 <PassiveScrollRegion
                   label="Tape description"
-                  className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap break-words pr-1 text-xs text-zinc-300"
+                  className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap break-words pr-1 text-xs text-fg"
                 >
                   {description}
                 </PassiveScrollRegion>
@@ -472,8 +472,8 @@ export function DetailPane({
                 label="Playback error details"
                 className="min-h-0 flex-1 overflow-auto p-4"
               >
-                <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300">{playbackError}</pre>
-                <p className="mt-3 text-xs text-zinc-400">
+                <pre className="whitespace-pre-wrap break-words text-xs text-fg">{playbackError}</pre>
+                <p className="mt-3 text-xs text-fg-muted">
                   Try “Open in player” below for the system player, or reveal the session log from the menu for the full record.
                 </p>
               </PassiveScrollRegion>
@@ -495,14 +495,14 @@ export function DetailPane({
           )
         ) : tape.state === 'listing' ? (
           <CaptionedPanel kind="info" caption="This page lists several videos" fill>
-            <p className="p-5 text-sm leading-relaxed text-zinc-300">
+            <p className="p-5 text-sm leading-relaxed text-fg">
               TapeBox adds one video at a time. Use <strong>Scan page</strong> below
               to see its videos and pick which to add.
             </p>
           </CaptionedPanel>
         ) : tape.state === 'paused' ? (
           <CaptionedPanel kind="warning" caption="Paused" fill>
-            <p className="p-5 text-sm leading-relaxed text-zinc-300">
+            <p className="p-5 text-sm leading-relaxed text-fg">
               Auto-start is off, so it won't download until you resume it.
             </p>
           </CaptionedPanel>
@@ -515,12 +515,12 @@ export function DetailPane({
             grouped use → housekeep (refresh → rename → export) → archive, then
             the source-link reference actions that apply to any tape, and finally
             the destructive Remove, set apart on the right. */}
-        <div className="detail-result-shelf shrink-0 space-y-2 border-t border-zinc-700 px-4 py-3 empty:hidden">
+        <div className="detail-result-shelf shrink-0 space-y-2 border-t border-line px-4 py-3 empty:hidden">
           <TapeActionResults tapeId={tape.id} />
           <LayoutWriteResult field="chaptersPaneWidth" />
           <LayoutWriteResult field="volume" />
         </div>
-        <div className="mt-auto flex shrink-0 flex-wrap items-center gap-2 border-t border-zinc-700 px-4 pt-3">
+        <div className="mt-auto flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-4 pt-3">
           {/* Primary: re-engage / resolve the current state. */}
           {(tape.state === 'queued' || tape.state === 'probing' || tape.state === 'downloading') && (
             <ActionButton onClick={cancel}>Cancel</ActionButton>
@@ -568,7 +568,7 @@ export function DetailPane({
       {tape.state === 'downloaded' && (chapters.length > 0 || sidecarError) && (
         <aside
           style={{ width: chaptersPaneWidth }}
-          className="relative flex shrink-0 flex-col border-l border-zinc-700 p-4"
+          className="relative flex shrink-0 flex-col border-l border-line p-4"
         >
           <ResizeHandle
             edge="left"
@@ -581,13 +581,13 @@ export function DetailPane({
             onResize={(w) => void patchLayout({ chaptersPaneWidth: w }, false)}
             onCommit={(w) => void patchLayout({ chaptersPaneWidth: w }, true)}
           />
-          <h3 className="mb-2 shrink-0 text-sm font-medium text-zinc-300">Chapters</h3>
+          <h3 className="mb-2 shrink-0 text-sm font-medium text-fg">Chapters</h3>
           {sidecarError ? (
             <PassiveScrollRegion
               label="Chapter error details"
               className="min-h-0 flex-1 overflow-y-auto"
             >
-              <p className="text-xs text-red-300">{sidecarError}</p>
+              <p className="text-xs text-danger-fg">{sidecarError}</p>
             </PassiveScrollRegion>
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -638,7 +638,7 @@ function headerStatus(tape: Tape, progress: ProgressEntry | undefined): string {
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-2">
-      <dt className="shrink-0 text-zinc-500">{label}</dt>
+      <dt className="shrink-0 text-fg-subtle">{label}</dt>
       <dd className="min-w-0 break-words">{children}</dd>
     </div>
   )
@@ -687,7 +687,7 @@ function DownloadLogPanel({
         className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs"
       >
         {fallback != null ? (
-          <pre className="whitespace-pre-wrap break-words text-zinc-300">{fallback}</pre>
+          <pre className="whitespace-pre-wrap break-words text-fg">{fallback}</pre>
         ) : entries.length > 0 ? (
           <ul className="space-y-0.5">
             {entries.map((e, i) => (
@@ -695,7 +695,7 @@ function DownloadLogPanel({
                 key={i}
                 className={
                   'whitespace-pre-wrap break-words ' +
-                  (e.kind === 'error' ? 'text-red-300' : 'text-zinc-400')
+                  (e.kind === 'error' ? 'text-danger-fg' : 'text-fg-muted')
                 }
               >
                 {e.text}
@@ -703,7 +703,7 @@ function DownloadLogPanel({
             ))}
           </ul>
         ) : (
-          <p className="text-zinc-500">{WORKING_PLACEHOLDER[tape.state] ?? 'Working…'}</p>
+          <p className="text-fg-subtle">{WORKING_PLACEHOLDER[tape.state] ?? 'Working…'}</p>
         )}
       </PassiveScrollRegion>
     </CaptionedPanel>
@@ -758,8 +758,8 @@ function ActionButton({
       className={
         'rounded border px-3 py-1.5 text-xs transition disabled:opacity-50 ' +
         (danger
-          ? 'border-red-900 text-red-300 hover:border-red-700 hover:bg-red-950/40'
-          : 'border-zinc-700 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800/60') +
+          ? 'border-danger-line text-danger-fg hover:border-danger-line-strong hover:bg-danger-tint'
+          : 'border-line text-fg-emphasis hover:border-line-hover hover:bg-hover') +
         (className ? ` ${className}` : '')
       }
     >

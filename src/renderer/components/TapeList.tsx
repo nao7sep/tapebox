@@ -89,7 +89,7 @@ export function TapeList() {
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {visible.length === 0 ? (
-          <div className="p-6 text-sm text-zinc-300">{emptyMessageFor(filter)}</div>
+          <div className="p-6 text-sm text-fg">{emptyMessageFor(filter)}</div>
         ) : (
           <ListboxDragProvider onDragEnd={onDragEnd}>
             <div ref={topRef} />

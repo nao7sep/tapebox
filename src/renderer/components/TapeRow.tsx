@@ -47,12 +47,12 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
           {tape.title ?? tape.sourceUrl}
         </div>
         {tape.durationSeconds != null && (
-          <div className="shrink-0 text-xs tabular-nums text-zinc-300">
+          <div className="shrink-0 text-xs tabular-nums text-fg">
             {formatTime(tape.durationSeconds)}
           </div>
         )}
       </div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
+      <div className="mt-1 flex items-center gap-2 text-xs text-fg-muted">
         {/* A downloaded tape's status is just "In library" (says nothing across a
             whole library), so show the uploader instead when we have one. */}
         <span className="min-w-0 truncate">
@@ -86,11 +86,11 @@ function paletteFor(tape: Tape, selected: boolean): string {
   // selected row — the listbox's active descendant — is always obvious without
   // erasing its state colour.
   const selectionRing = selected
-    ? 'border-zinc-100 ring-1 ring-zinc-100/40'
+    ? 'border-selected ring-1 ring-selected/40'
     : ''
 
   const baseBgBorder = archived
-    ? 'bg-zinc-950/40 border-zinc-700/70 hover:border-zinc-700'
+    ? 'bg-row-archived border-line/70 hover:border-line'
     : bgBorderForState(state)
 
   return `${baseBgBorder} ${selectionRing}`
@@ -105,19 +105,19 @@ function paletteFor(tape: Tape, selected: boolean): string {
 function bgBorderForState(state: TapeState): string {
   switch (state) {
     case 'failed':
-      return 'bg-red-900/30 border-red-600/70 hover:border-red-500'
+      return 'bg-danger-row border-danger-line-strong hover:border-danger-line-hover'
     case 'paused':
-      return 'bg-amber-900/30 border-amber-600/70 hover:border-amber-500'
+      return 'bg-warning-row border-warning-line-strong hover:border-warning-line-hover'
     case 'listing':
-      return 'bg-violet-900/30 border-violet-600/70 hover:border-violet-500'
+      return 'bg-note-row border-note-line-strong hover:border-note-line-hover'
     case 'downloading':
-      return 'bg-sky-900/30 border-sky-600/70 hover:border-sky-500'
+      return 'bg-info-row border-info-line-strong hover:border-info-line-hover'
     case 'queued':
     case 'probing':
     case 'ready':
-      return 'bg-teal-900/30 border-teal-600/70 hover:border-teal-500'
+      return 'bg-calm-row border-calm-line-strong hover:border-calm-line-hover'
     case 'downloaded':
     default:
-      return 'bg-zinc-900/60 border-zinc-700 hover:border-zinc-600'
+      return 'bg-row border-line hover:border-line-strong'
   }
 }

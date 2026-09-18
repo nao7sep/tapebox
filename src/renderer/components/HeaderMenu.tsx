@@ -35,7 +35,7 @@ export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortc
           {...props}
           ref={ref}
           aria-label="Menu"
-          className="flex items-center justify-center rounded-md p-2 -m-2 hover:bg-zinc-800"
+          className="flex items-center justify-center rounded-md p-2 -m-2 hover:bg-raised"
         >
           <svg width="24" height="24" viewBox="3 3 18 18" aria-hidden="true">
             {/* bottom bun */}

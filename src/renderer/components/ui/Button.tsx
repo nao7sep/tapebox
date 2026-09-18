@@ -33,17 +33,17 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary:
-    'bg-zinc-50 text-zinc-950 font-medium hover:bg-zinc-200 disabled:bg-zinc-700 disabled:text-zinc-300',
+    'bg-inverse text-on-inverse font-medium hover:bg-inverse-hover disabled:bg-raised-hover disabled:text-fg',
   secondary:
-    'border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50',
+    'border border-line text-fg hover:bg-raised disabled:opacity-50',
   ghost:
-    'border border-zinc-700 text-zinc-300 hover:border-zinc-600 hover:text-zinc-100 disabled:opacity-50',
+    'border border-line text-fg hover:border-line-strong hover:text-fg-strong disabled:opacity-50',
   dangerOutline:
-    'border border-red-900 text-red-300 hover:border-red-700 hover:bg-red-950/40 disabled:opacity-50',
+    'border border-danger-line text-danger-fg hover:border-danger-line-strong hover:bg-danger-tint disabled:opacity-50',
   danger:
-    'bg-red-600 text-zinc-50 font-medium hover:bg-red-500 disabled:opacity-50',
+    'bg-danger-fill text-on-danger font-medium hover:bg-danger-fill-hover disabled:opacity-50',
   warm:
-    'bg-amber-500 text-zinc-950 font-medium hover:bg-amber-400 disabled:opacity-50',
+    'bg-warm-fill text-on-warm font-medium hover:bg-warm-fill-hover disabled:opacity-50',
 }
 
 // Both sizes share text-sm so inline actions read as the same weight as the

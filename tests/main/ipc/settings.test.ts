@@ -21,6 +21,7 @@ import { defaultSettings, type Settings } from '@shared/settings'
 // `node:os` (homedir) and `node:path` stay real, so the ~ expansion is genuine.
 
 const handlers = new Map<string, (req: unknown) => unknown>()
+vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn() }))
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {

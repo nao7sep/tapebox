@@ -47,22 +47,22 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
     >
       <div className="space-y-4 text-sm">
         <div>
-          <p className="text-lg font-medium text-zinc-100">
-            TapeBox{version && <span className="ml-2 text-sm font-normal text-zinc-400">v{version}</span>}
+          <p className="text-lg font-medium text-fg-strong">
+            TapeBox{version && <span className="ml-2 text-sm font-normal text-fg-muted">v{version}</span>}
           </p>
-          <p className="mt-1 text-zinc-300">A local media library with web import.</p>
+          <p className="mt-1 text-fg">A local media library with web import.</p>
         </div>
         <div className="flex gap-4">
-          <button type="button" onClick={() => void openLink('repository', GITHUB_URL)} className="whitespace-nowrap bg-transparent p-0 text-zinc-300 hover:text-zinc-100">
+          <button type="button" onClick={() => void openLink('repository', GITHUB_URL)} className="whitespace-nowrap bg-transparent p-0 text-fg hover:text-fg-strong">
             GitHub <ExternalLinkIcon />
           </button>
-          <button type="button" onClick={() => void openLink('issues', `${GITHUB_URL}/issues`)} className="whitespace-nowrap bg-transparent p-0 text-zinc-300 hover:text-zinc-100">
+          <button type="button" onClick={() => void openLink('issues', `${GITHUB_URL}/issues`)} className="whitespace-nowrap bg-transparent p-0 text-fg hover:text-fg-strong">
             Report an issue <ExternalLinkIcon />
           </button>
         </div>
         {linkErrors.repository && <InlineError onDismiss={() => setLinkErrors((current) => ({ ...current, repository: undefined }))} closeLabel="Close GitHub result">{linkErrors.repository}</InlineError>}
         {linkErrors.issues && <InlineError onDismiss={() => setLinkErrors((current) => ({ ...current, issues: undefined }))} closeLabel="Close Report an issue result">{linkErrors.issues}</InlineError>}
-        <p className="text-zinc-300">© 2026 Yoshinao Inoguchi — GNU GPL v3 or later</p>
+        <p className="text-fg">© 2026 Yoshinao Inoguchi — GNU GPL v3 or later</p>
       </div>
     </Modal>
   )

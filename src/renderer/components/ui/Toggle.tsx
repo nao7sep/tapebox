@@ -24,7 +24,7 @@ export function Toggle({ label, description, checked, disabled, onChange }: Prop
         onChange={(e) => onChange(e.target.checked)}
       />
       <div className="text-sm">{label}</div>
-      {description && <div className="col-start-2 text-xs text-zinc-300">{description}</div>}
+      {description && <div className="col-start-2 text-xs text-fg">{description}</div>}
     </label>
   )
 }

@@ -27,7 +27,7 @@ export function ChapterList({ chapters, currentIndex, onActivate }: Props) {
   })
 
   if (chapters.length === 0) {
-    return <p className="text-xs text-zinc-300">No chapters in this video.</p>
+    return <p className="text-xs text-fg">No chapters in this video.</p>
   }
 
   return (
@@ -50,11 +50,11 @@ export function ChapterList({ chapters, currentIndex, onActivate }: Props) {
             aria-selected={i === currentIndex}
             onClick={() => onActivate(i)}
             className={
-              'flex w-full cursor-pointer items-baseline gap-3 rounded border px-2 py-1 text-left text-sm hover:bg-zinc-800/60 ' +
-              (i === currentIndex ? 'border-zinc-100 ring-1 ring-zinc-100/40' : 'border-transparent')
+              'flex w-full cursor-pointer items-baseline gap-3 rounded border px-2 py-1 text-left text-sm hover:bg-hover ' +
+              (i === currentIndex ? 'border-selected ring-1 ring-selected/40' : 'border-transparent')
             }
           >
-            <span className="w-16 shrink-0 text-xs tabular-nums text-zinc-300">
+            <span className="w-16 shrink-0 text-xs tabular-nums text-fg">
               {formatTime(c.start_time)}
             </span>
             <span className="min-w-0 flex-1 truncate">{c.title}</span>

@@ -18,7 +18,7 @@ import { ArrowDownIcon } from './Icon'
  */
 export function StatusBar() {
   return (
-    <footer className="flex shrink-0 items-center gap-4 border-t border-zinc-700 px-4 py-1.5 text-xs">
+    <footer className="flex shrink-0 items-center gap-4 border-t border-line px-4 py-1.5 text-xs">
       <div className="min-w-0 flex-1">
         <ActivityZone />
       </div>
@@ -55,17 +55,17 @@ function ActivityZone() {
     if (totalSpeedBps > 0) parts.push(formatSpeed(totalSpeedBps))
     if (etaSec != null) parts.push(`~${formatTime(etaSec)} left`)
     text = parts.join(' · ')
-    tone = 'text-sky-300'
+    tone = 'text-info-fg'
   } else if (queued > 0) {
     text = `${queued} queued`
-    tone = 'text-teal-300'
+    tone = 'text-calm-fg'
   } else if (paused > 0) {
     // Paused tapes won't move until the user starts them — amber, like the chips.
     text = `${paused} paused`
-    tone = 'text-amber-300'
+    tone = 'text-warning-fg'
   } else {
     text = tapes.length === 0 ? 'No tapes yet' : `${tapes.length} ${tapes.length === 1 ? 'tape' : 'tapes'}`
-    tone = 'text-zinc-300'
+    tone = 'text-fg'
   }
 
   // Spin while work is actually moving (downloading, or queued with auto-start on
@@ -77,8 +77,8 @@ function ActivityZone() {
       {active && <Spinner className={tone} />}
       {downloading > 0 && <ArrowDownIcon className={tone} />}
       <span className={tone}>{text}</span>
-      {failed > 0 && <span className="text-red-300">· {failed} failed</span>}
-      {listing > 0 && <span className="text-violet-300">· {listing} to scan</span>}
+      {failed > 0 && <span className="text-danger-fg">· {failed} failed</span>}
+      {listing > 0 && <span className="text-note-fg">· {listing} to scan</span>}
     </span>
   )
 }
@@ -91,7 +91,7 @@ function ActivityZone() {
 function NoticeZone() {
   const info = useToastStore((s) => s.toasts).filter((t) => t.kind === 'info').at(-1)
   if (!info) return null
-  return <span className="block truncate text-zinc-300">{info.text}</span>
+  return <span className="block truncate text-fg">{info.text}</span>
 }
 
 /**
@@ -121,13 +121,13 @@ function ToolsZone() {
 }
 
 function Plain({ children }: { children: ReactNode }) {
-  return <span className="block truncate text-zinc-300">{children}</span>
+  return <span className="block truncate text-fg">{children}</span>
 }
 
 /** A still status with a spinner, for genuinely in-progress tool states. */
 function Busy({ children }: { children: ReactNode }) {
   return (
-    <span className="flex items-center justify-end gap-1.5 truncate text-zinc-300">
+    <span className="flex items-center justify-end gap-1.5 truncate text-fg">
       <Spinner /> {children}
     </span>
   )

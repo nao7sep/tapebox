@@ -47,12 +47,12 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
       label="Move to box"
       placement="top"
       maxHeight={256}
-      contentClassName="w-52 rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl"
+      contentClassName="w-52 rounded-md border border-line bg-panel py-1 shadow-xl"
       trigger={({ ref, ...props }) => (
         <button
           {...props}
           ref={ref}
-          className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-800/60"
+          className="rounded border border-line px-3 py-1.5 text-xs text-fg-emphasis transition hover:border-line-hover hover:bg-hover"
         >
           Move to box
         </button>
@@ -68,7 +68,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
           {g.name}
         </MenuItem>
       ))}
-      <div className="my-1 border-t border-zinc-700" role="separator" />
+      <div className="my-1 border-t border-line" role="separator" />
       <MenuItem onSelect={() => void newBoxAndMove()} className="whitespace-nowrap">
         <PlusIcon className="mr-1.5" />
         New box
@@ -80,6 +80,6 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
 function itemClass(active: boolean): string {
   return (
     'block w-full px-3 py-1.5 text-left text-sm transition ' +
-    (active ? 'text-zinc-100' : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100')
+    (active ? 'text-fg-strong' : 'text-fg hover:bg-raised hover:text-fg-strong')
   )
 }

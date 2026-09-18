@@ -11,6 +11,7 @@ TapeBox is a local media library: download videos with `yt-dlp`, keep them as **
 - **Rename / refresh / export / re-import** — rename a tape and its files together, re-probe metadata with a before/after review, export the bundle to any folder, and bring it back later from its sidecar
 - **Managed tools** — `yt-dlp` and `ffmpeg` are required; Deno is optional and helps yt-dlp with sites that need a JavaScript runtime. Installation and updates are explicit and checksum-verified. Expect a few hundred MB of downloads in total and allow about 1 GB of free space during installation. [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) and [Deno](https://github.com/denoland/deno) come from their official releases; `ffmpeg` comes from the accepted third-party builders [Martin Riedl](https://ffmpeg.martin-riedl.de/) on macOS arm64 and [BtbN](https://github.com/BtbN/FFmpeg-Builds) on Windows.
 - **Custom `yt-dlp` args** — pass your own flags globally or per site profile
+- **Light and dark themes** — follow the OS appearance or pick Light or Dark in Settings › General
 
 ## Requirements
 

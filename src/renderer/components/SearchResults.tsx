@@ -26,7 +26,7 @@ export function SearchResults() {
   const kb = useTapeListboxKeyboard<HTMLDivElement>(tapes, selectedId)
 
   if (tapes.length === 0) {
-    return <div className="p-6 text-sm text-zinc-300">No archived tapes match.</div>
+    return <div className="p-6 text-sm text-fg">No archived tapes match.</div>
   }
 
   const boxName = (boxId: string | null) =>
@@ -49,7 +49,7 @@ export function SearchResults() {
           role="group"
           aria-label={boxName(group.boxId)}
         >
-          <div className="sticky top-0 z-10 bg-zinc-800/95 px-3 py-1 text-xs font-medium uppercase tracking-wide text-zinc-300 backdrop-blur-sm">
+          <div className="sticky top-0 z-10 bg-sticky px-3 py-1 text-xs font-medium uppercase tracking-wide text-fg backdrop-blur-sm">
             {boxName(group.boxId)}
           </div>
           <ul role="presentation" className="space-y-1.5 px-3 py-2">

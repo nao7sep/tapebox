@@ -77,15 +77,15 @@ export function ShortcutsModal({ onClose }: { onClose: () => void }) {
       <div className="space-y-5">
         {groups(mod).map((group) => (
           <section key={group.title}>
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
               {group.title}
-              {group.note && <span className="ml-2 normal-case tracking-normal text-zinc-500">{group.note}</span>}
+              {group.note && <span className="ml-2 normal-case tracking-normal text-fg-subtle">{group.note}</span>}
             </h3>
             <div className="space-y-2 text-sm">
               {group.shortcuts.map((s) => (
                 <div key={s.label} className="flex items-center justify-between gap-4">
-                  <span className="text-zinc-300">{s.label}</span>
-                  <kbd className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-200">
+                  <span className="text-fg">{s.label}</span>
+                  <kbd className="shrink-0 rounded border border-line bg-raised px-2 py-1 text-xs text-fg-emphasis">
                     {s.keys}
                   </kbd>
                 </div>

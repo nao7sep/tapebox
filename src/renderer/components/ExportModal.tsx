@@ -87,15 +87,15 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
         hint="Names the exported copy only — the tape in your library keeps its current name."
       />
 
-      <div className="mt-4 space-y-4 border-t border-zinc-700 pt-4">
+      <div className="mt-4 space-y-4 border-t border-line pt-4">
         <Field label="Destination">
           <div className="flex items-center gap-2">
             <code
               className={
-                'min-w-0 flex-1 truncate rounded border bg-zinc-950 px-2 py-1.5 text-xs ' +
+                'min-w-0 flex-1 truncate rounded border bg-canvas px-2 py-1.5 text-xs ' +
                 // Not set is a neutral placeholder, not a warning — choosing per-export
                 // is a legitimate preference, so it stays muted rather than amber.
-                (dir ? 'border-zinc-700 text-zinc-300' : 'border-dashed border-zinc-700 text-zinc-500')
+                (dir ? 'border-line text-fg' : 'border-dashed border-line text-fg-subtle')
               }
             >
               {dir ?? 'Not set — choose a folder'}
@@ -109,13 +109,13 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
               type="button"
               onClick={() => setDir(defaultDir)}
               disabled={busy}
-              className="mt-1 truncate text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
+              className="mt-1 truncate text-xs text-fg-muted hover:text-fg-emphasis disabled:opacity-50"
             >
               Use default ({defaultDir})
             </button>
           )}
           {!defaultDir && (
-            <p className="mt-1 text-xs text-zinc-400">
+            <p className="mt-1 text-xs text-fg-muted">
               Set a default export folder in Settings → General to skip choosing each time.
             </p>
           )}
