@@ -2,8 +2,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-// Every color pair the renderer draws must meet WCAG AA in both themes
-// (app-chrome conventions, Theme): 4.5:1 for text, 3:1 for a field's outline and
+// Every color pair the renderer draws keeps high contrast in both themes,
+// by this app's own floor: 4.5:1 for text, 3:1 for a field's outline and
 // focus border, the focus and selection rings, icons, and the scroll-bar thumb.
 // Light values live in globals.css's color @theme block; dark values in the :root
 // block inside @media (prefers-color-scheme: dark). A translucent token carries
