@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import { resolve } from 'node:path'
 
 // Tests live under tests/, mirroring the src/ layout, so src/ stays pure shipped
@@ -18,6 +18,9 @@ export default defineConfig({
     // opt into jsdom per file via a `// @vitest-environment jsdom` pragma.
     environment: 'node',
     include: ['tests/**/*.test.{ts,tsx}'],
+    // tests/live runs the real yt-dlp, ffmpeg, and OpenAI; only
+    // vitest.live.config.ts, run by npm run check:full, includes it.
+    exclude: [...configDefaults.exclude, 'tests/live/**'],
     // Keep filesystem and jsdom tests responsive on resource-constrained hosts.
     maxWorkers: 1,
     coverage: {
