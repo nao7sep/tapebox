@@ -1,7 +1,7 @@
 // The download path end to end, driven through the real IPC handlers the
 // renderer calls, with nothing substituted but Electron's window glue: the
 // managed yt-dlp, ffmpeg, and deno, acquired through the app's own binaries
-// handlers, and the real OpenAI API. Run only by npm run check:full, through
+// handlers, and the real OpenAI API. Run only by npm run test:full, through
 // vitest.live.config.ts.
 //
 // The binaries are acquired into a cache that persists between runs and follow
@@ -268,7 +268,7 @@ describe('the live download path', () => {
 
   it('suggests a file name for a downloaded tape through the real OpenAI API', async () => {
     if (!process.env.OPENAI_API_KEY?.trim()) {
-      throw new Error('OPENAI_API_KEY is not set. The full check calls the real OpenAI API; export OPENAI_API_KEY and run it again.')
+      throw new Error('OPENAI_API_KEY is not set. The full run calls the real OpenAI API; export OPENAI_API_KEY and run it again.')
     }
     const { slugifyAscii } = await import('@main/core/slug')
     const home = await freshHome('slug')

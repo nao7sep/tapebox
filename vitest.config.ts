@@ -19,7 +19,7 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.{ts,tsx}'],
     // tests/live runs the real yt-dlp, ffmpeg, and OpenAI; only
-    // vitest.live.config.ts, run by npm run check:full, includes it.
+    // vitest.live.config.ts, run by npm run test:full, includes it.
     exclude: [...configDefaults.exclude, 'tests/live/**'],
     coverage: {
       // V8's native coverage; `include` spans all source so the report flags
