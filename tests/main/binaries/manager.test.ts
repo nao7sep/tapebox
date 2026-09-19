@@ -265,7 +265,7 @@ describe('install final-preparation cancellation', () => {
 
     const operationId = 'op-xattr'
     const install = installOrUpdate('yt-dlp', operationId)
-    await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce(), { timeout: 10_000 })
+    await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce())
     expect(execCapture).toHaveBeenCalledWith(
       'xattr',
       expect.any(Array),
@@ -286,7 +286,7 @@ describe('install final-preparation cancellation', () => {
 
     const operationId = 'op-arch'
     const install = installOrUpdate('yt-dlp', operationId)
-    await vi.waitFor(() => expect(assertArm64Slice).toHaveBeenCalledOnce(), { timeout: 10_000 })
+    await vi.waitFor(() => expect(assertArm64Slice).toHaveBeenCalledOnce())
     expect(assertArm64Slice).toHaveBeenCalledWith(expect.any(String), expect.any(AbortSignal))
 
     cancelInstall('yt-dlp', operationId)
@@ -310,7 +310,7 @@ describe('install final-preparation cancellation', () => {
 
     const operationId = 'op-zip'
     const install = installOrUpdate('yt-dlp', operationId)
-    await vi.waitFor(() => expect(extractFileFromZip).toHaveBeenCalledOnce(), { timeout: 10_000 })
+    await vi.waitFor(() => expect(extractFileFromZip).toHaveBeenCalledOnce())
     expect(extractFileFromZip).toHaveBeenCalledWith(
       expect.any(String),
       'yt-dlp',
@@ -332,7 +332,7 @@ describe('install final-preparation cancellation', () => {
     )
     const operationId = 'op-shutdown'
     const install = installOrUpdate('yt-dlp', operationId)
-    await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce(), { timeout: 10_000 })
+    await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce())
 
     await shutdownInstalls()
     await expectNoPublishedArtifact(install, operationId)

@@ -21,8 +21,6 @@ export default defineConfig({
     // tests/live runs the real yt-dlp, ffmpeg, and OpenAI; only
     // vitest.live.config.ts, run by npm run check:full, includes it.
     exclude: [...configDefaults.exclude, 'tests/live/**'],
-    // Keep filesystem and jsdom tests responsive on resource-constrained hosts.
-    maxWorkers: 1,
     coverage: {
       // V8's native coverage; `include` spans all source so the report flags
       // logic no test reaches, not just a score for what is reached.
