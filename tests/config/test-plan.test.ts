@@ -14,20 +14,24 @@ describe('the default test plan', () => {
     expect(plan(['README.md', 'CHANGELOG.md'])).toEqual({ typecheck: false, vitest: null, live: false })
   })
 
-  it('typechecks and runs related tests for a TypeScript change', () => {
+  it('typechecks and runs related and repository-reading tests for a TypeScript change', () => {
     expect(plan(['src/main/queue/queue.ts'])).toEqual({
       typecheck: true,
-      vitest: ['src/main/queue/queue.ts'],
+      vitest: ['src/main/queue/queue.ts', ...repositoryReaders],
       live: false,
     })
   })
 
-  it('adds every repository-reading test when a file outside the module graph changes', () => {
+  it('runs the related and repository-reading tests without the type check for a stylesheet change', () => {
     expect(plan(['src/renderer/index.css'])).toEqual({
       typecheck: false,
       vitest: ['src/renderer/index.css', ...repositoryReaders],
       live: false,
     })
+  })
+
+  it('typechecks for a JSON change, since modules import JSON', () => {
+    expect(plan(['src/strings.json'])).toMatchObject({ typecheck: true, vitest: ['src/strings.json', ...repositoryReaders] })
   })
 
   it('typechecks a live test but never runs the live lane', () => {
