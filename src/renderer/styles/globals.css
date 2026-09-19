@@ -38,8 +38,8 @@ button:disabled {
      browser resolves (comma-separated, graceful fallback). --font-mono is the
      read-only face for the download log and yt-dlp-args. There is no UI font-size
      knob. */
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+  --font-sans: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Menlo", "Consolas", monospace;
   --text-xs--line-height: 1.125rem;
   --text-sm--line-height: 1.375rem;
 }
