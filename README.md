@@ -37,7 +37,7 @@ npm run dev
 
 ## Tests
 
-`npm test` runs the tests your uncommitted changes can affect. `npm run test:full` runs every test, then the live lane: the real main process, through the same IPC handlers the window calls, downloads a video from the shared test-fixture corpus with the managed yt-dlp and ffmpeg, served from a local address the test closes again, and asks the real OpenAI API for a file name. The corpus lives in the company repository, which must be checked out beside this one. Export `OPENAI_API_KEY` first; the lane makes a paid OpenAI call, and the full run fails without the key. The first run downloads yt-dlp, ffmpeg and deno into `node_modules/.cache`, and later runs download them again only when a newer build is available.
+`npm test` runs the type check and the whole ordinary suite, the same set every time; [`tests/README.md`](tests/README.md) says which areas it covers. `npm run test:full` runs that, then the live lane: the real main process, through the same IPC handlers the window calls, downloads a video from the shared test-fixture corpus with the managed yt-dlp and ffmpeg, served from a local address the test closes again, and asks the real OpenAI API for a file name. The corpus lives in the company repository, which must be checked out beside this one. Export `OPENAI_API_KEY` first; the lane makes a paid OpenAI call, and the full run fails without the key. The first run downloads yt-dlp, ffmpeg and deno into `node_modules/.cache`, and later runs download them again only when a newer build is available.
 
 ## License
 
