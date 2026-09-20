@@ -75,6 +75,7 @@ button:disabled {
   /* The primary button and the active filter chip: the strongest contrast. */
   --color-inverse: #18181b;
   --color-inverse-hover: #3f3f46;
+  --color-inverse-active: #52525b;
   --color-on-inverse: #fafafa;
   /* Text, strongest to quietest. */
   --color-fg-strong: #09090b;
@@ -108,6 +109,7 @@ button:disabled {
   --color-danger-hover: #fecaca;
   --color-danger-fill: #dc2626;
   --color-danger-fill-hover: #b91c1c;
+  --color-danger-fill-active: #991b1b;
   --color-on-danger: #ffffff;
   /* Warning (amber): paused tapes, available actions, the drop target. */
   --color-warning-fg: #a4500a;
@@ -123,6 +125,7 @@ button:disabled {
   --color-warning-ring: #b45309;
   --color-warm-fill: #f59e0b;
   --color-warm-fill-hover: #fbbf24;
+  --color-warm-fill-active: #fcd34d;
   --color-on-warm: #09090b;
   /* Info (sky): downloads, notices, the selected box. */
   --color-info-fg: #0369a1;
@@ -171,6 +174,7 @@ button:disabled {
       --color-progress: #e4e4e7;
       --color-inverse: #fafafa;
       --color-inverse-hover: #e4e4e7;
+      --color-inverse-active: #d4d4d8;
       --color-on-inverse: #09090b;
       --color-fg-strong: #f4f4f5;
       --color-fg-emphasis: #e4e4e7;
@@ -198,6 +202,7 @@ button:disabled {
       --color-danger-hover: #7f1d1d;
       --color-danger-fill: #dc2626;
       --color-danger-fill-hover: #b91c1c;
+      --color-danger-fill-active: #991b1b;
       --color-on-danger: #ffffff;
       --color-warning-fg: #fcd34d;
       --color-warning-fg-strong: #fef3c7;
@@ -212,6 +217,7 @@ button:disabled {
       --color-warning-ring: #fbbf24;
       --color-warm-fill: #f59e0b;
       --color-warm-fill-hover: #fbbf24;
+      --color-warm-fill-active: #fcd34d;
       --color-on-warm: #09090b;
       --color-info-fg: #7dd3fc;
       --color-info-fg-strong: #e0f2fe;

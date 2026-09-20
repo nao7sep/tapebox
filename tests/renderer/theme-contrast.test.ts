@@ -96,12 +96,18 @@ describe('theme token contrast', () => {
     })
 
     it('keeps text on filled buttons and chips at 4.5:1 or more', () => {
+      // Resting, hover and pressed: a label is read on every fill its button takes.
       check('on-inverse', 'inverse', 4.5)
       check('on-inverse', 'inverse-hover', 4.5)
+      check('on-inverse', 'inverse-active', 4.5)
       check('on-danger', 'danger-fill', 4.5)
       check('on-danger', 'danger-fill-hover', 4.5)
+      check('on-danger', 'danger-fill-active', 4.5)
       check('on-warm', 'warm-fill', 4.5)
       check('on-warm', 'warm-fill-hover', 4.5)
+      check('on-warm', 'warm-fill-active', 4.5)
+      // The outlined destructive trigger presses on the danger banner's fill.
+      check('danger-fg', 'danger-banner', 4.5)
     })
 
     it('keeps status text at 4.5:1 or more on the grounds, its tints, and its banners', () => {

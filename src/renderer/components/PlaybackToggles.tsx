@@ -79,7 +79,7 @@ function ToggleButton({
       disabled={disabled}
       aria-pressed={on}
       title={title}
-      className={'rounded p-1 -m-1 transition disabled:cursor-wait disabled:opacity-60 ' + (on ? accent : 'text-fg-muted hover:text-fg')}
+      className={'rounded p-1 -m-1 transition disabled:opacity-60 ' + (on ? accent : 'text-fg-muted hover:text-fg')}
     >
       {icon}
     </button>

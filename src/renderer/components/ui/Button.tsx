@@ -31,19 +31,31 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode
 }
 
+// Each variant answers a press with a further step of its own surface, one beyond
+// its hover in the direction that theme's hover already moves. Without one, a
+// press shows nothing at all, and a button that shows nothing reads as a button
+// that did nothing until whatever it started finishes.
+//
+// Off, a variant is its resting self faded, at the one value the app states.
+// Primary used to swap its near-black fill for a raised grey and its inverted ink
+// for the ordinary one, which turned the most emphatic control in the app into a
+// slab that no longer read as the primary — alone among the six in doing so.
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary:
-    'bg-inverse text-on-inverse font-medium hover:bg-inverse-hover disabled:bg-raised-hover disabled:text-fg',
+    'bg-inverse text-on-inverse font-medium hover:bg-inverse-hover active:bg-inverse-active disabled:opacity-50',
   secondary:
-    'border border-line text-fg hover:bg-raised disabled:opacity-50',
+    'border border-line text-fg hover:bg-raised active:bg-raised-hover disabled:opacity-50',
   ghost:
-    'border border-line text-fg hover:border-line-strong hover:text-fg-strong disabled:opacity-50',
+    'border border-line text-fg hover:border-line-strong hover:text-fg-strong active:border-line-hover disabled:opacity-50',
+  // Its pressed tint is the danger banner's fill, which is already the next step
+  // down from the hover tint in both themes; a second token of the same value
+  // would say nothing more.
   dangerOutline:
-    'border border-danger-line text-danger-fg hover:border-danger-line-strong hover:bg-danger-tint disabled:opacity-50',
+    'border border-danger-line text-danger-fg hover:border-danger-line-strong hover:bg-danger-tint active:border-danger-line-hover active:bg-danger-banner disabled:opacity-50',
   danger:
-    'bg-danger-fill text-on-danger font-medium hover:bg-danger-fill-hover disabled:opacity-50',
+    'bg-danger-fill text-on-danger font-medium hover:bg-danger-fill-hover active:bg-danger-fill-active disabled:opacity-50',
   warm:
-    'bg-warm-fill text-on-warm font-medium hover:bg-warm-fill-hover disabled:opacity-50',
+    'bg-warm-fill text-on-warm font-medium hover:bg-warm-fill-hover active:bg-warm-fill-active disabled:opacity-50',
 }
 
 // Both sizes share text-sm so inline actions read as the same weight as the
