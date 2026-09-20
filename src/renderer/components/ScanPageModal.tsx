@@ -9,7 +9,7 @@ import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { Modal } from '@renderer/components/Modal'
 import { IndeterminateBar } from '@renderer/components/Progress'
-import { Button, InlineError, INPUT_CLASS } from '@renderer/components/ui'
+import { Button, InlineError, INPUT_LINE_CLASS } from '@renderer/components/ui'
 
 type Props = { onClose: () => void; initialUrl?: string }
 
@@ -169,7 +169,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
           onKeyDown={(e) => { if (e.key === 'Enter' && !isComposingKeyboardEvent(composingRef, e)) scan() }}
           placeholder="Paste a page URL"
           spellCheck={false}
-          className={`flex-1 ${INPUT_CLASS}`}
+          className={`flex-1 ${INPUT_LINE_CLASS}`}
         />
         <Button
           variant={scanning ? 'secondary' : 'primary'}
@@ -209,7 +209,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search title…"
-              className={`flex-1 ${INPUT_CLASS}`}
+              className={`flex-1 ${INPUT_LINE_CLASS}`}
             />
           </div>
 

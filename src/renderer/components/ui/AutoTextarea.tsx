@@ -2,10 +2,12 @@ import { useLayoutEffect, useRef } from 'react'
 import { INPUT_CLASS } from './input-styles'
 
 /**
- * A textarea that shows as a single line at rest and grows to fit its content
- * (wrapped text or explicit newlines) — no manual resize handle. Lets a user
- * write one yt-dlp flag per line instead of cramming everything onto one line;
- * the tokenizer treats newlines as whitespace, so multi-line input is safe.
+ * A textarea that grows to fit its content (wrapped text or explicit newlines)
+ * — no manual resize handle. Lets a user write one yt-dlp flag per line instead
+ * of cramming everything onto one line; the tokenizer treats newlines as
+ * whitespace, so multi-line input is safe. `minRows` sets how tall it stands
+ * while short, so a field that usually holds several lines looks like one
+ * before anything is typed.
  */
 export function AutoTextarea({
   value,
@@ -13,12 +15,14 @@ export function AutoTextarea({
   placeholder,
   disabled,
   mono,
+  minRows = 1,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
   disabled?: boolean
   mono?: boolean
+  minRows?: number
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -29,7 +33,7 @@ export function AutoTextarea({
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
-  }, [value])
+  }, [value, minRows])
 
   return (
     <textarea
@@ -38,7 +42,7 @@ export function AutoTextarea({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       disabled={disabled}
-      rows={1}
+      rows={minRows}
       spellCheck={false}
       className={`w-full resize-none overflow-hidden ${mono ? 'font-mono ' : ''}${INPUT_CLASS}`}
     />

@@ -1,4 +1,4 @@
-import { INPUT_CLASS } from './input-styles'
+import { INPUT_LINE_CLASS } from './input-styles'
 
 type Props = {
   label: string
@@ -20,7 +20,7 @@ export function NumberField({ label, value, min, max, disabled, onChange }: Prop
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Math.max(min, Math.min(max, parseInt(e.target.value || '0', 10))))}
-        className={`mt-1 w-full ${INPUT_CLASS}`}
+        className={`mt-1 w-full ${INPUT_LINE_CLASS}`}
       />
     </label>
   )

@@ -3,7 +3,7 @@ import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
-import { Button, Field, INPUT_CLASS } from '@renderer/components/ui'
+import { Button, Field, INPUT_LINE_CLASS } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
 
@@ -110,7 +110,7 @@ export function NameEditor({
             placeholder={placeholder}
             spellCheck={false}
             disabled={busy}
-            className={`w-full ${INPUT_CLASS}`}
+            className={`w-full ${INPUT_LINE_CLASS}`}
           />
         </Field>
         {hint && <p className="mt-1.5 text-xs text-fg-muted">{hint}</p>}

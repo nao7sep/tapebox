@@ -1,4 +1,4 @@
-import { INPUT_CLASS } from './input-styles'
+import { INPUT_LINE_CLASS } from './input-styles'
 
 type Props = {
   label: string
@@ -20,7 +20,7 @@ export function TextField({ label, value, placeholder, disabled, type = 'text', 
         disabled={disabled}
         spellCheck={false}
         onChange={(e) => onChange(e.target.value)}
-        className={`mt-1 w-full ${INPUT_CLASS}`}
+        className={`mt-1 w-full ${INPUT_LINE_CLASS}`}
       />
     </label>
   )

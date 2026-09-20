@@ -12,6 +12,7 @@ import {
   Button,
   Field,
   INPUT_CLASS,
+  INPUT_LINE_CLASS,
   NumberField,
   Spinner,
   TextField,
@@ -458,7 +459,7 @@ function GeneralTab({
             placeholder={defaultLibraryDir}
             spellCheck={false}
             disabled={busy}
-            className={`flex-1 ${INPUT_CLASS}`}
+            className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
           <Button variant="secondary" onClick={() => void chooseLibraryDir()} disabled={busy}>
             Choose…
@@ -507,7 +508,7 @@ function GeneralTab({
             placeholder="Blank = ask each time"
             spellCheck={false}
             disabled={busy}
-            className={`flex-1 ${INPUT_CLASS}`}
+            className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
           <Button variant="secondary" onClick={() => void chooseExportDir()} disabled={busy}>
             Choose…
@@ -595,7 +596,7 @@ function AiTab({
             placeholder={keyIsSet ? '••••••••' : 'sk-…'}
             spellCheck={false}
             disabled={busy}
-            className={`flex-1 ${INPUT_CLASS}`}
+            className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
           {keyIsSet && (
             <Button variant="dangerOutline" onClick={onClearKey} disabled={busy}>
@@ -683,6 +684,7 @@ function YtdlpTab({
             placeholder={'--add-header "Accept-Language: ja"\n--sleep-requests "1"'}
             disabled={busy}
             mono
+            minRows={4}
           />
         </div>
         <p className="mt-1 text-xs text-fg-muted">
@@ -716,7 +718,7 @@ function YtdlpTab({
                 placeholder="Name"
                 spellCheck={false}
                 disabled={busy}
-                className={`flex-1 ${INPUT_CLASS}`}
+                className={`flex-1 ${INPUT_LINE_CLASS}`}
               />
               <Button variant="dangerOutline" size="sm" onClick={() => removeProfile(p.id)} disabled={busy}>
                 Remove
@@ -729,7 +731,7 @@ function YtdlpTab({
                 placeholder="example.com (or a regex)"
                 spellCheck={false}
                 disabled={busy}
-                className={`flex-1 ${INPUT_CLASS}`}
+                className={`flex-1 ${INPUT_LINE_CLASS}`}
               />
               <label className="flex shrink-0 items-center gap-1.5 text-xs text-fg">
                 <input
@@ -747,6 +749,7 @@ function YtdlpTab({
               placeholder={'--add-header "Accept-Language: ja" -f bestvideo+bestaudio'}
               disabled={busy}
               mono
+              minRows={3}
             />
             <AutoTextarea
               value={p.comment}

@@ -127,7 +127,14 @@ export function Modal({ title,
         onCompositionEnd={composing.handlers.onCompositionEnd}
         className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-line bg-panel shadow-xl focus:outline-hidden`}
       >
-        <header className={`flex shrink-0 items-center justify-between p-4 ${titleHidden ? 'pb-0' : 'border-b border-line'}`}>
+        <header
+          className={`flex shrink-0 items-center p-4 ${
+            // With the title hidden there is nothing to divide from the content,
+            // so the band drops its line — and the close control stays in its
+            // own corner rather than sliding into the title's place.
+            titleHidden ? 'justify-end pb-0' : 'justify-between border-b border-line'
+          }`}
+        >
           <h2 id={titleId} className={titleHidden ? 'sr-only' : 'text-lg font-medium'}>{title}</h2>
           <button
             onClick={onClose}
