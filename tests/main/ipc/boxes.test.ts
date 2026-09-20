@@ -20,7 +20,8 @@ vi.mock('@main/store/session', () => ({
   removeBox: vi.fn(),
   upsertTape: vi.fn(),
 }))
-vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
+const emit = vi.hoisted(() => vi.fn())
+vi.mock('@main/ipc/events', () => ({ emit }))
 vi.mock('@main/io/logger', () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
@@ -35,6 +36,7 @@ function invoke<T>(channel: string, req: unknown): Promise<T> {
 
 beforeEach(() => {
   handlers.clear()
+  emit.mockClear()
   state.boxes = [
     { id: 'box1234567', name: 'Caf\u00e9', order: 0 },
     { id: 'box7654321', name: 'Other', order: 1 },
@@ -54,5 +56,35 @@ describe('box-name canonical identity', () => {
 
     expect(created.name).toBe('Caf\u00e9 2')
     expect(created.name).toBe(created.name.normalize('NFC'))
+  })
+})
+
+describe('box names the user types', () => {
+  it('renames a box and tells the window the list changed', async () => {
+    const renamed = await invoke<Box>('boxes:rename', { boxId: 'box7654321', name: '  Winter  ' })
+
+    expect(renamed).toEqual({ id: 'box7654321', name: 'Winter', order: 1 })
+    expect(state.boxes.find((box) => box.id === 'box7654321')?.name).toBe('Winter')
+    expect(emit).toHaveBeenCalledWith('boxes:changed', state.boxes)
+  })
+
+  it('keeps the current name when the edit is left empty, and says nothing changed', async () => {
+    const unchanged = await invoke<Box>('boxes:rename', { boxId: 'box7654321', name: '   ' })
+
+    expect(unchanged.name).toBe('Other')
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it('refuses to rename a box that is not there', async () => {
+    await expect(invoke('boxes:rename', { boxId: 'box-missing', name: 'Winter' })).rejects.toThrow(
+      'The operation could not be completed.',
+    )
+  })
+
+  it('seeds an unnamed new box with a name the user can overtype', async () => {
+    const created = await invoke<Box>('boxes:create', { name: '   ' })
+
+    expect(created).toMatchObject({ name: 'New box', order: 2 })
+    expect(emit).toHaveBeenCalledWith('boxes:changed', state.boxes)
   })
 })
