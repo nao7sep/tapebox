@@ -47,11 +47,13 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
 }
 
 // Both sizes share text-sm so inline actions read as the same weight as the
-// primary buttons beside them; sm just trims the padding. sm's height matches
-// INPUT_CLASS (py-1.5 text-sm), so a button sitting next to an input lines up.
+// primary buttons beside them; sm just trims the width. The height is fixed
+// rather than grown from padding, so a bordered variant and a filled one are
+// the same height in the same row, and sm matches INPUT_CLASS's height, so a
+// button sitting next to an input lines up.
 const SIZE_CLASS: Record<ButtonSize, string> = {
-  sm: 'px-3 py-1.5 text-sm',
-  md: 'px-4 py-2 text-sm',
+  sm: 'h-8 px-3 text-sm',
+  md: 'h-9 px-4 text-sm',
 }
 
 export function Button({

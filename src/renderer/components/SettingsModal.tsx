@@ -460,7 +460,7 @@ function GeneralTab({
             disabled={busy}
             className={`flex-1 ${INPUT_CLASS}`}
           />
-          <Button variant="secondary" size="sm" onClick={() => void chooseLibraryDir()} disabled={busy}>
+          <Button variant="secondary" onClick={() => void chooseLibraryDir()} disabled={busy}>
             Choose…
           </Button>
         </div>
@@ -509,7 +509,7 @@ function GeneralTab({
             disabled={busy}
             className={`flex-1 ${INPUT_CLASS}`}
           />
-          <Button variant="secondary" size="sm" onClick={() => void chooseExportDir()} disabled={busy}>
+          <Button variant="secondary" onClick={() => void chooseExportDir()} disabled={busy}>
             Choose…
           </Button>
         </div>

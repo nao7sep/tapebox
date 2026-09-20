@@ -23,17 +23,17 @@ export function FilterChips() {
   // exposed to assistive tech. The radio input is visually hidden; the styled
   // label is the chip.
   return (
-    <div role="radiogroup" aria-label="Tape filter" className="flex gap-2">
+    <div role="radiogroup" aria-label="Tape filter" className="inline-flex gap-0.5 rounded-md bg-raised p-0.5 inset-ring inset-ring-line">
       {order.map((f) => {
         const active = f === filter
         return (
           <label
             key={f}
             className={
-              'cursor-pointer rounded px-2.5 py-1 text-xs transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-fg-muted ' +
+              'flex h-7 cursor-pointer items-center rounded px-2.5 text-xs transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-fg-muted ' +
               (active
                 ? 'bg-inverse text-on-inverse'
-                : 'border border-line text-fg hover:border-line-strong')
+                : 'text-fg hover:bg-raised-hover')
             }
           >
             <input

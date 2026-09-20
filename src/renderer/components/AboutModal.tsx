@@ -37,6 +37,7 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal
       title="About TapeBox"
+      titleHidden
       onClose={onClose}
       size="md"
       footer={
@@ -47,10 +48,9 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
     >
       <div className="space-y-4 text-sm">
         <div>
-          <p className="text-lg font-medium text-fg-strong">
-            TapeBox{version && <span className="ml-2 text-sm font-normal text-fg-muted">v{version}</span>}
-          </p>
-          <p className="mt-1 text-fg">A local media library with web import.</p>
+          <p className="text-[26px] font-semibold leading-tight tracking-tight text-fg-strong">TapeBox</p>
+          {version && <p className="mt-0.5 text-sm text-fg-muted">Version {version}</p>}
+          <p className="mt-3 text-fg">A local media library with web import.</p>
         </div>
         <div className="flex gap-4">
           <button type="button" onClick={() => void openLink('repository', GITHUB_URL)} className="whitespace-nowrap bg-transparent p-0 text-fg hover:text-fg-strong">

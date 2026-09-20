@@ -129,7 +129,7 @@ export function BoxList({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between px-3 py-2">
         <span className="text-xs font-medium uppercase tracking-wide text-fg-muted">Boxes</span>
-        <button onClick={() => void newBox()} className="whitespace-nowrap text-xs text-fg transition hover:text-fg-strong">
+        <button onClick={() => void newBox()} className="-mr-2 flex h-7 items-center whitespace-nowrap rounded px-2 text-xs text-fg transition hover:bg-raised hover:text-fg-strong">
           <PlusIcon className="mr-1" />
           New box
         </button>

@@ -15,6 +15,12 @@ type ModalSize = 'md' | '2xl' | '4xl'
 
 type ModalProps = {
   title: string
+  /**
+   * Keeps the title as the dialog's spoken name but takes it off the screen,
+   * for a surface whose own content already says what it is (About). With no
+   * title to divide from the content, the header band also drops its line.
+   */
+  titleHidden?: boolean
   onClose: () => void
   children: ReactNode
   /** Action buttons. Rendered right-aligned, so the primary action goes last. */
@@ -45,7 +51,8 @@ const SIZE_CLASS: Record<ModalSize, string> = {
  *   - the title is the accessible name via aria-labelledby.
  * Feature modals supply only their content, footer actions, and close logic.
  */
-export function Modal({ title, onClose, children, footer, size = 'md', fitContent = false, closeDisabled = false }: ModalProps) {
+export function Modal({ title,
+  titleHidden = false, onClose, children, footer, size = 'md', fitContent = false, closeDisabled = false }: ModalProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
   const titleId = useId()
 
@@ -120,8 +127,8 @@ export function Modal({ title, onClose, children, footer, size = 'md', fitConten
         onCompositionEnd={composing.handlers.onCompositionEnd}
         className={`flex max-h-[85vh] ${fitContent ? 'w-fit' : 'w-full'} ${SIZE_CLASS[size]} flex-col rounded-lg border border-line bg-panel shadow-xl focus:outline-hidden`}
       >
-        <header className="flex shrink-0 items-center justify-between border-b border-line p-4">
-          <h2 id={titleId} className="text-lg font-medium">{title}</h2>
+        <header className={`flex shrink-0 items-center justify-between p-4 ${titleHidden ? 'pb-0' : 'border-b border-line'}`}>
+          <h2 id={titleId} className={titleHidden ? 'sr-only' : 'text-lg font-medium'}>{title}</h2>
           <button
             onClick={onClose}
             disabled={closeDisabled}
