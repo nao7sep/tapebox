@@ -333,6 +333,35 @@ button:disabled {
   }
 }
 
+/* The ring belongs to what the key acts on (composite-control-conventions). A
+   container that holds focus on its items' behalf draws none of its own: a list's
+   active row shows the cursor, and a scroll region's cue is its brightened thumb.
+   The ring in the base layer above is `:focus-visible`, which is no guard here —
+   any key pressed after a click turns it on, and since Safari 27 so does focus a
+   script moves after keyboard use — so the container's own outline is off for
+   every one of them. Unlayered, so it outranks both the base ring and the
+   utilities layer. */
+:is(
+  [role="listbox"],
+  [role="tree"],
+  [role="grid"],
+  [role="treegrid"],
+  [role="region"],
+  [role="tabpanel"],
+  [role="dialog"],
+  [role="alertdialog"],
+  [role="document"],
+  [role="log"],
+  [role="radiogroup"],
+  [role="tablist"],
+  [role="menu"],
+  [role="menubar"],
+  [role="toolbar"],
+  [data-passive-scroll-region]
+):focus-visible {
+  outline: none;
+}
+
 /* Native application inactivity is distinct from DOM focus on macOS. Keep the
    keyboard target legible, but mute the active-window accent while another app
    owns the menu bar. This is intentionally unlayered so it also overrides

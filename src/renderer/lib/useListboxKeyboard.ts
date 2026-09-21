@@ -29,6 +29,7 @@ export type ListboxKeyboard<E extends HTMLElement> = {
   ref: RefObject<E | null>
   /** Spread onto the container element. */
   listboxProps: {
+    role: 'listbox'
     tabIndex: 0
     'aria-activedescendant': string | undefined
     onKeyDown: (e: KeyboardEvent) => void
@@ -112,6 +113,7 @@ export function useListboxKeyboard<E extends HTMLElement = HTMLElement>(opts: {
   return {
     ref,
     listboxProps: {
+      role: 'listbox',
       tabIndex: 0,
       'aria-activedescendant': activeId != null && itemIds.includes(activeId) ? optionId(activeId) : undefined,
       onKeyDown,
