@@ -1,6 +1,12 @@
 import { configDefaults, defineConfig } from 'vitest/config'
 import { resolve } from 'node:path'
 
+import { readFileSync } from 'node:fs';
+
+// __APP_VERSION__ is injected from package.json by electron.vite.config.ts for the
+// build; mirrored here so the tests run against the same value.
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+
 // Tests live under tests/, mirroring the src/ layout, so src/ stays pure shipped
 // code and the production typecheck (tsc over src/**) never sees test files. The
 // alias map mirrors electron.vite.config.ts / tsconfig.json so tests import
@@ -12,6 +18,7 @@ const alias = {
 }
 
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(version) },
   resolve: { alias },
   test: {
     // Node by default for the pure main/shared logic; the renderer's DOM helpers

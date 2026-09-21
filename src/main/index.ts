@@ -103,7 +103,7 @@ async function startup(): Promise<void> {
   await ensureDirs()
   const logPath = initLogger({ debug: isDebugEnabled(app.isPackaged, process.env) })
   log.info('startup', {
-    version: app.getVersion(),
+    version: __APP_VERSION__,
     logPath,
     platform: process.platform,
     arch: process.arch,

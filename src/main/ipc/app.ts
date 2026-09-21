@@ -1,4 +1,4 @@
-import { app, shell } from 'electron'
+import { shell } from 'electron'
 import { handle } from './handle'
 import { getCurrentLogPath } from '@main/io/logger'
 import { setVideoPlaying } from '@main/power-blocker'
@@ -12,7 +12,7 @@ export function registerAppHandlers(): void {
   handle('app:runtimeInfo', async () => ({
     platform: process.platform,
     arch: process.arch,
-    version: app.getVersion(),
+    version: __APP_VERSION__,
   }))
 
   handle('app:revealLog', async () => {
