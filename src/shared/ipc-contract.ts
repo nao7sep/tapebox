@@ -90,6 +90,9 @@ export type IpcCalls = {
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }
   'settings:update':       { req: Partial<Settings>;                 res: Settings }
+  // Stop a library move started by settings:update; its copies are rolled back and
+  // the update rejects with the library still in the old folder.
+  'settings:cancelLibraryMove': { req: undefined;                    res: void }
   // The resolved default library folder (paths.library). The Settings dialog shows
   // it as the placeholder for an empty libraryDir field, so the user sees where
   // downloads land when they leave the field blank.
@@ -266,6 +269,9 @@ export type IpcEvents = {
 
   // The box list changed (created / renamed / deleted / reordered).
   'boxes:changed':    Box[]
+
+  // Progress of a library move started by settings:update, per file published.
+  'settings:libraryMoveProgress': { filesDone: number; filesTotal: number; bytesDone: number; bytesTotal: number }
 
   'scan:entry':        { sessionId: string; entry: ScanResult }
   'scan:done':         { sessionId: string; totalCount: number }

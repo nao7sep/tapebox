@@ -48,8 +48,29 @@ function queued(id: string): Tape {
   return { id, state: 'queued', sourceUrl: `https://example.com/${id}` } as Tape
 }
 
+describe('queue hold', () => {
+  it('starts no job while held and catches up once released', async () => {
+    vi.resetModules()
+    const queue = await import('@main/queue/manager')
+    tapes.push(queued('h1'))
+    let startedWhileHeld: string[] = []
+    await queue.holdWhile(async () => {
+      queue.tick()
+      startedWhileHeld = [...jobs.started]
+    })
+    expect(startedWhileHeld).toEqual([])
+    expect(jobs.started).toEqual(['h1'])
+    await queue.shutdown()
+    tapes.length = 0
+    jobs.started.length = 0
+    jobs.stopped.length = 0
+    jobs.settled.length = 0
+  })
+})
+
 describe('queue shutdown', () => {
   it('stops every running job, waits for each to settle, and starts no more', async () => {
+    vi.resetModules()
     const queue = await import('@main/queue/manager')
     tapes.push(queued('a'), queued('b'), queued('c'))
     queue.tick()

@@ -2,7 +2,11 @@ import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { AiSettings, Settings, SiteProfile, ThemePreference } from '@shared/settings'
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
-import { ipcInvoke } from '@renderer/ipc/client'
+import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
+import { log } from '@renderer/ipc/log'
+import { describeError } from '@shared/error'
+import type { IpcEvents } from '@shared/ipc-contract'
+import { formatBytes } from '@renderer/lib/format'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useTapesStore } from '@renderer/store/tapes'
 import { Modal } from '@renderer/components/Modal'
@@ -35,8 +39,11 @@ type Tab = 'general' | 'ai' | 'ytdlp'
  * field's placeholder); a set value points the library at a custom folder. Changing
  * it moves every existing tape's files to the new folder as part of Save (main does
  * the move, then commits the setting), so a confirm prompts first; the move is
- * refused while downloads are running.
+ * refused while downloads are running. While it runs, the dialog shows its
+ * progress and offers Stop Move, which rolls the copies back.
  */
+
+type MoveProgress = IpcEvents['settings:libraryMoveProgress']
 export function SettingsModal({ onClose }: Props) {
   const [tab, setTab] = useState<Tab>('general')
   const [original, setOriginal] = useState<Settings | null>(null)
@@ -49,6 +56,10 @@ export function SettingsModal({ onClose }: Props) {
   const [busy, setBusy] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [confirmMove, setConfirmMove] = useState<{ count: number } | null>(null)
+  const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null)
+  const [stoppingMove, setStoppingMove] = useState(false)
+  // Read by save() after the rejected update, so a requested stop is not reported as a failure.
+  const stopRequested = useRef(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   function load() {
@@ -74,6 +85,15 @@ export function SettingsModal({ onClose }: Props) {
   useEffect(() => {
     load()
   }, [])
+
+  useEffect(() => ipcOn('settings:libraryMoveProgress', setMoveProgress), [])
+
+  function stopMove() {
+    stopRequested.current = true
+    setStoppingMove(true)
+    void ipcInvoke('settings:cancelLibraryMove')
+      .catch((err) => log.debug('library move cancel failed', { error: describeError(err) }))
+  }
 
   function patchDraft(patch: Partial<Settings>) {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
@@ -128,6 +148,9 @@ export function SettingsModal({ onClose }: Props) {
     setConfirmMove(null)
     setBusy(true)
     setError(null)
+    setMoveProgress(null)
+    setStoppingMove(false)
+    stopRequested.current = false
     let settingsSaved = false
     try {
       const updated = await ipcInvoke('settings:update', pickEditable(draft))
@@ -140,6 +163,10 @@ export function SettingsModal({ onClose }: Props) {
       }
       onClose()
     } catch (err) {
+      if (stopRequested.current && !settingsSaved) {
+        setError('The library move was stopped. The library stays in its current folder and no setting was saved.')
+        return
+      }
       setError(presentFailure(
         err,
         settingsSaved
@@ -149,6 +176,8 @@ export function SettingsModal({ onClose }: Props) {
       ))
     } finally {
       setBusy(false)
+      setMoveProgress(null)
+      setStoppingMove(false)
     }
   }
 
@@ -175,13 +204,20 @@ export function SettingsModal({ onClose }: Props) {
     )
   }
 
+  const moving = busy && moveProgress !== null
   const footer = (
     <>
-      <Button variant="ghost" onClick={requestClose} disabled={busy}>
-        Cancel
-      </Button>
+      {moving ? (
+        <Button variant="ghost" onClick={stopMove} disabled={stoppingMove}>
+          {stoppingMove ? 'Stopping…' : 'Stop Move'}
+        </Button>
+      ) : (
+        <Button variant="ghost" onClick={requestClose} disabled={busy}>
+          Cancel
+        </Button>
+      )}
       <Button variant="primary" onClick={requestSave} disabled={!dirty} loading={busy}>
-        {busy ? 'Saving…' : 'Save'}
+        {moving ? 'Moving…' : busy ? 'Saving…' : 'Save'}
       </Button>
     </>
   )
@@ -232,6 +268,13 @@ export function SettingsModal({ onClose }: Props) {
           </div>
         </div>
 
+        {moving && (
+          <p className="mt-4 flex items-center gap-2 text-sm text-fg" role="status">
+            <Spinner />
+            Moving library: {moveProgress.filesDone} of {moveProgress.filesTotal} files
+            ({formatBytes(moveProgress.bytesDone)} of {formatBytes(moveProgress.bytesTotal)})
+          </p>
+        )}
         {error && <InlineError className="mt-4">{error}</InlineError>}
       </Modal>
 

@@ -252,4 +252,26 @@ describe('relocateLibrary', () => {
     expect(await names(fromDir)).toEqual(['a.mp4', 'b.mp4'])
     expect(await readFile(join(toDir, 'b.mp4'), 'utf8')).toBe('video-b')
   })
+
+  it('reports progress per file and rolls back what it published when aborted', async () => {
+    await seed(fromDir, 'a.mp4', 'video-a')
+    await seed(fromDir, 'b.mp4', 'video-bb')
+    await seed(fromDir, 'c.mp4', 'video-ccc')
+    const controller = new AbortController()
+    const seen: { filesDone: number; bytesDone: number; filesTotal: number; bytesTotal: number }[] = []
+
+    await expect(relocateLibrary(fromDir, toDir, ['a.mp4', 'b.mp4', 'c.mp4'], {
+      signal: controller.signal,
+      onProgress: (progress) => {
+        seen.push(progress)
+        if (progress.filesDone === 2) controller.abort()
+      },
+    })).rejects.toThrow()
+
+    expect(seen.map((p) => p.filesDone)).toEqual([0, 1, 2])
+    expect(seen[0]).toMatchObject({ filesTotal: 3, bytesTotal: 7 + 8 + 9 })
+    expect(seen[2]!.bytesDone).toBe(7 + 8)
+    expect(await names(toDir)).toEqual([])
+    expect(await names(fromDir)).toEqual(['a.mp4', 'b.mp4', 'c.mp4'])
+  })
 })

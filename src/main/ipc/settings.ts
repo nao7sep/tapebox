@@ -15,6 +15,8 @@ import {
   type RelocatedFile,
 } from '@main/store/library-move'
 import { log } from '@main/io/logger'
+import { emit } from './events'
+import { cancelWork, runCancellable } from '@main/work-registry'
 import { SettingsSchema, type Settings } from '@shared/settings'
 
 /**
@@ -86,7 +88,13 @@ function normalizeUserDir(label: string, value: string): string {
  */
 type CompletedRelocation = { fromDir: string; files: RelocatedFile[] }
 
-async function relocateIfLibraryDirChanged(patch: Partial<Settings>): Promise<CompletedRelocation | null> {
+/** Work-registry key for the one library move that can be in flight. */
+const LIBRARY_MOVE_KEY = 'library-move'
+
+async function relocateIfLibraryDirChanged(
+  patch: Partial<Settings>,
+  signal: AbortSignal,
+): Promise<CompletedRelocation | null> {
   if (patch.libraryDir === undefined) return null
   const fromDir = config.getLibraryDir()
   const toDir = effectiveLibraryDir(patch.libraryDir)
@@ -100,7 +108,10 @@ async function relocateIfLibraryDirChanged(patch: Partial<Settings>): Promise<Co
 
   const entries = trackedLibraryFiles()
   log.info('relocating library', { from: fromDir, to: toDir, files: entries.length })
-  const result = await relocateLibrary(fromDir, toDir, entries)
+  const result = await relocateLibrary(fromDir, toDir, entries, {
+    signal,
+    onProgress: (progress) => emit('settings:libraryMoveProgress', progress),
+  })
   if (result.moved) {
     log.info('library destinations published; awaiting settings commit', {
       from: fromDir,
@@ -136,50 +147,16 @@ export function registerSettingsHandlers(): void {
     // Move the library first; if it throws (collision, in-flight downloads, a
     // failed-and-rolled-back move) the new libraryDir is never committed, so the
     // renderer surfaces the error and the catalog still points at the old folder.
-    const relocation = await relocateIfLibraryDirChanged(normalized)
-    let next: Settings
-    try {
-      next = await config.updateSettings(normalized)
-    } catch (saveError) {
-      if (relocation) {
-        try {
-          await rollbackLibraryRelocation(relocation.files)
-          log.info('library destinations rolled back after settings save failure', {
-            source: relocation.fromDir,
-            files: relocation.files.length,
-          })
-        } catch (rollbackError) {
-          throw new AggregateError(
-            [saveError, rollbackError],
-            'Settings could not be saved and the library relocation could not be fully rolled back.',
-          )
-        }
-      }
-      throw saveError
-    }
-    // Settings apply on Save, the theme included (app-chrome conventions, Theme).
-    applyThemePreference(next.theme)
-    // Flipping autostart on should start anything already waiting.
-    if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
-    // Toggling keep-awake off mid-playback must release the held wake lock now
-    // (and toggling it on while a tape plays must acquire it) — reconcile against
-    // the new setting rather than waiting for the next play/pause transition.
-    reconcileWakeLock()
-    if (relocation) {
-      try {
-        await completeLibraryRelocation(relocation.files)
-        log.info('obsolete library sources cleaned after settings commit', {
-          from: relocation.fromDir,
-          files: relocation.files.length,
-        })
-      } catch (cleanupError) {
-        throw new AggregateError(
-          [cleanupError],
-          'Settings were saved and the new library is authoritative, but obsolete source cleanup was incomplete.',
-        )
-      }
-    }
-    return next
+    // The queue is held for the whole move and settings commit so no download
+    // starts writing into the old folder meanwhile. Stop (settings:cancelLibraryMove)
+    // or quitting aborts the copy and rolls back every file already published.
+    return queue.holdWhile(() => runCancellable(
+      (signal) => applySettingsPatch(normalized, wasAutostart, signal),
+      LIBRARY_MOVE_KEY,
+    ))
+  })
+  handle('settings:cancelLibraryMove', async () => {
+    cancelWork(LIBRARY_MOVE_KEY)
   })
   handle('settings:setApiKey', async ({ apiKey }) => {
     await apiKeys.writeApiKey(['openai'], apiKey)
@@ -189,3 +166,55 @@ export function registerSettingsHandlers(): void {
   })
   handle('settings:hasApiKey', async () => apiKeys.hasApiKey(['openai']))
 }
+
+async function applySettingsPatch(
+  normalized: Partial<Settings>,
+  wasAutostart: boolean,
+  signal: AbortSignal,
+): Promise<Settings> {
+  const relocation = await relocateIfLibraryDirChanged(normalized, signal)
+  let next: Settings
+  try {
+    next = await config.updateSettings(normalized)
+  } catch (saveError) {
+    if (relocation) {
+      try {
+        await rollbackLibraryRelocation(relocation.files)
+        log.info('library destinations rolled back after settings save failure', {
+          source: relocation.fromDir,
+          files: relocation.files.length,
+        })
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [saveError, rollbackError],
+          'Settings could not be saved and the library relocation could not be fully rolled back.',
+        )
+      }
+    }
+    throw saveError
+  }
+  // Settings apply on Save, the theme included (app-chrome conventions, Theme).
+  applyThemePreference(next.theme)
+  // Flipping autostart on should start anything already waiting.
+  if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
+  // Toggling keep-awake off mid-playback must release the held wake lock now
+  // (and toggling it on while a tape plays must acquire it) — reconcile against
+  // the new setting rather than waiting for the next play/pause transition.
+  reconcileWakeLock()
+  if (relocation) {
+    try {
+      await completeLibraryRelocation(relocation.files)
+      log.info('obsolete library sources cleaned after settings commit', {
+        from: relocation.fromDir,
+        files: relocation.files.length,
+      })
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [cleanupError],
+        'Settings were saved and the new library is authoritative, but obsolete source cleanup was incomplete.',
+      )
+    }
+  }
+  return next
+}
+

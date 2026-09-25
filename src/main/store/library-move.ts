@@ -28,10 +28,13 @@ import { portableFilenameIdentity } from '@shared/filename'
  *      abort before moving a single file — a relocation must never overwrite a file
  *      already in the new folder, and aborting early means nothing has moved yet.
  *   4. Per file: claim its inode and publish to the destination without overwrite,
- *      retaining the exact public source. Cross-device publication uses an
- *      exclusive, durable bounded copy while the public source remains visible.
- *   5. If publication or the later config save fails, remove every exact destination
- *      claim. Only after config commits may the caller remove exact source claims;
+ *      retaining the exact public source. Cross-device publication copies into a
+ *      destination temp that is linked into place (or, where the destination has
+ *      no hard links, into an exclusive claim that any failure removes) while the
+ *      public source remains visible.
+ *   5. If publication fails, the caller's signal aborts it (checked between files
+ *      and copy chunks), or the later config save fails, remove every exact
+ *      destination claim. Only after config commits may the caller remove exact source claims;
  *      a crash at any earlier phase therefore leaves the old config fully readable.
  *
  * Only the named entries are touched — files the app created and tracks (media,
@@ -45,6 +48,14 @@ export type RelocateResult =
 
 export type RelocatedFile = { name: string; sourceClaim: FileClaim; claim: FileClaim }
 
+export type RelocateProgress = { filesDone: number; filesTotal: number; bytesDone: number; bytesTotal: number }
+
+export type RelocateOptions = {
+  signal?: AbortSignal
+  /** Called once before the first file and after each file is published. */
+  onProgress?: (progress: RelocateProgress) => void
+}
+
 /**
  * Resolve whether two library paths point at the same effective directory. The
  * caller resolves blank→default before calling, but normalizing here too makes the
@@ -54,12 +65,12 @@ function sameDir(a: string, b: string): boolean {
   return resolve(a) === resolve(b)
 }
 
-async function pathExists(path: string): Promise<boolean> {
+/** Size of a file, or null when it is not on disk. */
+async function fileSize(path: string): Promise<number | null> {
   try {
-    await stat(path)
-    return true
+    return (await stat(path)).size
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw err
   }
 }
@@ -92,7 +103,9 @@ export async function relocateLibrary(
   fromDir: string,
   toDir: string,
   entries: readonly string[],
+  options: RelocateOptions = {},
 ): Promise<RelocateResult> {
+  const { signal, onProgress } = options
   if (sameDir(fromDir, toDir)) return { moved: false, reason: 'same-dir' }
 
   await mkdir(toDir, { recursive: true })
@@ -117,28 +130,44 @@ export async function relocateLibrary(
     )
   }
 
+  // A file the catalog references but that isn't on disk (already deleted out of
+  // band) is skipped, not failed — there's nothing to move and nothing to lose.
+  const present: { name: string; size: number }[] = []
+  for (const name of entries) {
+    const size = await fileSize(join(fromDir, name))
+    if (size !== null) present.push({ name, size })
+  }
+  const progress: RelocateProgress = {
+    filesDone: 0,
+    filesTotal: present.length,
+    bytesDone: 0,
+    bytesTotal: present.reduce((sum, file) => sum + file.size, 0),
+  }
+  onProgress?.({ ...progress })
+
   const movedFiles: RelocatedFile[] = []
   let crossDevice = false
   try {
-    for (const name of entries) {
+    for (const { name, size } of present) {
+      signal?.throwIfAborted()
       const src = join(fromDir, name)
-      // A file the catalog references but that isn't on disk (already deleted out of
-      // band) is skipped, not failed — there's nothing to move and nothing to lose.
-      if (!(await pathExists(src))) continue
-      let sourceClaim: FileClaim
-      try {
-        sourceClaim = await claimFile(src)
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue
+      const sourceClaim = await claimFile(src).catch((err: unknown) => {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
         throw err
+      })
+      if (sourceClaim) {
+        // not recorded: relocation preserves an already-accounted media bundle at
+        // a new managed location; it does not author new content.
+        const copied = await copyClaimedFileNoOverwrite(sourceClaim, join(toDir, name), undefined, signal)
+        if (!copied) throw new Error(`Library file changed while being copied: ${src}`)
+        crossDevice = crossDevice || copied.crossDevice
+        movedFiles.push({ name, sourceClaim, claim: copied.claim })
       }
-      // not recorded: relocation preserves an already-accounted media bundle at
-      // a new managed location; it does not author new content.
-      const copied = await copyClaimedFileNoOverwrite(sourceClaim, join(toDir, name))
-      if (!copied) throw new Error(`Library file changed while being copied: ${src}`)
-      crossDevice = crossDevice || copied.crossDevice
-      movedFiles.push({ name, sourceClaim, claim: copied.claim })
+      progress.filesDone += 1
+      progress.bytesDone += size
+      onProgress?.({ ...progress })
     }
+    signal?.throwIfAborted()
   } catch (err) {
     try {
       await rollbackPublishedFiles(movedFiles)

@@ -26,9 +26,10 @@ import { planOrphanResets, selectTapesToStart } from './schedule'
 
 const active = new Map<string, Job>()
 let stopped = false
+let holds = 0
 
 export function tick(): void {
-  if (stopped) return
+  if (stopped || holds > 0) return
   const max = getSettings().maxConcurrentDownloads
   const toStart = selectTapesToStart(session.getTapes(), new Set(active.keys()), max)
 
@@ -95,6 +96,21 @@ export function isActive(tapeId: string): boolean {
  */
 export function activeCount(): number {
   return active.size
+}
+
+/**
+ * Run `work` while the queue starts no new job, then let it catch up. A library
+ * move holds the queue so no download starts writing into the old folder while
+ * its files are being copied to the new one.
+ */
+export async function holdWhile<T>(work: () => Promise<T>): Promise<T> {
+  holds += 1
+  try {
+    return await work()
+  } finally {
+    holds -= 1
+    tick()
+  }
 }
 
 /**

@@ -31,10 +31,20 @@ vi.mock('electron', () => ({
 }))
 
 const { activeCount } = vi.hoisted(() => ({ activeCount: vi.fn(() => 0) }))
+const queueHeld = vi.hoisted(() => ({ depth: 0, seenDuringMove: [] as number[] }))
 vi.mock('@main/queue/manager', () => ({
   activeCount,
   resumePaused: vi.fn(),
+  holdWhile: async <T>(work: () => Promise<T>): Promise<T> => {
+    queueHeld.depth += 1
+    try {
+      return await work()
+    } finally {
+      queueHeld.depth -= 1
+    }
+  },
 }))
+vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 const { getSettings, getLibraryDir, updateSettings } = vi.hoisted(() => ({
   getSettings: vi.fn(),
@@ -177,7 +187,7 @@ describe('settings:update — relocation refused while downloads run', () => {
 
     await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('The operation could not be completed.')
 
-    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [])
+    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [], expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(rollbackLibraryRelocation).toHaveBeenCalledWith(files)
     expect(completeLibraryRelocation).not.toHaveBeenCalled()
   })
@@ -219,5 +229,25 @@ describe('settings:update — relocation refused while downloads run', () => {
     expect(JSON.stringify(logError.mock.calls)).toContain(sourcePath)
     expect(updateSettings).toHaveBeenCalledOnce()
     expect(rollbackLibraryRelocation).not.toHaveBeenCalled()
+  })
+})
+
+describe('settings:update — library move control', () => {
+  it('holds the queue while the move runs, and Stop Move aborts it without committing', async () => {
+    relocateLibrary.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => {
+      queueHeld.seenDuringMove.push(queueHeld.depth)
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('relocation aborted')), { once: true })
+      })
+    })
+
+    const pending = update({ libraryDir: '/data/new-library' })
+    await vi.waitFor(() => expect(relocateLibrary).toHaveBeenCalledTimes(1))
+    await handlers.get('settings:cancelLibraryMove')!(undefined)
+
+    await expect(pending).rejects.toThrow('The operation could not be completed.')
+    expect(queueHeld.seenDuringMove).toEqual([1])
+    expect(queueHeld.depth).toBe(0)
+    expect(updateSettings).not.toHaveBeenCalled()
   })
 })
