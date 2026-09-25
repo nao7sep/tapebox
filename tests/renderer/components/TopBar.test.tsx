@@ -103,4 +103,16 @@ describe('TopBar Add URL result ownership', () => {
     expect(host.querySelector('[role="alert"]')).toBeNull()
     expect(host.querySelector<HTMLInputElement>('input')!.value).toBe('')
   })
+
+  it('sends one add while the first is still in flight', async () => {
+    let finish!: () => void
+    ipcInvoke.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
+    const input = await enter('https://example.test/watch')
+    const enterKey = () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await act(async () => { enterKey(); enterKey() })
+    await add()
+    expect(ipcInvoke).toHaveBeenCalledTimes(1)
+    expect(host.querySelector<HTMLButtonElement>('button')!.disabled).toBe(true)
+    await act(async () => finish())
+  })
 })

@@ -23,6 +23,10 @@ export function registerDownloadHandlers(): void {
     if (!isImportableUrl(trimmed)) {
       throw new Error('Enter a valid http(s) URL.')
     }
+    // Reserve the on-disk stem first: it is the only await. The dedup check, the
+    // order and the insert then happen in one synchronous turn, so two quick Adds
+    // of the same URL cannot both pass the check.
+    const id = await reserveStem(getLibraryDir())
     // URL-based dedup for the single-add path (no id yet — it's unprobed). Compare
     // canonical forms so the same video pasted with tracking junk / a fragment isn't
     // added twice and re-probed. Any existing tape blocks the add, in any state; a
@@ -32,7 +36,7 @@ export function registerDownloadHandlers(): void {
       throw new Error('This URL has already been added.')
     }
     const [order] = inboxFrontOrders(1)
-    const tape = await makeQueuedTape(trimmed, order)
+    const tape = queuedTape(id, trimmed, order)
     session.upsertTape(tape)
     emit('tapes:added', [tape])
     queue.tick()
@@ -40,31 +44,19 @@ export function registerDownloadHandlers(): void {
   })
 
   handle('downloads:addBulk', async ({ urls }) => {
-    // Dedup by URL against the library and within the batch itself, so adding the
-    // same scan twice (or a list with repeats) can't create duplicate rows. The
-    // set grows as we go, which collapses intra-batch repeats too. Same-video-
-    // different-URL collisions are caught later, post-probe, in the queue.
-    const seen = new Set(session.getTapes().map((i) => canonicalizeForDedup(i.sourceUrl)))
-    const accepted: string[] = []
-    for (const url of urls) {
-      const trimmed = url.trim()
-      // Skip blanks and any non-http(s) scheme (the trust-boundary gate); dedup by
-      // canonical form so tracking-param variants of the same link collapse.
-      if (!trimmed || !isImportableUrl(trimmed)) continue
-      const canonical = canonicalizeForDedup(trimmed)
-      if (seen.has(canonical)) continue
-      seen.add(canonical)
-      accepted.push(trimmed)
-    }
+    // Skip blanks and any non-http(s) scheme (the trust-boundary gate).
+    const candidates = newUrls([], urls.map((url) => url.trim()).filter((url) => url && isImportableUrl(url)))
+    if (candidates.length === 0) return []
+    // Reserve stems first (the only awaits), then dedup and insert in one
+    // synchronous turn so a concurrent add cannot slip a duplicate in between.
+    const ids: string[] = []
+    for (let i = 0; i < candidates.length; i++) ids.push(await reserveStem(getLibraryDir()))
+    const accepted = newUrls(session.getTapes(), candidates)
     if (accepted.length === 0) return []
     // One front-of-inbox window for the whole batch, so the paste lands as a block
-    // on top in its original order (first URL topmost). Stems are reserved
-    // sequentially to avoid two tapes racing for the same on-disk name.
+    // on top in its original order (first URL topmost).
     const orders = inboxFrontOrders(accepted.length)
-    const tapes: Tape[] = []
-    for (let i = 0; i < accepted.length; i++) {
-      tapes.push(await makeQueuedTape(accepted[i], orders[i]))
-    }
+    const tapes = accepted.map((url, i) => queuedTape(ids[i]!, url, orders[i]!))
     for (const tape of tapes) session.upsertTape(tape)
     emit('tapes:added', tapes)
     queue.tick()
@@ -91,12 +83,29 @@ function transition(tapeId: string, patch: Partial<Tape>): void {
   emit('tapes:updated', next)
 }
 
-async function makeQueuedTape(url: string, order: number): Promise<Tape> {
+/**
+ * Dedup by URL against the library and within the batch itself, so adding the
+ * same scan twice (or a list with repeats) can't create duplicate rows. The set
+ * grows as it goes, which collapses intra-batch repeats too. Same-video-
+ * different-URL collisions are caught later, post-probe, in the queue.
+ */
+export function newUrls(tapes: readonly Tape[], urls: readonly string[]): string[] {
+  const seen = new Set(tapes.map((i) => canonicalizeForDedup(i.sourceUrl)))
+  const accepted: string[] = []
+  for (const url of urls) {
+    const canonical = canonicalizeForDedup(url)
+    if (seen.has(canonical)) continue
+    seen.add(canonical)
+    accepted.push(url)
+  }
+  return accepted
+}
+
+/** A new tape for `url`. Its id doubles as the on-disk filename stem once the
+ * download lands, so the caller reserves it against the library first. */
+function queuedTape(id: string, url: string, order: number): Tape {
   const autostart = getSettings().autoStartDownloads
   const now = nowUtcIso()
-  // The id doubles as the on-disk filename stem once the download lands, so it is
-  // reserved against the library to guarantee a free {id}.* namespace.
-  const id = await reserveStem(getLibraryDir())
   return {
     id,
     sourceUrl: url,

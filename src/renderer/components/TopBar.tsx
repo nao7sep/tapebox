@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useBinariesStore, requiredBinariesUsable } from '@renderer/store/binaries'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
@@ -25,17 +25,25 @@ export function TopBar({ clipboardEnabled }: Props) {
   // and shifts the layout the moment the state it guards first occurs.
   const toolsReady = useBinariesStore((s) => requiredBinariesUsable(s.statuses))
   const [error, setError] = useState<string | null>(null)
+  // One Add at a time: a double click or a repeated Enter must not send the URL twice.
+  const addingRef = useRef(false)
+  const [adding, setAdding] = useState(false)
   const errorId = useId()
 
   async function add(value: string) {
     const v = value.trim()
-    if (!v || !toolsReady) return
+    if (!v || !toolsReady || addingRef.current) return
+    addingRef.current = true
+    setAdding(true)
     try {
       await ipcInvoke('downloads:add', { url: v })
       setError(null)
       consume()
     } catch (err) {
       setError(presentFailure(err, 'The URL could not be added. Check it and try again.', 'add URL failed'))
+    } finally {
+      addingRef.current = false
+      setAdding(false)
     }
   }
 
@@ -62,7 +70,7 @@ export function TopBar({ clipboardEnabled }: Props) {
         <Button
           variant="primary"
           onClick={() => void add(url)}
-          disabled={!url.trim() || !toolsReady}
+          disabled={!url.trim() || !toolsReady || adding}
         >
           Add
         </Button>
