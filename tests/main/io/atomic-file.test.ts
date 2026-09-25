@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   publishFileNoOverwrite,
   claimFile,
+  copyFileNoOverwrite,
+  directorySupportsHardLinks,
   relocateClaimedFileNoOverwrite,
   unlinkClaimedFile,
   type ExclusivePublishDestination,
@@ -554,5 +556,108 @@ describe('physical claim transitions', () => {
     await expect(relocation).resolves.toMatchObject({ crossDevice: true })
     expect(await exists(source)).toBe(false)
     expect((await readFile(destination)).length).toBe(600_000)
+  })
+})
+
+describe('single-pass no-overwrite copy', () => {
+  it('writes every byte once, straight into the final claim, where hard links are unavailable', async () => {
+    const source = join(dir, 'source.bin')
+    const bytes = Buffer.alloc(256 * 1024 * 2 + 7, 0x33)
+    await writeFile(source, bytes)
+    const fixture = memoryPublishOperations(bytes, {
+      link: vi.fn().mockRejectedValue(failure('ENOTSUP')),
+    })
+
+    const destination = join(dir, 'output.bin')
+    await copyFileNoOverwrite(source, destination, { hardLinks: false }, fixture.operations)
+
+    expect(Buffer.concat(fixture.published)).toEqual(bytes)
+    expect(fixture.operations.openExclusive).toHaveBeenCalledTimes(1)
+    expect(fixture.operations.openExclusive).toHaveBeenCalledWith(destination)
+    expect(fixture.operations.link).not.toHaveBeenCalled()
+  })
+
+  it('stages in a sibling temp and links it into place where hard links work', async () => {
+    const source = join(dir, 'source.bin')
+    await writeFile(source, Buffer.alloc(300_000, 0x44))
+    const destination = join(dir, 'output.bin')
+
+    const claim = await copyFileNoOverwrite(source, destination, { hardLinks: await directorySupportsHardLinks(dir) })
+
+    expect(claim.path).toBe(destination)
+    expect((await readFile(destination)).length).toBe(300_000)
+    expect((await readdir(dir)).sort()).toEqual(['output.bin', 'source.bin'])
+  })
+
+  for (const hardLinks of [true, false]) {
+    it(`an abort mid-copy leaves nothing under the final name (hard links: ${hardLinks})`, async () => {
+      const source = join(dir, 'source.bin')
+      await writeFile(source, Buffer.alloc(600_000, 0x55))
+      const destination = join(dir, 'output.bin')
+      const controller = new AbortController()
+      const base = realOperations()
+      let writes = 0
+      const operations = realOperations({
+        openExclusive: async (path) => {
+          const opened = await base.openExclusive(path)
+          return {
+            ...opened,
+            write: async (buffer, offset, length, position) => {
+              writes += 1
+              if (writes === 1) controller.abort()
+              return opened.write(buffer, offset, length, position)
+            },
+          }
+        },
+      })
+
+      await expect(copyFileNoOverwrite(source, destination, { hardLinks, signal: controller.signal }, operations))
+        .rejects.toThrow()
+
+      expect(await exists(destination)).toBe(false)
+      expect(await readdir(dir)).toEqual(['source.bin'])
+    })
+  }
+
+  it('never names a cross-device copy in progress with its final name when the destination links', async () => {
+    const source = join(dir, 'source.bin')
+    const destination = join(dir, 'destination.bin')
+    await writeFile(source, Buffer.alloc(600_000, 0x61))
+    const base = realOperations()
+    let signalStarted!: () => void
+    let resumeCopy!: () => void
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const paused = new Promise<void>((resolve) => { resumeCopy = resolve })
+    let firstWrite = true
+    const operations = realOperations({
+      // Only the source cannot be linked (another device); the destination can.
+      link: async (from, to) => {
+        if (from === source) throw failure('EXDEV')
+        return link(from, to)
+      },
+      openExclusive: async (path) => {
+        const opened = await base.openExclusive(path)
+        return {
+          ...opened,
+          write: async (buffer, offset, length, position) => {
+            if (firstWrite) {
+              firstWrite = false
+              signalStarted()
+              await paused
+            }
+            return opened.write(buffer, offset, length, position)
+          },
+        }
+      },
+    })
+
+    const relocation = relocateClaimedFileNoOverwrite(await claimFile(source), destination, operations)
+    await started
+    expect(await exists(destination)).toBe(false)
+    resumeCopy()
+
+    await expect(relocation).resolves.toMatchObject({ crossDevice: true })
+    expect((await readFile(destination)).length).toBe(600_000)
+    expect(await readdir(dir)).toEqual(['destination.bin'])
   })
 })

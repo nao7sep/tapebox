@@ -1,4 +1,4 @@
-import { copyFile, readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { handle } from './handle'
 import { caseInsensitiveSiblingExists, removeTapes } from './library'
@@ -7,7 +7,15 @@ import { getLibraryDir } from '@main/store/config'
 import { planExport } from '@main/core/export-plan'
 import { SidecarTapeBoxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
-import { unlinkClaimedFiles, writeFileAtomicNoOverwriteVia, type FileClaim } from '@main/io/atomic-file'
+import {
+  copyFileNoOverwrite,
+  directorySupportsHardLinks,
+  unlinkClaimedFiles,
+  writeFileAtomicNoOverwriteVia,
+  type FileClaim,
+} from '@main/io/atomic-file'
+import { runCancellable } from '@main/work-registry'
+import type { IpcCalls } from '@shared/ipc-contract'
 
 /**
  * export:files — copy a tape out of the library, verbatim. No transcoding:
@@ -22,84 +30,94 @@ import { unlinkClaimedFiles, writeFileAtomicNoOverwriteVia, type FileClaim } fro
  * Trash setting), making export a "move out".
  */
 export function registerExportHandlers(): void {
-  handle('export:files', async ({ tapeId, destinationDir, name, deleteFromApp }) => {
-    const tape = session.getTape(tapeId)
-    if (!tape) throw new Error(`Tape not found: ${tapeId}`)
-    if (!tape.filename || !tape.sidecarFilename) {
-      throw new Error('Tape has no files on disk to export.')
-    }
-    const plan = planExport(
-      { filename: tape.filename, thumbnailFilename: tape.thumbnailFilename },
-      destinationDir,
-      name,
-    )
-    if (plan.status === 'error') throw new Error(plan.message)
-    const { cleanName, mediaName, sidecarName, thumbName: newThumbName } = plan
-
-    const libDir = getLibraryDir()
-    const mediaDst = join(destinationDir, mediaName)
-    const sidecarDst = join(destinationDir, sidecarName)
-    const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null
-
-    // Case-insensitive so a sibling differing only in case (which macOS/Windows would
-    // silently clobber) is refused too, per storage-path-conventions' invariant.
-    const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
-    for (const dst of writtenPaths) {
-      if (await caseInsensitiveSiblingExists(dst)) {
-        throw new Error(`A file already exists at the destination: ${dst}`)
-      }
-    }
-
-    // Read + rewrite + validate the sidecar's tapebox namespace UP FRONT — before any
-    // file is copied out — so a corrupt source sidecar (or a rewrite that would
-    // downgrade it below what import accepts) fails the export before it leaves
-    // partial files in the user's folder.
-    const sidecar = JSON.parse(await readFile(join(libDir, tape.sidecarFilename), 'utf8')) as Record<string, unknown>
-    const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
-    tb['name'] = cleanName
-    tb['mediaFilename'] = mediaName
-    tb['thumbnailFilename'] = newThumbName
-    sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
-
-    // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
-    // written to the user's chosen destination and then forgotten. They are OUTPUT,
-    // and the sidecar is also colocated with binary media, so none enters backups.
-    const committed: FileClaim[] = []
-    try {
-      committed.push(
-        await writeFileAtomicNoOverwriteVia(mediaDst, (temp) => copyFile(join(libDir, tape.filename!), temp)),
-      )
-      if (thumbDst && tape.thumbnailFilename) {
-        committed.push(
-          await writeFileAtomicNoOverwriteVia(thumbDst, (temp) => copyFile(join(libDir, tape.thumbnailFilename!), temp)),
-        )
-      }
-      const sidecarBytes = Buffer.from(JSON.stringify(sidecar, null, 2) + '\n', 'utf8')
-      committed.push(await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes)))
-    } catch (err) {
-      try {
-        await unlinkClaimedFiles(committed)
-      } catch (cleanupError) {
-        throw new AggregateError(
-          [err, cleanupError],
-          `Export failed: ${String(err)}. Published files could not be fully cleaned up.`,
-        )
-      }
-      throw err
-    }
-
-    log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })
-
-    // Copies are safely written; only now take the tape out of the library. The copy
-    // already succeeded, so a discard failure must say "exported, but the original
-    // wasn't removed" rather than leave an untracked orphan while claiming success.
-    if (deleteFromApp) {
-      const { failed } = await removeTapes([tapeId], true)
-      if (failed.length > 0) {
-        throw new Error('The tape was exported, but its original files could not be removed from the library.')
-      }
-    }
-
-    return { writtenPaths }
-  })
+  handle('export:files', (req) => runCancellable((signal) => exportTape(req, signal)))
 }
+
+/**
+ * Copy one tape out. Each media byte is written once: into a temp that is linked
+ * into place where the destination supports hard links, or straight into an
+ * exclusive claim on the final name where it does not (exFAT/FAT32 sticks).
+ * Quitting aborts between chunks and rolls back every file already published.
+ */
+async function exportTape(
+  { tapeId, destinationDir, name, deleteFromApp }: IpcCalls['export:files']['req'],
+  signal: AbortSignal,
+): Promise<IpcCalls['export:files']['res']> {
+  const tape = session.getTape(tapeId)
+  if (!tape) throw new Error(`Tape not found: ${tapeId}`)
+  if (!tape.filename || !tape.sidecarFilename) {
+    throw new Error('Tape has no files on disk to export.')
+  }
+  const plan = planExport(
+    { filename: tape.filename, thumbnailFilename: tape.thumbnailFilename },
+    destinationDir,
+    name,
+  )
+  if (plan.status === 'error') throw new Error(plan.message)
+  const { cleanName, mediaName, sidecarName, thumbName: newThumbName } = plan
+
+  const libDir = getLibraryDir()
+  const mediaDst = join(destinationDir, mediaName)
+  const sidecarDst = join(destinationDir, sidecarName)
+  const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null
+
+  // Case-insensitive so a sibling differing only in case (which macOS/Windows would
+  // silently clobber) is refused too, per storage-path-conventions' invariant.
+  const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
+  for (const dst of writtenPaths) {
+    if (await caseInsensitiveSiblingExists(dst)) {
+      throw new Error(`A file already exists at the destination: ${dst}`)
+    }
+  }
+
+  // Read + rewrite + validate the sidecar's tapebox namespace UP FRONT — before any
+  // file is copied out — so a corrupt source sidecar (or a rewrite that would
+  // downgrade it below what import accepts) fails the export before it leaves
+  // partial files in the user's folder.
+  const sidecar = JSON.parse(await readFile(join(libDir, tape.sidecarFilename), 'utf8')) as Record<string, unknown>
+  const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+  tb['name'] = cleanName
+  tb['mediaFilename'] = mediaName
+  tb['thumbnailFilename'] = newThumbName
+  sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
+
+  // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
+  // written to the user's chosen destination and then forgotten. They are OUTPUT,
+  // and the sidecar is also colocated with binary media, so none enters backups.
+  const committed: FileClaim[] = []
+  try {
+    const hardLinks = await directorySupportsHardLinks(destinationDir)
+    committed.push(await copyFileNoOverwrite(join(libDir, tape.filename), mediaDst, { hardLinks, signal }))
+    if (thumbDst && tape.thumbnailFilename) {
+      committed.push(await copyFileNoOverwrite(join(libDir, tape.thumbnailFilename), thumbDst, { hardLinks, signal }))
+    }
+    signal.throwIfAborted()
+    const sidecarBytes = Buffer.from(JSON.stringify(sidecar, null, 2) + '\n', 'utf8')
+    committed.push(await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes)))
+  } catch (err) {
+    try {
+      await unlinkClaimedFiles(committed)
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [err, cleanupError],
+        `Export failed: ${String(err)}. Published files could not be fully cleaned up.`,
+      )
+    }
+    throw err
+  }
+
+  log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })
+
+  // Copies are safely written; only now take the tape out of the library. The copy
+  // already succeeded, so a discard failure must say "exported, but the original
+  // wasn't removed" rather than leave an untracked orphan while claiming success.
+  if (deleteFromApp) {
+    const { failed } = await removeTapes([tapeId], true)
+    if (failed.length > 0) {
+      throw new Error('The tape was exported, but its original files could not be removed from the library.')
+    }
+  }
+
+  return { writtenPaths }
+}
+

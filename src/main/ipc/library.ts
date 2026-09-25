@@ -1,4 +1,4 @@
-import { access, constants, copyFile, readFile, stat, unlink } from 'node:fs/promises'
+import { access, constants, readFile, stat, unlink } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
@@ -12,9 +12,11 @@ import { describeError } from '@shared/error'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import {
   claimFile,
+  copyClaimedFileNoOverwrite,
+  copyFileNoOverwrite,
+  directorySupportsHardLinks,
   publishFileNoOverwrite,
   unlinkClaimedFiles,
-  writeFileAtomicNoOverwriteVia,
   type FileClaim,
 } from '@main/io/atomic-file'
 import { portableSiblingExists, type AllowedPortableDirectoryEntry } from '@main/io/portable-directory'
@@ -29,7 +31,7 @@ import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
 import { SidecarTapeBoxSchema, type Tape } from '@shared/domain'
-import type { ImportIssue, SidecarRaw } from '@shared/ipc-contract'
+import type { ImportIssue, ImportResult, SidecarRaw } from '@shared/ipc-contract'
 
 export function registerLibraryHandlers(): void {
   handle('library:list', async () => session.getTapes())
@@ -128,162 +130,7 @@ export function registerLibraryHandlers(): void {
     child.unref()
   })
 
-  handle('library:rename', async ({ tapeId, name }) => {
-    const tape = session.getTape(tapeId)
-    if (!tape) throw new Error(`Tape not found: ${tapeId}`)
-    if (!tape.filename || !tape.sidecarFilename) {
-      throw new Error('Tape has no files on disk yet')
-    }
-    const plan = planRename(
-      {
-        filename: tape.filename,
-        sidecarFilename: tape.sidecarFilename,
-        thumbnailFilename: tape.thumbnailFilename,
-      },
-      name,
-    )
-    if (plan.status === 'error') throw new Error(plan.message)
-    if (plan.status === 'noop') return tape
-
-    const { cleanName } = plan
-    const libraryDir = getLibraryDir()
-    const p = (rel: string) => join(libraryDir, rel)
-    const nowUtc = nowUtcIso()
-
-    // Resolve the plan while retaining every old public claim until the durable
-    // catalog commits. A portable-equivalent spelling change keeps the existing
-    // physical filename (the only crash-safe representation on case-insensitive
-    // filesystems) while still applying the requested display name.
-    const items = await Promise.all(plan.items.map(async (it) => {
-      const old = p(it.old)
-      const equivalent = portableFilenameIdentity(it.fresh) === portableFilenameIdentity(it.old)
-      return {
-        artifact: it.artifact,
-        finalName: equivalent ? it.old : it.fresh,
-        old,
-        fresh: p(it.fresh),
-        stage: p(it.stage),
-        equivalent,
-        original: await claimFile(old),
-      }
-    }))
-
-    const publishing = items.filter((item) => !item.equivalent)
-    for (const it of publishing) {
-      await assertMissing(it.fresh)
-      await assertMissing(it.stage)
-    }
-
-    const byArtifact = (artifact: (typeof items)[number]['artifact']) =>
-      items.find((item) => item.artifact === artifact)
-    const mediaName = byArtifact('media')!.finalName
-    const sidecarName = byArtifact('sidecar')!.finalName
-    const thumbnailName = byArtifact('thumbnail')?.finalName ?? null
-    const sidecarItem = byArtifact('sidecar')!
-    const sidecar = JSON.parse(await readFile(sidecarItem.old, 'utf8')) as Record<string, unknown>
-    const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
-    tb['name'] = cleanName
-    tb['renamedAtUtc'] = nowUtc
-    tb['mediaFilename'] = mediaName
-    tb['thumbnailFilename'] = thumbnailName
-    sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
-
-    const updated = {
-      ...tape,
-      filename: mediaName,
-      sidecarFilename: sidecarName,
-      thumbnailFilename: thumbnailName,
-      name: cleanName,
-      renamedAtUtc: nowUtc,
-    }
-
-    // Build and exclusively publish every genuinely new destination while the old
-    // public files remain intact. Until catalog.json commits, these destination
-    // claims are rollback-only and the persisted row still resolves every old file.
-    const done: FileClaim[] = []
-    const rollbackBeforeCatalogCommit = async (initiatingError: unknown): Promise<never> => {
-      const rollbackErrors: unknown[] = []
-      try {
-        await unlinkClaimedFiles(done)
-      } catch (cleanupError) {
-        rollbackErrors.push(cleanupError)
-      }
-      for (const it of publishing) {
-        try {
-          await unlink(it.stage)
-        } catch (cleanupError) {
-          if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') rollbackErrors.push(cleanupError)
-        }
-      }
-      if (rollbackErrors.length > 0) {
-        throw new AggregateError(
-          [initiatingError, ...rollbackErrors],
-          `Rename failed before the catalog commit and destination rollback was incomplete. ` +
-            `Destination claims: ${done.map((claim) => claim.path).join(', ')}.`,
-        )
-      }
-      throw initiatingError
-    }
-
-    try {
-      for (const it of publishing) {
-        if (it.artifact === 'sidecar') {
-          // not recorded: this sidecar lives in the library directory beside the tape's
-          // media and thumbnail — a binary-bearing directory whose contents ride along
-          // into exclusion (data-backup conventions). It uses the raw writeJsonAtomic,
-          // not the managed-text choke point; the tape's catalog row records instead.
-          await writeJsonAtomic(it.stage, sidecar)
-        } else {
-          // not recorded: rename stages the tape's existing media/thumbnail bytes
-          // inside the binary-bearing library. The catalog records the user-authored
-          // name; copying the binary bundle does not create backup-worthy text.
-          await copyFile(it.old, it.stage)
-        }
-      }
-      for (const it of publishing) {
-        done.push(await publishFileNoOverwrite(it.stage, it.fresh))
-      }
-    } catch (err) {
-      await rollbackBeforeCatalogCommit(err)
-    }
-
-    try {
-      await session.renameTapeDurably(updated)
-    } catch (catalogError) {
-      await rollbackBeforeCatalogCommit(catalogError)
-    }
-    emit('tapes:updated', updated)
-
-    // The durable catalog is the commit point. Equivalent-name sidecars retain
-    // their old physical path and are rewritten only now; genuinely renamed old
-    // files become obsolete only now. Any failure is an explicit partial success:
-    // catalog and renderer still name a complete, existing bundle.
-    const postCommitErrors: unknown[] = []
-    if (sidecarItem.equivalent) {
-      try {
-        await writeJsonAtomic(sidecarItem.old, sidecar)
-      } catch (sidecarError) {
-        postCommitErrors.push(
-          new AggregateError([sidecarError], `Committed sidecar could not be updated at ${sidecarItem.old}.`),
-        )
-      }
-    }
-    const obsoleteClaims = publishing.map((item) => item.original)
-    try {
-      await unlinkClaimedFiles(obsoleteClaims)
-    } catch (cleanupError) {
-      postCommitErrors.push(cleanupError)
-    }
-    if (postCommitErrors.length > 0) {
-      throw new AggregateError(
-        postCommitErrors,
-        `Rename committed and the catalog points to the new bundle, but post-commit sidecar/source cleanup was incomplete. ` +
-          `Old/sidecar paths: ${[...obsoleteClaims.map((claim) => claim.path), sidecarItem.old].join(', ')}.`,
-      )
-    }
-    log.info('renamed', { tapeId: tape.id, name: cleanName })
-    return updated
-  })
+  handle('library:rename', ({ tapeId, name }) => runCancellable((signal) => renameTape(tapeId, name, signal)))
 
   handle('library:probeMetadata', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
@@ -362,178 +209,350 @@ export function registerLibraryHandlers(): void {
   // Sidecar-driven import: the whole selection arrives here so this filesystem-owning
   // boundary can tell referenced bundle companions from unsupported extras. One
   // sidecar = one tape, so a duplicate is reported once, not once per selected file.
-  handle('library:import', async ({ paths }) => {
-    const libraryDir = getLibraryDir()
-    const imported: Tape[] = []
-    const issues: ImportIssue[] = []
-    const sidecarPaths = paths.filter((path) => extname(path).toLowerCase() === '.json')
-    const claimedCompanionPaths: string[] = []
+  handle('library:import', ({ paths }) => runCancellable((signal) => importBundles(paths, signal)))
+}
 
-    // Reserve a front-of-inbox order window for the whole selection up front, then
-    // hand them out one per successful import, so the batch lands on top in the
-    // order chosen even when some entries are rejected mid-loop.
-    const inbox = session.getTapes().filter((t) => !t.archivedAtUtc)
-    const orderWindow = frontOrders(inbox.map((t) => t.order), sidecarPaths.length)
-    let orderCursor = 0
+/**
+ * Import sidecar-driven bundles into the library. Each file is copied once (into
+ * a temp that is linked into place where the library supports hard links), and
+ * quitting stops the import between chunks, rolling back the bundle in progress.
+ */
+async function importBundles(paths: string[], signal: AbortSignal): Promise<ImportResult> {
+  const libraryDir = getLibraryDir()
+  const hardLinks = await directorySupportsHardLinks(libraryDir)
+  const imported: Tape[] = []
+  const issues: ImportIssue[] = []
+  const sidecarPaths = paths.filter((path) => extname(path).toLowerCase() === '.json')
+  const claimedCompanionPaths: string[] = []
 
-    for (const sidecarPath of sidecarPaths) {
-      // Defensive: only sidecars drive an import (the caller filters already).
-      if (extname(sidecarPath).toLowerCase() !== '.json') continue
-      const dir = dirname(sidecarPath)
+  // Reserve a front-of-inbox order window for the whole selection up front, then
+  // hand them out one per successful import, so the batch lands on top in the
+  // order chosen even when some entries are rejected mid-loop.
+  const inbox = session.getTapes().filter((t) => !t.archivedAtUtc)
+  const orderWindow = frontOrders(inbox.map((t) => t.order), sidecarPaths.length)
+  let orderCursor = 0
 
-      let rawSidecar: string
-      try {
-        rawSidecar = await readFile(sidecarPath, 'utf8')
-      } catch (err) {
-        log.error('import sidecar read failed', { path: sidecarPath, error: describeError(err) })
-        issues.push({
-          path: sidecarPath,
-          reason: 'The sidecar could not be read. Check that the file is still available and try again.',
-          severity: 'error',
-        })
-        continue
-      }
+  for (const sidecarPath of sidecarPaths) {
+    if (signal.aborted) break
+    // Defensive: only sidecars drive an import (the caller filters already).
+    if (extname(sidecarPath).toLowerCase() !== '.json') continue
+    const dir = dirname(sidecarPath)
 
-      let sidecar: Record<string, unknown>
-      try {
-        sidecar = JSON.parse(rawSidecar)
-      } catch (err) {
-        issues.push({
-          path: sidecarPath,
-          reason: 'The sidecar is not valid TapeBox JSON.',
-          severity: 'warning',
-        })
-        continue
-      }
-
-      const classification = classifyImport(sidecar)
-      if (classification.status === 'reject') {
-        issues.push({ path: sidecarPath, reason: classification.reason, severity: 'warning' })
-        continue
-      }
-      const { sourceUrl, mediaFilename, thumbnailFilename: tbThumb } = classification
-      claimedCompanionPaths.push(join(dir, mediaFilename))
-      if (tbThumb) claimedCompanionPaths.push(join(dir, tbThumb))
-
-      const existing = session.getTapes().find((i) => i.sourceUrl === sourceUrl)
-      if (existing) {
-        issues.push({ path: sidecarPath, reason: 'already in library', severity: 'information' })
-        continue
-      }
-
-      const srcMedia = join(dir, mediaFilename)
-      try {
-        await access(srcMedia, constants.R_OK)
-      } catch {
-        issues.push({
-          path: sidecarPath,
-          reason: `media file is missing beside the sidecar: ${mediaFilename}`,
-          severity: 'warning',
-        })
-        continue
-      }
-
-      // Library names follow the media file's stem so the bundle stays internally
-      // consistent (media + sidecar share a stem) regardless of the sidecar's own name.
-      const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
-      const targetMedia = join(libraryDir, mediaFilename)
-      const targetSidecar = join(libraryDir, `${mediaStem}.json`)
-      const copied: FileClaim[] = []
-      try {
-        // not recorded: import copies a media bundle (binary plus its colocated,
-        // source-derived sidecar) into the binary-bearing managed library. The
-        // new catalog row records the user's durable library membership instead.
-        if (srcMedia !== targetMedia) {
-          await assertMissing(targetMedia)
-          copied.push(await writeFileAtomicNoOverwriteVia(targetMedia, (temp) => copyFile(srcMedia, temp)))
-        }
-        if (sidecarPath !== targetSidecar) {
-          await assertMissing(targetSidecar)
-          copied.push(await writeFileAtomicNoOverwriteVia(targetSidecar, (temp) => copyFile(sidecarPath, temp)))
-        }
-      } catch (err) {
-        try {
-          await unlinkClaimedFiles(copied)
-          log.error('import bundle copy failed', {
-            path: sidecarPath,
-            error: describeError(err),
-          })
-          issues.push({
-            path: sidecarPath,
-            reason: 'The tape files could not be copied into the library. Check that the library folder is available and try again.',
-            severity: 'error',
-          })
-        } catch (cleanupError) {
-          const failure = new AggregateError(
-            [err, cleanupError],
-            `Copy into library failed: ${String(err)}. Published files could not be fully cleaned up.`,
-          )
-          log.error('import bundle copy and rollback failed', {
-            path: sidecarPath,
-            error: describeError(failure),
-          })
-          issues.push({
-            path: sidecarPath,
-            reason: 'The tape files could not be copied completely. Check the library folder and the log before trying again.',
-            severity: 'error',
-          })
-        }
-        continue
-      }
-
-      // Bring the local poster along if the sidecar names one and it's sitting beside
-      // it. Best-effort: a missing or unreadable thumbnail just imports the tape
-      // without a poster — it never rejects the import.
-      let thumbnailFilename: string | null = null
-      if (tbThumb) {
-        const srcThumb = join(dir, tbThumb)
-        const dstThumb = join(libraryDir, tbThumb)
-        try {
-          // not recorded: the imported thumbnail is binary image data colocated
-          // with the tape's media and sidecar in the binary-bearing library.
-          if (srcThumb !== dstThumb) {
-            await assertMissing(dstThumb)
-            await writeFileAtomicNoOverwriteVia(dstThumb, (temp) => copyFile(srcThumb, temp))
-          }
-          thumbnailFilename = tbThumb
-        } catch (err) {
-          log.error('import thumbnail copy failed', {
-            path: srcThumb,
-            error: describeError(err),
-          })
-          issues.push({
-            path: srcThumb,
-            reason: 'The thumbnail could not be copied into the library. The tape was imported without it.',
-            severity: 'error',
-          })
-        }
-      }
-
-      const tape = tapeFromSidecar(sidecar, {
-        id: nanoid(10),
-        sourceUrl,
-        mediaFilename,
-        sidecarFilename: `${mediaStem}.json`,
-        thumbnailFilename,
-        order: orderWindow[orderCursor++],
-        nowUtc: nowUtcIso(),
+    let rawSidecar: string
+    try {
+      rawSidecar = await readFile(sidecarPath, 'utf8')
+    } catch (err) {
+      log.error('import sidecar read failed', { path: sidecarPath, error: describeError(err) })
+      issues.push({
+        path: sidecarPath,
+        reason: 'The sidecar could not be read. Check that the file is still available and try again.',
+        severity: 'error',
       })
-      session.upsertTape(tape)
-      imported.push(tape)
+      continue
     }
 
-    if (imported.length > 0) emit('tapes:added', imported)
-    for (const path of unsupportedSelectedPaths(paths, claimedCompanionPaths)) {
+    let sidecar: Record<string, unknown>
+    try {
+      sidecar = JSON.parse(rawSidecar)
+    } catch (err) {
       issues.push({
-        path,
-        reason: 'TapeBox imports .json sidecars together with the media and image files they name.',
+        path: sidecarPath,
+        reason: 'The sidecar is not valid TapeBox JSON.',
         severity: 'warning',
       })
+      continue
     }
 
-    log.info('library:import', { imported: imported.length, issues: issues.length })
-    return { imported, issues }
-  })
+    const classification = classifyImport(sidecar)
+    if (classification.status === 'reject') {
+      issues.push({ path: sidecarPath, reason: classification.reason, severity: 'warning' })
+      continue
+    }
+    const { sourceUrl, mediaFilename, thumbnailFilename: tbThumb } = classification
+    claimedCompanionPaths.push(join(dir, mediaFilename))
+    if (tbThumb) claimedCompanionPaths.push(join(dir, tbThumb))
+
+    const existing = session.getTapes().find((i) => i.sourceUrl === sourceUrl)
+    if (existing) {
+      issues.push({ path: sidecarPath, reason: 'already in library', severity: 'information' })
+      continue
+    }
+
+    const srcMedia = join(dir, mediaFilename)
+    try {
+      await access(srcMedia, constants.R_OK)
+    } catch {
+      issues.push({
+        path: sidecarPath,
+        reason: `media file is missing beside the sidecar: ${mediaFilename}`,
+        severity: 'warning',
+      })
+      continue
+    }
+
+    // Library names follow the media file's stem so the bundle stays internally
+    // consistent (media + sidecar share a stem) regardless of the sidecar's own name.
+    const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
+    const targetMedia = join(libraryDir, mediaFilename)
+    const targetSidecar = join(libraryDir, `${mediaStem}.json`)
+    const copied: FileClaim[] = []
+    try {
+      // not recorded: import copies a media bundle (binary plus its colocated,
+      // source-derived sidecar) into the binary-bearing managed library. The
+      // new catalog row records the user's durable library membership instead.
+      if (srcMedia !== targetMedia) {
+        await assertMissing(targetMedia)
+        copied.push(await copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal }))
+      }
+      if (sidecarPath !== targetSidecar) {
+        await assertMissing(targetSidecar)
+        copied.push(await copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal }))
+      }
+    } catch (err) {
+      try {
+        await unlinkClaimedFiles(copied)
+        log.error('import bundle copy failed', {
+          path: sidecarPath,
+          error: describeError(err),
+        })
+        issues.push({
+          path: sidecarPath,
+          reason: 'The tape files could not be copied into the library. Check that the library folder is available and try again.',
+          severity: 'error',
+        })
+      } catch (cleanupError) {
+        const failure = new AggregateError(
+          [err, cleanupError],
+          `Copy into library failed: ${String(err)}. Published files could not be fully cleaned up.`,
+        )
+        log.error('import bundle copy and rollback failed', {
+          path: sidecarPath,
+          error: describeError(failure),
+        })
+        issues.push({
+          path: sidecarPath,
+          reason: 'The tape files could not be copied completely. Check the library folder and the log before trying again.',
+          severity: 'error',
+        })
+      }
+      continue
+    }
+
+    // Bring the local poster along if the sidecar names one and it's sitting beside
+    // it. Best-effort: a missing or unreadable thumbnail just imports the tape
+    // without a poster — it never rejects the import.
+    let thumbnailFilename: string | null = null
+    if (tbThumb) {
+      const srcThumb = join(dir, tbThumb)
+      const dstThumb = join(libraryDir, tbThumb)
+      try {
+        // not recorded: the imported thumbnail is binary image data colocated
+        // with the tape's media and sidecar in the binary-bearing library.
+        if (srcThumb !== dstThumb) {
+          await assertMissing(dstThumb)
+          await copyFileNoOverwrite(srcThumb, dstThumb, { hardLinks, signal })
+        }
+        thumbnailFilename = tbThumb
+      } catch (err) {
+        log.error('import thumbnail copy failed', {
+          path: srcThumb,
+          error: describeError(err),
+        })
+        issues.push({
+          path: srcThumb,
+          reason: 'The thumbnail could not be copied into the library. The tape was imported without it.',
+          severity: 'error',
+        })
+      }
+    }
+
+    const tape = tapeFromSidecar(sidecar, {
+      id: nanoid(10),
+      sourceUrl,
+      mediaFilename,
+      sidecarFilename: `${mediaStem}.json`,
+      thumbnailFilename,
+      order: orderWindow[orderCursor++],
+      nowUtc: nowUtcIso(),
+    })
+    session.upsertTape(tape)
+    imported.push(tape)
+  }
+
+  if (imported.length > 0) emit('tapes:added', imported)
+  for (const path of unsupportedSelectedPaths(paths, claimedCompanionPaths)) {
+    issues.push({
+      path,
+      reason: 'TapeBox imports .json sidecars together with the media and image files they name.',
+      severity: 'warning',
+    })
+  }
+
+  log.info('library:import', { imported: imported.length, issues: issues.length })
+  return { imported, issues }
+}
+
+/**
+ * Rename a downloaded tape's media, sidecar and thumbnail together. New names are
+ * published with hard links (a copy only where the library cannot link), so the
+ * cost does not grow with the video. Quitting aborts it before the catalog commit,
+ * which rolls the new names back.
+ */
+async function renameTape(tapeId: string, name: string, signal: AbortSignal): Promise<Tape> {
+  const tape = session.getTape(tapeId)
+  if (!tape) throw new Error(`Tape not found: ${tapeId}`)
+  if (!tape.filename || !tape.sidecarFilename) {
+    throw new Error('Tape has no files on disk yet')
+  }
+  const plan = planRename(
+    {
+      filename: tape.filename,
+      sidecarFilename: tape.sidecarFilename,
+      thumbnailFilename: tape.thumbnailFilename,
+    },
+    name,
+  )
+  if (plan.status === 'error') throw new Error(plan.message)
+  if (plan.status === 'noop') return tape
+
+  const { cleanName } = plan
+  const libraryDir = getLibraryDir()
+  const p = (rel: string) => join(libraryDir, rel)
+  const nowUtc = nowUtcIso()
+
+  // Resolve the plan while retaining every old public claim until the durable
+  // catalog commits. A portable-equivalent spelling change keeps the existing
+  // physical filename (the only crash-safe representation on case-insensitive
+  // filesystems) while still applying the requested display name.
+  const items = await Promise.all(plan.items.map(async (it) => {
+    const old = p(it.old)
+    const equivalent = portableFilenameIdentity(it.fresh) === portableFilenameIdentity(it.old)
+    return {
+      artifact: it.artifact,
+      finalName: equivalent ? it.old : it.fresh,
+      old,
+      fresh: p(it.fresh),
+      stage: p(it.stage),
+      equivalent,
+      original: await claimFile(old),
+    }
+  }))
+
+  const publishing = items.filter((item) => !item.equivalent)
+  for (const it of publishing) {
+    await assertMissing(it.fresh)
+    await assertMissing(it.stage)
+  }
+
+  const byArtifact = (artifact: (typeof items)[number]['artifact']) =>
+    items.find((item) => item.artifact === artifact)
+  const mediaName = byArtifact('media')!.finalName
+  const sidecarName = byArtifact('sidecar')!.finalName
+  const thumbnailName = byArtifact('thumbnail')?.finalName ?? null
+  const sidecarItem = byArtifact('sidecar')!
+  const sidecar = JSON.parse(await readFile(sidecarItem.old, 'utf8')) as Record<string, unknown>
+  const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+  tb['name'] = cleanName
+  tb['renamedAtUtc'] = nowUtc
+  tb['mediaFilename'] = mediaName
+  tb['thumbnailFilename'] = thumbnailName
+  sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
+
+  const updated = {
+    ...tape,
+    filename: mediaName,
+    sidecarFilename: sidecarName,
+    thumbnailFilename: thumbnailName,
+    name: cleanName,
+    renamedAtUtc: nowUtc,
+  }
+
+  // Build and exclusively publish every genuinely new destination while the old
+  // public files remain intact. Until catalog.json commits, these destination
+  // claims are rollback-only and the persisted row still resolves every old file.
+  const done: FileClaim[] = []
+  const rollbackBeforeCatalogCommit = async (initiatingError: unknown): Promise<never> => {
+    const rollbackErrors: unknown[] = []
+    try {
+      await unlinkClaimedFiles(done)
+    } catch (cleanupError) {
+      rollbackErrors.push(cleanupError)
+    }
+    for (const it of publishing) {
+      try {
+        await unlink(it.stage)
+      } catch (cleanupError) {
+        if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') rollbackErrors.push(cleanupError)
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [initiatingError, ...rollbackErrors],
+        `Rename failed before the catalog commit and destination rollback was incomplete. ` +
+          `Destination claims: ${done.map((claim) => claim.path).join(', ')}.`,
+      )
+    }
+    throw initiatingError
+  }
+
+  try {
+    for (const it of publishing) {
+      if (it.artifact === 'sidecar') {
+        // not recorded: this sidecar lives in the library directory beside the tape's
+        // media and thumbnail — a binary-bearing directory whose contents ride along
+        // into exclusion (data-backup conventions). It uses the raw writeJsonAtomic,
+        // not the managed-text choke point; the tape's catalog row records instead.
+        await writeJsonAtomic(it.stage, sidecar)
+        done.push(await publishFileNoOverwrite(it.stage, it.fresh))
+      } else {
+        // not recorded: the tape's existing media/thumbnail bytes gain a second
+        // name inside the binary-bearing library; no backup-worthy text is created.
+        const published = await copyClaimedFileNoOverwrite(it.original, it.fresh, undefined, signal)
+        if (!published) throw new Error(`File changed before it could be renamed: ${it.old}`)
+        done.push(published.claim)
+      }
+      signal.throwIfAborted()
+    }
+  } catch (err) {
+    await rollbackBeforeCatalogCommit(err)
+  }
+
+  try {
+    await session.renameTapeDurably(updated)
+  } catch (catalogError) {
+    await rollbackBeforeCatalogCommit(catalogError)
+  }
+  emit('tapes:updated', updated)
+
+  // The durable catalog is the commit point. Equivalent-name sidecars retain
+  // their old physical path and are rewritten only now; genuinely renamed old
+  // files become obsolete only now. Any failure is an explicit partial success:
+  // catalog and renderer still name a complete, existing bundle.
+  const postCommitErrors: unknown[] = []
+  if (sidecarItem.equivalent) {
+    try {
+      await writeJsonAtomic(sidecarItem.old, sidecar)
+    } catch (sidecarError) {
+      postCommitErrors.push(
+        new AggregateError([sidecarError], `Committed sidecar could not be updated at ${sidecarItem.old}.`),
+      )
+    }
+  }
+  const obsoleteClaims = publishing.map((item) => item.original)
+  try {
+    await unlinkClaimedFiles(obsoleteClaims)
+  } catch (cleanupError) {
+    postCommitErrors.push(cleanupError)
+  }
+  if (postCommitErrors.length > 0) {
+    throw new AggregateError(
+      postCommitErrors,
+      `Rename committed and the catalog points to the new bundle, but post-commit sidecar/source cleanup was incomplete. ` +
+        `Old/sidecar paths: ${[...obsoleteClaims.map((claim) => claim.path), sidecarItem.old].join(', ')}.`,
+    )
+  }
+  log.info('renamed', { tapeId: tape.id, name: cleanName })
+  return updated
 }
 
 /**

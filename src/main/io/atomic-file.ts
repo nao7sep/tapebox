@@ -1,5 +1,5 @@
-import { link, lstat, open, rename, unlink } from 'node:fs/promises'
-import { dirname, extname } from 'node:path'
+import { link, lstat, open, rename, unlink, writeFile } from 'node:fs/promises'
+import { dirname, extname, join } from 'node:path'
 import { nanoid } from 'nanoid'
 
 /**
@@ -124,23 +124,28 @@ function destinationChanged(destPath: string): NodeJS.ErrnoException {
   })
 }
 
+/** Stream `sourcePath` into an exclusive claim on `destPath`. The claim is the
+ * final name, so any failure or abort (checked per chunk) removes it again. */
 async function copyExclusive(
-  tempPath: string,
+  sourcePath: string,
   destPath: string,
   operations: ExclusivePublishOperations,
   expectedSourceIdentity: string,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const source = await operations.openRead(tempPath)
+  signal?.throwIfAborted()
+  const source = await operations.openRead(sourcePath)
   let destination: ExclusivePublishDestination | null = null
   let claimIdentity: string | null = null
   let committed = false
   try {
-    if ((await source.identity()) !== expectedSourceIdentity) throw destinationChanged(tempPath)
+    if ((await source.identity()) !== expectedSourceIdentity) throw destinationChanged(sourcePath)
     destination = await operations.openExclusive(destPath)
     claimIdentity = await destination.identity()
     const buffer = Buffer.allocUnsafe(COPY_CHUNK_BYTES)
     let readPosition = 0
     for (;;) {
+      signal?.throwIfAborted()
       const { bytesRead } = await source.read(buffer, 0, buffer.length, readPosition)
       if (bytesRead === 0) break
       readPosition += bytesRead
@@ -155,6 +160,7 @@ async function copyExclusive(
     await destination.sync()
     await destination.close()
     destination = null
+    signal?.throwIfAborted()
     if ((await operations.pathIdentity(destPath)) !== claimIdentity) throw destinationChanged(destPath)
     committed = true
     return claimIdentity
@@ -244,6 +250,65 @@ export async function writeFileAtomicNoOverwriteVia(
     return await publishFileNoOverwrite(tempPath, destPath)
   } catch (err) {
     await unlink(tempPath).catch(() => {})
+    throw err
+  }
+}
+
+/**
+ * Whether `dir` can hold hard links. Probed once per operation with a tiny
+ * sibling file, removed again, so a copy picks its strategy before moving any
+ * bytes instead of discovering it after a full copy (exFAT and FAT32 cannot).
+ */
+export async function directorySupportsHardLinks(dir: string): Promise<boolean> {
+  const probe = join(dir, `.tapebox-link-probe-${nanoid(10)}.tmp`)
+  const linked = `${probe}.link`
+  await writeFile(probe, '', { flag: 'wx' })
+  try {
+    await link(probe, linked)
+    await unlink(linked).catch(() => {})
+    return true
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code && LINK_UNSUPPORTED.has(code)) return false
+    throw err
+  } finally {
+    await unlink(probe).catch(() => {})
+  }
+}
+
+/**
+ * Copy a file to `destPath` without replacing anything already there, writing
+ * each byte once. Where the destination directory has hard links, the bytes go
+ * into a sibling temp that is linked onto the final name once durable, so an
+ * interrupted copy never leaves a file under the final name. Without hard links
+ * the bytes stream straight into an exclusive claim on the final name, which a
+ * failure or abort removes. `signal` is checked between chunks.
+ */
+export async function copyFileNoOverwrite(
+  sourcePath: string,
+  destPath: string,
+  options: { hardLinks: boolean; signal?: AbortSignal; expectedSourceIdentity?: string },
+  operations: ExclusivePublishOperations = realPublishOperations,
+): Promise<FileClaim> {
+  const sourceIdentity = await operations.pathIdentity(sourcePath)
+  if (sourceIdentity === null) {
+    throw Object.assign(new Error(`Source file is missing: ${sourcePath}`), { code: 'ENOENT' })
+  }
+  if (options.expectedSourceIdentity !== undefined && sourceIdentity !== options.expectedSourceIdentity) {
+    throw destinationChanged(sourcePath)
+  }
+  if (!options.hardLinks) {
+    const identity = await copyExclusive(sourcePath, destPath, operations, sourceIdentity, options.signal)
+    await fsyncDirBestEffort(dirname(destPath))
+    return { path: destPath, identity }
+  }
+  const tempPath = defaultTempPath(destPath)
+  try {
+    const tempIdentity = await copyExclusive(sourcePath, tempPath, operations, sourceIdentity, options.signal)
+    options.signal?.throwIfAborted()
+    return (await publishFileNoOverwriteDetailed(tempPath, destPath, operations, tempIdentity, false)).claim
+  } catch (err) {
+    await operations.unlink(tempPath).catch(() => {})
     throw err
   }
 }
@@ -342,24 +407,33 @@ export async function unlinkClaimedFiles(
 /** Durably publish a claimed file without overwriting a late destination winner,
  * while retaining the public source claim. The caller chooses its later durable
  * authority boundary and may then remove either the exact source or destination
- * claim. This is the crash-safe primitive for multi-file/location transactions. */
+ * claim. This is the crash-safe primitive for multi-file/location transactions.
+ * On one filesystem the publication is two hard links and moves no bytes; across
+ * filesystems, or where links are unsupported, it is one abortable copy (see
+ * {@link copyFileNoOverwrite}). */
 export async function copyClaimedFileNoOverwrite(
   claim: FileClaim,
   destPath: string,
   operations: ExclusivePublishOperations = realPublishOperations,
+  signal?: AbortSignal,
 ): Promise<{ claim: FileClaim; crossDevice: boolean } | null> {
   const sourceIdentity = await operations.pathIdentity(claim.path)
   if (sourceIdentity !== claim.identity) return null
 
   // Bind a same-filesystem source to an inert destination sibling first. This
   // preserves hard-link speed without linking a mutable public pathname directly
-  // to the final name. If hard links are unavailable/cross-device, the verified
-  // source handle in the exclusive-copy fallback provides the same binding.
-  let publicationSource = claim
-  let boundStage: FileClaim | null = null
+  // to the final name.
   const stagePath = defaultTempPath(destPath)
+  let linkFailure: string | null = null
   try {
     await operations.link(claim.path, stagePath)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (!code || !LINK_UNSUPPORTED.has(code)) throw err
+    linkFailure = code
+  }
+
+  if (linkFailure === null) {
     const stageIdentity = await operations.pathIdentity(stagePath)
     if (stageIdentity !== claim.identity) {
       if (stageIdentity !== null) {
@@ -367,25 +441,11 @@ export async function copyClaimedFileNoOverwrite(
       }
       return null
     }
-    boundStage = { path: stagePath, identity: stageIdentity }
-    publicationSource = boundStage
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (!code || !LINK_UNSUPPORTED.has(code)) throw err
-  }
-
-  let published: Publication
-  try {
-    published = await publishFileNoOverwriteDetailed(
-      publicationSource.path,
-      destPath,
-      operations,
-      publicationSource.identity,
-      false,
-      boundStage !== null,
-    )
-  } catch (publishError) {
-    if (boundStage !== null) {
+    const boundStage = { path: stagePath, identity: stageIdentity }
+    try {
+      const published = await publishFileNoOverwriteDetailed(boundStage.path, destPath, operations, boundStage.identity, false)
+      return { claim: published.claim, crossDevice: false }
+    } catch (publishError) {
       try {
         const cleaned = await unlinkClaimedFile(boundStage, operations)
         if (!cleaned && (await operations.pathIdentity(boundStage.path)) !== null) {
@@ -397,11 +457,21 @@ export async function copyClaimedFileNoOverwrite(
           `File publication failed and its bound source stage could not be cleaned up: ${boundStage.path}.`,
         )
       }
+      throw publishError
     }
-    throw publishError
   }
 
-  return { claim: published.claim, crossDevice: published.fallbackCode === 'EXDEV' }
+  // No link from the source: a cross-device destination may still hold links of
+  // its own, which lets the copy land in a temp before it takes the final name.
+  const crossDevice = linkFailure === 'EXDEV'
+  const hardLinks = crossDevice ? await directorySupportsHardLinks(dirname(destPath)) : false
+  const published = await copyFileNoOverwrite(
+    claim.path,
+    destPath,
+    { hardLinks, signal, expectedSourceIdentity: claim.identity },
+    operations,
+  )
+  return { claim: published, crossDevice }
 }
 
 /** Relocate a claim without overwriting a late destination winner. The public
@@ -413,8 +483,9 @@ export async function relocateClaimedFileNoOverwrite(
   claim: FileClaim,
   destPath: string,
   operations: ExclusivePublishOperations = realPublishOperations,
+  signal?: AbortSignal,
 ): Promise<{ claim: FileClaim; crossDevice: boolean } | null> {
-  const published = await copyClaimedFileNoOverwrite(claim, destPath, operations)
+  const published = await copyClaimedFileNoOverwrite(claim, destPath, operations, signal)
   if (!published) return null
   try {
     // A false result means the public source was replaced or removed after the

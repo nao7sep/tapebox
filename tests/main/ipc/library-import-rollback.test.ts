@@ -26,7 +26,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
     ...actual,
-    writeFileAtomicNoOverwriteVia: vi.fn(async (...args: Parameters<typeof actual.writeFileAtomicNoOverwriteVia>) => {
+    copyFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.copyFileNoOverwrite>) => {
       state.calls += 1
       if (state.calls === state.failCall) {
         if (state.failureMode === 'plain') throw new Error('thumbnail permission denied')
@@ -35,7 +35,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
         await rename(winner, state.first!.path)
         throw new Error('sidecar publication failed')
       }
-      const claim = await actual.writeFileAtomicNoOverwriteVia(...args)
+      const claim = await actual.copyFileNoOverwrite(...args)
       state.first = claim
       return claim
     }),

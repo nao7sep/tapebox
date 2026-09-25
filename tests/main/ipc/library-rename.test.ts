@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -53,21 +53,25 @@ const rollbackMutation = vi.hoisted(() => ({
 }))
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
+  const tracked = async (publish: () => Promise<{ path: string; identity: string }>) => {
+    rollbackMutation.publishes += 1
+    if (rollbackMutation.mode === 'committed-winner' && rollbackMutation.publishes === 2) {
+      const winner = join(rollbackMutation.dir, 'external-winner.tmp')
+      await writeFile(winner, 'external winner')
+      await rename(winner, rollbackMutation.firstClaim!.path)
+      throw new Error('second publication failed')
+    }
+    const claim = await publish()
+    rollbackMutation.firstClaim ??= claim
+    rollbackMutation.order.push(`publish:${basename(claim.path)}`)
+    return claim
+  }
   return {
     ...actual,
-    publishFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.publishFileNoOverwrite>) => {
-      rollbackMutation.publishes += 1
-      if (rollbackMutation.mode === 'committed-winner' && rollbackMutation.publishes === 2) {
-        const winner = join(rollbackMutation.dir, 'external-winner.tmp')
-        await writeFile(winner, 'external winner')
-        await rename(winner, rollbackMutation.firstClaim!.path)
-        throw new Error('second publication failed')
-      }
-      const claim = await actual.publishFileNoOverwrite(...args)
-      rollbackMutation.firstClaim ??= claim
-      rollbackMutation.order.push(`publish:${basename(claim.path)}`)
-      return claim
-    }),
+    publishFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.publishFileNoOverwrite>) =>
+      tracked(() => actual.publishFileNoOverwrite(...args))),
+    copyClaimedFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.copyClaimedFileNoOverwrite>) =>
+      tracked(async () => (await actual.copyClaimedFileNoOverwrite(...args))!.claim).then((claim) => ({ claim, crossDevice: false }))),
     unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
       rollbackMutation.order.push(state.tape?.name === 'renamed' ? 'cleanup:obsolete' : 'cleanup:rollback')
       if (rollbackMutation.mode === 'final-cleanup' && state.tape?.name === 'renamed') {
@@ -206,6 +210,21 @@ describe('library:rename', () => {
     expect(rollbackMutation.order.indexOf('catalog:committed')).toBeLessThan(
       rollbackMutation.order.indexOf('cleanup:obsolete'),
     )
+    expect((await readdir(dir)).sort()).toEqual(['renamed.jpg', 'renamed.json', 'renamed.mp4'])
+  })
+
+  it('gives the media and poster their new names without copying their bytes', async () => {
+    const before = await Promise.all(['Take.mp4', 'Take.jpg'].map((name) => stat(join(dir, name))))
+    let linkedAtCommit: boolean[] = []
+    renameTapeDurably.mockImplementationOnce(async (tape: Tape) => {
+      const after = await Promise.all(['renamed.mp4', 'renamed.jpg'].map((name) => stat(join(dir, name))))
+      linkedAtCommit = after.map((file, index) => file.ino === before[index]!.ino && file.dev === before[index]!.dev)
+      state.tape = tape
+    })
+
+    await handlers.get('library:rename')!({ tapeId: state.tape!.id, name: 'renamed' })
+
+    expect(linkedAtCommit).toEqual([true, true])
     expect((await readdir(dir)).sort()).toEqual(['renamed.jpg', 'renamed.json', 'renamed.mp4'])
   })
 

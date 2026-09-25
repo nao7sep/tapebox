@@ -21,6 +21,12 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
     ...actual,
+    copyFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.copyFileNoOverwrite>) => {
+      state.calls += 1
+      const claim = await actual.copyFileNoOverwrite(...args)
+      state.first ??= claim
+      return claim
+    }),
     writeFileAtomicNoOverwriteVia: vi.fn(async (...args: Parameters<typeof actual.writeFileAtomicNoOverwriteVia>) => {
       state.calls += 1
       if (state.calls === 3) {
