@@ -279,6 +279,7 @@ describe('the live download path', () => {
         const { slug } = await app.invoke<{ slug: string }>('ai:generateSlug', {
           tapeId: tape.id,
           include: { title: true, uploader: true, description: true },
+          requestId: 'live-slug',
         })
         expect(slug.length).toBeGreaterThan(0)
         expect(slug).toBe(slugifyAscii(slug))

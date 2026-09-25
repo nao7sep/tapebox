@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
@@ -24,7 +24,9 @@ const SOURCE_FIELDS: { key: SourceField; label: string }[] = [
  *
  * Any filesystem-safe name is allowed — the AI only suggests a slug the user can
  * accept or edit. Generating is reported up via onGeneratingChange so the parent
- * can disable its own primary action; generate errors surface here.
+ * can disable its own primary action; generate errors surface here. A running
+ * suggestion can be stopped with its own button, and unmounting (closing the
+ * dialog) stops it too, so a slow provider never holds the dialog open.
  */
 export function NameEditor({
   tape,
@@ -48,6 +50,8 @@ export function NameEditor({
   hint?: ReactNode
 }) {
   const [generating, setGenerating] = useState(false)
+  // The in-flight suggestion's id, so Stop and unmount can cancel exactly it.
+  const requestRef = useRef<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [description, setDescription] = useState<string | null>(null)
   const [include, setInclude] = useState<Record<SourceField, boolean>>({
@@ -78,6 +82,13 @@ export function NameEditor({
     uploader: tape.uploader,
     description,
   }
+  // Closing the dialog mid-suggestion cancels the request in main.
+  useEffect(() => () => {
+    const requestId = requestRef.current
+    requestRef.current = null
+    if (requestId) cancelSuggestion(requestId)
+  }, [])
+
   const canSuggest = include.title || include.uploader || include.description
   const busy = disabled || generating
   // A field with no value contributes nothing, so it's dropped from the list
@@ -85,18 +96,35 @@ export function NameEditor({
   const availableFields = SOURCE_FIELDS.filter(({ key }) => !!sourceValue[key]?.trim())
 
   async function suggest() {
+    const requestId = crypto.randomUUID()
+    requestRef.current = requestId
     setError(null)
     setGenerating(true)
     onGeneratingChange?.(true)
     try {
-      const result = await ipcInvoke('ai:generateSlug', { tapeId: tape.id, include })
-      onChange(result.slug)
+      const result = await ipcInvoke('ai:generateSlug', { tapeId: tape.id, include, requestId })
+      if (requestRef.current === requestId) onChange(result.slug)
     } catch (err) {
-      setError(presentFailure(err, 'A name could not be suggested. Check the AI settings and try again.', 'AI name suggestion failed'))
+      // A stopped or abandoned request is the user's choice, not a failure.
+      if (requestRef.current === requestId) {
+        setError(presentFailure(err, 'A name could not be suggested. Check the AI settings and try again.', 'AI name suggestion failed'))
+      }
     } finally {
-      setGenerating(false)
-      onGeneratingChange?.(false)
+      if (requestRef.current === requestId) {
+        requestRef.current = null
+        setGenerating(false)
+        onGeneratingChange?.(false)
+      }
     }
+  }
+
+  function stop() {
+    const requestId = requestRef.current
+    if (!requestId) return
+    requestRef.current = null
+    cancelSuggestion(requestId)
+    setGenerating(false)
+    onGeneratingChange?.(false)
   }
 
   return (
@@ -122,15 +150,20 @@ export function NameEditor({
               right. The button reads naturally next to "Suggest with AI from …". */}
           <div className="flex items-center justify-between">
             <div className="text-xs font-medium text-fg">Suggest with AI from</div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void suggest()}
-              disabled={busy || !canSuggest}
-              loading={generating}
-            >
-              {generating ? 'Suggesting…' : 'Suggest'}
-            </Button>
+            {generating ? (
+              <Button variant="secondary" size="sm" onClick={stop}>
+                Stop
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void suggest()}
+                disabled={busy || !canSuggest}
+              >
+                Suggest
+              </Button>
+            )}
           </div>
 
           {/* Definition list: a ticked field feeds the suggestion. Label and value
@@ -157,6 +190,11 @@ export function NameEditor({
       )}
     </div>
   )
+}
+
+function cancelSuggestion(requestId: string): void {
+  void ipcInvoke('ai:cancelSlug', { requestId })
+    .catch((err) => log.debug('AI suggestion cancel failed', { error: describeError(err) }))
 }
 
 /**

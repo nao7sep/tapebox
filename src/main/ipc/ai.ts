@@ -5,21 +5,32 @@ import * as ai from '@main/services/ai-client'
 import { readSidecar } from '@main/core/sidecar'
 import { slugifyAscii } from '@main/core/slug'
 import { getLibraryDir } from '@main/store/config'
+import { cancelWork, runCancellable } from '@main/work-registry'
 import type { Tape } from '@shared/domain'
 
 export function registerAiHandlers(): void {
-  handle('ai:generateSlug', async ({ tapeId, include }) => {
+  // The renderer names each suggestion with its own requestId so Stop, or closing
+  // the Rename/Export dialog, can abort that exact request (and its retry wait).
+  handle('ai:generateSlug', async ({ tapeId, include, requestId }) => {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
     // Only the fields the user chose are sent; the description (the only one not
     // already on the tape) is read from the sidecar solely when included.
-    const raw = await ai.generateSlug({
+    const raw = await runCancellable(async (signal) => ai.generateSlug({
       title: include.title ? tape.title : null,
       uploader: include.uploader ? tape.uploader : null,
       description: include.description ? await readDescription(tape) : null,
-    })
+    }, signal), aiRequestKey(requestId))
     return { slug: slugifyAscii(raw) }
   })
+
+  handle('ai:cancelSlug', async ({ requestId }) => {
+    cancelWork(aiRequestKey(requestId))
+  })
+}
+
+function aiRequestKey(requestId: string): string {
+  return `ai:${requestId}`
 }
 
 /**

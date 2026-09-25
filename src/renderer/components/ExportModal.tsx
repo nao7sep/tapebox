@@ -63,7 +63,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   const busy = exporting || generating
   const footer = (
     <>
-      <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+      <Button variant="ghost" onClick={onClose} disabled={exporting}>Cancel</Button>
       <Button
         variant="primary"
         onClick={() => void run()}
@@ -76,7 +76,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   )
 
   return (
-    <Modal title="Export" onClose={onClose} size="2xl" footer={footer} closeDisabled={busy}>
+    <Modal title="Export" onClose={onClose} size="2xl" footer={footer} closeDisabled={exporting}>
       <NameEditor
         tape={tape}
         value={name}

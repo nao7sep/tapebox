@@ -80,10 +80,12 @@ export type IpcCalls = {
   // `include` selects which probed fields are filled into the slug prompt's
   // tokens; an unselected field substitutes to empty (so the user controls what
   // the model sees).
+  // `requestId` is chosen by the caller; ai:cancelSlug with the same id aborts it.
   'ai:generateSlug': {
-    req: { tapeId: string; include: { title: boolean; uploader: boolean; description: boolean } }
+    req: { tapeId: string; include: { title: boolean; uploader: boolean; description: boolean }; requestId: string }
     res: { slug: string }
   }
+  'ai:cancelSlug':   { req: { requestId: string }; res: void }
 
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }

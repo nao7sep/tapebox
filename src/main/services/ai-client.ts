@@ -11,11 +11,14 @@ import { resolveApiKey } from './api-keys'
  * without restart. withRetry owns the retry schedule (SDK retries disabled to
  * avoid compounding).
  */
-export async function generateSlug(opts: {
-  title: string | null
-  uploader?: string | null
-  description?: string | null
-}): Promise<string> {
+export async function generateSlug(
+  opts: {
+    title: string | null
+    uploader?: string | null
+    description?: string | null
+  },
+  signal: AbortSignal,
+): Promise<string> {
   const { ai, prompts } = getSettings()
   const apiKey = await resolveApiKey(['openai'])
   if (!apiKey) throw new Error('No AI API key configured')
@@ -48,11 +51,14 @@ export async function generateSlug(opts: {
   const res = await withRetry(
     HTTP_RETRY,
     () =>
-      client.chat.completions.create({
-        model: ai.model,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
-    { isRetryable: isRetryableAiError },
+      client.chat.completions.create(
+        {
+          model: ai.model,
+          messages: [{ role: 'user', content: userPrompt }],
+        },
+        { signal },
+      ),
+    { signal, isRetryable: isRetryableAiError },
   )
   // Result line for the external boundary (the request was logged above): the
   // finish_reason distinguishes a normal stop from a length/content-filter cutoff.
@@ -89,9 +95,11 @@ export function completionText(choice: CompletionChoice): string {
 }
 
 /**
- * Retry transient AI failures only: rate limits (429), server errors (5xx),
- * and connection/timeout errors (no status). A 4xx like 400/401/403 is a
- * config/auth problem that won't fix itself, so don't waste retries on it.
+ * Retry transient AI failures only: rate limits (429) and server errors (5xx).
+ * A 4xx like 400/401/403 is a config/auth problem that won't fix itself. The
+ * SDK's connection, timeout and user-abort errors are APIErrors without a
+ * status, so they are not retried: a request that already waited out its
+ * deadline is reported rather than repeated.
  */
 function isRetryableAiError(err: unknown): boolean {
   if (err instanceof OpenAI.APIError) {

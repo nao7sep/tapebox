@@ -41,7 +41,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
   const busy = applying || generating
   const footer = (
     <>
-      <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+      <Button variant="ghost" onClick={onClose} disabled={applying}>Cancel</Button>
       <Button
         variant="primary"
         onClick={() => void apply()}
@@ -54,7 +54,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
   )
 
   return (
-    <Modal title="Rename" onClose={onClose} size="2xl" footer={footer} closeDisabled={busy}>
+    <Modal title="Rename" onClose={onClose} size="2xl" footer={footer} closeDisabled={applying}>
       <div className="mb-4">
         <div className="text-xs text-fg-muted">Current name</div>
         <div className="mt-1 truncate text-base text-fg-emphasis">{tape.filename ?? '—'}</div>

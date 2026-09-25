@@ -77,7 +77,9 @@ export const ipcRequestSchemas = {
   'ai:generateSlug':       z.object({
     tapeId: z.string(),
     include: z.object({ title: z.boolean(), uploader: z.boolean(), description: z.boolean() }),
+    requestId: z.string().min(1),
   }),
+  'ai:cancelSlug':         z.object({ requestId: z.string().min(1) }),
 
   // ── Settings ──────────────────────────────────────────────────────────────
   'settings:get':          z.undefined(),
