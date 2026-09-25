@@ -13,6 +13,11 @@ import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain
  * In-memory session cache, debounced atomic persistence to catalog.json.
  * Single instance per main process. Live progress fields are NOT persisted —
  * they're rebuilt by the queue at runtime.
+ *
+ * catalog.json holds only durable state (see {@link durableTape}): a download in
+ * flight is written as the queued tape it will be again after any restart, so the
+ * transient probing/ready/downloading steps never reach the file or its backup
+ * history, and a write whose durable content is unchanged is skipped.
  */
 
 const SAVE_DEBOUNCE_MS = 500
@@ -21,6 +26,33 @@ let cache: Session = emptySession()
 let saveTimer: NodeJS.Timeout | null = null
 let loaded = false
 let persistChain: Promise<void> = Promise.resolve()
+/** Serialized durable content last written or loaded, to skip unchanged writes. */
+let lastWritten: string | null = null
+
+const IN_FLIGHT_STATES: ReadonlySet<Tape['state']> = new Set(['probing', 'ready', 'downloading'])
+
+/**
+ * The durable form of a tape. A tape in flight exists only while its job runs; a
+ * restart resumes it from the queue, so it is stored as queued, without the
+ * attempt's start time. Its probed metadata is kept, as it is real data.
+ */
+export function durableTape(tape: Tape): Tape {
+  if (!IN_FLIGHT_STATES.has(tape.state)) return tape
+  return { ...tape, state: 'queued', downloadStartedAtUtc: null }
+}
+
+function durableSession(session: Session): Session {
+  return { tapes: session.tapes.map(durableTape), boxes: [...session.boxes] }
+}
+
+/** Write the durable form of `session` unless it matches what is already on disk. */
+async function writeCatalog(session: Session): Promise<void> {
+  const durable = durableSession(session)
+  const key = JSON.stringify(durable)
+  if (key === lastWritten) return
+  await writeManagedJson(paths.catalog, durable, SessionSchema)
+  lastWritten = key
+}
 
 function emptySession(): Session {
   return { tapes: [], boxes: [] }
@@ -85,7 +117,10 @@ export async function loadSessionFile(
  */
 export async function loadSession(): Promise<SessionLoadResult> {
   const { result, session } = await loadSessionFile(paths.catalog)
-  cache = session
+  // A catalog written by an older version may still hold in-flight states; they
+  // resume from the queue exactly like a download stopped at quit.
+  cache = durableSession(session)
+  lastWritten = JSON.stringify({ tapes: session.tapes, boxes: session.boxes })
   loaded = true
   switch (result.status) {
     case 'loaded':
@@ -138,11 +173,7 @@ export async function reorderTapesDurably(orderedIds: readonly string[]): Promis
       .map((id) => byId.get(id))
       .filter((tape): tape is Tape => !!tape)
     if (named.length === 0) {
-      await writeManagedJson(
-        paths.catalog,
-        { tapes: [...cache.tapes], boxes: [...cache.boxes] },
-        SessionSchema,
-      )
+      await writeCatalog(cache)
       return
     }
 
@@ -169,7 +200,7 @@ export async function reorderTapesDurably(orderedIds: readonly string[]): Promis
         .map((tape) => tape.id),
     )
 
-    await writeManagedJson(paths.catalog, { ...cache, tapes: candidateTapes }, SessionSchema)
+    await writeCatalog({ ...cache, tapes: candidateTapes })
 
     // Preserve unrelated fields changed while the durable write was in flight.
     cache.tapes = cache.tapes.map((tape) => {
@@ -201,7 +232,7 @@ export async function renameTapeDurably(tape: Tape): Promise<void> {
     tapes[idx] = applyRenameFields(tapes[idx]!, tape)
     const candidate = { ...cache, tapes }
 
-    await writeManagedJson(paths.catalog, candidate, SessionSchema)
+    await writeCatalog(candidate)
 
     // The durable rename is now authoritative. Preserve unrelated fields changed
     // by queue/progress work while the write was in flight, and let its already-
@@ -272,7 +303,7 @@ export async function reorderBoxesDurably(orderedIds: readonly string[]): Promis
         .map((box) => box.id),
     )
 
-    await writeManagedJson(paths.catalog, { ...cache, boxes: candidateBoxes }, SessionSchema)
+    await writeCatalog({ ...cache, boxes: candidateBoxes })
     cache.boxes = cache.boxes.map((box) => {
       const order = orderById.get(box.id)
       return order === undefined || order === box.order ? box : { ...box, order }
@@ -316,10 +347,9 @@ export async function persistNow(): Promise<void> {
     await enqueueCatalogWrite(async () => {
       // Snapshot at execution, not enqueue time: a durable rename ahead of this
       // write may either commit or roll back while this call is waiting its turn.
-      const snapshot = { tapes: [...cache.tapes], boxes: [...cache.boxes] }
       // catalog.json is the app's most important durable managed text — the whole
-      // tape library structure — so it records on every save through the choke point.
-      await writeManagedJson(paths.catalog, snapshot, SessionSchema)
+      // tape library structure — so every changed save records through the choke point.
+      await writeCatalog(cache)
     })
   } catch (err) {
     log.error('session persist failed', { error: describeError(err) })
@@ -343,7 +373,10 @@ export function persistNowSync(): void {
   clearTimeout(saveTimer)
   saveTimer = null
   try {
-    const text = JSON.stringify(SessionSchema.parse(cache), null, 2) + '\n'
+    const durable = durableSession(cache)
+    const key = JSON.stringify(durable)
+    if (key === lastWritten) return
+    const text = JSON.stringify(SessionSchema.parse(durable), null, 2) + '\n'
     const bytes = Buffer.from(text, 'utf8')
     const stem = paths.catalog.slice(0, -extname(paths.catalog).length)
     const tmp = `${stem}-${nanoid(10)}.tmp`
@@ -355,6 +388,7 @@ export function persistNowSync(): void {
     // in-hand bytes. This terminal-only path makes its bounded SQLite attempt now;
     // there is no event-loop turn left for the ordinary queue.
     recordBeforeExit(paths.catalog, bytes)
+    lastWritten = key
   } catch (err) {
     log.error('session sync persist failed', { error: describeError(err) })
   }

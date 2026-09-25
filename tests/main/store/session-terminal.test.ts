@@ -182,4 +182,50 @@ describe('terminal catalog persistence', () => {
     expect(recordBeforeExit).toHaveBeenCalledWith(catalogPath, expect.any(Buffer))
     expect(Buffer.from(recordBeforeExit.mock.calls[0]![1])).toEqual(published)
   })
+
+  it('writes a download in flight as its queued self, so queue steps add no catalog versions', async () => {
+    await loadSession()
+    const queued: Tape = {
+      ...tape('fly1234567'), state: 'queued', sourceId: null, extractor: null, title: null,
+      probedAtUtc: null, filename: null, sidecarFilename: null, downloadedAtUtc: null, name: null,
+    }
+    const catalogPath = join(testRoot, 'catalog.json')
+    const writes = (): number => record.mock.calls.filter(([path]) => path === catalogPath).length
+
+    upsertTape(queued)
+    await persistNow()
+    expect(writes()).toBe(1)
+
+    upsertTape({ ...queued, state: 'probing' })
+    await persistNow()
+    expect(writes()).toBe(1)
+
+    const probed = { ...queued, state: 'ready' as const, sourceId: 'vid', extractor: 'test', title: 'Probed', probedAtUtc: '2026-01-02T00:00:00.000Z' }
+    upsertTape(probed)
+    await persistNow()
+    expect(writes()).toBe(2)
+
+    upsertTape({ ...probed, state: 'downloading', downloadStartedAtUtc: '2026-01-02T00:00:01.000Z' })
+    await persistNow()
+    persistNowSync()
+    expect(writes()).toBe(2)
+    expect(recordBeforeExit).not.toHaveBeenCalled()
+
+    const onDisk = JSON.parse(await readFile(catalogPath, 'utf8')) as { tapes: Tape[] }
+    expect(onDisk.tapes[0]).toMatchObject({ state: 'queued', title: 'Probed', downloadStartedAtUtc: null })
+
+    upsertTape({ ...probed, state: 'downloaded', filename: 'fly1234567.mp4', downloadedAtUtc: '2026-01-02T00:01:00.000Z' })
+    await persistNow()
+    expect(writes()).toBe(3)
+  })
+
+  it('resumes a download an older catalog left in flight', async () => {
+    const { writeFile } = await import('node:fs/promises')
+    const inFlight = { ...tape('old1234567'), state: 'downloading', downloadStartedAtUtc: '2026-01-02T00:00:01.000Z' }
+    await writeFile(join(testRoot, 'catalog.json'), JSON.stringify({ tapes: [inFlight], boxes: [] }))
+
+    await loadSession()
+
+    expect(getTape('old1234567')).toMatchObject({ state: 'queued', downloadStartedAtUtc: null })
+  })
 })

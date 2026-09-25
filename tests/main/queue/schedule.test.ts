@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest'
 
-import { selectTapesToStart, planOrphanResets } from '@main/queue/schedule'
+import { selectTapesToStart } from '@main/queue/schedule'
 import type { Tape } from '@shared/domain'
 
-const NOW = '2026-06-26T00:00:00.000Z'
 
 function tape(id: string, state: Tape['state']): Tape {
   return {
@@ -57,28 +56,5 @@ describe('selectTapesToStart', () => {
   it('skips tapes that are not queued or are already active', () => {
     const tapes = [tape('a', 'downloading'), tape('b', 'queued'), tape('c', 'queued'), tape('d', 'paused')]
     expect(ids(selectTapesToStart(tapes, new Set(['c']), 5))).toEqual(['b'])
-  })
-})
-
-describe('planOrphanResets', () => {
-  it('requeues interrupted tapes when autostart is on', () => {
-    const tapes = [tape('a', 'probing'), tape('b', 'downloading'), tape('c', 'downloaded')]
-    const reset = planOrphanResets(tapes, true, NOW)
-    expect(reset.map((t) => [t.id, t.state])).toEqual([
-      ['a', 'queued'],
-      ['b', 'queued'],
-    ])
-    expect(reset.every((t) => t.pausedAtUtc === null)).toBe(true)
-  })
-
-  it('pauses interrupted tapes (stamping the time) when autostart is off', () => {
-    const reset = planOrphanResets([tape('a', 'probing'), tape('b', 'downloading')], false, NOW)
-    expect(reset.map((t) => t.state)).toEqual(['paused', 'paused'])
-    expect(reset.every((t) => t.pausedAtUtc === NOW)).toBe(true)
-  })
-
-  it('leaves tapes in other states untouched (filtered out)', () => {
-    const tapes = [tape('a', 'queued'), tape('b', 'ready'), tape('c', 'failed'), tape('d', 'downloaded')]
-    expect(planOrphanResets(tapes, true, NOW)).toEqual([])
   })
 })

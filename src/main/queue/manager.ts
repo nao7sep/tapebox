@@ -2,10 +2,9 @@ import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
-import { nowUtcIso } from '@shared/utc'
 import { stripUrlCredentials } from '@shared/url'
 import { Job } from './job'
-import { planOrphanResets, selectTapesToStart } from './schedule'
+import { selectTapesToStart } from './schedule'
 
 /**
  * Download queue.
@@ -114,16 +113,10 @@ export async function holdWhile<T>(work: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Called once at startup. Any tape that was 'probing' or 'downloading' when
- * we shut down has been orphaned — its process is gone. Reset to 'queued'
- * (or 'paused' if autostart is off) so the queue picks it back up.
+ * Called once at startup. A download that was in flight when the app stopped
+ * comes back from the catalog as queued (see session's durableTape), so starting
+ * the queue resumes it.
  */
 export function start(): void {
-  const autostart = getSettings().autoStartDownloads
-  for (const next of planOrphanResets(session.getTapes(), autostart, nowUtcIso())) {
-    session.upsertTape(next)
-    emit('tapes:updated', next)
-  }
-
   tick()
 }
