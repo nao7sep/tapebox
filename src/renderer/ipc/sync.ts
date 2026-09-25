@@ -70,6 +70,7 @@ export function startIpcSync(): () => void {
     ipcOn('tapes:progress',  ({ tapeId, phase, percent, speedBps, etaSec }) =>
       useTapesStore.getState().setProgress(tapeId, { phase, percent, speedBps, etaSec }),
     ),
+    ipcOn('tapes:stalled',   ({ tapeId, stalled }) => useTapesStore.getState().setStalled(tapeId, stalled)),
     ipcOn('tapes:completed', ({ tapeId }) => {
       useTapesStore.getState().clearProgress(tapeId)
       // Success: the player takes over, so the live log is no longer needed.

@@ -11,17 +11,21 @@ export type ProgressEntry = {
 type TapesState = {
   tapes: Tape[]
   progress: Record<string, ProgressEntry | undefined>
+  /** Downloads main reports as silent for too long (see tapes:stalled). */
+  stalled: Record<string, true | undefined>
   setAll: (tapes: Tape[]) => void
   upsert: (tape: Tape) => void
   upsertMany: (tapes: Tape[]) => void
   removeMany: (ids: string[]) => void
   setProgress: (tapeId: string, entry: ProgressEntry) => void
   clearProgress: (tapeId: string) => void
+  setStalled: (tapeId: string, stalled: boolean) => void
 }
 
 export const useTapesStore = create<TapesState>((set) => ({
   tapes: [],
   progress: {},
+  stalled: {},
   setAll: (tapes) => set({ tapes }),
   upsert: (tape) => set((state) => {
     const idx = state.tapes.findIndex((i) => i.id === tape.id)
@@ -46,5 +50,12 @@ export const useTapesStore = create<TapesState>((set) => ({
     const next = { ...state.progress }
     delete next[tapeId]
     return { progress: next }
+  }),
+  setStalled: (tapeId, stalled) => set((state) => {
+    if ((state.stalled[tapeId] === true) === stalled) return state
+    const next = { ...state.stalled }
+    if (stalled) next[tapeId] = true
+    else delete next[tapeId]
+    return { stalled: next }
   }),
 }))

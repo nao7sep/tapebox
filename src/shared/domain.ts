@@ -44,6 +44,9 @@ export const tapeStates = [
 
 export type TapeState = (typeof tapeStates)[number]
 
+/** How long a running download may print nothing before its row says it has stalled. */
+export const DOWNLOAD_STALL_AFTER_MS = 2 * 60_000
+
 /** Stable failure classes persisted with a failed tape and sent over IPC. */
 export const tapeFailureCodes = ['download', 'duplicate'] as const
 export type TapeFailureCode = (typeof tapeFailureCodes)[number]

@@ -77,6 +77,7 @@ export function DetailPane({
   const [infoOpen, setInfoOpen] = useState(false)
   const { copied, copy: copyUrl } = useCopyTapeSourceUrl(tape.id, tape.sourceUrl)
   const progress = useTapesStore((s) => s.progress[tape.id])
+  const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
   const logEntries = useDownloadLogStore((s) => s.entries[tape.id]) ?? NO_ENTRIES
   const mediaBase = useMediaStore((s) => s.baseUrl)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
@@ -388,7 +389,7 @@ export function DetailPane({
                   {/* Always visible: the media line for a downloaded tape (its "status"
                       is just "In library", which says nothing), otherwise the status. */}
                   <p className="mt-0.5 truncate text-xs text-fg-muted">
-                    {downloaded && mediaMeta ? mediaMeta : headerStatus(tape, progress)}
+                    {downloaded && mediaMeta ? mediaMeta : headerStatus(tape, progress, stalled)}
                   </p>
                 </div>
               </div>
@@ -626,8 +627,8 @@ const WORKING_PLACEHOLDER: Partial<Record<TapeState, string>> = {
 
 /** The one-line status under the heading: the shared status label, plus the live
  *  download speed when downloading and an Archived suffix when archived. */
-function headerStatus(tape: Tape, progress: ProgressEntry | undefined): string {
-  let base = tapeStatusLabel(tape, progress)
+function headerStatus(tape: Tape, progress: ProgressEntry | undefined, stalled: boolean): string {
+  let base = tapeStatusLabel(tape, progress, stalled)
   if (progress?.phase === 'downloading' && progress.speedBps) {
     base += ` · ${formatSpeed(progress.speedBps)}`
   }

@@ -2,6 +2,7 @@ import { dirname, extname, join } from 'node:path'
 import { readdir, unlink } from 'node:fs/promises'
 import { binaryPath, paths } from '@main/paths'
 import { resolveYtdlpArgs } from './ytdlp-args'
+import { watchForStall } from './download-stall'
 import { YTDLP_PROBE_IDLE_TIMEOUT_MS } from '@main/io/network'
 import {
   execCapture,
@@ -101,6 +102,8 @@ export type DownloadOptions = {
   onProgress?: (progress: DownloadProgress) => void
   /** Each meaningful yt-dlp output line (progress lines and our markers excluded). */
   onLog?: (line: string) => void
+  /** The transfer went silent (true) or resumed (false); see download-stall.ts. */
+  onStall?: (stalled: boolean) => void
   signal: AbortSignal
 }
 
@@ -146,8 +149,9 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
   await clearStem(opts.libraryDir, opts.outputId)
   // Never auto-retried: re-running hammers the site and risks a block. yt-dlp
   // runs its own internal --retries for transient blips within the attempt. No
-  // idle watchdog: yt-dlp goes silent during the post-download ffmpeg merge of a
-  // large file, so a watchdog would kill a healthy job mid-merge.
+  // idle kill: yt-dlp goes silent during the post-download ffmpeg merge of a
+  // large file, so a watchdog would kill a healthy job mid-merge. A silent
+  // transfer is reported as stalled instead (onStall), for the user to cancel.
   return runDownloadOnce(opts, undefined)
 }
 
@@ -186,9 +190,11 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     { env: ytdlpEnv(), signal: opts.signal, idleTimeoutMs },
   )
 
+  const stall = watchForStall((stalled) => opts.onStall?.(stalled))
   const recentLines: string[] = []
   const lineBuffer = makeLineBuffer((line) => {
     if (!line) return
+    stall.line(line)
     if (line.startsWith(FINAL_PATH_MARKER)) {
       captured.finalPath = line.slice(FINAL_PATH_MARKER.length)
       return
@@ -235,6 +241,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     throw err
   } finally {
     lineBuffer.flush()
+    stall.stop()
   }
 
   const finalPath = captured.finalPath

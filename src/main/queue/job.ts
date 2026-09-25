@@ -212,6 +212,9 @@ export class Job {
       onLog: (line) => {
         this.d.emit('tapes:log', { tapeId: this.tapeId, line })
       },
+      onStall: (stalled) => {
+        this.d.emit('tapes:stalled', { tapeId: this.tapeId, stalled })
+      },
     })
 
     // yt-dlp should write straight into the library root via --paths, but if it

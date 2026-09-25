@@ -256,6 +256,9 @@ export type IpcEvents = {
     speedBps?: number
     etaSec?: number
   }
+  // A running download printed nothing for DOWNLOAD_STALL_AFTER_MS (stalled: true),
+  // or resumed or ended (false). The download keeps running; the user decides.
+  'tapes:stalled':     { tapeId: string; stalled: boolean }
   'tapes:completed':   { tapeId: string }
   'tapes:failed':      { tapeId: string; code: TapeFailureCode }
   'tapes:removed':     { tapeIds: string[] }

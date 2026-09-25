@@ -1,4 +1,4 @@
-import type { Tape, TapeState } from '@shared/domain'
+import { DOWNLOAD_STALL_AFTER_MS, type Tape, type TapeState } from '@shared/domain'
 import type { ProgressEntry } from '@renderer/store/tapes'
 
 /**
@@ -30,10 +30,14 @@ export function isProcessing(state: TapeState): boolean {
 
 /**
  * A tape's status as one short phrase: live progress while downloading or
- * probing, otherwise the plain state label.
+ * probing, otherwise the plain state label. A download main reports as stalled
+ * says so, so the user can decide whether to cancel it.
  */
-export function tapeStatusLabel(tape: Tape, progress: ProgressEntry | undefined): string {
-  if (progress?.phase === 'downloading') return `Downloading ${progress.percent.toFixed(0)}%`
-  if (progress?.phase === 'probing') return 'Probing'
-  return TAPE_STATE_LABEL[tape.state]
+export function tapeStatusLabel(tape: Tape, progress: ProgressEntry | undefined, stalled = false): string {
+  const base = progress?.phase === 'downloading'
+    ? `Downloading ${progress.percent.toFixed(0)}%`
+    : progress?.phase === 'probing' ? 'Probing' : TAPE_STATE_LABEL[tape.state]
+  return stalled && isProcessing(tape.state) ? `${base} · ${STALLED_SUFFIX}` : base
 }
+
+const STALLED_SUFFIX = `no progress for ${DOWNLOAD_STALL_AFTER_MS / 60_000} min`

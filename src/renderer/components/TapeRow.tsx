@@ -1,5 +1,5 @@
 import type { Tape, TapeState } from '@shared/domain'
-import type { ProgressEntry } from '@renderer/store/tapes'
+import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
 import { chapterCountLabel, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
@@ -30,6 +30,7 @@ type Props = {
  */
 export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
   const palette = paletteFor(tape, selected)
+  const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
 
   return (
     <div
@@ -58,7 +59,7 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
         <span className="min-w-0 truncate">
           {tape.state === 'downloaded' && tape.uploader
             ? tape.uploader
-            : tapeStatusLabel(tape, progress)}
+            : tapeStatusLabel(tape, progress, stalled)}
         </span>
         {chapterCountLabel(tape.chapterCount) && (
           <span className="shrink-0">· {chapterCountLabel(tape.chapterCount)}</span>
