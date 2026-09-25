@@ -88,6 +88,12 @@ function makeDeps(opts: {
       upsertTape: (t) => {
         tapes.set(t.id, t)
       },
+      persistNow: async () => {
+        // Kept in the event sequence (with a matching payload slot) so tests can
+        // see whether a commit came before an event.
+        emits.push(`persist:${[...tapes.values()].map((t) => t.state).join(',')}`)
+        payloads.push(null)
+      },
     },
     getLibraryDir: () => LIBRARY_DIR,
     emit: ((channel: string, payload: unknown) => {
@@ -121,6 +127,9 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(final.sidecarFilename).toBe('t1.json')
     expect(final.thumbnailFilename).toBe('t1.jpg')
     expect(emits).toContain('tapes:completed')
+    // The downloaded row is durable before success is reported.
+    expect(emits.indexOf('persist:downloaded')).toBeGreaterThanOrEqual(0)
+    expect(emits.indexOf('persist:downloaded')).toBeLessThan(emits.indexOf('tapes:completed'))
   })
 
   it('rejects a probe whose (extractor, id) duplicates an existing tape', async () => {

@@ -53,6 +53,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
 
 const upsertTape = vi.hoisted(() => vi.fn((_tape: Tape) => {}))
 vi.mock('@main/store/session', () => ({
+  persistNow: vi.fn(async () => {}),
   getTape: () => undefined,
   getTapes: () => [],
   getBoxes: () => [],

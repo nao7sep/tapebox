@@ -25,7 +25,9 @@ const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[] }))
 const emit = vi.hoisted(() => vi.fn())
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
+const persistNow = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@main/store/session', () => ({
+  persistNow,
   getTape: (id: string) => state.tapes.find((tape) => tape.id === id),
   getTapes: () => state.tapes,
   getBoxes: () => [],
@@ -143,6 +145,9 @@ describe('importing a bundle', () => {
     expect(await readFile(join(state.libraryDir, 'holiday.mp4'), 'utf8')).toBe('video for holiday')
     expect(state.tapes.map((entry) => entry.id)).toContain(tape.id)
     expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:added', result.imported)
+    // The imported rows are durable before they are announced.
+    expect(persistNow).toHaveBeenCalled()
+    expect(persistNow.mock.invocationCallOrder.at(-1)!).toBeLessThan(emit.mock.invocationCallOrder[0]!)
   })
 
   it('names the library copies after the media file, not after the sidecar', async () => {

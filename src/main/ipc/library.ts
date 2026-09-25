@@ -379,7 +379,12 @@ async function importBundles(paths: string[], signal: AbortSignal): Promise<Impo
     imported.push(tape)
   }
 
-  if (imported.length > 0) emit('tapes:added', imported)
+  if (imported.length > 0) {
+    // The copied files are in the library; commit their rows before reporting,
+    // so a crash now cannot leave them unlisted and blocking a re-import.
+    await session.persistNow()
+    emit('tapes:added', imported)
+  }
   for (const path of unsupportedSelectedPaths(paths, claimedCompanionPaths)) {
     issues.push({
       path,
@@ -609,6 +614,9 @@ export async function removeTapes(
 
   if (removed.length > 0) {
     session.removeTapes(removed)
+    // Files are already discarded; commit the removal before reporting it, so a
+    // crash now cannot bring back rows that point at trashed files.
+    await session.persistNow()
     emit('tapes:removed', { tapeIds: removed })
   }
   return { removed, failed }

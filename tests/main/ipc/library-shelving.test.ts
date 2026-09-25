@@ -30,7 +30,9 @@ const queueManager = vi.hoisted(() => ({ isActive: vi.fn(() => false), cancel: v
 const clearPartials = vi.hoisted(() => vi.fn(async () => {}))
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
+const persistNow = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@main/store/session', () => ({
+  persistNow,
   getTape: (id: string) => state.tapes.find((tape) => tape.id === id),
   getTapes: () => state.tapes,
   getBoxes: () => [],
@@ -186,6 +188,10 @@ describe('removing tapes from the library', () => {
 
     expect(state.tapes).toEqual([])
     expect(emitted('tapes:removed')).toEqual([[{ tapeIds: ['Keepfiles1'] }]])
+    // The removal is durable before it is announced.
+    expect(persistNow.mock.invocationCallOrder[0]!).toBeLessThan(
+      emit.mock.invocationCallOrder[emit.mock.calls.findIndex((call) => call[0] === 'tapes:removed')]!,
+    )
     expect((await readdir(state.libraryDir)).sort()).toEqual(['Keepfiles1.jpg', 'Keepfiles1.json', 'Keepfiles1.mp4'])
     expect(clearPartials).not.toHaveBeenCalled()
   })

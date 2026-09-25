@@ -36,6 +36,7 @@ export interface JobDeps {
     getTape: typeof session.getTape
     getTapes: typeof session.getTapes
     upsertTape: typeof session.upsertTape
+    persistNow: typeof session.persistNow
   }
   getLibraryDir: typeof getLibraryDir
   emit: typeof emit
@@ -47,7 +48,12 @@ export const defaultJobDeps: JobDeps = {
   ytdlp: { probe: ytdlp.probe, download: ytdlp.download, findThumbnail: ytdlp.findThumbnail },
   ffmpeg: { probeMedia: ffmpeg.probeMedia, saveThumbnailJpeg: ffmpeg.saveThumbnailJpeg },
   sidecar: { finalize: sidecar.finalize },
-  session: { getTape: session.getTape, getTapes: session.getTapes, upsertTape: session.upsertTape },
+  session: {
+    getTape: session.getTape,
+    getTapes: session.getTapes,
+    upsertTape: session.upsertTape,
+    persistNow: session.persistNow,
+  },
   getLibraryDir,
   emit,
   log: { info: log.info, warn: log.warn, error: log.error },
@@ -269,6 +275,10 @@ export class Job {
       thumbnailFilename,
       downloadedAtUtc: this.d.now(),
     })
+    // The finished files are on disk; commit the row that names them before
+    // reporting success, so a crash now cannot restore the tape as queued and
+    // have its next attempt delete the finished download.
+    await this.d.session.persistNow()
     // Close the bracket opened by 'job start': the queue logs start and the catch
     // logs failure, so without this the app's central operation — a finished
     // download — would be the one outcome absent from the session log.
