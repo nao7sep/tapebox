@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ScanResult } from '@shared/ipc-contract'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { formatTime } from '@renderer/lib/format'
+import { visibleRowRange } from '@renderer/lib/windowedRows'
 import { useClipboardUrl } from '@renderer/lib/useClipboardUrl'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { Modal } from '@renderer/components/Modal'
@@ -12,6 +13,9 @@ import { IndeterminateBar } from '@renderer/components/Progress'
 import { Button, InlineError, INPUT_LINE_CLASS } from '@renderer/components/ui'
 
 type Props = { onClose: () => void; initialUrl?: string }
+
+/** Fixed row height (px) of the results list, which renders only visible rows. */
+const ROW_HEIGHT = 32
 
 /**
  * Scan a page for videos — a URL that lists multiple videos (a creator's uploads,
@@ -21,6 +25,10 @@ type Props = { onClose: () => void; initialUrl?: string }
  * The modal owns the scan session: it subscribes to scan:* once on mount and
  * filters events by the current sessionId (set when scan:start resolves), so a
  * re-scan cleanly supersedes the previous stream.
+ *
+ * A scan can stream thousands of entries, so arrivals are deduplicated through a
+ * Set, buffered, and committed to state once per animation frame, and the list
+ * renders only the rows in view.
  */
 export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const { url, setUrl, onPaste } = useClipboardUrl(true, initialUrl)
@@ -34,6 +42,37 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const [adding, setAdding] = useState(false)
 
   const sessionIdRef = useRef<string | null>(null)
+  // Arrivals not yet committed to state, the sourceUrls already seen this scan,
+  // and the pending frame that will commit them.
+  const pendingRef = useRef<ScanResult[]>([])
+  const seenRef = useRef<Set<string>>(new Set())
+  const frameRef = useRef<number | null>(null)
+  const listRef = useRef<HTMLUListElement | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
+
+  function flushPending() {
+    frameRef.current = null
+    const batch = pendingRef.current
+    if (batch.length === 0) return
+    pendingRef.current = []
+    setEntries((prev) => prev.concat(batch))
+    const selectable = batch.filter((entry) => !entry.alreadyInLibrary && !entry.unavailable)
+    if (selectable.length > 0) {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        for (const entry of selectable) next.add(entry.sourceUrl)
+        return next
+      })
+    }
+  }
+
+  function resetPending() {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+    frameRef.current = null
+    pendingRef.current = []
+    seenRef.current = new Set()
+  }
 
   useEffect(() => {
     const offs = [
@@ -41,14 +80,10 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
         if (e.sessionId !== sessionIdRef.current) return
         // The same video can surface twice on a listing page; dedup by sourceUrl so the
         // list keys and the (sourceUrl-keyed) selection stay unambiguous.
-        setEntries((prev) => (prev.some((x) => x.sourceUrl === e.entry.sourceUrl) ? prev : [...prev, e.entry]))
-        if (!e.entry.alreadyInLibrary && !e.entry.unavailable) {
-          setSelected((prev) => {
-            const next = new Set(prev)
-            next.add(e.entry.sourceUrl)
-            return next
-          })
-        }
+        if (seenRef.current.has(e.entry.sourceUrl)) return
+        seenRef.current.add(e.entry.sourceUrl)
+        pendingRef.current.push(e.entry)
+        frameRef.current ??= requestAnimationFrame(flushPending)
       }),
       ipcOn('scan:done', (e) => {
         if (e.sessionId === sessionIdRef.current) { setScanning(false); setScanned(true) }
@@ -63,6 +98,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     ]
     return () => {
       offs.forEach((off) => off())
+      resetPending()
       const sid = sessionIdRef.current
       if (sid) void ipcInvoke('scan:cancel', { sessionId: sid }).catch((err) => log.debug('scan cancel failed', { error: describeError(err) }))
     }
@@ -74,6 +110,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     const prev = sessionIdRef.current
     if (prev) void ipcInvoke('scan:cancel', { sessionId: prev }).catch((err) => log.debug('scan cancel failed', { error: describeError(err) }))
     sessionIdRef.current = null
+    resetPending()
     setEntries([])
     setSelected(new Set())
     setSearch('')
@@ -106,6 +143,15 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     if (!q) return entries
     return entries.filter((e) => (e.title ?? '').toLowerCase().includes(q))
   }, [entries, search])
+
+  // The list grows up to its max height as rows arrive; re-measure when the row
+  // count changes (scrolling measures too).
+  useLayoutEffect(() => {
+    if (listRef.current) setViewportHeight(listRef.current.clientHeight)
+  }, [filtered.length])
+
+  const range = visibleRowRange(scrollTop, viewportHeight, ROW_HEIGHT, filtered.length)
+  const visibleRows = filtered.slice(range.start, range.end)
 
   function toggle(sourceUrl: string) {
     setSelected((prev) => {
@@ -143,7 +189,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     }
   }
 
-  const inLibraryCount = entries.filter((e) => e.alreadyInLibrary).length
+  const inLibraryCount = useMemo(() => entries.filter((e) => e.alreadyInLibrary).length, [entries])
   const footer = (
     <>
       {inLibraryCount > 0 && (
@@ -207,21 +253,36 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setScrollTop(0)
+                if (listRef.current) listRef.current.scrollTop = 0
+              }}
               placeholder="Search title…"
               className={`flex-1 ${INPUT_LINE_CLASS}`}
             />
           </div>
 
-          <ul className="mt-2 max-h-[45vh] overflow-y-auto">
-            {filtered.map((e) => {
+          <ul
+            ref={listRef}
+            className="mt-2 max-h-[45vh] overflow-y-auto"
+            onScroll={(event) => {
+              setScrollTop(event.currentTarget.scrollTop)
+              setViewportHeight(event.currentTarget.clientHeight)
+            }}
+            style={{
+              paddingTop: range.start * ROW_HEIGHT,
+              paddingBottom: (filtered.length - range.end) * ROW_HEIGHT,
+            }}
+          >
+            {visibleRows.map((e) => {
               const disabled = e.alreadyInLibrary || e.unavailable !== null
               const checked = selected.has(e.sourceUrl) && !disabled
               return (
-                <li key={e.sourceUrl}>
+                <li key={e.sourceUrl} style={{ height: ROW_HEIGHT }}>
                   <label
                     className={
-                      'flex items-center gap-3 rounded px-2 py-1.5 text-sm ' +
+                      'flex h-full items-center gap-3 rounded px-2 text-sm ' +
                       (disabled ? 'opacity-50' : 'hover:bg-hover')
                     }
                   >

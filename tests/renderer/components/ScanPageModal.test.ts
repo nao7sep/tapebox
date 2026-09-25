@@ -101,6 +101,14 @@ async function scanOneEntry(): Promise<void> {
   await act(async () => {
     emitEvent('scan:entry', { sessionId: 'S1', entry: ENTRY })
   })
+  await nextFrame()
+}
+
+/** Entries are committed once per animation frame. */
+async function nextFrame(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+  })
 }
 
 describe('ScanPageModal bulk add', () => {
@@ -138,5 +146,33 @@ describe('ScanPageModal bulk add', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(document.querySelector('[role="alert"]')).toBeNull()
+  })
+})
+
+describe('ScanPageModal streaming', () => {
+  it('batches a burst of entries into one commit, drops repeats, and renders only visible rows', async () => {
+    await mount(vi.fn())
+    ipcInvoke.mockResolvedValueOnce({ sessionId: 'S1' }) // scan:start
+    await act(async () => {
+      buttonByText('Scan').click()
+    })
+    await flush()
+
+    await act(async () => {
+      for (let i = 0; i < 3000; i++) {
+        const entry = { ...ENTRY, sourceId: `v${i}`, sourceUrl: `https://example.test/watch?v=${i}`, title: `Video ${i}` }
+        emitEvent('scan:entry', { sessionId: 'S1', entry })
+        emitEvent('scan:entry', { sessionId: 'S1', entry }) // listing pages repeat videos
+      }
+    })
+    // Nothing is committed until the frame fires.
+    expect(document.querySelectorAll('[role="dialog"] li')).toHaveLength(0)
+    await nextFrame()
+
+    expect(document.body.textContent).toContain('3000')
+    expect(buttonByText('Add 3000 tapes')).toBeTruthy()
+    const rows = document.querySelectorAll('[role="dialog"] li')
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.length).toBeLessThan(100)
   })
 })
