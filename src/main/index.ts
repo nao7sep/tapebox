@@ -12,6 +12,8 @@ import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import { shutdownBinaryOperations } from './ipc/binaries.js'
 import * as queue from './queue/manager.js'
+import { cancelAllScans } from './ipc/scan.js'
+import { cancelAllWork } from './work-registry.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
@@ -159,10 +161,18 @@ async function handleTerminalStartupFailure(error: unknown): Promise<void> {
   })
 }
 
+/** Upper bound on stopping in-flight work at quit. Each owner's own teardown is
+ * already bounded (a process-tree kill settles within ~2 s on POSIX and 5 s on
+ * Windows; file copies stop at their next chunk); this only keeps an unforeseen
+ * stall from turning Quit into a hang. */
+const WORK_STOP_BOUND_MS = 15_000
+
 /**
- * Idempotent teardown, run once on before-quit: flush session, stop the media
- * server, close the logger. The media server is in-process, so it dies with this
- * process — there is no separate server to leave stale.
+ * Idempotent teardown, run once on before-quit: stop downloads, scans and other
+ * in-flight work (their child processes and library writes must not outlive the
+ * app), flush session, stop the media server, close the logger. The media server
+ * is in-process, so it dies with this process — there is no separate server to
+ * leave stale.
  */
 let shutdownPromise: Promise<void> | null = null
 function shutdown(reason: string): Promise<void> {
@@ -173,6 +183,7 @@ function shutdown(reason: string): Promise<void> {
     // held playback wake lock up front.
     releaseWakeLock()
     await shutdownBinaryOperations()
+    await stopInFlightWork()
     try {
       await persistNow()
     } catch {
@@ -184,6 +195,20 @@ function shutdown(reason: string): Promise<void> {
     closeLogger()
   })()
   return shutdownPromise
+}
+
+async function stopInFlightWork(): Promise<void> {
+  let timer: NodeJS.Timeout | undefined
+  const bound = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), WORK_STOP_BOUND_MS)
+  })
+  const stopped = Promise.all([queue.shutdown(), cancelAllScans(), cancelAllWork()]).then(() => 'stopped' as const)
+  const outcome = await Promise.race([stopped, bound]).catch((error: unknown) => {
+    log.error('in-flight work could not be stopped', { error: describeError(error) })
+    return 'failed' as const
+  })
+  clearTimeout(timer)
+  if (outcome === 'timeout') log.warn('in-flight work did not stop within the quit bound', { boundMs: WORK_STOP_BOUND_MS })
 }
 
 // Global last-resort hooks. An uncaught exception is fatal: log it with full

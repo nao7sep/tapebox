@@ -25,8 +25,10 @@ import { planOrphanResets, selectTapesToStart } from './schedule'
  */
 
 const active = new Map<string, Job>()
+let stopped = false
 
 export function tick(): void {
+  if (stopped) return
   const max = getSettings().maxConcurrentDownloads
   const toStart = selectTapesToStart(session.getTapes(), new Set(active.keys()), max)
 
@@ -67,6 +69,16 @@ export async function cancel(tapeId: string): Promise<void> {
   const job = active.get(tapeId)
   if (!job) return
   await job.cancel()
+}
+
+/**
+ * Quit-time teardown: start no further jobs, stop every running one (killing its
+ * yt-dlp/ffmpeg/Deno process tree) and resolve once each has settled. Stopped
+ * tapes keep their queued place and resume on the next launch.
+ */
+export async function shutdown(): Promise<void> {
+  stopped = true
+  await Promise.all([...active.values()].map((job) => job.stop()))
 }
 
 export function isActive(tapeId: string): boolean {

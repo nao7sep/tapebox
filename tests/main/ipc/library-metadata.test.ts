@@ -163,6 +163,7 @@ describe('accepting refreshed metadata', () => {
       join(state.libraryDir, 'Holiday.webp'),
       state.libraryDir,
       'Holiday',
+      expect.any(AbortSignal),
     )
     expect(updated.thumbnailFilename).toBe('Holiday.jpg')
   })

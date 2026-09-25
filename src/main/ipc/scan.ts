@@ -20,6 +20,7 @@ import type { ScanResult } from '@shared/ipc-contract'
  */
 
 const active = new Map<string, scanService.ScanHandle>()
+let closed = false
 
 export function registerScanHandlers(): void {
   handle('scan:start', async ({ url }) => {
@@ -27,6 +28,7 @@ export function registerScanHandlers(): void {
     if (!isImportableUrl(url)) {
       throw new Error('Enter a valid http(s) URL to scan.')
     }
+    if (closed) throw new Error('TapeBox is quitting.')
     const sessionId = nanoid(8)
     // Dedupe against the library by video id AND url. id is the reliable key but
     // is only set once an tape has been probed; url is the fallback that catches
@@ -65,6 +67,15 @@ export function registerScanHandlers(): void {
     active.get(sessionId)?.cancel()
     active.delete(sessionId)
   })
+}
+
+/** Quit-time teardown: stop every running scan and wait for its yt-dlp tree to exit. */
+export async function cancelAllScans(): Promise<void> {
+  closed = true
+  const handles = [...active.values()]
+  active.clear()
+  for (const scan of handles) scan.cancel()
+  await Promise.allSettled(handles.map((scan) => scan.complete))
 }
 
 function ymdToUtcIso(ymd: string): string | null {

@@ -149,6 +149,26 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(tapes.get('t1')!.lastError).toBeNull()
   })
 
+  it('leaves a run stopped at quit in its in-flight state so the next launch resumes it', async () => {
+    const t = tape({ id: 't1' })
+    const { deps, tapes, emits } = makeDeps({
+      initial: [t],
+      probe: async () => video,
+      download: (opts) => new Promise((_resolve, reject) => {
+        opts.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+      }),
+    })
+    const job = new Job(t, deps)
+    const run = job.run()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(tapes.get('t1')!.state).toBe('downloading')
+    await job.stop()
+    await run
+    expect(tapes.get('t1')!.state).toBe('downloading')
+    expect(tapes.get('t1')!.pausedAtUtc).toBeNull()
+    expect(emits).not.toContain('tapes:failed')
+  })
+
   it('keeps hostile process diagnostics out of persisted and emitted presentation', async () => {
     const hostile = 'EACCES Error invoking remote method IPC /private/tmp/HOSTILE-SENTINEL'
     const t = tape({ id: 't1' })

@@ -65,6 +65,9 @@ export class Job {
   readonly tapeId: string
   private controller = new AbortController()
   private cancelled = false
+  // A stop at quit leaves the tape's persisted state alone so it resumes on the
+  // next launch; a user cancel parks it as paused.
+  private stopping = false
   private runPromise: Promise<void> | null = null
   private readonly d: JobDeps
 
@@ -84,6 +87,16 @@ export class Job {
     return this.runPromise ?? Promise.resolve()
   }
 
+  /**
+   * Quit-time teardown: abort like {@link cancel}, but without the paused
+   * transition. The tape keeps its in-flight state, and the next launch returns
+   * it to the queue.
+   */
+  stop(): Promise<void> {
+    this.stopping = true
+    return this.cancel()
+  }
+
   run(): Promise<void> {
     if (this.runPromise) return this.runPromise
     this.runPromise = this.runInner()
@@ -98,6 +111,7 @@ export class Job {
       if (!isVideo || this.cancelled) return
       await this.download()
     } catch (err) {
+      if (this.stopping) return
       if (this.cancelled) {
         this.update({ state: 'paused', failureCode: null, lastError: null, pausedAtUtc: this.d.now() })
         return

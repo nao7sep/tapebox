@@ -23,6 +23,7 @@ import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
+import { runCancellable } from '@main/work-registry'
 import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
@@ -291,7 +292,7 @@ export function registerLibraryHandlers(): void {
     // One deliberate re-probe, read-only. The probe's own idle watchdog guards a
     // stall, and it is never auto-retried — re-hammering the source is the user's
     // call. Nothing is written here: the caller reviews this and decides.
-    const result = await probe(tape.sourceUrl, new AbortController().signal)
+    const result = await runCancellable((signal) => probe(tape.sourceUrl, signal))
     if (result.kind === 'page') {
       throw new Error('This link now points to a list of videos, not a single video.')
     }
@@ -333,8 +334,10 @@ export function registerLibraryHandlers(): void {
     if (thumbnailFilename === null && tape.filename) {
       const stem = tape.filename.slice(0, -extname(tape.filename).length)
       try {
-        const raw = await downloadThumbnail(tape.sourceUrl, dir, stem, new AbortController().signal)
-        if (raw) thumbnailFilename = await saveThumbnailJpeg(raw, dir, stem)
+        thumbnailFilename = await runCancellable(async (signal) => {
+          const raw = await downloadThumbnail(tape.sourceUrl, dir, stem, signal)
+          return raw ? saveThumbnailJpeg(raw, dir, stem, signal) : null
+        })
       } catch (err) {
         log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })
       }
