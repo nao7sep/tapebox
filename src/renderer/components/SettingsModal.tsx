@@ -618,6 +618,10 @@ function AiTab({
   const keyIsSet = hadKey && !wantsClearKey && apiKeyDraft.length === 0
   const willClear = wantsClearKey && apiKeyDraft.length === 0
 
+  function resetModelToDefault() {
+    onAiPatch({ model: DEFAULT_AI_MODEL })
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-fg">
@@ -656,13 +660,31 @@ function AiTab({
         )}
       </div>
 
-      <TextField
-        label="Model"
-        value={ai.model}
-        placeholder={DEFAULT_AI_MODEL}
-        disabled={busy}
-        onChange={(v) => onAiPatch({ model: v })}
-      />
+      <div>
+        <label htmlFor="settings-ai-model" className="text-xs font-medium text-fg">Model</label>
+        <div className="mt-1 flex items-center gap-2">
+          <input
+            id="settings-ai-model"
+            type="text"
+            value={ai.model}
+            placeholder={DEFAULT_AI_MODEL}
+            spellCheck={false}
+            disabled={busy}
+            onChange={(e) => onAiPatch({ model: e.target.value })}
+            className={`flex-1 ${INPUT_LINE_CLASS}`}
+          />
+          {/* A model name goes stale as providers retire models; this returns it
+              to the one the current version ships (config-seeding-conventions). */}
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy || ai.model === DEFAULT_AI_MODEL}
+            onClick={resetModelToDefault}
+          >
+            Reset model
+          </Button>
+        </div>
+      </div>
 
       <div className="border-t border-line pt-4">
         <Field label="Slug prompt">
