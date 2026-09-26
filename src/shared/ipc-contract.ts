@@ -89,7 +89,9 @@ export type IpcCalls = {
 
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }
-  'settings:update':       { req: Partial<Settings>;                 res: Settings }
+  // `warning` is main-authored copy for a save that committed with a leftover
+  // problem (old library copies not removed); null on a clean save.
+  'settings:update':       { req: Partial<Settings>;                 res: { settings: Settings; warning: string | null } }
   // Stop a library move started by settings:update; its copies are rolled back and
   // the update rejects with the library still in the old folder.
   'settings:cancelLibraryMove': { req: undefined;                    res: void }

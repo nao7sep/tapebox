@@ -15,9 +15,12 @@ import {
   type RelocatedFile,
 } from '@main/store/library-move'
 import { log } from '@main/io/logger'
+import { describeError } from '@shared/error'
 import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import { SettingsSchema, type Settings } from '@shared/settings'
+import { UserFacingError } from '@main/user-facing-error'
+import type { IpcCalls } from '@shared/ipc-contract'
 
 /**
  * The flat library files the app owns and tracks, as basenames — every tape's
@@ -65,7 +68,8 @@ function normalizeUserDir(label: string, value: string): string {
     expanded = join(homedir(), expanded.slice(2))
   }
   if (!isAbsolute(expanded)) {
-    throw new Error(
+    throw new UserFacingError(
+      'invalid',
       `${label} must be an absolute path (or left blank for the default). ` +
         'Use the Choose… button, or type a full path or one starting with ~.',
     )
@@ -101,7 +105,8 @@ async function relocateIfLibraryDirChanged(
   if (resolve(fromDir) === resolve(toDir)) return null
 
   if (queue.activeCount() > 0) {
-    throw new Error(
+    throw new UserFacingError(
+      'refused',
       "Can't move the library while downloads are running. Finish or stop them first, then change the library folder.",
     )
   }
@@ -167,11 +172,17 @@ export function registerSettingsHandlers(): void {
   handle('settings:hasApiKey', async () => apiKeys.hasApiKey(['openai']))
 }
 
+type SettingsUpdateResult = IpcCalls['settings:update']['res']
+
+/** Shown when the new library folder is committed but old copies remain in the previous one. */
+const OBSOLETE_SOURCES_WARNING =
+  'Settings were saved and the library now uses the new folder, but some files could not be removed from the previous folder.'
+
 async function applySettingsPatch(
   normalized: Partial<Settings>,
   wasAutostart: boolean,
   signal: AbortSignal,
-): Promise<Settings> {
+): Promise<SettingsUpdateResult> {
   const relocation = await relocateIfLibraryDirChanged(normalized, signal)
   let next: Settings
   try {
@@ -201,6 +212,8 @@ async function applySettingsPatch(
   // (and toggling it on while a tape plays must acquire it) — reconcile against
   // the new setting rather than waiting for the next play/pause transition.
   reconcileWakeLock()
+  // The commit above is the outcome: the new folder is authoritative, so a failed
+  // cleanup of the old copies is a warning on a successful save, never a failure.
   if (relocation) {
     try {
       await completeLibraryRelocation(relocation.files)
@@ -209,12 +222,13 @@ async function applySettingsPatch(
         files: relocation.files.length,
       })
     } catch (cleanupError) {
-      throw new AggregateError(
-        [cleanupError],
-        'Settings were saved and the new library is authoritative, but obsolete source cleanup was incomplete.',
-      )
+      log.error('obsolete library source cleanup incomplete after settings commit', {
+        from: relocation.fromDir,
+        error: describeError(cleanupError),
+      })
+      return { settings: next, warning: OBSOLETE_SOURCES_WARNING }
     }
   }
-  return next
+  return { settings: next, warning: null }
 }
 

@@ -57,7 +57,7 @@ export async function savePlaybackSettings(
     saving: { ...state.saving, ...Object.fromEntries(fields.map((field) => [field, true])) },
   }))
   try {
-    const confirmed = await ipcInvoke('settings:update', patch)
+    const { settings: confirmed } = await ipcInvoke('settings:update', patch)
     const current = useSettingsStore.getState().settings
     if (current) {
       const confirmedPatch: Partial<Settings> = {}

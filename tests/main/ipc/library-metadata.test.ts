@@ -1,3 +1,4 @@
+import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +12,7 @@ const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
-      handlers.set(channel, (req) => fn({}, req))
+      handlers.set(channel, async (req: unknown) => unwrapIpcReply(channel, (await fn({}, req)) as IpcReply<unknown>))
     },
   },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
@@ -101,7 +102,7 @@ describe('re-probing a tape', () => {
     probe.mockResolvedValue({ kind: 'page', entries: [] })
 
     await expect(invoke('library:probeMetadata', { tapeId: 'Nowaplayli' })).rejects.toThrow(
-      'The operation could not be completed.',
+      'This link now points to a list of videos, not a single video.',
     )
   })
 

@@ -8,6 +8,7 @@ import {
 } from '@main/io/atomic-file'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { portableFilenameIdentity } from '@shared/filename'
+import { UserFacingError } from '@main/user-facing-error'
 
 /**
  * Move the library's flat contents from one folder to another when the user
@@ -124,7 +125,8 @@ export async function relocateLibrary(
   if (collisions.length > 0) {
     const shown = collisions.slice(0, 5).join(', ')
     const more = collisions.length > 5 ? `, and ${collisions.length - 5} more` : ''
-    throw new Error(
+    throw new UserFacingError(
+      'conflict',
       `The new library folder already contains ${collisions.length} file(s) with the same name (${shown}${more}). ` +
         `Move or remove them first — TapeBox won't overwrite existing files.`,
     )

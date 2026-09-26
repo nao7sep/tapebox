@@ -51,7 +51,7 @@ export function BinariesModal() {
   async function saveGate(check: boolean) {
     setSettingsError(null)
     try {
-      const next = await ipcInvoke('settings:update', { checkUpdatesAtLaunch: check })
+      const { settings: next } = await ipcInvoke('settings:update', { checkUpdatesAtLaunch: check })
       useSettingsStore.getState().setSettings(next)
     } catch (err) {
       setSettingsError(presentFailure(err, 'The update-check setting was not saved. The previous setting remains in use; try again.', 'tool update setting save failed'))

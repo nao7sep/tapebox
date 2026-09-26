@@ -1,3 +1,4 @@
+import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,7 +18,7 @@ const shell = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
-      handlers.set(channel, (req) => fn({}, req))
+      handlers.set(channel, async (req: unknown) => unwrapIpcReply(channel, (await fn({}, req)) as IpcReply<unknown>))
     },
   },
   shell,
@@ -239,7 +240,7 @@ describe('removing tapes from the library', () => {
     })
 
     await expect(invoke('library:remove', { tapeIds: ['Stuckhere1', 'Removable1'], deleteFiles: true })).rejects.toThrow(
-      'The operation could not be completed.',
+      'The files for 1 tape could not be removed. The library entries were kept.',
     )
 
     expect(state.tapes.map((tape) => tape.id), 'the tape whose files stayed is kept').toEqual(['Stuckhere1'])

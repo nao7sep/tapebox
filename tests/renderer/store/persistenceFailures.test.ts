@@ -55,17 +55,18 @@ describe('truthful renderer persistence', () => {
   })
 
   it('settles unrelated setting writes independently when responses finish out of order', async () => {
-    let resolveAutoplay!: (value: ReturnType<typeof defaultSettings>) => void
-    let resolveSound!: (value: ReturnType<typeof defaultSettings>) => void
-    const autoplayResponse = new Promise<ReturnType<typeof defaultSettings>>((resolve) => { resolveAutoplay = resolve })
-    const soundResponse = new Promise<ReturnType<typeof defaultSettings>>((resolve) => { resolveSound = resolve })
+    type Saved = { settings: ReturnType<typeof defaultSettings>; warning: string | null }
+    let resolveAutoplay!: (value: Saved) => void
+    let resolveSound!: (value: Saved) => void
+    const autoplayResponse = new Promise<Saved>((resolve) => { resolveAutoplay = resolve })
+    const soundResponse = new Promise<Saved>((resolve) => { resolveSound = resolve })
     ipcInvoke.mockReturnValueOnce(autoplayResponse).mockReturnValueOnce(soundResponse)
 
     const autoplayWrite = savePlaybackSettings({ autoplay: false })
     const soundWrite = savePlaybackSettings({ playSound: false })
-    resolveSound({ ...defaultSettings(), playSound: false })
+    resolveSound({ settings: { ...defaultSettings(), playSound: false }, warning: null })
     await soundWrite
-    resolveAutoplay({ ...defaultSettings(), autoplay: false })
+    resolveAutoplay({ settings: { ...defaultSettings(), autoplay: false }, warning: null })
     await autoplayWrite
 
     expect(useSettingsStore.getState().settings).toMatchObject({ autoplay: false, playSound: false })

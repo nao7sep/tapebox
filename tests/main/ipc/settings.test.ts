@@ -1,3 +1,4 @@
+import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,7 +26,7 @@ vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn() }))
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
-      handlers.set(channel, (req: unknown) => fn({}, req))
+      handlers.set(channel, async (req: unknown) => unwrapIpcReply(channel, (await fn({}, req)) as IpcReply<unknown>))
     },
   },
 }))
@@ -81,10 +82,10 @@ vi.mock('@main/io/logger', () => ({
 
 const { registerSettingsHandlers } = await import('@main/ipc/settings')
 
-function update(patch: Partial<Settings>): Promise<Settings> {
+function update(patch: Partial<Settings>): Promise<{ settings: Settings; warning: string | null }> {
   const fn = handlers.get('settings:update')
   if (!fn) throw new Error('settings:update was not registered')
-  return Promise.resolve(fn(patch) as Settings)
+  return Promise.resolve(fn(patch) as { settings: Settings; warning: string | null })
 }
 
 let base: Settings
@@ -110,14 +111,14 @@ afterEach(() => {
 
 describe('settings:update — normalizeUserDir at the boundary', () => {
   it('rejects a relative typed library folder (it must never reach a path join)', async () => {
-    await expect(update({ libraryDir: 'relative/library' })).rejects.toThrow('The operation could not be completed.')
+    await expect(update({ libraryDir: 'relative/library' })).rejects.toThrow('Library folder must be an absolute path')
     // The relative value must not have been stored, and no relocation attempted.
     expect(updateSettings).not.toHaveBeenCalled()
     expect(relocateLibrary).not.toHaveBeenCalled()
   })
 
   it('rejects a relative typed default export folder', async () => {
-    await expect(update({ defaultExportDir: 'exports/here' })).rejects.toThrow('The operation could not be completed.')
+    await expect(update({ defaultExportDir: 'exports/here' })).rejects.toThrow('Default export folder must be an absolute path')
     expect(updateSettings).not.toHaveBeenCalled()
   })
 
@@ -152,7 +153,7 @@ describe('settings:update — relocation refused while downloads run', () => {
   it('throws and moves nothing when the library dir changes during active downloads', async () => {
     activeCount.mockReturnValue(2)
     // A real change: from the current resolved dir to a new absolute custom folder.
-    await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('The operation could not be completed.')
+    await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow("Can't move the library while downloads are running.")
     // The safety guard fires BEFORE the move and BEFORE the commit.
     expect(relocateLibrary).not.toHaveBeenCalled()
     expect(updateSettings).not.toHaveBeenCalled()
@@ -212,7 +213,7 @@ describe('settings:update — relocation refused while downloads run', () => {
     expect(JSON.stringify(logError.mock.calls)).toContain(recoveryPath)
   })
 
-  it('keeps post-commit cleanup details diagnostic-only without rolling back the destination', async () => {
+  it('reports a post-commit cleanup failure as a warning on a successful save', async () => {
     const sourcePath = '/current/library/a.mp4'
     const files = [{
       name: 'a.mp4',
@@ -224,8 +225,10 @@ describe('settings:update — relocation refused while downloads run', () => {
       new AggregateError([new Error(`Source claim remains at ${sourcePath}`)], 'cleanup incomplete'),
     )
 
-    const failure = update({ libraryDir: '/data/new-library' })
-    await expect(failure).rejects.toThrow('The operation could not be completed.')
+    const result = await update({ libraryDir: '/data/new-library' })
+    expect(result.settings.libraryDir).toBe('/data/new-library')
+    expect(result.warning).toMatch(/saved and the library now uses the new folder/)
+    expect(result.warning).not.toContain(sourcePath)
     expect(JSON.stringify(logError.mock.calls)).toContain(sourcePath)
     expect(updateSettings).toHaveBeenCalledOnce()
     expect(rollbackLibraryRelocation).not.toHaveBeenCalled()

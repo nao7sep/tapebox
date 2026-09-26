@@ -1,3 +1,4 @@
+import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Box } from '@shared/domain'
 
@@ -5,7 +6,7 @@ const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
-      handlers.set(channel, (req) => fn({}, req))
+      handlers.set(channel, async (req: unknown) => unwrapIpcReply(channel, (await fn({}, req)) as IpcReply<unknown>))
     },
   },
 }))

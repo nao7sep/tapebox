@@ -9,6 +9,7 @@ import type { IpcEvents } from '@shared/ipc-contract'
 import { formatBytes } from '@renderer/lib/format'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useTapesStore } from '@renderer/store/tapes'
+import { useToastStore } from '@renderer/store/toast'
 import { Modal } from '@renderer/components/Modal'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
 import {
@@ -153,9 +154,12 @@ export function SettingsModal({ onClose }: Props) {
     stopRequested.current = false
     let settingsSaved = false
     try {
-      const updated = await ipcInvoke('settings:update', pickEditable(draft))
+      const { settings: updated, warning } = await ipcInvoke('settings:update', pickEditable(draft))
       useSettingsStore.getState().setHydratedSettings(updated)
       settingsSaved = true
+      // The save committed; a leftover problem main reports stays on screen after
+      // the dialog closes, since an error toast persists until dismissed.
+      if (warning) useToastStore.getState().notify(warning, 'error')
       if (apiKeyDraft.length > 0) {
         await ipcInvoke('settings:setApiKey', { apiKey: apiKeyDraft })
       } else if (wantsClearKey) {

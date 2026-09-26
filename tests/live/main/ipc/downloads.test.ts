@@ -1,3 +1,4 @@
+import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 // The download path end to end, driven through the real IPC handlers the
 // renderer calls, with nothing substituted but Electron's window glue: the
 // managed yt-dlp, ffmpeg, and deno, acquired through the app's own binaries
@@ -29,7 +30,7 @@ const handlers = vi.hoisted(() => new Map<string, (req: unknown) => Promise<unkn
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
-      handlers.set(channel, async (req) => fn({}, req))
+      handlers.set(channel, async (req) => unwrapIpcReply(channel, (await fn({}, req)) as IpcReply<unknown>))
     },
     on: () => {},
   },

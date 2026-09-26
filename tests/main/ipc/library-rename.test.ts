@@ -1,3 +1,4 @@
+import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -8,7 +9,7 @@ const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
-      handlers.set(channel, (req) => fn({}, req))
+      handlers.set(channel, async (req: unknown) => unwrapIpcReply(channel, (await fn({}, req)) as IpcReply<unknown>))
     },
   },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
@@ -18,6 +19,7 @@ const state = vi.hoisted(() => ({ tape: null as Tape | null, libraryDir: '' }))
 const upsertTape = vi.hoisted(() => vi.fn((tape: Tape) => { state.tape = tape }))
 const renameTapeDurably = vi.hoisted(() => vi.fn())
 const logError = vi.hoisted(() => vi.fn())
+const logWarn = vi.hoisted(() => vi.fn())
 vi.mock('@main/store/session', () => ({
   getTape: (id: string) => state.tape?.id === id ? state.tape : undefined,
   getTapes: () => state.tape ? [state.tape] : [],
@@ -36,7 +38,7 @@ vi.mock('@main/services/ytdlp', () => ({
 }))
 vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: vi.fn() }))
 vi.mock('@main/io/logger', () => ({
-  log: { info: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() },
+  log: { info: vi.fn(), warn: logWarn, error: logError, debug: vi.fn() },
 }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
@@ -250,14 +252,11 @@ describe('library:rename', () => {
     const invoke = handlers.get('library:rename')!
 
     const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'renamed' }))
-    await expect(failure).rejects.toThrow('The operation could not be completed.')
+    // The rename committed, so the user is told exactly that; the paths stay in the log.
+    await expect(failure).rejects.toThrow('The tape was renamed, but some of its old files could not be removed')
+    await expect(failure).rejects.not.toThrow(dir)
     expect(rollbackMutation.cleanupPath).toBe(join(dir, 'Take.mp4'))
-    expect(logError).toHaveBeenCalledWith(
-      'ipc handler failed',
-      expect.objectContaining({
-        error: expect.objectContaining({ message: expect.stringContaining(rollbackMutation.cleanupPath) }),
-      }),
-    )
+    expect(JSON.stringify(logWarn.mock.calls)).toContain(rollbackMutation.cleanupPath)
 
     expect(state.tape).toMatchObject({
       name: 'renamed',

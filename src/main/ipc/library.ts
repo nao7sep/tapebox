@@ -32,6 +32,7 @@ import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
 import { SidecarTapeBoxSchema, type Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, SidecarRaw } from '@shared/ipc-contract'
+import { UserFacingError } from '@main/user-facing-error'
 
 export function registerLibraryHandlers(): void {
   handle('library:list', async () => session.getTapes())
@@ -89,7 +90,7 @@ export function registerLibraryHandlers(): void {
     // files (and the catalog entry) actually remain.
     if (failed.length > 0) {
       const noun = failed.length === 1 ? 'tape' : 'tapes'
-      throw new Error(`The files for ${failed.length} ${noun} could not be removed. The library entries were kept.`)
+      throw new UserFacingError('conflict', `The files for ${failed.length} ${noun} could not be removed. The library entries were kept.`)
     }
   })
 
@@ -141,7 +142,7 @@ export function registerLibraryHandlers(): void {
     // call. Nothing is written here: the caller reviews this and decides.
     const result = await runCancellable((signal) => probe(tape.sourceUrl, signal))
     if (result.kind === 'page') {
-      throw new Error('This link now points to a list of videos, not a single video.')
+      throw new UserFacingError('refused', 'This link now points to a list of videos, not a single video.')
     }
     return {
       title: result.title,
@@ -417,7 +418,7 @@ async function renameTape(tapeId: string, name: string, signal: AbortSignal): Pr
     },
     name,
   )
-  if (plan.status === 'error') throw new Error(plan.message)
+  if (plan.status === 'error') throw new UserFacingError('invalid', plan.message)
   if (plan.status === 'noop') return tape
 
   const { cleanName } = plan
@@ -550,10 +551,15 @@ async function renameTape(tapeId: string, name: string, signal: AbortSignal): Pr
     postCommitErrors.push(cleanupError)
   }
   if (postCommitErrors.length > 0) {
-    throw new AggregateError(
+    const diagnostic = new AggregateError(
       postCommitErrors,
       `Rename committed and the catalog points to the new bundle, but post-commit sidecar/source cleanup was incomplete. ` +
         `Old/sidecar paths: ${[...obsoleteClaims.map((claim) => claim.path), sidecarItem.old].join(', ')}.`,
+    )
+    throw new UserFacingError(
+      'conflict',
+      'The tape was renamed, but some of its old files could not be removed from the library folder.',
+      { cause: diagnostic },
     )
   }
   log.info('renamed', { tapeId: tape.id, name: cleanName })

@@ -8,6 +8,7 @@ import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
 import { canonicalizeForDedup, isImportableUrl } from '@shared/url'
 import type { Tape } from '@shared/domain'
+import { UserFacingError } from '@main/user-facing-error'
 
 /** Orders that drop a block of `count` new tapes onto the top of the inbox. */
 function inboxFrontOrders(count: number): number[] {
@@ -21,7 +22,7 @@ export function registerDownloadHandlers(): void {
     // Gate the scheme at the trust boundary: only http(s) reaches yt-dlp, never
     // file:// or an internal scheme a renderer could otherwise drive it at.
     if (!isImportableUrl(trimmed)) {
-      throw new Error('Enter a valid http(s) URL.')
+      throw new UserFacingError('invalid', 'Enter a valid http(s) URL.')
     }
     // Reserve the on-disk stem first: it is the only await. The dedup check, the
     // order and the insert then happen in one synchronous turn, so two quick Adds
@@ -33,7 +34,7 @@ export function registerDownloadHandlers(): void {
     // failed one is resumed via Retry, not re-added.
     const canonical = canonicalizeForDedup(trimmed)
     if (session.getTapes().some((i) => canonicalizeForDedup(i.sourceUrl) === canonical)) {
-      throw new Error('This URL has already been added.')
+      throw new UserFacingError('refused', 'This URL is already in the library.')
     }
     const [order] = inboxFrontOrders(1)
     const tape = queuedTape(id, trimmed, order)

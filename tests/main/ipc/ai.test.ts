@@ -1,10 +1,11 @@
+import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { describe, expect, it, vi } from 'vitest'
 
 const handlers = vi.hoisted(() => new Map<string, (req: unknown) => Promise<unknown>>())
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => Promise<unknown>) => {
-      handlers.set(channel, (req) => fn({}, req))
+      handlers.set(channel, async (req: unknown) => unwrapIpcReply(channel, (await fn({}, req)) as IpcReply<unknown>))
     },
   },
 }))
