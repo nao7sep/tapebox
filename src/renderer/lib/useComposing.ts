@@ -54,15 +54,21 @@ export function isComposingKeyboardEvent(
   e: React.KeyboardEvent | KeyboardEvent,
 ): boolean {
   if (composingRef.current) return true
-  const nativeEvent = 'nativeEvent' in e ? e.nativeEvent : e
-  if (nativeEvent.isComposing) return true
+  return keyEventIsComposing('nativeEvent' in e ? e.nativeEvent : e)
+}
 
+/**
+ * Layers 2 and 3 alone: whether the key event itself is marked as part of a
+ * composition. This is the whole guard for an app-wide accelerator dispatcher,
+ * which has no field to track: the web tags a chord pressed mid-composition with
+ * isComposing (text-input-ime-conventions, command accelerators).
+ */
+export function keyEventIsComposing(e: KeyboardEvent): boolean {
+  if (e.isComposing) return true
   // Legacy fallback for older IME implementations. keyCode is deprecated and may
   // eventually be dropped from TypeScript's DOM types; the cast keeps the build
   // working if so. Reading a missing property yields undefined rather than
-  // throwing, so the guard simply degrades to the two checks above.
-  const legacyKeyCode = (nativeEvent as { keyCode?: number }).keyCode
-  if (legacyKeyCode === 229) return true
-
-  return false
+  // throwing, so the guard simply degrades to the check above.
+  const legacyKeyCode = (e as { keyCode?: number }).keyCode
+  return legacyKeyCode === 229
 }
