@@ -557,7 +557,7 @@
   "shortcuts.navigateNote": "las flechas actúan en la lista a la que llegaste con Tab o en la que hiciste clic por última vez: videos, capítulos o cajas",
   "shortcuts.moveSelection": "Mover la selección arriba/abajo",
   "shortcuts.reorder": "Reordenar la cinta o caja seleccionada",
-  "shortcuts.searchArchive": "Buscar en el archivo",
+  "shortcuts.searchArchive": "Buscar en las cintas archivadas",
   "shortcuts.selectedTape": "Cinta seleccionada",
   "shortcuts.mainAction": "Reproducir/pausar, o la acción principal de la cinta",
   "shortcuts.archiveToggle": "Archivar/desarchivar",

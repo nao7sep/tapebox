@@ -105,7 +105,7 @@
   "import.mediaNameInvalid": "Le fichier sidecar doit désigner son fichier multimédia par un seul nom de fichier. Exportez-le à nouveau depuis une version actuelle de TapeBox.",
   "import.thumbnailNameInvalid": "La vignette du fichier sidecar doit être un seul nom de fichier, ou aucune.",
   "import.mediaNoExtension": "Le nom du fichier multimédia doit avoir une extension.",
-  "import.bundleNamesClash": "Les noms des fichiers multimédia, sidecar et vignette doivent tous être différents.",
+  "import.bundleNamesClash": "Les noms du fichier multimédia, du fichier sidecar et de la vignette doivent tous être différents.",
   "import.sidecarUnreadable": "Impossible de lire le fichier sidecar. Vérifiez que le fichier est toujours disponible, puis réessayez.",
   "import.sidecarInvalidJson": "Le fichier sidecar n’est pas un JSON TapeBox valide.",
   "import.alreadyInLibrary": "Déjà dans la bibliothèque.",

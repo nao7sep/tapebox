@@ -105,7 +105,7 @@
   "import.mediaNameInvalid": "Il file sidecar deve indicare il suo file multimediale con un unico nome di file. Esportalo di nuovo da una versione aggiornata di TapeBox.",
   "import.thumbnailNameInvalid": "La miniatura del file sidecar deve essere un unico nome di file, oppure nessuna.",
   "import.mediaNoExtension": "Il nome del file multimediale deve avere un’estensione.",
-  "import.bundleNamesClash": "I nomi dei file multimediale, sidecar e miniatura devono essere tutti diversi.",
+  "import.bundleNamesClash": "I nomi del file multimediale, del file sidecar e della miniatura devono essere tutti diversi.",
   "import.sidecarUnreadable": "Impossibile leggere il file sidecar. Verifica che il file sia ancora disponibile e riprova.",
   "import.sidecarInvalidJson": "Il file sidecar non è un JSON di TapeBox valido.",
   "import.alreadyInLibrary": "Già nella libreria.",
@@ -184,9 +184,9 @@
     "other": "{count} cassette"
   },
   "status.failedSuffix": {
-    "one": "· {count} non riuscito",
-    "many": "· {count} non riusciti",
-    "other": "· {count} non riusciti"
+    "one": "· {count} con errore",
+    "many": "· {count} con errore",
+    "other": "· {count} con errore"
   },
   "status.toScanSuffix": {
     "one": "· {count} da scansionare",
