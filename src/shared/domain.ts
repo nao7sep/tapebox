@@ -158,6 +158,25 @@ export const BoxSchema = z.object({
 })
 export type Box = z.infer<typeof BoxSchema>
 
+/** The tape fields that name a file in the library folder. */
+export const TRACKED_FILENAME_FIELDS = ['filename', 'sidecarFilename', 'thumbnailFilename'] as const
+
+/**
+ * The portable identities of every library file the catalog tracks. The catalog
+ * requires these to be unique (SessionSchema below), so a new row is checked
+ * against this set before it joins the catalog.
+ */
+export function trackedFilenameIdentities(tapes: readonly Tape[]): Set<string> {
+  const identities = new Set<string>()
+  for (const tape of tapes) {
+    for (const field of TRACKED_FILENAME_FIELDS) {
+      const filename = tape[field]
+      if (filename !== null) identities.add(portableFilenameIdentity(filename))
+    }
+  }
+  return identities
+}
+
 /**
  * Session file shape — persisted in ~/.tapebox/catalog.json.
  * Live progress data (percent, speed, ETA) is intentionally absent;
@@ -169,7 +188,7 @@ export const SessionSchema = z.object({
 }).superRefine((session, ctx) => {
   const tapeIds = new Set<string>()
   const filenames = new Map<string, string>()
-  const filenameFields = ['filename', 'sidecarFilename', 'thumbnailFilename'] as const
+  const filenameFields = TRACKED_FILENAME_FIELDS
   for (let i = 0; i < session.tapes.length; i++) {
     const tape = session.tapes[i]!
     const id = tape.id

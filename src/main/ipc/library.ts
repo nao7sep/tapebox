@@ -30,7 +30,7 @@ import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import { SidecarTapeBoxSchema, type Tape } from '@shared/domain'
+import { SidecarTapeBoxSchema, trackedFilenameIdentities, type Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 
@@ -296,6 +296,21 @@ async function importBundles(paths: string[], signal: AbortSignal): Promise<Impo
     // Library names follow the media file's stem so the bundle stays internally
     // consistent (media + sidecar share a stem) regardless of the sidecar's own name.
     const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
+
+    // The catalog tracks each library filename once. A name another tape already
+    // owns is refused here, before anything is copied: the disk alone cannot tell
+    // (the other tape's file may be missing, or this bundle may already sit in the
+    // library folder), and a row that broke the rule would fail every later save.
+    const tracked = trackedFilenameIdentities(session.getTapes())
+    const clash = [mediaFilename, `${mediaStem}.json`].find((name) => tracked.has(portableFilenameIdentity(name)))
+    if (clash) {
+      issues.push({
+        path: sidecarPath,
+        reason: `Another tape in the library already uses the file name ${clash}. Rename this bundle's files, then import it again.`,
+        severity: 'warning',
+      })
+      continue
+    }
     const targetMedia = join(libraryDir, mediaFilename)
     const targetSidecar = join(libraryDir, `${mediaStem}.json`)
     const copied: FileClaim[] = []
@@ -345,7 +360,13 @@ async function importBundles(paths: string[], signal: AbortSignal): Promise<Impo
     // it. Best-effort: a missing or unreadable thumbnail just imports the tape
     // without a poster — it never rejects the import.
     let thumbnailFilename: string | null = null
-    if (tbThumb) {
+    if (tbThumb && tracked.has(portableFilenameIdentity(tbThumb))) {
+      issues.push({
+        path: join(dir, tbThumb),
+        reason: 'Another tape in the library already uses this thumbnail\'s file name. The tape was imported without it.',
+        severity: 'warning',
+      })
+    } else if (tbThumb) {
       const srcThumb = join(dir, tbThumb)
       const dstThumb = join(libraryDir, tbThumb)
       try {

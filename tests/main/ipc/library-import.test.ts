@@ -152,6 +152,33 @@ describe('importing a bundle', () => {
     expect(persistNow.mock.invocationCallOrder.at(-1)!).toBeLessThan(emit.mock.invocationCallOrder[0]!)
   })
 
+  it('refuses a bundle whose file name another tape tracks, even when that file is gone from disk', async () => {
+    // The existing tape's trip.mp4 was deleted outside the app, so only the catalog knows the name.
+    state.tapes = [makeTape({ id: 'has-trip', filename: 'trip.mp4', sidecarFilename: 'has-trip.json' })]
+    const sidecar = await stageBundle({ stem: 'trip', sourceUrl: 'https://example.test/other-trip' })
+
+    const result = await importPaths(sidecar)
+
+    expect(result.imported).toEqual([])
+    expect(result.issues).toEqual([
+      expect.objectContaining({ path: sidecar, severity: 'warning', reason: expect.stringContaining('trip.mp4') }),
+    ])
+    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(state.tapes.map((tape) => tape.id)).toEqual(['has-trip'])
+  })
+
+  it('imports without a thumbnail whose file name another tape tracks', async () => {
+    state.tapes = [makeTape({ id: 'has-poster', thumbnailFilename: 'poster.jpg' })]
+    const sidecar = await stageBundle({ stem: 'holiday', thumbnailFilename: 'poster.jpg' })
+
+    const result = await importPaths(sidecar, join(sourceDir, 'holiday.mp4'), join(sourceDir, 'poster.jpg'))
+
+    expect(result.imported).toHaveLength(1)
+    expect(result.imported[0]!.thumbnailFilename).toBeNull()
+    expect(result.issues).toEqual([expect.objectContaining({ path: join(sourceDir, 'poster.jpg'), severity: 'warning' })])
+    expect((await readdir(state.libraryDir)).sort()).toEqual(['holiday.json', 'holiday.mp4'])
+  })
+
   it('names the library copies after the media file, not after the sidecar', async () => {
     const sidecar = await stageBundle({ stem: 'holiday', sidecarName: 'renamed-by-hand.json' })
 
