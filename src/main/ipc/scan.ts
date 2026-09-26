@@ -5,6 +5,7 @@ import * as scanService from '@main/services/ytdlp-scan'
 import * as session from '@main/store/session'
 import { describeError } from '@shared/error'
 import { isImportableUrl } from '@shared/url'
+import { librarySourceIndex } from '@shared/source-identity'
 import { log } from '@main/io/logger'
 import type { ScanResult } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
@@ -32,12 +33,10 @@ export function registerScanHandlers(): void {
     }
     if (closed) throw new Error('TapeBox is quitting.')
     const sessionId = nanoid(8)
-    // Dedupe against the library by video id AND url. id is the reliable key but
-    // is only set once an tape has been probed; url is the fallback that catches
-    // tapes still queued unprobed (added with autostart off).
-    const tapes = session.getTapes()
-    const knownSourceIds = new Set(tapes.map((i) => i.sourceId).filter((x): x is string => !!x))
-    const knownSourceUrls = new Set(tapes.map((i) => i.sourceUrl))
+    // Mark what the library already holds with its one identity rule: the
+    // (extractor, id) pair for probed tapes, the canonical URL for any tape,
+    // including ones still queued unprobed (added with autostart off).
+    const known = librarySourceIndex(session.getTapes())
 
     const handle_ = scanService.startScan(url, (raw) => {
       const entry: ScanResult = {
@@ -47,7 +46,7 @@ export function registerScanHandlers(): void {
         durationSeconds: raw.duration,
         uploadDateUtc: raw.uploadDate ? ymdToUtcIso(raw.uploadDate) : null,
         thumbnailUrl: raw.thumbnailUrl,
-        alreadyInLibrary: knownSourceIds.has(raw.id) || knownSourceUrls.has(raw.url),
+        alreadyInLibrary: known.has({ url: raw.url, extractor: raw.extractor, sourceId: raw.id }),
         unavailable: null,
       }
       emit('scan:entry', { sessionId, entry })

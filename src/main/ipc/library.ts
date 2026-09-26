@@ -27,6 +27,7 @@ import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
 import { runCancellable } from '@main/work-registry'
 import { withLibraryWrite } from '@main/library-writes'
+import { librarySourceIndex } from '@shared/source-identity'
 import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
@@ -276,7 +277,11 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     claimedCompanionPaths.push(join(dir, mediaFilename))
     if (tbThumb) claimedCompanionPaths.push(join(dir, tbThumb))
 
-    const existing = session.getTapes().find((i) => i.sourceUrl === sourceUrl)
+    const existing = librarySourceIndex(session.getTapes()).has({
+      url: sourceUrl,
+      extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
+      sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
+    })
     if (existing) {
       issues.push({ path: sidecarPath, reason: 'already in library', severity: 'information' })
       continue

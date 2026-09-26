@@ -6,7 +6,8 @@ import { reserveStem } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import { canonicalizeForDedup, isImportableUrl } from '@shared/url'
+import { isImportableUrl } from '@shared/url'
+import { librarySourceIndex } from '@shared/source-identity'
 import type { Tape } from '@shared/domain'
 import { UserFacingError } from '@main/user-facing-error'
 
@@ -28,12 +29,11 @@ export function registerDownloadHandlers(): void {
     // order and the insert then happen in one synchronous turn, so two quick Adds
     // of the same URL cannot both pass the check.
     const id = await reserveStem(getLibraryDir())
-    // URL-based dedup for the single-add path (no id yet — it's unprobed). Compare
-    // canonical forms so the same video pasted with tracking junk / a fragment isn't
-    // added twice and re-probed. Any existing tape blocks the add, in any state; a
+    // Dedup by URL for the single-add path (no id yet — it's unprobed), with the
+    // library's one identity rule, so the same video pasted with tracking junk or a
+    // fragment isn't added twice. Any existing tape blocks the add, in any state; a
     // failed one is resumed via Retry, not re-added.
-    const canonical = canonicalizeForDedup(trimmed)
-    if (session.getTapes().some((i) => canonicalizeForDedup(i.sourceUrl) === canonical)) {
+    if (librarySourceIndex(session.getTapes()).has({ url: trimmed })) {
       throw new UserFacingError('refused', 'This URL is already in the library.')
     }
     const [order] = inboxFrontOrders(1)
@@ -108,12 +108,11 @@ function transition(tapeId: string, patch: Partial<Tape>): void {
  * different-URL collisions are caught later, post-probe, in the queue.
  */
 export function newUrls(tapes: readonly Tape[], urls: readonly string[]): string[] {
-  const seen = new Set(tapes.map((i) => canonicalizeForDedup(i.sourceUrl)))
+  const known = librarySourceIndex(tapes)
   const accepted: string[] = []
   for (const url of urls) {
-    const canonical = canonicalizeForDedup(url)
-    if (seen.has(canonical)) continue
-    seen.add(canonical)
+    if (known.has({ url })) continue
+    known.add({ url }, url)
     accepted.push(url)
   }
   return accepted

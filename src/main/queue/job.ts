@@ -10,6 +10,7 @@ import { describeError } from '@shared/error'
 import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
+import { librarySourceIndex } from '@shared/source-identity'
 
 const DOWNLOAD_FAILURE_MESSAGE =
   'The download could not be completed. Check the source and your connection, then try again.'
@@ -154,17 +155,18 @@ export class Job {
       return false
     }
     // Two URLs can resolve to the same video (e.g. a short share link and the
-    // canonical page), and we don't want two library rows for one video. The id
-    // is unique only within an extractor, so the identity is the (extractor, id)
-    // pair — the same key its --download-archive uses. Only known post-probe, so
-    // we catch it here.
-    const duplicate = this.d.session
-      .getTapes()
-      .find((i) => i.id !== this.tapeId && i.sourceId === result.id && i.extractor === result.extractor)
-    if (duplicate) {
+    // canonical page), and we don't want two library rows for one video. The
+    // (extractor, id) pair is only known post-probe, so the library's identity
+    // rule is checked again here with it.
+    const duplicateOf = librarySourceIndex(this.d.session.getTapes(), this.tapeId).find({
+      url: this.current()!.sourceUrl,
+      extractor: result.extractor,
+      sourceId: result.id,
+    })
+    if (duplicateOf) {
       // A terminal outcome that bypasses the runInner() catch, so log it here —
       // otherwise a download that "failed" leaves no trace in the session log.
-      this.d.log.info('job rejected: duplicate', { tapeId: this.tapeId, extractor: result.extractor, sourceId: result.id, duplicateOf: duplicate.id })
+      this.d.log.info('job rejected: duplicate', { tapeId: this.tapeId, extractor: result.extractor, sourceId: result.id, duplicateOf })
       this.update({
         state: 'failed',
         failureCode: 'duplicate',

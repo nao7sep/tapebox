@@ -193,6 +193,17 @@ describe('importing a bundle', () => {
     expect(state.tapes).toEqual([])
   })
 
+  it('reports a bundle of a video already in the library under a URL with tracking parameters', async () => {
+    state.tapes = [makeTape({ id: 'already-in', sourceUrl: 'https://www.youtube.com/watch?v=X' })]
+    const sidecar = await stageBundle({ stem: 'shared', sourceUrl: 'https://www.youtube.com/watch?v=X&si=abc' })
+
+    const result = await importPaths(sidecar)
+
+    expect(result.imported).toEqual([])
+    expect(result.issues).toEqual([expect.objectContaining({ path: sidecar, reason: 'already in library' })])
+    expect(await readdir(state.libraryDir)).toEqual([])
+  })
+
   it('names the library copies after the media file, not after the sidecar', async () => {
     const sidecar = await stageBundle({ stem: 'holiday', sidecarName: 'renamed-by-hand.json' })
 

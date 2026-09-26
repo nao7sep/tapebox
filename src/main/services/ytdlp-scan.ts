@@ -22,6 +22,8 @@ import { resolveYtdlpArgs } from './ytdlp-args'
 
 export type ScannedEntry = {
   id: string
+  /** yt-dlp's extractor key for the entry (`ie_key`), when the listing names it. */
+  extractor: string | null
   url: string
   title: string | null
   duration: number | null
@@ -130,6 +132,7 @@ function parseEntry(info: Record<string, unknown>): ScannedEntry | null {
   if (!url) return null
   return {
     id,
+    extractor: typeof info['ie_key'] === 'string' ? info['ie_key'] : null,
     url,
     title: typeof info['title'] === 'string' ? info['title'] : null,
     duration: typeof info['duration'] === 'number' ? info['duration'] : null,
