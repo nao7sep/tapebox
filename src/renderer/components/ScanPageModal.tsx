@@ -127,6 +127,8 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     if (!sid) return
     try {
       await ipcInvoke('scan:cancel', { sessionId: sid })
+      // The stopped session is over: a late event from its exiting process is ignored.
+      if (sessionIdRef.current === sid) sessionIdRef.current = null
       setScanning(false)
       setScanned(true)
     } catch (err) {

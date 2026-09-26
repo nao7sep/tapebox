@@ -16,8 +16,9 @@ import { UserFacingError } from '@main/user-facing-error'
  *
  * Events:
  *   scan:entry  — per video as it arrives
- *   scan:done   — stream finished naturally
- *   scan:error  — stream errored
+ *   scan:done   — stream finished, possibly with partial results after a yt-dlp error
+ *   scan:error  — yt-dlp failed before listing anything
+ * A stopped scan emits neither.
  */
 
 const active = new Map<string, scanService.ScanHandle>()
@@ -54,10 +55,13 @@ export function registerScanHandlers(): void {
 
     active.set(sessionId, handle_)
     void handle_.complete
-      .then(({ totalCount }) => emit('scan:done', { sessionId, totalCount }))
-      .catch((err) => {
-        log.warn('scan stream errored', { sessionId, error: describeError(err) })
-        emit('scan:error', { sessionId, code: 'scan-failed' })
+      .then((outcome) => {
+        if (outcome.kind === 'done') emit('scan:done', { sessionId, totalCount: outcome.totalCount })
+        else if (outcome.kind === 'failed') {
+          log.warn('scan failed', { sessionId, error: describeError(outcome.error) })
+          emit('scan:error', { sessionId, code: 'scan-failed' })
+        }
+        // A stopped scan emits nothing: whoever stopped it already settled the dialog.
       })
       .finally(() => active.delete(sessionId))
 

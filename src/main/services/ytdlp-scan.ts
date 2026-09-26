@@ -4,6 +4,7 @@ import { YTDLP_PROBE_IDLE_TIMEOUT_MS } from '@main/io/network'
 import {
   makeLineBuffer,
   spawnStreaming,
+  SubprocessError,
   waitForExit,
 } from '@main/io/spawn'
 import { errorMessage } from '@shared/error'
@@ -28,10 +29,39 @@ export type ScannedEntry = {
   thumbnailUrl: string | null
 }
 
+/**
+ * How a scan ended. `stopped` is a cancel (the user's Stop, closing the dialog, or
+ * quitting), never a failure. A scan that listed entries before yt-dlp failed keeps
+ * them as `done`; one that failed with nothing listed is `failed`.
+ */
+export type ScanOutcome =
+  | { kind: 'done'; totalCount: number }
+  | { kind: 'stopped'; totalCount: number }
+  | { kind: 'failed'; error: unknown }
+
 export type ScanHandle = {
   cancel: () => void
-  complete: Promise<{ totalCount: number }>
+  /** Always resolves; a failure is an outcome, not a rejection. */
+  complete: Promise<ScanOutcome>
 }
+
+/** Decide a finished scan's outcome from how yt-dlp ended and what it listed. */
+export function scanOutcome(ended: {
+  aborted: boolean
+  failure: unknown
+  exitCode: number | null
+  totalCount: number
+  stderrTail: string
+}): ScanOutcome {
+  const { aborted, failure, exitCode, totalCount } = ended
+  if (aborted) return { kind: 'stopped', totalCount }
+  if ((failure === null && exitCode === 0) || totalCount > 0) return { kind: 'done', totalCount }
+  return { kind: 'failed', error: failure ?? new SubprocessError(SCAN_COMMAND, exitCode, ended.stderrTail) }
+}
+
+const SCAN_COMMAND = 'yt-dlp enum'
+/** How much of yt-dlp's stderr a failed scan keeps for the log. */
+const STDERR_TAIL_CHARS = 4000
 
 export function startScan(
   url: string,
@@ -65,14 +95,23 @@ export function startScan(
   })
 
   child.stdout.on('data', lineBuffer.feed)
+  // yt-dlp states why it failed on stderr; the tail is kept for the log.
+  let stderrTail = ''
+  child.stderr.on('data', (chunk: Buffer | string) => {
+    stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_CHARS)
+  })
 
-  const complete = (async () => {
+  const complete = (async (): Promise<ScanOutcome> => {
+    let exitCode: number | null = null
+    let failure: unknown = null
     try {
-      await waitForExit(child, { reject: false, command: 'yt-dlp enum' })
+      exitCode = await waitForExit(child, { reject: false, command: SCAN_COMMAND })
+    } catch (err) {
+      failure = err
     } finally {
       lineBuffer.flush()
     }
-    return { totalCount: total }
+    return scanOutcome({ aborted: ctl.signal.aborted, failure, exitCode, totalCount: total, stderrTail })
   })()
 
   return {

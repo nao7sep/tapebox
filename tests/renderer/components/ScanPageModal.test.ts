@@ -176,3 +176,22 @@ describe('ScanPageModal streaming', () => {
     expect(rows.length).toBeLessThan(100)
   })
 })
+
+describe('ScanPageModal stop', () => {
+  it('shows no scan failure when the stopped scan settles afterwards', async () => {
+    await mount(vi.fn())
+    await scanOneEntry()
+
+    await act(async () => {
+      buttonByText('Stop').click()
+    })
+    await flush()
+    // The killed process settles a moment later; nothing about that reaches the dialog.
+    await act(async () => {
+      emitEvent('scan:error', { sessionId: 'S1', code: 'scan-failed' })
+    })
+
+    expect(document.querySelector('[role="dialog"] [role="alert"]')).toBeNull()
+    expect(buttonByText('Add 1 tape')).toBeTruthy()
+  })
+})
