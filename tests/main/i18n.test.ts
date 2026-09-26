@@ -10,6 +10,7 @@ const electron = vi.hoisted(() => {
     configText: null as string | null,
     switches: [] as Array<[string, string]>,
     menus: [] as unknown[],
+    isPackaged: true,
   }
 })
 
@@ -23,6 +24,9 @@ vi.mock('electron', () => ({
       return own ?? electron.preferred
     },
     getSystemLocale: () => 'ja-JP',
+    get isPackaged() {
+      return electron.isPackaged
+    },
   },
   ipcMain: { on: vi.fn() },
   systemPreferences: {
@@ -64,6 +68,7 @@ beforeEach(() => {
   electron.menus.splice(0)
   electron.preferred = ['ja-JP', 'en-US']
   electron.configText = null
+  electron.isPackaged = true
   Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
 })
 
@@ -113,6 +118,16 @@ describe('main-process interface language', () => {
 
   it('leaves the defaults alone off macOS', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    electron.configText = JSON.stringify({ language: 'it' })
+    const i18n = await load()
+    i18n.settleLanguageBeforeReady()
+    i18n.settleLanguageWhenReady()
+    expect(i18n.currentLanguage()).toBe('it')
+    expect(electron.calls.filter((call) => call !== 'read')).toEqual([])
+  })
+
+  it('leaves the defaults alone on an unpackaged macOS run', async () => {
+    electron.isPackaged = false
     electron.configText = JSON.stringify({ language: 'it' })
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
