@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Toaster } from '@renderer/components/Toaster'
 import { useToastStore } from '@renderer/store/toast'
+import { message } from '@shared/i18n/translate'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -18,8 +19,8 @@ afterEach(async () => {
 
 describe('Toaster error results', () => {
   it('stacks persistent results as alerts without redundant severity labels', async () => {
-    useToastStore.getState().notify('First failure', 'error')
-    useToastStore.getState().notify('Second failure', 'error')
+    useToastStore.getState().notify(message('app.librarySaveFailed'), 'error')
+    useToastStore.getState().notify(message('tapes.orderSaveFailed'), 'error')
     const container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -29,12 +30,12 @@ describe('Toaster error results', () => {
     const alerts = document.querySelectorAll('[role="alert"]')
     expect(alerts).toHaveLength(2)
     expect(alerts[0]?.textContent).not.toContain('Error')
-    expect(alerts[0]?.textContent).toContain('First failure')
+    expect(alerts[0]?.textContent).toContain('Library changes could not be saved to disk.')
 
     await act(async () => {
       alerts[0]?.querySelector<HTMLButtonElement>('button')?.click()
     })
     expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1)
-    expect(document.body.textContent).toContain('Second failure')
+    expect(document.body.textContent).toContain('The tape order was not saved.')
   })
 })

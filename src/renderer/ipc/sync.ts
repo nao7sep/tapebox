@@ -14,10 +14,10 @@ import type { Layout } from '@shared/layout'
 import type { Settings } from '@shared/settings'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
 import { useToastStore } from '@renderer/store/toast'
+import { message } from '@shared/i18n/translate'
 
 /** Shown when main reports that library changes are not reaching disk. */
-export const LIBRARY_SAVE_FAILED_MESSAGE =
-  'Library changes could not be saved to disk. TapeBox keeps them and will try again; check that the disk has free space.'
+export const LIBRARY_SAVE_FAILED_MESSAGE = message('app.librarySaveFailed')
 
 export type InitialSyncState = {
   tapes: Tape[]

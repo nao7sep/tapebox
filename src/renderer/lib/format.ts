@@ -1,10 +1,12 @@
+import { message, type Message } from '@shared/i18n/translate'
+
 /**
  * "N chapters", but only when the count is meaningful — more than one. A video
  * with 0 or 1 chapters, or an unknown count (null/undefined, e.g. not yet probed),
  * has nothing worth showing, so this returns null and callers render nothing.
  */
-export function chapterCountLabel(count: number | null | undefined): string | null {
-  return count != null && count > 1 ? `${count} chapters` : null
+export function chapterCountLabel(count: number | null | undefined): Message | null {
+  return count != null && count > 1 ? message('tape.chapters', { count }) : null
 }
 
 /**
@@ -21,20 +23,5 @@ export function formatTime(totalSeconds: number): string {
   return `${m}:${pad2(ss)}`
 }
 
-/** Human-readable byte size, e.g. 142 MB. */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let value = bytes / 1024
-  let i = 0
-  while (value >= 1024 && i < units.length - 1) {
-    value /= 1024
-    i++
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`
-}
-
-/** Human-readable transfer rate, e.g. 4.2 MB/s. */
-export function formatSpeed(bytesPerSec: number): string {
-  return `${formatBytes(bytesPerSec)}/s`
-}
+// Byte sizes and transfer rates are formatted for the reader's locale by the
+// translator (t.bytes, t.bytesPerSecond).

@@ -9,6 +9,7 @@ import {
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { portableFilenameIdentity } from '@shared/filename'
 import { UserFacingError } from '@main/user-facing-error'
+import { message } from '@shared/i18n/translate'
 
 /**
  * Move the library's flat contents from one folder to another when the user
@@ -123,12 +124,13 @@ export async function relocateLibrary(
     incoming.add(identity)
   }
   if (collisions.length > 0) {
+    // File names are the user's own, listed as they are; the count is a plural entry.
     const shown = collisions.slice(0, 5).join(', ')
-    const more = collisions.length > 5 ? `, and ${collisions.length - 5} more` : ''
     throw new UserFacingError(
       'conflict',
-      `The new library folder already contains ${collisions.length} file(s) with the same name (${shown}${more}). ` +
-        `Move or remove them first — TapeBox won't overwrite existing files.`,
+      collisions.length > 5
+        ? message('errors.libraryMoveCollisionsMore', { count: collisions.length, names: shown, more: collisions.length - 5 })
+        : message('errors.libraryMoveCollisions', { count: collisions.length, names: shown }),
     )
   }
 

@@ -4,6 +4,7 @@ import { chapterCountLabel, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 import { TapeActionResults } from './TapeActionResults'
+import { useI18n } from '@renderer/i18n/I18nContext'
 
 type Props = {
   tape: Tape
@@ -31,6 +32,8 @@ type Props = {
 export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
   const palette = paletteFor(tape, selected)
   const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
+  const t = useI18n()
+  const chapters = chapterCountLabel(tape.chapterCount)
 
   return (
     <div
@@ -59,10 +62,10 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
         <span className="min-w-0 truncate">
           {tape.state === 'downloaded' && tape.uploader
             ? tape.uploader
-            : tapeStatusLabel(tape, progress, stalled)}
+            : t.text(tapeStatusLabel(tape, progress, stalled))}
         </span>
-        {chapterCountLabel(tape.chapterCount) && (
-          <span className="shrink-0">· {chapterCountLabel(tape.chapterCount)}</span>
+        {chapters && (
+          <span className="shrink-0">· {t.text(chapters)}</span>
         )}
       </div>
       {(progress || isProcessing(tape.state)) && (

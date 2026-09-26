@@ -6,6 +6,7 @@ import { releaseVideo } from '@renderer/lib/video'
 import { advanceSelection } from '@renderer/lib/tapeActions'
 import { RemoveTapeConfirmModal } from '@renderer/components/RemoveTapeConfirmModal'
 import { runTapeAction } from '@renderer/lib/runTapeAction'
+import { message } from '@shared/i18n/translate'
 
 /**
  * The single removal flow, shared by the Remove button and the keyboard
@@ -32,7 +33,7 @@ export function useTapeRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
       tape.id,
       'remove',
       'tape removal failed',
-      'This tape could not be removed. It remains in the library; try again.',
+      message('tapeActions.removeFailed'),
       () => ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true }),
     )
     if (outcome === 'succeeded') advance()

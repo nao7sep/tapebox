@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { planExport } from '@main/core/export-plan'
+import { inEnglish } from '../../helpers/i18n'
 
 describe('planExport', () => {
   it('computes the destination names from an absolute destination', () => {
@@ -25,12 +26,12 @@ describe('planExport', () => {
   it('rejects a non-absolute destination directory', () => {
     const plan = planExport({ filename: 'a.mp4', thumbnailFilename: null }, 'relative/dir', 'b')
     expect(plan.status).toBe('error')
-    if (plan.status === 'error') expect(plan.message).toMatch(/absolute/)
+    if (plan.status === 'error') expect(inEnglish(plan.message)).toMatch(/absolute/)
   })
 
   it('rejects a collision when media and thumbnail share an extension', () => {
     const plan = planExport({ filename: 'a.jpg', thumbnailFilename: 'thumb.jpg' }, '/out', 'shared')
     expect(plan.status).toBe('error')
-    if (plan.status === 'error') expect(plan.message).toMatch(/same name/)
+    if (plan.status === 'error') expect(inEnglish(plan.message)).toMatch(/same name/)
   })
 })

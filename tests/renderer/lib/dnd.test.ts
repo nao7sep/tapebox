@@ -69,6 +69,7 @@ import { BoxList, UNBOXED_DROP_ID } from '@renderer/components/BoxList'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useArchiveStore } from '@renderer/store/archive'
+import { message } from '@shared/i18n/translate'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -173,14 +174,14 @@ describe('listbox drag configuration', () => {
     root = createRoot(host)
     act(() => root!.render(createElement(BoxList, {
       onReorder: vi.fn(),
-      orderError: 'Could not save box order: disk full',
+      orderError: message('archive.boxOrderSaveFailed'),
       onDismissOrderError: dismiss,
     })))
 
     const list = host.querySelector<HTMLElement>('[role="listbox"][aria-label="Boxes"]')!
     const alert = host.querySelector<HTMLElement>('[role="alert"]')!
     expect(list.parentElement?.contains(alert)).toBe(true)
-    expect(alert.textContent).toContain('Could not save box order: disk full')
+    expect(alert.textContent).toContain('The box order was not saved.')
     act(() => host.querySelector<HTMLButtonElement>('[aria-label="Close box order result"]')!.click())
     expect(dismiss).toHaveBeenCalledOnce()
   })

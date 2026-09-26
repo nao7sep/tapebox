@@ -25,6 +25,12 @@ import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
+import {
+  applyLanguagePreference,
+  registerLanguageHandlers,
+  settleLanguageBeforeReady,
+  settleLanguageWhenReady,
+} from './i18n.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -41,6 +47,10 @@ if (!app.requestSingleInstanceLock()) {
 app.on('second-instance', () => {
   showOrCreateMainWindow()
 })
+
+// The interface language is known before anything is drawn: Chromium's own
+// strings take it from a switch that only applies before ready.
+settleLanguageBeforeReady()
 
 let mainWindow: BrowserWindow | null = null
 let startupReady = false
@@ -120,6 +130,8 @@ async function startup(): Promise<void> {
   }
 
   const configResult = await loadSettings()
+  applyLanguagePreference(getSettings().language)
+  registerLanguageHandlers()
   // The saved theme reaches the title bar, the renderer's prefers-color-scheme,
   // and the recovery dialogs before any window exists, so launch never shows the
   // OS appearance and then switches. A failure before this point follows the OS.
@@ -229,6 +241,9 @@ process.on('exit', () => {
 })
 
 void app.whenReady().then(() => {
+  // The computer's languages, the menu and AppKit's record of the choice, before
+  // any window exists.
+  settleLanguageWhenReady()
   // Register before starting asynchronous initialization: macOS can deliver an
   // activation while stores/server/IPC are still loading. The handler defers;
   // startup creates the one owner window as soon as readiness is established.

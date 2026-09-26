@@ -22,6 +22,8 @@ import { ArchiveTapeList } from './ArchiveTapeList'
 import { SearchResults } from './SearchResults'
 import { ResizeHandle } from './ResizeHandle'
 import { LayoutWriteResult } from './LayoutWriteResult'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message } from '@shared/i18n/translate'
 
 /**
  * The archived view's left-pane layout and drag handling: boxes on top, the
@@ -45,6 +47,7 @@ export function ArchiveOrganizer() {
   const tapeListKey = selectedBoxId === null ? 'unboxed' : `box:${selectedBoxId}`
   const tapeOrderError = useOrderFailuresStore((s) => s.archiveTapes[tapeListKey] ?? null)
   const setTapeOrderError = useOrderFailuresStore((s) => s.setArchiveTapes)
+  const t = useI18n()
 
   // Consume the one-shot focus request from the "/" shortcut: focus + select the
   // search box, then clear the flag. Runs on mount too (when "/" was pressed from
@@ -114,7 +117,7 @@ export function ArchiveOrganizer() {
       },
       () => useBoxesStore.getState().setBoxes(boxes),
       () => setBoxOrderError(null),
-      (error) => setBoxOrderError(presentFailure(error, 'The box order was not saved. The previous order remains in use; try again.', 'box order save failed')),
+      (error) => setBoxOrderError(presentFailure(error, message('archive.boxOrderSaveFailed'), 'box order save failed')),
     )
   }
 
@@ -134,7 +137,7 @@ export function ArchiveOrganizer() {
       },
       () => useTapesStore.getState().upsertMany(tapes),
       () => setTapeOrderError(tapeListKey, null),
-      (error) => setTapeOrderError(tapeListKey, presentFailure(error, 'The tape order was not saved. The previous order remains in use; try again.', 'archive tape order save failed')),
+      (error) => setTapeOrderError(tapeListKey, presentFailure(error, message('tapes.orderSaveFailed'), 'archive tape order save failed')),
     )
   }
 
@@ -146,7 +149,7 @@ export function ArchiveOrganizer() {
             ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search archived…"
+            placeholder={t.t('archive.searchPlaceholder')}
             spellCheck={false}
             className="w-full rounded border border-field-line bg-panel px-2.5 py-1.5 text-sm placeholder-fg-subtle focus:border-field-focus focus:outline-hidden"
           />

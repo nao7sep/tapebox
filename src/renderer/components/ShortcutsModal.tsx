@@ -1,9 +1,13 @@
 import { Modal } from '@renderer/components/Modal'
 import { Button } from '@renderer/components/ui'
 import { useRuntimeStore } from '@renderer/store/runtime'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import type { MessageKey } from '@shared/i18n/catalogues'
 
-type Shortcut = { label: string; keys: string }
-type Group = { title: string; note?: string; shortcuts: Shortcut[] }
+// Labels are catalogue keys; key tokens stay English in every language
+// (keyboard-shortcut-conventions).
+type Shortcut = { label: MessageKey; keys: string }
+type Group = { title: MessageKey; note?: MessageKey; shortcuts: Shortcut[] }
 
 /**
  * The keyboard map, grouped by where the keys apply. Kept in sync by hand with the
@@ -14,43 +18,43 @@ type Group = { title: string; note?: string; shortcuts: Shortcut[] }
 function groups(mod: string): Group[] {
   return [
     {
-      title: 'Navigate',
-      note: 'arrows act on the list you tabbed into or last clicked — videos, chapters, or boxes',
+      title: 'shortcuts.navigate',
+      note: 'shortcuts.navigateNote',
       shortcuts: [
-        { label: 'Move selection up / down', keys: 'Up / Down' },
-        { label: 'Reorder selected tape or box', keys: `${mod}+Shift+Up / Down` },
-        { label: 'Inbox', keys: `${mod}+1` },
-        { label: 'Archived', keys: `${mod}+2` },
-        { label: 'Search the archive', keys: 'Slash' },
+        { label: 'shortcuts.moveSelection', keys: 'Up / Down' },
+        { label: 'shortcuts.reorder', keys: `${mod}+Shift+Up / Down` },
+        { label: 'filter.inbox', keys: `${mod}+1` },
+        { label: 'filter.archived', keys: `${mod}+2` },
+        { label: 'shortcuts.searchArchive', keys: 'Slash' },
       ],
     },
     {
       // Same order as the detail-pane button row: primary action, then the
       // housekeeping group (refresh → rename → export), then archive, then remove.
-      title: 'Selected tape',
+      title: 'shortcuts.selectedTape',
       shortcuts: [
-        { label: 'Play / pause, or the tape’s main action', keys: 'Enter' },
-        { label: 'Refresh metadata', keys: 'M' },
-        { label: 'Rename', keys: 'R' },
-        { label: 'Export', keys: 'E' },
-        { label: 'Archive / unarchive', keys: 'A' },
-        { label: 'Move to Trash', keys: 'Backspace / Delete' },
+        { label: 'shortcuts.mainAction', keys: 'Enter' },
+        { label: 'detail.refreshMetadata', keys: 'M' },
+        { label: 'detail.rename', keys: 'R' },
+        { label: 'detail.export', keys: 'E' },
+        { label: 'shortcuts.archiveToggle', keys: 'A' },
+        { label: 'remove.moveToTrash', keys: 'Backspace / Delete' },
       ],
     },
     {
-      title: 'Player',
-      note: 'while a tape is open',
+      title: 'shortcuts.player',
+      note: 'shortcuts.playerNote',
       shortcuts: [
-        { label: 'Seek back / forward', keys: 'Left / Right' },
-        { label: 'Jump to chapter (in the chapter list)', keys: 'Up / Down' },
+        { label: 'shortcuts.seek', keys: 'Left / Right' },
+        { label: 'shortcuts.jumpChapter', keys: 'Up / Down' },
       ],
     },
     {
-      title: 'General',
+      title: 'settings.tabGeneral',
       shortcuts: [
-        { label: 'Add the URL in the input', keys: 'Enter' },
-        { label: 'Show this list', keys: `${mod}+Slash / Question` },
-        { label: 'Close a dialog', keys: 'Escape' },
+        { label: 'shortcuts.addUrl', keys: 'Enter' },
+        { label: 'shortcuts.showList', keys: `${mod}+Slash / Question` },
+        { label: 'shortcuts.closeDialog', keys: 'Escape' },
       ],
     },
   ]
@@ -62,15 +66,16 @@ export function ShortcutsModal({ onClose }: { onClose: () => void }) {
   // to anyone who isn't on a Mac.
   const platform = useRuntimeStore((s) => s.info?.platform)
   const mod = platform === 'darwin' ? 'Cmd' : 'Ctrl'
+  const t = useI18n()
 
   return (
     <Modal
-      title="Keyboard shortcuts"
+      title={t.t('menu.shortcuts')}
       onClose={onClose}
       size="md"
       footer={
         <Button variant="ghost" onClick={onClose}>
-          Close
+          {t.t('common.close')}
         </Button>
       }
     >
@@ -78,13 +83,13 @@ export function ShortcutsModal({ onClose }: { onClose: () => void }) {
         {groups(mod).map((group) => (
           <section key={group.title}>
             <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
-              {group.title}
-              {group.note && <span className="ml-2 normal-case tracking-normal text-fg-subtle">{group.note}</span>}
+              {t.t(group.title)}
+              {group.note && <span className="ml-2 normal-case tracking-normal text-fg-subtle">{t.t(group.note)}</span>}
             </h3>
             <div className="space-y-2 text-sm">
               {group.shortcuts.map((s) => (
                 <div key={s.label} className="flex items-center justify-between gap-4">
-                  <span className="text-fg">{s.label}</span>
+                  <span className="text-fg">{t.t(s.label)}</span>
                   <kbd className="shrink-0 rounded border border-line bg-raised px-2 py-1 text-xs text-fg-emphasis">
                     {s.keys}
                   </kbd>

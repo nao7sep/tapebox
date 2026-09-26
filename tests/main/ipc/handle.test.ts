@@ -12,6 +12,7 @@ vi.mock('@main/io/logger', () => ({ log: { error: mocks.logError, warn: mocks.lo
 import { handle } from '@main/ipc/handle'
 import { UserFacingError } from '@main/user-facing-error'
 import { IpcCallError, unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
+import { message } from '@shared/i18n/translate'
 
 type Callback = (_event: unknown, request: unknown) => Promise<IpcReply<unknown>>
 
@@ -39,20 +40,20 @@ describe('IPC failure boundary', () => {
 
   it('carries a main-authored refusal across as its code and copy, keeping the cause in the log', async () => {
     handle('settings:get', async () => {
-      throw new UserFacingError('refused', 'Finish or stop the downloads first.', {
+      throw new UserFacingError('refused', message('errors.libraryMoveBlocked'), {
         cause: new Error('/private/tmp/HOSTILE-SENTINEL'),
       })
     })
 
     const reply = await registered()({}, undefined)
-    expect(reply).toEqual({ ok: false, failure: { code: 'refused', userMessage: 'Finish or stop the downloads first.' } })
+    expect(reply).toEqual({ ok: false, failure: { code: 'refused', userMessage: { key: 'errors.libraryMoveBlocked' } } })
     expect(JSON.stringify(reply)).not.toContain('HOSTILE-SENTINEL')
     expect(JSON.stringify(mocks.logWarn.mock.calls)).toContain('HOSTILE-SENTINEL')
 
     let thrown: unknown
     try { unwrapIpcReply('settings:get', reply) } catch (error) { thrown = error }
     expect(thrown).toBeInstanceOf(IpcCallError)
-    expect(thrown).toMatchObject({ code: 'refused', userMessage: 'Finish or stop the downloads first.' })
+    expect(thrown).toMatchObject({ code: 'refused', userMessage: { key: 'errors.libraryMoveBlocked' } })
   })
 
   it('wraps a successful result as its value', async () => {

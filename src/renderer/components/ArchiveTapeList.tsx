@@ -6,6 +6,8 @@ import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
 import { InlineError } from './ui'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import type { Message } from '@shared/i18n/translate'
 
 /**
  * The selected box's tapes, in manual order, as a sortable list. Reorder within
@@ -19,29 +21,30 @@ export function ArchiveTapeList({
   onDismissOrderError,
 }: {
   onReorder: (activeId: string, offset: -1 | 1) => void
-  orderError: string | null
+  orderError: Message | null
   onDismissOrderError: () => void
 }) {
   const tapes = useVisibleTapes()
   const progress = useTapesStore((s) => s.progress)
   const selectedId = useSelectionStore((s) => s.selectedId)
   const kb = useTapeListboxKeyboard<HTMLUListElement>(tapes, selectedId, onReorder)
+  const t = useI18n()
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {orderError && (
-        <InlineError className="m-3 mb-0 shrink-0" onDismiss={onDismissOrderError} closeLabel="Close box tape order result">
-          {orderError}
+        <InlineError className="m-3 mb-0 shrink-0" onDismiss={onDismissOrderError} closeLabel={t.t('archive.closeTapeOrderResult')}>
+          {t.text(orderError)}
         </InlineError>
       )}
       {tapes.length === 0 ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-6 text-sm text-fg">This box is empty.</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6 text-sm text-fg">{t.t('archive.boxEmpty')}</div>
       ) : (
         <ul
           ref={kb.ref}
           {...kb.listboxProps}
           role="listbox"
-          aria-label="Box tapes"
+          aria-label={t.t('archive.boxTapes')}
           className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3 outline-none"
         >
           {tapes.map((tape, index) => (

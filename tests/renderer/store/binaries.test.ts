@@ -12,6 +12,7 @@ import {
   summarizeBinaries,
   useBinariesStore,
 } from '@renderer/store/binaries'
+import { inEnglish } from '../../helpers/i18n'
 
 // An up-to-date tool: the quiet baseline each case deviates from.
 function status(over: Partial<BinaryStatus> = {}): BinaryStatus {
@@ -55,6 +56,12 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+// The roll-up as an English status bar shows it.
+function summary(statuses: Parameters<typeof summarizeBinaries>[0]) {
+  const result = summarizeBinaries(statuses)
+  return { ...result, text: inEnglish(result.text) }
+}
+
 describe('derivedOf', () => {
   it('maps a wire status to its derived four-state via the shared rule', () => {
     expect(derivedOf(status())).toEqual({ state: 'up-to-date', role: 'none' })
@@ -67,31 +74,31 @@ describe('derivedOf', () => {
 
 describe('summarizeBinaries — worst-role roll-up', () => {
   it('all up to date → quiet "Tools ready"', () => {
-    expect(summarizeBinaries([status(), status()])).toEqual({ role: 'none', text: 'Tools ready', actionable: false })
+    expect(summary([status(), status()])).toEqual({ role: 'none', text: 'Tools ready', actionable: false })
   })
 
   it('not-installed → warning, pluralized, actionable', () => {
-    expect(summarizeBinaries([absent, status()])).toMatchObject({ role: 'warning', text: '1 tool isn’t installed', actionable: true })
-    expect(summarizeBinaries([absent, status({ name: 'ffmpeg', present: false })]).text).toBe('2 tools aren’t installed')
+    expect(summary([absent, status()])).toMatchObject({ role: 'warning', text: '1 tool isn’t installed', actionable: true })
+    expect(summary([absent, status({ name: 'ffmpeg', present: false })]).text).toBe('2 tools aren’t installed')
   })
 
   it('update-available (no absent) → warning "updates available"', () => {
-    expect(summarizeBinaries([updateAvailable, status()])).toMatchObject({ role: 'warning', text: '1 update available', actionable: true })
+    expect(summary([updateAvailable, status()])).toMatchObject({ role: 'warning', text: '1 update available', actionable: true })
   })
 
   it('not-installed outranks update-available (reports the missing count)', () => {
-    const s = summarizeBinaries([absent, updateAvailable])
+    const s = summary([absent, updateAvailable])
     expect(s.role).toBe('warning')
     expect(s.text).toBe('1 tool isn’t installed')
   })
 
   it('installed-unchecked → informational "Updates not checked" (benign, not actionable)', () => {
-    expect(summarizeBinaries([unchecked, status()])).toEqual({ role: 'info', text: 'Updates not checked', actionable: false })
+    expect(summary([unchecked, status()])).toEqual({ role: 'info', text: 'Updates not checked', actionable: false })
   })
 
   it('treats missing optional Deno as informational and actionable', () => {
     const deno = status({ name: 'deno', present: false, installedVersion: null })
-    expect(summarizeBinaries([status(), status({ name: 'ffmpeg' }), deno])).toEqual({
+    expect(summary([status(), status({ name: 'ffmpeg' }), deno])).toEqual({
       role: 'info',
       text: 'Optional tool isn’t installed',
       actionable: true,
@@ -102,18 +109,18 @@ describe('summarizeBinaries — worst-role roll-up', () => {
   // own version could not be read needs re-acquiring, and the set-wide Check can
   // never clear it, so the roll-up says so and opens the modal.
   it('a tool whose version could not be read says so, and is actionable', () => {
-    expect(summarizeBinaries([unreadable, status()])).toEqual({
+    expect(summary([unreadable, status()])).toEqual({
       role: 'info',
       text: '1 tool couldn’t be read',
       actionable: true,
     })
-    expect(summarizeBinaries([unreadable, status({ name: 'deno', installedVersion: null })]).text).toBe(
+    expect(summary([unreadable, status({ name: 'deno', installedVersion: null })]).text).toBe(
       '2 tools couldn’t be read',
     )
   })
 
   it('an unreadable tool never outranks a real warning', () => {
-    expect(summarizeBinaries([unreadable, absent]).text).toBe('1 tool isn’t installed')
+    expect(summary([unreadable, absent]).text).toBe('1 tool isn’t installed')
   })
 })
 

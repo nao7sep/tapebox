@@ -1,9 +1,10 @@
 import type { TapeFailureCode } from '@shared/domain'
+import { message, type Message } from '@shared/i18n/translate'
 
 /** Map durable failure facts to renderer-authored copy. */
-export function downloadFailurePresentation(code: TapeFailureCode | null | undefined): string {
+export function downloadFailurePresentation(code: TapeFailureCode | null | undefined): Message {
   if (code === 'duplicate') {
-    return 'This video is already in the library, so it was not downloaded again.'
+    return message('download.duplicate')
   }
-  return 'The download could not be completed. Check the source and your connection, then try again.'
+  return message('download.failed')
 }

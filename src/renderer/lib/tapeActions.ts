@@ -10,6 +10,7 @@ import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { runTapeAction } from '@renderer/lib/runTapeAction'
 import type { TapeAction } from '@renderer/store/tapeActionResults'
+import { message, type Message } from '@shared/i18n/translate'
 
 /**
  * The selection layer for tape actions.
@@ -101,7 +102,7 @@ function relocate(
   keep: Keep,
   action: TapeAction,
   operation: string,
-  userMessage: string,
+  userMessage: Message,
   persist: () => Promise<unknown>,
 ): void {
   const advance = keep === 'list' ? advanceSelection(tape) : null
@@ -134,7 +135,7 @@ export function archiveTape(tape: Tape, keep: Keep): void {
     keep,
     'archive',
     'tape archive failed',
-    'This tape could not be archived. It remains in the Inbox; try again.',
+    message('tapeActions.archiveFailed'),
     () => ipcInvoke('library:archive', { tapeIds: [tape.id] }),
   )
 }
@@ -149,7 +150,7 @@ export function unarchiveTape(tape: Tape, keep: Keep): void {
     keep,
     'unarchive',
     'tape unarchive failed',
-    'This tape could not be moved to the Inbox. It remains archived; try again.',
+    message('tapeActions.unarchiveFailed'),
     () => ipcInvoke('library:unarchive', { tapeIds: [tape.id] }),
   )
 }
@@ -165,7 +166,7 @@ export function moveTapeToBox(tape: Tape, boxId: string | null, keep: Keep): voi
     keep,
     'placement',
     'tape box placement failed',
-    'This tape could not be moved to that box. Its previous location remains in use; try again.',
+    message('tapeActions.placementFailed'),
     () => ipcInvoke('boxes:place', { tapeIds: [tape.id], boxId }),
   )
 }
@@ -175,7 +176,7 @@ export function copyTapeSourceUrl(tapeId: string, sourceUrl: string): Promise<bo
     tapeId,
     'copy-url',
     'source URL copy failed',
-    'The source URL could not be copied. Try Copy URL again.',
+    message('tapeActions.copyUrlFailed'),
     () => navigator.clipboard.writeText(sourceUrl),
   ).then((outcome) => outcome === 'succeeded')
 }
@@ -185,7 +186,7 @@ export function openTapeSourceUrl(tapeId: string, sourceUrl: string): Promise<bo
     tapeId,
     'open-url',
     'source URL open failed',
-    'The source URL could not be opened in your browser. Try Open URL again.',
+    message('tapeActions.openUrlFailed'),
     () => ipcInvoke('app:openExternal', { url: sourceUrl }),
   ).then((outcome) => outcome === 'succeeded')
 }

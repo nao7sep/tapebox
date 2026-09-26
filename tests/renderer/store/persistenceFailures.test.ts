@@ -8,6 +8,7 @@ vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
 import { patchLayout, useLayoutStore } from '@renderer/store/layout'
 import { savePlaybackSettings, useSettingsStore } from '@renderer/store/settings'
+import { inEnglish } from '../../helpers/i18n'
 
 const HOSTILE = "Error invoking remote method 'layout:update': EACCES /private/tmp/TAPEBOX_WRITE_SENTINEL"
 
@@ -34,10 +35,10 @@ describe('truthful renderer persistence', () => {
     const state = useLayoutStore.getState()
     expect(state.layout?.leftPaneWidth).toBe(defaultLayout.leftPaneWidth)
     expect(state.persistedLayout?.leftPaneWidth).toBe(defaultLayout.leftPaneWidth)
-    expect(state.writeErrors.leftPaneWidth).toBe(
+    expect(inEnglish(state.writeErrors.leftPaneWidth)).toBe(
       'The library pane size was not saved. Its previous size is back; try resizing it again.',
     )
-    expect(state.writeErrors.leftPaneWidth).not.toMatch(/EACCES|private\/tmp|SENTINEL|remote method/i)
+    expect(inEnglish(state.writeErrors.leftPaneWidth)).not.toMatch(/EACCES|private\/tmp|SENTINEL|remote method/i)
     expect(JSON.stringify(logError.mock.calls)).toContain('TAPEBOX_WRITE_SENTINEL')
   })
 
@@ -48,10 +49,10 @@ describe('truthful renderer persistence', () => {
     const state = useSettingsStore.getState()
     expect(state.settings?.autoplay).toBe(true)
     expect(state.saving.autoplay).toBeUndefined()
-    expect(state.writeErrors.autoplay).toBe(
+    expect(inEnglish(state.writeErrors.autoplay)).toBe(
       'The autoplay setting was not saved. The previous setting remains in use; try again.',
     )
-    expect(state.writeErrors.autoplay).not.toMatch(/EACCES|private\/tmp|SENTINEL|remote method/i)
+    expect(inEnglish(state.writeErrors.autoplay)).not.toMatch(/EACCES|private\/tmp|SENTINEL|remote method/i)
   })
 
   it('settles unrelated setting writes independently when responses finish out of order', async () => {
@@ -88,6 +89,6 @@ describe('truthful renderer persistence', () => {
 
     expect(useLayoutStore.getState().layout).toMatchObject({ leftPaneWidth: 500, volume: defaultLayout.volume })
     expect(useLayoutStore.getState().writeErrors.leftPaneWidth).toBeUndefined()
-    expect(useLayoutStore.getState().writeErrors.volume).toContain('playback volume was not saved')
+    expect(inEnglish(useLayoutStore.getState().writeErrors.volume)).toContain('playback volume was not saved')
   })
 })

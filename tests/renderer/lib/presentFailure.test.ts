@@ -5,8 +5,10 @@ vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { IpcCallError } from '@shared/ipc-reply'
+import { message } from '@shared/i18n/translate'
+import { inEnglish } from '../../helpers/i18n'
 
-const FALLBACK = 'Settings could not be saved. Your changes are still shown; try again.'
+const FALLBACK = message('settings.saveFailed')
 
 describe('presentFailure', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -14,11 +16,9 @@ describe('presentFailure', () => {
   it('shows the copy main authored for the user instead of the generic fallback', () => {
     const error = new IpcCallError('settings:update', {
       code: 'refused',
-      userMessage: "Can't move the library while downloads are running.",
+      userMessage: message('errors.libraryMoveBlocked'),
     })
-    expect(presentFailure(error, FALLBACK, 'settings save failed')).toBe(
-      "Can't move the library while downloads are running.",
-    )
+    expect(presentFailure(error, FALLBACK, 'settings save failed')).toEqual(message('errors.libraryMoveBlocked'))
     expect(logError).toHaveBeenCalledWith('settings save failed', expect.anything())
   })
 
@@ -29,7 +29,7 @@ describe('presentFailure', () => {
     const hostile = new Error('EACCES /private/tmp/HOSTILE-SENTINEL Error invoking remote method')
     const shown = presentFailure(hostile, FALLBACK, 'settings save failed')
     expect(shown).toBe(FALLBACK)
-    expect(shown).not.toContain('HOSTILE-SENTINEL')
+    expect(inEnglish(shown)).not.toContain('HOSTILE-SENTINEL')
     expect(JSON.stringify(logError.mock.calls)).toContain('HOSTILE-SENTINEL')
   })
 })

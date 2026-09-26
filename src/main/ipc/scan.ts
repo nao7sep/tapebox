@@ -9,6 +9,7 @@ import { librarySourceIndex } from '@shared/source-identity'
 import { log } from '@main/io/logger'
 import type { ScanResult } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
+import { message } from '@shared/i18n/translate'
 
 /**
  * Scan session lifecycle. The Scan-a-page modal subscribes to the events
@@ -29,7 +30,7 @@ export function registerScanHandlers(): void {
   handle('scan:start', async ({ url }) => {
     // Same trust-boundary gate as downloads: only http(s) reaches yt-dlp.
     if (!isImportableUrl(url)) {
-      throw new UserFacingError('invalid', 'Enter a valid http(s) URL to scan.')
+      throw new UserFacingError('invalid', message('errors.scanUrlInvalid'))
     }
     if (closed) throw new Error('TapeBox is quitting.')
     const sessionId = nanoid(8)

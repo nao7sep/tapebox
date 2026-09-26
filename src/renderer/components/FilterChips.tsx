@@ -1,9 +1,11 @@
 import { useTapesStore } from '@renderer/store/tapes'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import type { MessageKey } from '@shared/i18n/catalogues'
 
-const labels: Record<Filter, string> = {
-  inbox: 'Inbox',
-  archived: 'Archived',
+const labels: Record<Filter, MessageKey> = {
+  inbox: 'filter.inbox',
+  archived: 'filter.archived',
 }
 
 const order: Filter[] = ['inbox', 'archived']
@@ -12,6 +14,7 @@ export function FilterChips() {
   const filter = useFilterStore((s) => s.filter)
   const setFilter = useFilterStore((s) => s.setFilter)
   const tapes = useTapesStore((s) => s.tapes)
+  const t = useI18n()
 
   const counts: Record<Filter, number> = {
     inbox: tapes.filter((i) => !i.archivedAtUtc).length,
@@ -23,7 +26,7 @@ export function FilterChips() {
   // exposed to assistive tech. The radio input is visually hidden; the styled
   // label is the chip.
   return (
-    <div role="radiogroup" aria-label="Tape filter" className="inline-flex gap-0.5 rounded-md bg-raised p-0.5 inset-ring inset-ring-line">
+    <div role="radiogroup" aria-label={t.t('filter.label')} className="inline-flex gap-0.5 rounded-md bg-raised p-0.5 inset-ring inset-ring-line">
       {order.map((f) => {
         const active = f === filter
         return (
@@ -43,7 +46,7 @@ export function FilterChips() {
               checked={active}
               onChange={() => setFilter(f)}
             />
-            {labels[f]}
+            {t.t(labels[f])}
             <span className="ml-1.5 opacity-60">{counts[f]}</span>
           </label>
         )

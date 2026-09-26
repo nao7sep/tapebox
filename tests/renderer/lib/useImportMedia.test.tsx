@@ -8,6 +8,7 @@ vi.mock('@renderer/ipc/client', () => ({ ipcInvoke }))
 
 import { useImportMedia } from '@renderer/lib/useImportMedia'
 import { useImportResultStore } from '@renderer/store/importResult'
+import { message } from '@shared/i18n/translate'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -61,7 +62,7 @@ describe('useImportMedia', () => {
       entryKey: 'import',
     }, {
       imported: [],
-      issues: [{ path: '/tmp/old.txt', reason: 'Unsupported', severity: 'warning' }],
+      issues: [{ path: '/tmp/old.txt', reason: message('import.unsupportedFile'), severity: 'warning' }],
     })
     ipcInvoke.mockResolvedValueOnce({ imported: [{ id: 'tape-1' }], issues: [] })
     await act(async () => importMedia(['/tmp/sample.json']))
@@ -74,7 +75,7 @@ describe('useImportMedia', () => {
       entryKey: 'import',
     }, {
       imported: [],
-      issues: [{ path: '/tmp/sample.json', reason: 'Copy failed', severity: 'error' }],
+      issues: [{ path: '/tmp/sample.json', reason: message('import.copyFailed'), severity: 'error' }],
     })
     ipcInvoke.mockResolvedValueOnce({ imported: [{ id: 'tape-1' }], issues: [] })
 
@@ -86,7 +87,7 @@ describe('useImportMedia', () => {
   it('clears an entry-boundary failure after that entry point succeeds', async () => {
     useImportResultStore.getState().settle({ operationKey: 'picker', entryKey: 'picker' }, {
       imported: [],
-      issues: [{ path: 'Import files', reason: 'Picker unavailable', severity: 'error' }],
+      issues: [{ path: message('menu.importFiles'), reason: message('app.importPickerFailed'), severity: 'error' }],
     })
     ipcInvoke.mockResolvedValueOnce({ imported: [{ id: 'tape-1' }], issues: [] })
 
@@ -105,7 +106,7 @@ describe('useImportMedia', () => {
     }
     await act(async () => importMedia([], [{
       path: 'sample.json',
-      reason: 'The file could not be resolved as a local path.',
+      reason: message('drop.unresolvedPath'),
       severity: 'error',
     }], attempt))
     expect(useImportResultStore.getState().result?.issues[0]?.path).toBe('sample.json')
@@ -119,7 +120,7 @@ describe('useImportMedia', () => {
   it('shows one combined partial result', async () => {
     ipcInvoke.mockResolvedValueOnce({
       imported: [{ id: 'tape-2' }],
-      issues: [{ path: '/tmp/unrelated.txt', reason: 'Unsupported', severity: 'warning' }],
+      issues: [{ path: '/tmp/unrelated.txt', reason: message('import.unsupportedFile'), severity: 'warning' }],
     })
     await act(async () => importMedia(['/tmp/next.json', '/tmp/next.mp4']))
     expect(useImportResultStore.getState().result).toMatchObject({

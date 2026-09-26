@@ -1,5 +1,6 @@
 import { useToastStore } from '@renderer/store/toast'
 import { CloseIcon } from './Icon'
+import { useI18n } from '@renderer/i18n/I18nContext'
 
 /**
  * Floating stack of error toasts, bottom-right above the status bar. Errors
@@ -10,6 +11,7 @@ import { CloseIcon } from './Icon'
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts)
   const dismiss = useToastStore((s) => s.dismiss)
+  const t = useI18n()
   const errors = toasts.filter((t) => t.kind === 'error')
   if (errors.length === 0) return null
 
@@ -17,17 +19,17 @@ export function Toaster() {
     // Toasts sit at z-[45]: above menus / drop overlays (z-40) but below modals (z-50),
     // so an error toast never obscures an open modal's controls (it waits behind it).
     <div className="pointer-events-none fixed bottom-4 right-4 z-[45] flex w-full max-w-md flex-col gap-2">
-      {errors.map((t) => (
+      {errors.map((toast) => (
         <div
-          key={t.id}
+          key={toast.id}
           role="alert"
           aria-atomic="true"
           className="pointer-events-auto relative rounded-lg border border-danger-line bg-danger-banner py-3 pr-11 pl-4 text-sm text-danger-fg-strong shadow-lg"
         >
-          <div className="min-w-0 whitespace-pre-wrap break-words">{t.text}</div>
+          <div className="min-w-0 whitespace-pre-wrap break-words">{t.text(toast.text)}</div>
           <button
-            onClick={() => dismiss(t.id)}
-            aria-label="Close notification"
+            onClick={() => dismiss(toast.id)}
+            aria-label={t.t('toast.close')}
             className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded border-0 bg-transparent p-0 leading-none text-danger-fg/80 hover:bg-danger-hover hover:text-danger-fg-strong focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-danger-fg"
           >
             <CloseIcon />

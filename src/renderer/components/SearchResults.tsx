@@ -5,8 +5,8 @@ import { useSelectionStore } from '@renderer/store/selection'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { selectTape } from '@renderer/lib/selectTape'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
-import { UNBOXED_LABEL } from '@shared/box-names'
 import { TapeRow } from './TapeRow'
+import { useI18n } from '@renderer/i18n/I18nContext'
 
 /**
  * Read-only results for an archive search: matching tapes across all boxes,
@@ -24,13 +24,14 @@ export function SearchResults() {
   // One listbox over the whole flat result set; the box headers are just group
   // separators, so Up/Down crosses them seamlessly.
   const kb = useTapeListboxKeyboard<HTMLDivElement>(tapes, selectedId)
+  const t = useI18n()
 
   if (tapes.length === 0) {
-    return <div className="p-6 text-sm text-fg">No archived tapes match.</div>
+    return <div className="p-6 text-sm text-fg">{t.t('archive.noMatches')}</div>
   }
 
   const boxName = (boxId: string | null) =>
-    boxId === null ? UNBOXED_LABEL : boxes.find((g) => g.id === boxId)?.name ?? UNBOXED_LABEL
+    (boxId === null ? null : boxes.find((g) => g.id === boxId)?.name) ?? t.t('boxes.unboxed')
 
   // The list already arrives ordered by box, so equal-box rows are contiguous —
   // group them in one pass, starting a new group whenever the box changes.
@@ -42,7 +43,7 @@ export function SearchResults() {
   }
 
   return (
-    <div ref={kb.ref} {...kb.listboxProps} role="listbox" aria-label="Search results" className="min-h-0 flex-1 overflow-y-auto pb-3 outline-none">
+    <div ref={kb.ref} {...kb.listboxProps} role="listbox" aria-label={t.t('archive.searchResults')} className="min-h-0 flex-1 overflow-y-auto pb-3 outline-none">
       {groups.map((group) => (
         <section
           key={group.boxId ?? '__unboxed__'}

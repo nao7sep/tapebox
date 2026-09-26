@@ -1,5 +1,6 @@
 import { Modal } from '@renderer/components/Modal'
 import { Button } from '@renderer/components/ui'
+import { useI18n } from '@renderer/i18n/I18nContext'
 
 type Props = {
   title?: string
@@ -17,21 +18,22 @@ type Props = {
  * choices like discarding edits.
  */
 export function ConfirmModal({
-  title = 'Confirm',
+  title,
   message,
-  cancelLabel = 'Cancel',
+  cancelLabel,
   confirmLabel,
   danger = false,
   onCancel,
   onConfirm,
 }: Props) {
+  const t = useI18n()
   const footer = (
     <>
       {/* Cancel takes focus, named here rather than left to markup order: a
           confirmation exists because something could go wrong, so the action a
           reflexive Enter reaches must be the one that costs nothing. */}
       <Button variant="ghost" autoFocus onClick={onCancel}>
-        {cancelLabel}
+        {cancelLabel ?? t.t('common.cancel')}
       </Button>
       <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
         {confirmLabel}
@@ -40,7 +42,7 @@ export function ConfirmModal({
   )
 
   return (
-    <Modal title={title} onClose={onCancel} size="md" footer={footer}>
+    <Modal title={title ?? t.t('confirm.title')} onClose={onCancel} size="md" footer={footer}>
       <p className="text-sm text-fg">{message}</p>
     </Modal>
   )

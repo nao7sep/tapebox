@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { planRename } from '@main/core/rename-plan'
+import { inEnglish } from '../../helpers/i18n'
 
 describe('planRename', () => {
   it('derives the media/sidecar/thumbnail names and their staging files', () => {
@@ -54,6 +55,6 @@ describe('planRename', () => {
       'shared',
     )
     expect(plan.status).toBe('error')
-    if (plan.status === 'error') expect(plan.message).toMatch(/same name/)
+    if (plan.status === 'error') expect(inEnglish(plan.message)).toMatch(/same name/)
   })
 })

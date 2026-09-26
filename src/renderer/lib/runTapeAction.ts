@@ -1,3 +1,4 @@
+import type { Message } from '@shared/i18n/translate'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import {
   type TapeAction,
@@ -13,7 +14,7 @@ export async function runTapeAction(
   tapeId: string,
   action: TapeAction,
   operation: string,
-  userMessage: string,
+  userMessage: Message,
   invoke: () => Promise<unknown>,
 ): Promise<TapeActionOutcome> {
   const attemptKey = `${tapeId}:${action}`

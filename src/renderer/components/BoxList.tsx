@@ -13,12 +13,21 @@ import {
   BOX_TARGET_TYPE,
   TAPE_DRAG_TYPE,
 } from '@renderer/lib/dnd'
-import { boxNameError, UNBOXED_LABEL } from '@shared/box-names'
+import { boxNameError } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
 import { PlusIcon } from './Icon'
 import { InlineError } from './ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useBoxActionResultsStore, type BoxAction } from '@renderer/store/boxActionResults'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
+import type { MessageKey } from '@shared/i18n/catalogues'
+
+const CLOSE_ACTION_LABEL: Record<BoxAction, MessageKey> = {
+  create: 'boxes.closeCreateResult',
+  rename: 'boxes.closeRenameResult',
+  delete: 'boxes.closeDeleteResult',
+}
 
 /** Droppable id for the Unboxed row (it is not a real box, so it has no box id). */
 export const UNBOXED_DROP_ID = '__unboxed__'
@@ -36,7 +45,7 @@ export function BoxList({
   onDismissOrderError,
 }: {
   onReorder: (activeId: string, offset: -1 | 1) => void
-  orderError: string | null
+  orderError: Message | null
   onDismissOrderError: () => void
 }) {
   const boxes = useBoxesStore((s) => s.boxes)
@@ -50,6 +59,7 @@ export function BoxList({
   const actionErrors = useBoxActionResultsStore((state) => state.results)
   const setActionResult = useBoxActionResultsStore((state) => state.setResult)
   const { composingRef, handlers: composing } = useComposing()
+  const t = useI18n()
 
   const sorted = [...boxes].sort((a, b) => a.order - b.order)
   const archived = tapes.filter((i) => !!i.archivedAtUtc)
@@ -80,12 +90,12 @@ export function BoxList({
   async function newBox() {
     clearActionError('create')
     try {
-      const box = await ipcInvoke('boxes:create', { name: 'New box' })
+      const box = await ipcInvoke('boxes:create', { name: t.t('boxes.newBoxName') })
       selectBox(box.id)
       setDraftName(box.name)
       setEditingId(box.id)
     } catch (error) {
-      setActionResult('create', presentFailure(error, 'A new box could not be created. Try again.', 'box creation failed'))
+      setActionResult('create', presentFailure(error, message('boxes.createFailed'), 'box creation failed'))
     }
   }
 
@@ -99,7 +109,7 @@ export function BoxList({
     try {
       await ipcInvoke('boxes:rename', { boxId: id, name })
     } catch (error) {
-      setActionResult('rename', presentFailure(error, 'The box could not be renamed. Its previous name remains in use; try again.', 'box rename failed'))
+      setActionResult('rename', presentFailure(error, message('boxes.renameFailed'), 'box rename failed'))
     }
   }
 
@@ -117,7 +127,7 @@ export function BoxList({
     try {
       await ipcInvoke('boxes:delete', { boxId: id })
     } catch (error) {
-      setActionResult('delete', presentFailure(error, 'The box could not be deleted. It and its tapes are unchanged; try again.', 'box deletion failed'))
+      setActionResult('delete', presentFailure(error, message('boxes.deleteFailed'), 'box deletion failed'))
     }
   }
 
@@ -128,16 +138,16 @@ export function BoxList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-fg-muted">Boxes</span>
+        <span className="text-xs font-medium uppercase tracking-wide text-fg-muted">{t.t('boxes.heading')}</span>
         <button onClick={() => void newBox()} className="-mr-2 flex h-7 items-center whitespace-nowrap rounded px-2 text-xs text-fg transition hover:bg-raised hover:text-fg-strong">
           <PlusIcon className="mr-1" />
-          New box
+          {t.t('boxes.newBox')}
         </button>
       </div>
 
       {orderError && (
-        <InlineError className="mx-2 mb-2 shrink-0" onDismiss={onDismissOrderError} closeLabel="Close box order result">
-          {orderError}
+        <InlineError className="mx-2 mb-2 shrink-0" onDismiss={onDismissOrderError} closeLabel={t.t('boxes.closeOrderResult')}>
+          {t.text(orderError)}
         </InlineError>
       )}
       {(['create', 'rename', 'delete'] as const).map((action) => actionErrors[action] ? (
@@ -145,9 +155,9 @@ export function BoxList({
           key={action}
           className="mx-2 mb-2 shrink-0"
           onDismiss={() => clearActionError(action)}
-          closeLabel={`Close box ${action} result`}
+          closeLabel={t.t(CLOSE_ACTION_LABEL[action])}
         >
-          {actionErrors[action]}
+          {t.text(actionErrors[action])}
         </InlineError>
       ) : null)}
 
@@ -155,7 +165,7 @@ export function BoxList({
         ref={kb.ref}
         {...kb.listboxProps}
         role="listbox"
-        aria-label="Boxes"
+        aria-label={t.t('boxes.heading')}
         className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 outline-none"
       >
         <UnboxedRow
@@ -189,7 +199,7 @@ export function BoxList({
                     : 'border-field-line focus:border-field-focus')
                 }
               />
-              {draftError && <p className="mt-0.5 px-1 text-xs text-danger-fg">{draftError}</p>}
+              {draftError && <p className="mt-0.5 px-1 text-xs text-danger-fg">{t.text(draftError)}</p>}
             </div>
           ) : (
             <SortableBoxRow
@@ -210,9 +220,9 @@ export function BoxList({
 
       {confirmDeleteId && (
         <ConfirmModal
-          title="Delete box"
-          message="Delete this box? Its tapes move to Unboxed — the tapes themselves are not removed."
-          confirmLabel="Delete box"
+          title={t.t('boxes.delete')}
+          message={t.t('boxes.deleteMessage', { unboxed: t.t('boxes.unboxed') })}
+          confirmLabel={t.t('boxes.delete')}
           danger
           onCancel={() => setConfirmDeleteId(null)}
           onConfirm={() => void deleteBox(confirmDeleteId)}
@@ -247,6 +257,7 @@ function rowClass(selected: boolean, dropTarget: boolean): string {
 }
 
 function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: number; selected: boolean; onSelect: () => void }) {
+  const t = useI18n()
   const { ref, isDropTarget } = useDroppable({
     id: UNBOXED_DROP_ID,
     type: BOX_TARGET_TYPE,
@@ -265,7 +276,7 @@ function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: numb
         onClick={onSelect}
         className="min-w-0 flex-1 cursor-pointer truncate text-left"
       >
-        {UNBOXED_LABEL}
+        {t.t('boxes.unboxed')}
       </div>
       <span className="shrink-0 text-xs tabular-nums text-fg-muted">{count}</span>
     </div>
@@ -311,6 +322,7 @@ function SortableBoxRow({
     accept: TAPE_DRAG_TYPE,
     data: { type: BOX_TARGET_TYPE, boxId: id },
   })
+  const t = useI18n()
   return (
     <div
       ref={(element) => {
@@ -332,7 +344,7 @@ function SortableBoxRow({
       </div>
       <button
         onClick={onRename}
-        aria-label="Rename box"
+        aria-label={t.t('boxes.rename')}
         tabIndex={-1}
         className="hidden shrink-0 items-center justify-center rounded p-1 text-fg-muted transition hover:bg-hover-strong hover:text-fg-emphasis group-hover:inline-flex"
       >
@@ -340,7 +352,7 @@ function SortableBoxRow({
       </button>
       <button
         onClick={onDelete}
-        aria-label="Delete box"
+        aria-label={t.t('boxes.delete')}
         tabIndex={-1}
         className="hidden shrink-0 items-center justify-center rounded p-1 text-fg-muted transition hover:bg-hover-strong hover:text-danger-fg group-hover:inline-flex"
       >

@@ -1,5 +1,6 @@
 import type { Tape } from '@shared/domain'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
+import { useI18n } from '@renderer/i18n/I18nContext'
 
 type Props = {
   tape: Tape
@@ -19,17 +20,18 @@ type Props = {
  * the confirm is findable by filename rather than buried in the hook.
  */
 export function RemoveTapeConfirmModal({ tape, trashEnabled, onCancel, onConfirm }: Props) {
+  const t = useI18n()
   return (
     <ConfirmModal
-      title="Remove tape"
-      message={
+      title={t.t('remove.title')}
+      message={t.t(
         !tape.filename
-          ? "Remove this tape from the library? It hasn't finished downloading, so there's no file to remove."
+          ? 'remove.messageNoFile'
           : trashEnabled
-            ? 'Move this tape to the Trash? You can restore it from there.'
-            : "Permanently delete this tape's files? This can't be undone."
-      }
-      confirmLabel={!tape.filename ? 'Remove' : trashEnabled ? 'Move to Trash' : 'Delete'}
+            ? 'remove.messageTrash'
+            : 'remove.messageDelete',
+      )}
+      confirmLabel={t.t(!tape.filename ? 'common.remove' : trashEnabled ? 'remove.moveToTrash' : 'remove.delete')}
       danger
       onCancel={onCancel}
       onConfirm={onConfirm}

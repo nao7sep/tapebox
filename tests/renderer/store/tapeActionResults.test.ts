@@ -5,6 +5,10 @@ vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
 import { runTapeAction } from '@renderer/lib/runTapeAction'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
+import type { Message } from '@shared/i18n/translate'
+
+// Opaque stand-ins: the store keeps whatever message it is given.
+const note = (name: string) => ({ key: name }) as unknown as Message
 
 beforeEach(() => {
   logError.mockReset()
@@ -14,35 +18,35 @@ beforeEach(() => {
 describe('direct tape action result ownership', () => {
   it('retains independent operations per tape without exposing hostile diagnostics', async () => {
     const hostile = new Error("Error invoking remote method: EACCES /private/tmp/TAPEBOX_ACTION_SENTINEL")
-    await runTapeAction('tape-a', 'open', 'external player open failed', 'This tape could not be opened.', async () => { throw hostile })
-    await runTapeAction('tape-a', 'reveal', 'tape reveal failed', 'This tape could not be shown in its folder.', async () => { throw hostile })
-    await runTapeAction('tape-b', 'retry', 'download retry failed', 'This tape could not be queued again.', async () => { throw hostile })
+    await runTapeAction('tape-a', 'open', 'external player open failed', note('This tape could not be opened.'), async () => { throw hostile })
+    await runTapeAction('tape-a', 'reveal', 'tape reveal failed', note('This tape could not be shown in its folder.'), async () => { throw hostile })
+    await runTapeAction('tape-b', 'retry', 'download retry failed', note('This tape could not be queued again.'), async () => { throw hostile })
 
     expect(useTapeActionResultsStore.getState().byTape).toEqual({
       'tape-a': {
-        open: 'This tape could not be opened.',
-        reveal: 'This tape could not be shown in its folder.',
+        open: note('This tape could not be opened.'),
+        reveal: note('This tape could not be shown in its folder.'),
       },
-      'tape-b': { retry: 'This tape could not be queued again.' },
+      'tape-b': { retry: note('This tape could not be queued again.') },
     })
     expect(JSON.stringify(useTapeActionResultsStore.getState().byTape)).not.toMatch(/EACCES|private\/tmp|SENTINEL|remote method/i)
     expect(JSON.stringify(logError.mock.calls)).toContain('TAPEBOX_ACTION_SENTINEL')
   })
 
   it('clears only the matching operation after a successful retry', async () => {
-    useTapeActionResultsStore.getState().setResult('tape-a', 'open', 'Open failed')
-    useTapeActionResultsStore.getState().setResult('tape-a', 'reveal', 'Reveal failed')
+    useTapeActionResultsStore.getState().setResult('tape-a', 'open', note('Open failed'))
+    useTapeActionResultsStore.getState().setResult('tape-a', 'reveal', note('Reveal failed'))
 
-    await runTapeAction('tape-a', 'open', 'external player open failed', 'fallback', async () => {})
+    await runTapeAction('tape-a', 'open', 'external player open failed', note('fallback'), async () => {})
 
-    expect(useTapeActionResultsStore.getState().byTape['tape-a']).toEqual({ reveal: 'Reveal failed' })
+    expect(useTapeActionResultsStore.getState().byTape['tape-a']).toEqual({ reveal: note('Reveal failed') })
   })
 
   it('does not let an older rejection overwrite a newer success for the same action', async () => {
     let rejectOlder!: (error: Error) => void
     const older = new Promise<void>((_resolve, reject) => { rejectOlder = reject })
-    const olderAttempt = runTapeAction('tape-a', 'open', 'open failed', 'Older failure', () => older)
-    await runTapeAction('tape-a', 'open', 'open failed', 'Newer failure', async () => {})
+    const olderAttempt = runTapeAction('tape-a', 'open', 'open failed', note('Older failure'), () => older)
+    await runTapeAction('tape-a', 'open', 'open failed', note('Newer failure'), async () => {})
     rejectOlder(new Error('stale failure'))
     await olderAttempt
 
@@ -56,14 +60,14 @@ describe('direct tape action result ownership', () => {
   it('does not let an older success clear a newer rejection for the same action', async () => {
     let resolveOlder!: () => void
     const older = new Promise<void>((resolve) => { resolveOlder = resolve })
-    const olderAttempt = runTapeAction('tape-a', 'open', 'open failed', 'Older failure', () => older)
-    const newerOutcome = await runTapeAction('tape-a', 'open', 'open failed', 'Newer failure', async () => {
+    const olderAttempt = runTapeAction('tape-a', 'open', 'open failed', note('Older failure'), () => older)
+    const newerOutcome = await runTapeAction('tape-a', 'open', 'open failed', note('Newer failure'), async () => {
       throw new Error('newer failed')
     })
     resolveOlder()
 
     await expect(olderAttempt).resolves.toBe('superseded')
     expect(newerOutcome).toBe('failed')
-    expect(useTapeActionResultsStore.getState().byTape['tape-a']).toEqual({ open: 'Newer failure' })
+    expect(useTapeActionResultsStore.getState().byTape['tape-a']).toEqual({ open: note('Newer failure') })
   })
 })

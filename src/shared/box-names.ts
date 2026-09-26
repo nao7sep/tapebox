@@ -5,15 +5,17 @@
  * A box name must be non-empty, not a reserved word, and unique among the other
  * boxes — all compared case-insensitively after NFC normalization and trimming.
  */
+import { CATALOGUES } from './i18n/catalogues'
+import { LANGUAGES } from './i18n/languages'
+import { message, type Message } from './i18n/translate'
 
 /**
- * Display label for the implicit "no box" bucket. Not a real box, so it's
- * reserved: a user-created box must not shadow it. Kept here so the reserved
- * word and the label rendered in the UI can never drift apart.
+ * The implicit "no box" bucket's label, in every interface language. Not a real
+ * box, so each spelling is reserved: a user-created box must not shadow it in any
+ * language the list may be shown in. Read from the catalogues, so the reserved
+ * words and the label rendered in the UI can never drift apart.
  */
-export const UNBOXED_LABEL = 'Unboxed'
-
-const RESERVED_BOX_NAMES = [UNBOXED_LABEL]
+const RESERVED_BOX_NAMES = LANGUAGES.map((language) => CATALOGUES[language]['boxes.unboxed'] as string)
 
 export const normalizeBoxName = (name: string): string => name.normalize('NFC').trim()
 
@@ -23,14 +25,14 @@ export const boxNameIdentity = (name: string): string => normalizeBoxName(name).
 /**
  * Validate a candidate box name. `takenNames` is the names of the *other*
  * boxes (exclude the one being renamed, so renaming to the same name is a
- * no-op, not a collision). Returns a human-readable error, or null when ok.
+ * no-op, not a collision). Returns the message to show, or null when ok.
  */
-export function boxNameError(name: string, takenNames: string[]): string | null {
+export function boxNameError(name: string, takenNames: string[]): Message | null {
   const trimmed = normalizeBoxName(name)
-  if (!trimmed) return 'Enter a name.'
+  if (!trimmed) return message('boxes.nameEmpty')
   const identity = boxNameIdentity(trimmed)
-  if (RESERVED_BOX_NAMES.some((r) => boxNameIdentity(r) === identity)) return `"${trimmed}" is a reserved name.`
-  if (takenNames.some((n) => boxNameIdentity(n) === identity)) return `A box named "${trimmed}" already exists.`
+  if (RESERVED_BOX_NAMES.some((r) => boxNameIdentity(r) === identity)) return message('boxes.nameReserved', { name: trimmed })
+  if (takenNames.some((n) => boxNameIdentity(n) === identity)) return message('boxes.nameTaken', { name: trimmed })
   return null
 }
 

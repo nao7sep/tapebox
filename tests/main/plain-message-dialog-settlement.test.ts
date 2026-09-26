@@ -45,13 +45,13 @@ describe('plain message dialog settlement', () => {
 
   it('settles when the authored document cannot load', async () => {
     electronMock.setLoadError(new Error('EACCES /private/tmp/TAPEBOX-DIALOG-SENTINEL'))
-    await expect(showPlainMessageDialog({ title: 'Notice', message: 'Safe copy' })).resolves.toBeUndefined()
+    await expect(showPlainMessageDialog({ language: 'en', title: 'Notice', message: 'Safe copy', closeLabel: 'OK' })).resolves.toBeUndefined()
     expect(logError).toHaveBeenCalledWith('message dialog load failed', expect.any(Object))
   })
 
   it('settles when natural measurement rejects before the window is shown', async () => {
     electronMock.setMeasurementError(new Error('renderer gone'))
-    const pending = showPlainMessageDialog({ title: 'Notice', message: 'Safe copy' })
+    const pending = showPlainMessageDialog({ language: 'en', title: 'Notice', message: 'Safe copy', closeLabel: 'OK' })
     electronMock.getLastWindow()?.triggerDomReady()
     await expect(pending).resolves.toBeUndefined()
   })

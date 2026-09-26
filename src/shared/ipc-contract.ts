@@ -1,6 +1,7 @@
 import type { Box, Tape, TapeFailureCode } from './domain'
 import type { Settings } from './settings'
 import type { Layout } from './layout'
+import type { Message } from './i18n/translate'
 
 /**
  * Request/response contract for ipcMain.handle / ipcRenderer.invoke channels.
@@ -89,9 +90,9 @@ export type IpcCalls = {
 
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }
-  // `warning` is main-authored copy for a save that committed with a leftover
+  // `warning` is main-authored copy (a message descriptor) for a save that committed with a leftover
   // problem (old library copies not removed); null on a clean save.
-  'settings:update':       { req: Partial<Settings>;                 res: { settings: Settings; warning: string | null } }
+  'settings:update':       { req: Partial<Settings>;                 res: { settings: Settings; warning: Message | null } }
   // Stop a library move started by settings:update; its copies are rolled back and
   // the update rejects with the library still in the old folder.
   'settings:cancelLibraryMove': { req: undefined;                    res: void }
@@ -146,7 +147,7 @@ export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
 export type BinaryUpdateResult =
   | { outcome: 'installed'; operationId: string; status: BinaryStatus }
   | { outcome: 'cancelled'; operationId: string; status: BinaryStatus }
-  | { outcome: 'failed'; operationId: string; status: BinaryStatus; error: string }
+  | { outcome: 'failed'; operationId: string; status: BinaryStatus; error: Message }
 
 export type BinaryCancelResult =
   | { outcome: 'cancel-requested' }
@@ -180,15 +181,16 @@ export type BinaryStatus = {
   lastCheckedAtUtc: string | null
 }
 
-export type BinaryCheckFailure = { name: BinaryName; message: string }
+export type BinaryCheckFailure = { name: BinaryName; message: Message }
 
 export type BinaryCheckResult =
   | { outcome: 'completed'; statuses: BinaryStatus[]; failures: BinaryCheckFailure[] }
   | { outcome: 'cancelled' }
 
 export type ImportIssue = {
-  path: string
-  reason: string
+  /** The file the issue is about, or a message naming a whole selection or drop. */
+  path: string | Message
+  reason: Message
   severity: 'information' | 'warning' | 'error'
 }
 

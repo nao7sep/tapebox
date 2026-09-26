@@ -4,6 +4,8 @@ import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
 import { Button, InlineError } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
 
 type Props = {
   tape: Tape
@@ -22,7 +24,8 @@ type Props = {
  */
 export function RenameModal({ tape, onRename, onClose }: Props) {
   const [name, setName] = useState(tape.name ?? '')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Message | null>(null)
+  const t = useI18n()
   const [applying, setApplying] = useState(false)
   const [generating, setGenerating] = useState(false)
 
@@ -33,7 +36,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
       await onRename(name)
       onClose()
     } catch (err) {
-      setError(presentFailure(err, 'The tape could not be renamed. Existing filenames are unchanged; try another name or close apps using the files.', 'tape rename failed'))
+      setError(presentFailure(err, message('rename.failed'), 'tape rename failed'))
       setApplying(false)
     }
   }
@@ -41,22 +44,22 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
   const busy = applying || generating
   const footer = (
     <>
-      <Button variant="ghost" onClick={onClose} disabled={applying}>Cancel</Button>
+      <Button variant="ghost" onClick={onClose} disabled={applying}>{t.t('common.cancel')}</Button>
       <Button
         variant="primary"
         onClick={() => void apply()}
         disabled={!name.trim() || busy}
         loading={applying}
       >
-        {applying ? 'Renaming…' : 'Rename'}
+        {t.t(applying ? 'rename.renaming' : 'rename.rename')}
       </Button>
     </>
   )
 
   return (
-    <Modal title="Rename" onClose={onClose} size="2xl" footer={footer} closeDisabled={applying}>
+    <Modal title={t.t('rename.title')} onClose={onClose} size="2xl" footer={footer} closeDisabled={applying}>
       <div className="mb-4">
-        <div className="text-xs text-fg-muted">Current name</div>
+        <div className="text-xs text-fg-muted">{t.t('rename.currentName')}</div>
         <div className="mt-1 truncate text-base text-fg-emphasis">{tape.filename ?? '—'}</div>
       </div>
 
@@ -66,10 +69,10 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
         onChange={setName}
         disabled={applying}
         onGeneratingChange={setGenerating}
-        label="New name"
+        label={t.t('rename.newName')}
       />
 
-      {error && <InlineError className="mt-4">{error}</InlineError>}
+      {error && <InlineError className="mt-4">{t.text(error)}</InlineError>}
     </Modal>
   )
 }

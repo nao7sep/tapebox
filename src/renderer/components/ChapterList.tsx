@@ -1,5 +1,6 @@
 import { formatTime } from '@renderer/lib/format'
 import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
+import { useI18n } from '@renderer/i18n/I18nContext'
 
 type Chapter = { start_time: number; end_time: number; title: string }
 
@@ -25,9 +26,10 @@ export function ChapterList({ chapters, currentIndex, onActivate }: Props) {
     onActivate: (id) => onActivate(Number(id)),
     idPrefix: 'chap',
   })
+  const t = useI18n()
 
   if (chapters.length === 0) {
-    return <p className="text-xs text-fg">No chapters in this video.</p>
+    return <p className="text-xs text-fg">{t.t('detail.noChapters')}</p>
   }
 
   return (
@@ -35,7 +37,7 @@ export function ChapterList({ chapters, currentIndex, onActivate }: Props) {
       ref={kb.ref}
       {...kb.listboxProps}
       role="listbox"
-      aria-label="Chapters"
+      aria-label={t.t('detail.chapters')}
       className="space-y-1 outline-none"
     >
       {chapters.map((c, i) => (

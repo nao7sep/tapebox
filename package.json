@@ -37,12 +37,39 @@
         "to": "electron/LICENSES.chromium.html"
       }
     ],
+    "electronLanguages": [
+      "en",
+      "en-US",
+      "de",
+      "es",
+      "fr",
+      "it",
+      "pt_BR",
+      "pt-BR",
+      "ru",
+      "ja",
+      "ko",
+      "zh_CN",
+      "zh-CN"
+    ],
     "mac": {
       "icon": "build/icon.icns",
       "identity": "-",
       "artifactName": "${productName}-${version}-mac-arm64.${ext}",
       "extendInfo": {
-        "CFBundleIconName": "vhs-cassette-front-azure-rose"
+        "CFBundleIconName": "vhs-cassette-front-azure-rose",
+        "CFBundleLocalizations": [
+          "en",
+          "de",
+          "es",
+          "fr",
+          "it",
+          "pt-BR",
+          "ru",
+          "ja",
+          "ko",
+          "zh-Hans"
+        ]
       },
       "target": [
         {
@@ -74,7 +101,20 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "runAfterFinish": true,
-      "artifactName": "${productName}-${version}-setup.${ext}"
+      "artifactName": "${productName}-${version}-setup.${ext}",
+      "installerLanguages": [
+        "en_US",
+        "de_DE",
+        "es_ES",
+        "fr_FR",
+        "it_IT",
+        "pt_BR",
+        "ru_RU",
+        "ja_JP",
+        "ko_KR",
+        "zh_CN"
+      ],
+      "multiLanguageInstaller": true
     }
   },
   "engines": {
@@ -112,6 +152,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@babel/parser": "^8.0.6",
     "@electron/asar": "^3.4.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.4.1",

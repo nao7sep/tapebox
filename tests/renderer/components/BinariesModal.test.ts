@@ -9,6 +9,7 @@ const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke }))
 
 import { BinariesModal } from '@renderer/components/BinariesModal'
+import { message } from '@shared/i18n/translate'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -91,12 +92,12 @@ describe('BinariesModal check and acquisition outcomes', () => {
 
   it('shows failures retained from the launch check', async () => {
     useBinariesStore.setState({
-      checkFailures: [{ name: 'ffmpeg', message: 'release host offline' }],
+      checkFailures: [{ name: 'ffmpeg', message: message('tools.checkFailed', { tool: 'ffmpeg' }) }],
     })
     await mount()
 
     expect(document.body.textContent).toContain('Check incomplete — ffmpeg failed.')
-    expect(document.body.textContent).toContain('ffmpeg: release host offline')
+    expect(document.body.textContent).toContain('ffmpeg: ffmpeg could not be checked.')
   })
 
   it('shows an authored failure instead of mistaking a TimeoutError for Cancel', async () => {

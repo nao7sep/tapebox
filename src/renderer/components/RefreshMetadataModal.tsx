@@ -9,6 +9,8 @@ import { Button, InlineError, Spinner } from './ui'
 import { CheckIcon } from './Icon'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
 
 /**
  * Review-then-apply metadata refresh, and a rarely-needed one: saved metadata is
@@ -26,8 +28,9 @@ import { presentFailure } from '@renderer/lib/presentFailure'
 export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: () => void }) {
   const [candidate, setCandidate] = useState<RefreshedMetadata | null>(null)
   const [currentDescription, setCurrentDescription] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Message | null>(null)
   const [probing, setProbing] = useState(false)
+  const t = useI18n()
   const [applying, setApplying] = useState(false)
 
   const probed = candidate !== null
@@ -52,7 +55,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
     try {
       setCandidate(await ipcInvoke('library:probeMetadata', { tapeId: tape.id }))
     } catch (err) {
-      setError(presentFailure(err, 'The source metadata could not be checked. Saved metadata is unchanged; try again later.', 'metadata source check failed'))
+      setError(presentFailure(err, message('refresh.checkFailed'), 'metadata source check failed'))
     } finally {
       setProbing(false)
     }
@@ -66,7 +69,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
       await ipcInvoke('library:applyMetadata', { tapeId: tape.id, metadata: candidate })
       onClose()
     } catch (err) {
-      setError(presentFailure(err, 'The refreshed metadata could not be saved. Existing metadata is unchanged; try again.', 'metadata apply failed'))
+      setError(presentFailure(err, message('refresh.applyFailed'), 'metadata apply failed'))
       setApplying(false)
     }
   }
@@ -93,26 +96,26 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   // in-flight check, so the check buttons just disable — no redundant button spinner.
   const footer = (
     <>
-      <Button variant="ghost" onClick={onClose} disabled={applying}>Cancel</Button>
+      <Button variant="ghost" onClick={onClose} disabled={applying}>{t.t('common.cancel')}</Button>
       {probed && (
         <Button variant="secondary" onClick={() => void checkSource()} disabled={probing || applying}>
-          Check again
+          {t.t('refresh.checkAgain')}
         </Button>
       )}
       {probed ? (
         <Button variant="primary" onClick={() => void apply()} loading={applying} disabled={!dirty}>
-          {applying ? 'Applying…' : 'Apply'}
+          {t.t(applying ? 'refresh.applying' : 'refresh.apply')}
         </Button>
       ) : (
         <Button variant="primary" onClick={() => void checkSource()} disabled={probing}>
-          Check source
+          {t.t('refresh.checkSource')}
         </Button>
       )}
     </>
   )
 
   return (
-    <Modal title="Refresh metadata" onClose={onClose} size="4xl" footer={footer} closeDisabled={applying}>
+    <Modal title={t.t('refresh.title')} onClose={onClose} size="4xl" footer={footer} closeDisabled={applying}>
       <div className="space-y-3">
         {probed && !dirty ? (
           // A successful check that found nothing new. Said warmly, with a check
@@ -120,25 +123,23 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
           // it spells out that this is exactly why there's nothing to apply.
           <div className="flex items-center gap-2.5 rounded-md border border-calm-line bg-calm-tint px-3 py-2.5 text-sm text-fg-emphasis">
             <CheckIcon className="shrink-0 text-calm-fg" />
-            <span>Up to date — the source matches your saved metadata, so there’s nothing to apply.</span>
+            <span>{t.t('refresh.upToDate')}</span>
           </div>
         ) : (
           <p className="text-xs text-fg-muted">
-            {probed
-              ? 'Nothing changes unless you apply. A value shown in amber would replace existing data with nothing — cancel if that isn’t what you want.'
-              : 'Your saved metadata is shown below. It’s almost always fine — check the source only if you have reason to think the page now has better data. Nothing is fetched or changed until you do.'}
+            {t.t(probed ? 'refresh.reviewHint' : 'refresh.introHint')}
           </p>
         )}
-        {error && <InlineError>{error}</InlineError>}
+        {error && <InlineError>{t.text(error)}</InlineError>}
         {/* One grid for the header and every row, so the three columns line up. The
             label column is auto-sized (tight to the widest label), making the gap to
             "Current" match the gap between "Current" and "New" rather than dwarfing it. */}
         <div className="grid grid-cols-[auto_1fr_1fr] items-start gap-x-6 gap-y-2.5 text-xs">
           <div />
-          <div className="font-medium text-fg-subtle">Current</div>
-          <div className="font-medium text-fg-subtle">New</div>
-          <FieldDiff label="Title" probed={probed} probing={probing} current={nv(tape.title)} next={nv(candidate?.title ?? null)} />
-          <FieldDiff label="Uploader" probed={probed} probing={probing} current={nv(tape.uploader)} next={nv(candidate?.uploader ?? null)} />
+          <div className="font-medium text-fg-subtle">{t.t('refresh.current')}</div>
+          <div className="font-medium text-fg-subtle">{t.t('refresh.new')}</div>
+          <FieldDiff label={t.t('refresh.titleField')} probed={probed} probing={probing} current={nv(tape.title)} next={nv(candidate?.title ?? null)} />
+          <FieldDiff label={t.t('detail.uploader')} probed={probed} probing={probing} current={nv(tape.uploader)} next={nv(candidate?.uploader ?? null)} />
           {showDescription && (
             <DescriptionDiff probed={probed} probing={probing} current={nv(currentDescription)} next={newDescription} />
           )}
@@ -202,9 +203,10 @@ function DescriptionDiff({
   probing: boolean
 }) {
   const losing = probed && current !== null && next === null
+  const t = useI18n()
   return (
     <>
-      <div className="text-fg-subtle">Description</div>
+      <div className="text-fg-subtle">{t.t('refresh.description')}</div>
       <DescBox text={current} />
       <DescBox text={next} losing={losing} probing={probing} />
     </>
@@ -212,13 +214,14 @@ function DescriptionDiff({
 }
 
 function DescBox({ text, losing, probing }: { text: string | null; losing?: boolean; probing?: boolean }) {
+  const t = useI18n()
   if (probing) return <Spinner />
   if (text === null) {
     return <div className={losing ? 'text-warning-fg' : 'text-fg-subtle'}>—</div>
   }
   return (
     <PassiveScrollRegion
-      label="Description"
+      label={t.t('refresh.description')}
       className="max-h-28 min-w-0 overflow-y-auto whitespace-pre-wrap break-words rounded border border-line-subtle p-2 text-fg"
     >
       {text}

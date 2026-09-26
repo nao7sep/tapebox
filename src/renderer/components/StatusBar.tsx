@@ -5,9 +5,11 @@ import { useToastStore } from '@renderer/store/toast'
 import { useBinariesStore, summarizeBinaries } from '@renderer/store/binaries'
 import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { summarizeActivity } from '@renderer/lib/activity'
-import { formatSpeed, formatTime } from '@renderer/lib/format'
+import { formatTime } from '@renderer/lib/format'
 import { Spinner } from '@renderer/components/ui'
 import { ArrowDownIcon } from './Icon'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { joinMessages, message, type Message, type MessageValue } from '@shared/i18n/translate'
 
 /**
  * Footer split into three fixed zones, each owning one kind of information so
@@ -43,28 +45,29 @@ function ActivityZone() {
   const tapes = useTapesStore((s) => s.tapes)
   const progress = useTapesStore((s) => s.progress)
   const autoStart = useSettingsStore((s) => s.settings?.autoStartDownloads ?? true)
+  const t = useI18n()
 
   const { downloading, queued, paused, failed, listing, totalSpeedBps, etaSec } =
     summarizeActivity(tapes, progress)
 
-  let text: string
+  let text: Message
   let tone: string
   if (downloading > 0) {
-    const parts = [`${downloading} downloading`]
-    if (queued > 0) parts.push(`${queued} queued`)
-    if (totalSpeedBps > 0) parts.push(formatSpeed(totalSpeedBps))
-    if (etaSec != null) parts.push(`~${formatTime(etaSec)} left`)
-    text = parts.join(' · ')
+    const rest: MessageValue[] = []
+    if (queued > 0) rest.push(message('status.queued', { count: queued }))
+    if (totalSpeedBps > 0) rest.push(t.bytesPerSecond(totalSpeedBps))
+    if (etaSec != null) rest.push(message('status.timeLeft', { time: formatTime(etaSec) }))
+    text = joinMessages(message('status.downloading', { count: downloading }), ...rest)
     tone = 'text-info-fg'
   } else if (queued > 0) {
-    text = `${queued} queued`
+    text = message('status.queued', { count: queued })
     tone = 'text-calm-fg'
   } else if (paused > 0) {
     // Paused tapes won't move until the user starts them — amber, like the chips.
-    text = `${paused} paused`
+    text = message('status.paused', { count: paused })
     tone = 'text-warning-fg'
   } else {
-    text = tapes.length === 0 ? 'No tapes yet' : `${tapes.length} ${tapes.length === 1 ? 'tape' : 'tapes'}`
+    text = tapes.length === 0 ? message('status.noTapes') : message('status.tapes', { count: tapes.length })
     tone = 'text-fg'
   }
 
@@ -76,9 +79,9 @@ function ActivityZone() {
     <span className="flex items-center gap-1.5 truncate">
       {active && <Spinner className={tone} />}
       {downloading > 0 && <ArrowDownIcon className={tone} />}
-      <span className={tone}>{text}</span>
-      {failed > 0 && <span className="text-danger-fg">· {failed} failed</span>}
-      {listing > 0 && <span className="text-note-fg">· {listing} to scan</span>}
+      <span className={tone}>{t.text(text)}</span>
+      {failed > 0 && <span className="text-danger-fg">{t.t('status.failedSuffix', { count: failed })}</span>}
+      {listing > 0 && <span className="text-note-fg">{t.t('status.toScanSuffix', { count: listing })}</span>}
     </span>
   )
 }
@@ -89,9 +92,10 @@ function ActivityZone() {
  * dismissible cards (see Toaster).
  */
 function NoticeZone() {
-  const info = useToastStore((s) => s.toasts).filter((t) => t.kind === 'info').at(-1)
+  const info = useToastStore((s) => s.toasts).filter((toast) => toast.kind === 'info').at(-1)
+  const t = useI18n()
   if (!info) return null
-  return <span className="block truncate text-fg">{info.text}</span>
+  return <span className="block truncate text-fg">{t.text(info.text)}</span>
 }
 
 /**
@@ -107,17 +111,18 @@ function ToolsZone() {
   const checking = useBinariesStore((s) => s.checking)
   const active = useBinariesStore((s) => s.active)
   const openModal = useBinariesStore((s) => s.openModal)
+  const t = useI18n()
 
-  if (statuses.length === 0) return <Busy>Loading…</Busy>
-  if (checking) return <Busy>Checking for updates…</Busy>
-  if (Object.keys(active).length > 0) return <Busy>Working on tools…</Busy>
+  if (statuses.length === 0) return <Busy>{t.t('common.loading')}</Busy>
+  if (checking) return <Busy>{t.t('status.checkingTools')}</Busy>
+  if (Object.keys(active).length > 0) return <Busy>{t.t('status.workingOnTools')}</Busy>
 
   const { role, text, actionable } = summarizeBinaries(statuses)
-  if (role === 'none') return <Plain>{text}</Plain>
+  if (role === 'none') return <Plain>{t.text(text)}</Plain>
 
   const cls = ROLE_TEXT_CLASS[role]
-  if (actionable) return <Action onClick={openModal} className={cls}>{text}</Action>
-  return <span className={`block truncate ${cls}`}>{text}</span>
+  if (actionable) return <Action onClick={openModal} className={cls}>{t.text(text)}</Action>
+  return <span className={`block truncate ${cls}`}>{t.text(text)}</span>
 }
 
 function Plain({ children }: { children: ReactNode }) {

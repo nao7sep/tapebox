@@ -56,6 +56,6 @@ describe('AboutModal external links', () => {
     expect(host.textContent).not.toContain('GitHub could not be opened')
 
     await act(async () => issues.click())
-    expect(host.textContent).toContain('Report an issue could not be opened')
+    expect(host.textContent).toContain('The issue tracker could not be opened')
   })
 })

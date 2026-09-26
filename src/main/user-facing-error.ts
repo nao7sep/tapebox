@@ -1,4 +1,5 @@
 import type { IpcFailureCode } from '@shared/ipc-reply'
+import { createTranslator, type Message } from '@shared/i18n/translate'
 
 /**
  * A failure whose message main deliberately wrote for the user: a refusal, an
@@ -8,14 +9,18 @@ import type { IpcFailureCode } from '@shared/ipc-reply'
  *
  * Throw it only with copy that names no internal path, type or implementation
  * detail (error-handling-conventions); a user-chosen file or folder may be named.
+ * The copy is a message descriptor, rendered in the window's language; its
+ * English text is this error's own message, for the log.
  */
 export class UserFacingError extends Error {
   constructor(
     readonly code: Exclude<IpcFailureCode, 'internal'>,
-    userMessage: string,
+    readonly userMessage: Message,
     options?: ErrorOptions,
   ) {
-    super(userMessage, options)
+    super(ENGLISH.text(userMessage), options)
     this.name = 'UserFacingError'
   }
 }
+
+const ENGLISH = createTranslator('en')

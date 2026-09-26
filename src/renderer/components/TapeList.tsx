@@ -3,7 +3,7 @@ import type { DragEndEvent } from '@dnd-kit/react'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
-import { useFilterStore, type Filter } from '@renderer/store/filter'
+import { useFilterStore } from '@renderer/store/filter'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { ListboxDragProvider, planTapeListDrop } from '@renderer/lib/dnd'
@@ -14,6 +14,8 @@ import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { InlineError } from './ui'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message } from '@shared/i18n/translate'
 
 /**
  * The inbox: one continuous list in manual order. New tapes arrive at the top
@@ -28,6 +30,7 @@ export function TapeList() {
   const visible = useVisibleTapes()
   const orderError = useOrderFailuresStore((s) => s.inbox)
   const setOrderError = useOrderFailuresStore((s) => s.setInbox)
+  const t = useI18n()
 
   const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId, (id, offset) => {
     const from = visible.findIndex((t) => t.id === id)
@@ -76,20 +79,20 @@ export function TapeList() {
       },
       () => useTapesStore.getState().upsertMany(visible),
       () => setOrderError(null),
-      (error) => setOrderError(presentFailure(error, 'The tape order was not saved. The previous order remains in use; try again.', 'tape order save failed')),
+      (error) => setOrderError(presentFailure(error, message('tapes.orderSaveFailed'), 'tape order save failed')),
     )
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {orderError && (
-        <InlineError className="m-3 mb-0 shrink-0" onDismiss={() => setOrderError(null)} closeLabel="Close tape order result">
-          {orderError}
+        <InlineError className="m-3 mb-0 shrink-0" onDismiss={() => setOrderError(null)} closeLabel={t.t('tapes.closeOrderResult')}>
+          {t.text(orderError)}
         </InlineError>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {visible.length === 0 ? (
-          <div className="p-6 text-sm text-fg">{emptyMessageFor(filter)}</div>
+          <div className="p-6 text-sm text-fg">{t.t(filter === 'archived' ? 'tapes.emptyArchived' : 'tapes.emptyInbox')}</div>
         ) : (
           <ListboxDragProvider onDragEnd={onDragEnd}>
             <div ref={topRef} />
@@ -97,7 +100,7 @@ export function TapeList() {
               ref={kb.ref}
               {...kb.listboxProps}
               role="listbox"
-              aria-label="Tapes"
+              aria-label={t.t('tapes.label')}
               className="space-y-1.5 p-3 outline-none"
             >
               {visible.map((tape, index) => (
@@ -117,8 +120,4 @@ export function TapeList() {
       </div>
     </div>
   )
-}
-
-function emptyMessageFor(filter: Filter): string {
-  return filter === 'archived' ? 'No archived tapes yet.' : 'No tapes here yet.'
 }

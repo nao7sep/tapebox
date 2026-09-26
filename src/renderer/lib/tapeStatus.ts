@@ -1,20 +1,22 @@
 import { DOWNLOAD_STALL_AFTER_MS, type Tape, type TapeState } from '@shared/domain'
 import type { ProgressEntry } from '@renderer/store/tapes'
+import type { MessageKey } from '@shared/i18n/catalogues'
+import { joinMessages, message, type Message } from '@shared/i18n/translate'
 
 /**
  * Title-case label for each tape state. Module-private: callers go through
  * tapeStatusLabel() below (which layers live progress on top), so a tape reads
  * the same wherever it appears (no stray lowercase).
  */
-const TAPE_STATE_LABEL: Record<TapeState, string> = {
-  queued: 'Queued',
-  probing: 'Probing',
-  ready: 'Ready',
-  downloading: 'Downloading',
-  downloaded: 'In library',
-  failed: 'Failed',
-  paused: 'Paused',
-  listing: 'Video list',
+const TAPE_STATE_LABEL: Record<TapeState, MessageKey> = {
+  queued: 'tapeState.queued',
+  probing: 'tapeState.probing',
+  ready: 'tapeState.ready',
+  downloading: 'tapeState.downloading',
+  downloaded: 'tapeState.downloaded',
+  failed: 'tapeState.failed',
+  paused: 'tapeState.paused',
+  listing: 'tapeState.listing',
 }
 
 /**
@@ -33,11 +35,11 @@ export function isProcessing(state: TapeState): boolean {
  * probing, otherwise the plain state label. A download main reports as stalled
  * says so, so the user can decide whether to cancel it.
  */
-export function tapeStatusLabel(tape: Tape, progress: ProgressEntry | undefined, stalled = false): string {
+export function tapeStatusLabel(tape: Tape, progress: ProgressEntry | undefined, stalled = false): Message {
   const base = progress?.phase === 'downloading'
-    ? `Downloading ${progress.percent.toFixed(0)}%`
-    : progress?.phase === 'probing' ? 'Probing' : TAPE_STATE_LABEL[tape.state]
-  return stalled && isProcessing(tape.state) ? `${base} · ${STALLED_SUFFIX}` : base
+    ? message('tapeState.downloadingPercent', { percent: Math.round(progress.percent) })
+    : message(progress?.phase === 'probing' ? 'tapeState.probing' : TAPE_STATE_LABEL[tape.state])
+  return stalled && isProcessing(tape.state)
+    ? joinMessages(base, message('tapeState.stalled', { count: DOWNLOAD_STALL_AFTER_MS / 60_000 }))
+    : base
 }
-
-const STALLED_SUFFIX = `no progress for ${DOWNLOAD_STALL_AFTER_MS / 60_000} min`

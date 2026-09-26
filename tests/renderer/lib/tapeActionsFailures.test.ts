@@ -11,6 +11,8 @@ import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
 import { useArchiveStore } from '@renderer/store/archive'
+import { inEnglish, inEnglishAll } from '../../helpers/i18n'
+import { message } from '@shared/i18n/translate'
 
 function tape(overrides: Partial<Tape> = {}): Tape {
   return TapeSchema.parse({
@@ -64,23 +66,23 @@ describe('archive and placement settlement', () => {
 
     await vi.waitFor(() => expect(useTapesStore.getState().tapes[0]).toEqual(original))
     expect(useFilterStore.getState().filter).toBe('inbox')
-    const message = useTapeActionResultsStore.getState().byTape[original.id]?.archive
-    expect(message).toBe('This tape could not be archived. It remains in the Inbox; try again.')
-    expect(message).not.toMatch(/EACCES|private\/tmp|SENTINEL/i)
+    const shown = inEnglish(useTapeActionResultsStore.getState().byTape[original.id]?.archive)
+    expect(shown).toBe('This tape could not be archived. It remains in the Inbox; try again.')
+    expect(shown).not.toMatch(/EACCES|private\/tmp|SENTINEL/i)
     expect(JSON.stringify(logError.mock.calls)).toContain('TAPEBOX_ARCHIVE_SENTINEL')
   })
 
   it('rolls a rejected box placement back without clearing another tape action result', async () => {
     const original = tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z', boxId: null })
     useTapesStore.setState({ tapes: [original] })
-    useTapeActionResultsStore.getState().setResult(original.id, 'reveal', 'Reveal remains unresolved')
+    useTapeActionResultsStore.getState().setResult(original.id, 'reveal', message('detail.revealFailed'))
     ipcInvoke.mockRejectedValueOnce(new Error('hostile placement diagnostic'))
 
     moveTapeToBox(original, 'BoxTarget1', 'list')
     await vi.waitFor(() => expect(useTapesStore.getState().tapes[0]).toEqual(original))
 
-    expect(useTapeActionResultsStore.getState().byTape[original.id]).toEqual({
-      reveal: 'Reveal remains unresolved',
+    expect(inEnglishAll(useTapeActionResultsStore.getState().byTape[original.id])).toEqual({
+      reveal: 'This tape could not be shown in its folder. The tape is unchanged; try again.',
       placement: 'This tape could not be moved to that box. Its previous location remains in use; try again.',
     })
   })

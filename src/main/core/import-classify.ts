@@ -1,6 +1,7 @@
 import { FlatFilenameSchema, ImportableUrlSchema, type Tape } from '@shared/domain'
 import { extname } from 'node:path'
 import { portableFilenameIdentity } from '@main/core/filename'
+import { message, type Message } from '@shared/i18n/translate'
 
 // The pure decisions behind `library:import`, lifted out of the IPC handler: the
 // sidecar-shape accept/reject classification and the ~25-field Tape coercion. The
@@ -8,7 +9,7 @@ import { portableFilenameIdentity } from '@main/core/filename'
 // already-in-library check, copying into the library); these decide.
 
 export type ImportClassification =
-  | { status: 'reject'; reason: string }
+  | { status: 'reject'; reason: Message }
   | { status: 'accept'; sourceUrl: string; mediaFilename: string; thumbnailFilename: string | null }
 
 /**
@@ -19,40 +20,40 @@ export type ImportClassification =
  */
 export function classifyImport(sidecar: unknown): ImportClassification {
   if (!sidecar || typeof sidecar !== 'object' || Array.isArray(sidecar)) {
-    return { status: 'reject', reason: 'not a TapeBox sidecar (root must be an object)' }
+    return { status: 'reject', reason: message('import.notSidecarRoot') }
   }
   const tb = (sidecar as Record<string, unknown>)['tapebox']
   if (!tb || typeof tb !== 'object' || Array.isArray(tb)) {
-    return { status: 'reject', reason: 'not a TapeBox sidecar (missing tapebox object)' }
+    return { status: 'reject', reason: message('import.notSidecarNoSection') }
   }
   const fields = tb as Record<string, unknown>
 
   const sourceUrl = ImportableUrlSchema.safeParse(fields['sourceUrl'])
-  if (!sourceUrl.success) return { status: 'reject', reason: 'tapebox.sourceUrl must be an http(s) URL' }
+  if (!sourceUrl.success) return { status: 'reject', reason: message('import.sourceUrlInvalid') }
 
   // The sidecar names its media file — the whole point of importing by sidecar.
   const mediaFilename = FlatFilenameSchema.safeParse(fields['mediaFilename'])
   if (!mediaFilename.success) {
     return {
       status: 'reject',
-      reason: 'sidecar must name its media file with one flat filename — re-export it from a current build',
+      reason: message('import.mediaNameInvalid'),
     }
   }
 
   const thumbnailValue = fields['thumbnailFilename']
   const thumbnailFilename = thumbnailValue == null ? null : FlatFilenameSchema.safeParse(thumbnailValue)
   if (thumbnailFilename !== null && !thumbnailFilename.success) {
-    return { status: 'reject', reason: 'tapebox.thumbnailFilename must be a flat filename or null' }
+    return { status: 'reject', reason: message('import.thumbnailNameInvalid') }
   }
 
   const media = mediaFilename.data
   const mediaExtension = extname(media)
-  if (!mediaExtension) return { status: 'reject', reason: 'media filename must have an extension' }
+  if (!mediaExtension) return { status: 'reject', reason: message('import.mediaNoExtension') }
   const sidecarName = `${media.slice(0, -mediaExtension.length)}.json`
   const thumbnail = thumbnailFilename === null ? null : thumbnailFilename.data
   const bundleNames = [media, sidecarName, ...(thumbnail ? [thumbnail] : [])]
   if (new Set(bundleNames.map(portableFilenameIdentity)).size !== bundleNames.length) {
-    return { status: 'reject', reason: 'sidecar bundle filenames must be distinct' }
+    return { status: 'reject', reason: message('import.bundleNamesClash') }
   }
   return { status: 'accept', sourceUrl: sourceUrl.data, mediaFilename: media, thumbnailFilename: thumbnail }
 }

@@ -59,6 +59,27 @@ afterEach(() => {
 })
 
 describe('SettingsModal', () => {
+  it('lists System first, then each language by its own name, and saves the choice', async () => {
+    stubMain((patch) => ({ settings: { ...saved, ...patch }, warning: null }))
+    await render()
+
+    const select = document.querySelector('select') as HTMLSelectElement
+    const options = [...select.options]
+    expect(options[0]!.value).toBe('system')
+    expect(options.map((option) => option.textContent)).toEqual([
+      'System', 'English', 'Deutsch', 'Español', 'Français', 'Italiano', 'Português', 'Русский', '日本語', '한국어', '中文',
+    ])
+    expect(options.slice(1).map((option) => option.lang)).toEqual(['en', 'de', 'es', 'fr', 'it', 'pt-BR', 'ru', 'ja', 'ko', 'zh-Hans'])
+
+    await act(async () => {
+      select.value = 'ja'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Save')
+    const update = ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')
+    expect((update![1] as Partial<Settings>).language).toBe('ja')
+  })
+
   it('Reset model returns the model to the shipped default and saves it', async () => {
     stubMain((patch) => ({ settings: { ...saved, ...patch }, warning: null }))
     await render()

@@ -1,4 +1,5 @@
 import type { ImportIssue } from '@shared/ipc-contract'
+import { message } from '@shared/i18n/translate'
 
 export type ExternalFileOffer = 'rejected' | 'delivery-only'
 
@@ -55,8 +56,8 @@ export function resolveDroppedPaths(
 
   if (delivered.length === 0) {
     issues.push({
-      path: 'Dropped files',
-      reason: 'The dropped items were not available as local files.',
+      path: message('drop.droppedFiles'),
+      reason: message('drop.notLocalFiles'),
       severity: 'warning',
     })
   }
@@ -67,13 +68,13 @@ export function resolveDroppedPaths(
       if (!path) {
         issues.push({
           path: file.name,
-          reason: 'The file was not available as a local path.',
+          reason: message('drop.noLocalPath'),
           severity: 'warning',
         })
       } else if (seen.has(path)) {
         issues.push({
           path,
-          reason: 'This path was repeated in the same drop.',
+          reason: message('drop.repeatedPath'),
           severity: 'information',
         })
       } else {
@@ -83,7 +84,7 @@ export function resolveDroppedPaths(
     } catch (error) {
       issues.push({
         path: file.name,
-        reason: 'The file could not be resolved as a local path.',
+        reason: message('drop.unresolvedPath'),
         severity: 'error',
       })
       errors.push({ fileName: file.name, error })

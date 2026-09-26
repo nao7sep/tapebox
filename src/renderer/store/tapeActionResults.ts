@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { Message } from '@shared/i18n/translate'
 
 export type TapeAction =
   | 'archive'
@@ -13,8 +14,8 @@ export type TapeAction =
   | 'remove'
 
 type TapeActionResultsState = {
-  byTape: Record<string, Partial<Record<TapeAction, string>> | undefined>
-  setResult: (tapeId: string, action: TapeAction, message: string | null) => void
+  byTape: Record<string, Partial<Record<TapeAction, Message>> | undefined>
+  setResult: (tapeId: string, action: TapeAction, message: Message | null) => void
   clearTape: (tapeId: string) => void
 }
 

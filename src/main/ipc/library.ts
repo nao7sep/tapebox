@@ -35,6 +35,8 @@ import { frontOrders } from '@shared/order'
 import { SidecarTapeBoxSchema, trackedFilenameIdentities, type Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
+import { message } from '@shared/i18n/translate'
+import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
 
 export function registerLibraryHandlers(): void {
   session.onCatalogSaveFailure(() => emit('library:saveFailed', null))
@@ -93,8 +95,7 @@ export function registerLibraryHandlers(): void {
     // surface the failure so the user is never told a removal succeeded while the
     // files (and the catalog entry) actually remain.
     if (failed.length > 0) {
-      const noun = failed.length === 1 ? 'tape' : 'tapes'
-      throw new UserFacingError('conflict', `The files for ${failed.length} ${noun} could not be removed. The library entries were kept.`)
+      throw new UserFacingError('conflict', message('errors.removeFilesKept', { count: failed.length }))
     }
   })
 
@@ -147,7 +148,7 @@ export function registerLibraryHandlers(): void {
     // call. Nothing is written here: the caller reviews this and decides.
     const result = await runCancellable((signal) => probe(tape.sourceUrl, signal))
     if (result.kind === 'page') {
-      throw new UserFacingError('refused', 'This link now points to a list of videos, not a single video.')
+      throw new UserFacingError('refused', message('errors.linkNowList'))
     }
     return {
       title: result.title,
@@ -250,7 +251,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       log.error('import sidecar read failed', { path: sidecarPath, error: describeError(err) })
       issues.push({
         path: sidecarPath,
-        reason: 'The sidecar could not be read. Check that the file is still available and try again.',
+        reason: message('import.sidecarUnreadable'),
         severity: 'error',
       })
       continue
@@ -262,7 +263,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     } catch (err) {
       issues.push({
         path: sidecarPath,
-        reason: 'The sidecar is not valid TapeBox JSON.',
+        reason: message('import.sidecarInvalidJson'),
         severity: 'warning',
       })
       continue
@@ -283,7 +284,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
     })
     if (existing) {
-      issues.push({ path: sidecarPath, reason: 'already in library', severity: 'information' })
+      issues.push({ path: sidecarPath, reason: message(ALREADY_IN_LIBRARY), severity: 'information' })
       continue
     }
 
@@ -293,7 +294,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     } catch {
       issues.push({
         path: sidecarPath,
-        reason: `media file is missing beside the sidecar: ${mediaFilename}`,
+        reason: message('import.mediaMissing', { name: mediaFilename }),
         severity: 'warning',
       })
       continue
@@ -312,7 +313,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     if (clash) {
       issues.push({
         path: sidecarPath,
-        reason: `Another tape in the library already uses the file name ${clash}. Rename this bundle's files, then import it again.`,
+        reason: message('import.nameTaken', { name: clash }),
         severity: 'warning',
       })
       continue
@@ -341,7 +342,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
         })
         issues.push({
           path: sidecarPath,
-          reason: 'The tape files could not be copied into the library. Check that the library folder is available and try again.',
+          reason: message('import.copyFailed'),
           severity: 'error',
         })
       } catch (cleanupError) {
@@ -355,7 +356,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
         })
         issues.push({
           path: sidecarPath,
-          reason: 'The tape files could not be copied completely. Check the library folder and the log before trying again.',
+          reason: message('import.copyIncomplete'),
           severity: 'error',
         })
       }
@@ -369,7 +370,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     if (tbThumb && tracked.has(portableFilenameIdentity(tbThumb))) {
       issues.push({
         path: join(dir, tbThumb),
-        reason: 'Another tape in the library already uses this thumbnail\'s file name. The tape was imported without it.',
+        reason: message('import.thumbnailNameTaken'),
         severity: 'warning',
       })
     } else if (tbThumb) {
@@ -390,7 +391,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
         })
         issues.push({
           path: srcThumb,
-          reason: 'The thumbnail could not be copied into the library. The tape was imported without it.',
+          reason: message('import.thumbnailCopyFailed'),
           severity: 'error',
         })
       }
@@ -420,7 +421,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
   for (const path of unsupportedSelectedPaths(paths, claimedCompanionPaths)) {
     issues.push({
       path,
-      reason: 'TapeBox imports .json sidecars together with the media and image files they name.',
+      reason: message('import.unsupportedFile'),
       severity: 'warning',
     })
   }
@@ -588,7 +589,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
     )
     throw new UserFacingError(
       'conflict',
-      'The tape was renamed, but some of its old files could not be removed from the library folder.',
+      message('errors.renameOldFilesKept'),
       { cause: diagnostic },
     )
   }

@@ -11,6 +11,8 @@ import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposi
 import { Modal } from '@renderer/components/Modal'
 import { IndeterminateBar } from '@renderer/components/Progress'
 import { Button, InlineError, INPUT_LINE_CLASS } from '@renderer/components/ui'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
 
 type Props = { onClose: () => void; initialUrl?: string }
 
@@ -36,7 +38,8 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [entries, setEntries] = useState<ScanResult[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Message | null>(null)
+  const t = useI18n()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [adding, setAdding] = useState(false)
@@ -92,7 +95,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
         if (e.sessionId === sessionIdRef.current) {
           setScanning(false)
           setScanned(true)
-          setError('The page could not be scanned. Check the URL and try again later.')
+          setError(message('scan.failed'))
         }
       }),
     ]
@@ -119,7 +122,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     setScanning(true)
     void ipcInvoke('scan:start', { url: v })
       .then((r) => { sessionIdRef.current = r.sessionId })
-      .catch((err) => { setError(presentFailure(err, 'The page could not be scanned. Check the URL and try again later.', 'page scan start failed')); setScanning(false); setScanned(true) })
+      .catch((err) => { setError(presentFailure(err, message('scan.failed'), 'page scan start failed')); setScanning(false); setScanned(true) })
   }
 
   async function stopScan() {
@@ -134,7 +137,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     } catch (err) {
       setError(presentFailure(
         err,
-        'The scan could not be stopped yet. It may still be running; try again.',
+        message('scan.stopFailed'),
         'page scan cancellation failed',
       ))
     }
@@ -185,7 +188,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
       await ipcInvoke('downloads:addBulk', { urls })
       onClose()
     } catch (err) {
-      setError(presentFailure(err, 'The selected tapes could not be added. The library is unchanged; try again.', 'bulk tape add failed'))
+      setError(presentFailure(err, message('scan.addFailed'), 'bulk tape add failed'))
     } finally {
       setAdding(false)
     }
@@ -195,17 +198,17 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const footer = (
     <>
       {inLibraryCount > 0 && (
-        <span className="mr-auto text-xs text-fg-muted">{inLibraryCount} already in your library</span>
+        <span className="mr-auto text-xs text-fg-muted">{t.t('scan.inLibraryCount', { count: inLibraryCount })}</span>
       )}
-      <Button variant="ghost" onClick={onClose} disabled={adding}>Cancel</Button>
+      <Button variant="ghost" onClick={onClose} disabled={adding}>{t.t('common.cancel')}</Button>
       <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0} loading={adding}>
-        {adding ? 'Adding…' : `Add ${selected.size} ${selected.size === 1 ? 'tape' : 'tapes'}`}
+        {adding ? t.t('scan.adding') : t.t('scan.addTapes', { count: selected.size })}
       </Button>
     </>
   )
 
   return (
-    <Modal title="Scan a page" onClose={onClose} size="2xl" footer={footer}>
+    <Modal title={t.t('scan.title')} onClose={onClose} size="2xl" footer={footer}>
       <div className="flex gap-2">
         <input
           type="text"
@@ -215,7 +218,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
           onCompositionStart={composing.onCompositionStart}
           onCompositionEnd={composing.onCompositionEnd}
           onKeyDown={(e) => { if (e.key === 'Enter' && !isComposingKeyboardEvent(composingRef, e)) scan() }}
-          placeholder="Paste a page URL"
+          placeholder={t.t('scan.placeholder')}
           spellCheck={false}
           className={`flex-1 ${INPUT_LINE_CLASS}`}
         />
@@ -224,34 +227,34 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
           onClick={() => (scanning ? void stopScan() : scan())}
           disabled={!scanning && !url.trim()}
         >
-          {scanning ? 'Stop' : 'Scan'}
+          {t.t(scanning ? 'common.stop' : 'scan.scan')}
         </Button>
       </div>
 
       {!scanning && !scanned ? (
         <p className="mt-3 text-center text-sm text-fg">
-          Paste the URL of a page that lists videos — a creator's uploads, search results, a category.
+          {t.t('scan.intro')}
         </p>
       ) : (
         <div className="mt-3 text-center">
           <div className="text-2xl font-semibold tabular-nums text-info-fg">{entries.length}</div>
           <div className="mt-0.5 text-xs text-fg">
-            {scanning ? 'scanning…' : entries.length === 1 ? 'video found' : 'videos found'}
+            {scanning ? t.t('scan.scanning') : t.t('scan.videosFound', { count: entries.length })}
           </div>
           {scanning && (
             <div className="mx-auto mt-2 max-w-[12rem]">
               <IndeterminateBar />
             </div>
           )}
-          {error && <InlineError className="mt-1.5 text-left">{error}</InlineError>}
+          {error && <InlineError className="mt-1.5 text-left">{t.text(error)}</InlineError>}
         </div>
       )}
 
       {entries.length > 0 && (
         <>
           <div className="mt-3 flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => bulkSelect(true)}>Select all</Button>
-            <Button variant="secondary" size="sm" onClick={() => bulkSelect(false)}>Clear</Button>
+            <Button variant="secondary" size="sm" onClick={() => bulkSelect(true)}>{t.t('scan.selectAll')}</Button>
+            <Button variant="secondary" size="sm" onClick={() => bulkSelect(false)}>{t.t('scan.clearSelection')}</Button>
             <input
               type="text"
               value={search}
@@ -260,7 +263,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
                 setScrollTop(0)
                 if (listRef.current) listRef.current.scrollTop = 0
               }}
-              placeholder="Search title…"
+              placeholder={t.t('scan.searchPlaceholder')}
               className={`flex-1 ${INPUT_LINE_CLASS}`}
             />
           </div>
@@ -294,7 +297,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
                       onChange={() => toggle(e.sourceUrl)}
                       disabled={disabled}
                     />
-                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-fg-muted">In library</span>}
+                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-fg-muted">{t.t('tapeState.downloaded')}</span>}
                     <span className="min-w-0 flex-1 truncate">
                       {e.title ?? e.sourceUrl}
                       {e.unavailable && <span className="ml-2 text-xs text-fg">({e.unavailable.reason})</span>}

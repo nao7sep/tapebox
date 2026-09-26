@@ -41,7 +41,7 @@ export function handle<K extends keyof IpcCalls>(
     } catch (err) {
       if (err instanceof UserFacingError) {
         log.warn('ipc handler refused', { channel, error: describeError(err) })
-        return { ok: false, failure: { code: err.code, userMessage: err.message } }
+        return { ok: false, failure: { code: err.code, userMessage: err.userMessage } }
       }
       log.error('ipc handler failed', { channel, error: describeError(err) })
       return { ok: false, failure: { code: 'internal', userMessage: null } }

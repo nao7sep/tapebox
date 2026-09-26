@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
+import type { Message } from '@shared/i18n/translate'
+import { inEnglish } from '../../helpers/i18n'
 
 // Importing a bundle someone exported: the sidecar names its media and poster,
 // and this boundary decides what comes into the library, what is refused and
@@ -106,8 +108,14 @@ function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
   }
 }
 
-function importPaths(...paths: string[]): Promise<ImportResult> {
-  return Promise.resolve(handlers.get('library:import')!({ paths })) as Promise<ImportResult>
+// Each issue's reason as an English interface shows it, so the assertions read
+// the words a user sees.
+async function importPaths(...paths: string[]): Promise<ImportResult> {
+  const result = await handlers.get('library:import')!({ paths }) as {
+    imported: Tape[]
+    issues: Array<{ path: string; reason: Message; severity: string }>
+  }
+  return { ...result, issues: result.issues.map((issue) => ({ ...issue, reason: inEnglish(issue.reason)! })) }
 }
 
 beforeEach(async () => {
@@ -200,7 +208,7 @@ describe('importing a bundle', () => {
     const result = await importPaths(sidecar)
 
     expect(result.imported).toEqual([])
-    expect(result.issues).toEqual([expect.objectContaining({ path: sidecar, reason: 'already in library' })])
+    expect(result.issues).toEqual([expect.objectContaining({ path: sidecar, reason: 'Already in the library.' })])
     expect(await readdir(state.libraryDir)).toEqual([])
   })
 
@@ -289,7 +297,7 @@ describe('what the import refuses, and what it says', () => {
 
     expect(result.imported).toEqual([])
     expect(result.issues).toEqual([
-      expect.objectContaining({ severity: 'information', reason: 'already in library' }),
+      expect.objectContaining({ severity: 'information', reason: 'Already in the library.' }),
     ])
     expect(await readdir(state.libraryDir)).toEqual([])
   })
@@ -300,7 +308,7 @@ describe('what the import refuses, and what it says', () => {
     const result = await importPaths(sidecar)
 
     expect(result.issues).toEqual([
-      expect.objectContaining({ severity: 'warning', reason: 'media file is missing beside the sidecar: holiday.mp4' }),
+      expect.objectContaining({ severity: 'warning', reason: 'The media file holiday.mp4 is missing beside the sidecar.' }),
     ])
     expect(await readdir(state.libraryDir)).toEqual([])
   })

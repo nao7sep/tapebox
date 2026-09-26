@@ -1,12 +1,13 @@
 import { create } from 'zustand'
+import type { Message } from '@shared/i18n/translate'
 
 type OrderFailuresState = {
-  inbox: string | null
-  boxes: string | null
-  archiveTapes: Record<string, string | undefined>
-  setInbox: (message: string | null) => void
-  setBoxes: (message: string | null) => void
-  setArchiveTapes: (boxKey: string, message: string | null) => void
+  inbox: Message | null
+  boxes: Message | null
+  archiveTapes: Record<string, Message | undefined>
+  setInbox: (message: Message | null) => void
+  setBoxes: (message: Message | null) => void
+  setArchiveTapes: (boxKey: string, message: Message | null) => void
 }
 
 /**

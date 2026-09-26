@@ -7,6 +7,8 @@ import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
 import { Button, Field, InlineError, Toggle } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
 
 type Props = { tape: Tape; videoRef: RefObject<HTMLVideoElement | null>; onClose: () => void }
 
@@ -31,15 +33,16 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   const [deleteFromApp, setDeleteFromApp] = useState(settings?.deleteAfterExport ?? true)
   const [generating, setGenerating] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Message | null>(null)
+  const t = useI18n()
 
   async function pickDir() {
     setError(null)
     try {
-      const d = await ipcInvoke('dialog:pickDirectory', { title: 'Choose export destination' })
+      const d = await ipcInvoke('dialog:pickDirectory', { title: t.t('export.pickerTitle') })
       if (d) setDir(d)
     } catch (err) {
-      setError(presentFailure(err, 'The folder picker could not be opened. Try again.', 'export folder picker failed'))
+      setError(presentFailure(err, message('common.folderPickerFailed'), 'export folder picker failed'))
     }
   }
 
@@ -55,7 +58,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
       await ipcInvoke('export:files', { tapeId: tape.id, destinationDir: dir, name, deleteFromApp })
       onClose()
     } catch (err) {
-      setError(presentFailure(err, 'The tape could not be exported. Existing library files are unchanged; check the destination and try again.', 'tape export failed'))
+      setError(presentFailure(err, message('export.failed'), 'tape export failed'))
       setExporting(false)
     }
   }
@@ -63,32 +66,32 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   const busy = exporting || generating
   const footer = (
     <>
-      <Button variant="ghost" onClick={onClose} disabled={exporting}>Cancel</Button>
+      <Button variant="ghost" onClick={onClose} disabled={exporting}>{t.t('common.cancel')}</Button>
       <Button
         variant="primary"
         onClick={() => void run()}
         disabled={!dir || !name.trim() || busy}
         loading={exporting}
       >
-        {exporting ? 'Exporting…' : deleteFromApp ? 'Export and Remove' : 'Export'}
+        {t.t(exporting ? 'export.exporting' : deleteFromApp ? 'export.exportAndRemove' : 'export.export')}
       </Button>
     </>
   )
 
   return (
-    <Modal title="Export" onClose={onClose} size="2xl" footer={footer} closeDisabled={exporting}>
+    <Modal title={t.t('export.title')} onClose={onClose} size="2xl" footer={footer} closeDisabled={exporting}>
       <NameEditor
         tape={tape}
         value={name}
         onChange={setName}
         disabled={exporting}
         onGeneratingChange={setGenerating}
-        label="Export name"
-        hint="Names the exported copy only — the tape in your library keeps its current name."
+        label={t.t('export.name')}
+        hint={t.t('export.nameHint')}
       />
 
       <div className="mt-4 space-y-4 border-t border-line pt-4">
-        <Field label="Destination">
+        <Field label={t.t('export.destination')}>
           <div className="flex items-center gap-2">
             <code
               className={
@@ -98,10 +101,10 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
                 (dir ? 'border-line text-fg' : 'border-dashed border-line text-fg-subtle')
               }
             >
-              {dir ?? 'Not set — choose a folder'}
+              {dir ?? t.t('export.destinationUnset')}
             </code>
             <Button variant="secondary" size="sm" onClick={() => void pickDir()} disabled={busy}>
-              Choose…
+              {t.t('common.choose')}
             </Button>
           </div>
           {defaultDir && dir !== defaultDir && (
@@ -111,26 +114,26 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
               disabled={busy}
               className="mt-1 truncate text-xs text-fg-muted hover:text-fg-emphasis disabled:opacity-50"
             >
-              Use default ({defaultDir})
+              {t.t('export.useDefault', { path: defaultDir })}
             </button>
           )}
           {!defaultDir && (
             <p className="mt-1 text-xs text-fg-muted">
-              Set a default export folder in Settings → General to skip choosing each time.
+              {t.t('export.setDefaultHint')}
             </p>
           )}
         </Field>
 
         <Toggle
-          label="Delete from library after export"
-          description="Remove this tape from TapeBox once its files are copied out (respecting the Trash setting). Off = keep it in the library too."
+          label={t.t('export.deleteAfter')}
+          description={t.t('export.deleteAfterHint')}
           checked={deleteFromApp}
           disabled={busy}
           onChange={setDeleteFromApp}
         />
       </div>
 
-      {error && <InlineError className="mt-4">{error}</InlineError>}
+      {error && <InlineError className="mt-4">{t.text(error)}</InlineError>}
     </Modal>
   )
 }

@@ -10,6 +10,7 @@ import { isImportableUrl } from '@shared/url'
 import { librarySourceIndex } from '@shared/source-identity'
 import type { Tape } from '@shared/domain'
 import { UserFacingError } from '@main/user-facing-error'
+import { message } from '@shared/i18n/translate'
 
 /** Orders that drop a block of `count` new tapes onto the top of the inbox. */
 function inboxFrontOrders(count: number): number[] {
@@ -23,7 +24,7 @@ export function registerDownloadHandlers(): void {
     // Gate the scheme at the trust boundary: only http(s) reaches yt-dlp, never
     // file:// or an internal scheme a renderer could otherwise drive it at.
     if (!isImportableUrl(trimmed)) {
-      throw new UserFacingError('invalid', 'Enter a valid http(s) URL.')
+      throw new UserFacingError('invalid', message('errors.urlInvalid'))
     }
     // Reserve the on-disk stem first: it is the only await. The dedup check, the
     // order and the insert then happen in one synchronous turn, so two quick Adds
@@ -34,7 +35,7 @@ export function registerDownloadHandlers(): void {
     // fragment isn't added twice. Any existing tape blocks the add, in any state; a
     // failed one is resumed via Retry, not re-added.
     if (librarySourceIndex(session.getTapes()).has({ url: trimmed })) {
-      throw new UserFacingError('refused', 'This URL is already in the library.')
+      throw new UserFacingError('refused', message('errors.urlInLibrary'))
     }
     const [order] = inboxFrontOrders(1)
     const tape = queuedTape(id, trimmed, order)

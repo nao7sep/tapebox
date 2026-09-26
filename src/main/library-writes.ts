@@ -1,5 +1,6 @@
 import { getLibraryDir } from '@main/store/config'
 import { UserFacingError } from '@main/user-facing-error'
+import { message } from '@shared/i18n/translate'
 
 /**
  * The one owner of writes into the library folder. Every run that creates,
@@ -18,10 +19,8 @@ import { UserFacingError } from '@main/user-facing-error'
 let writers = 0
 let moving = false
 
-const MOVE_BLOCKED_MESSAGE =
-  "Can't move the library while downloads, imports, renames or exports are running. " +
-  'Finish or stop them first, then change the library folder.'
-const WRITE_BLOCKED_MESSAGE = 'The library is being moved to a new folder. Try again when the move has finished.'
+const MOVE_BLOCKED_MESSAGE = message('errors.libraryMoveBlocked')
+const WRITE_BLOCKED_MESSAGE = message('errors.libraryWriteBlocked')
 
 /**
  * Claim a write, or get null while a move runs. The returned release is

@@ -19,7 +19,7 @@ import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { useKeepAwake } from '@renderer/lib/useKeepAwake'
 import { useVolume } from '@renderer/lib/useVolume'
 import { useCurrentChapter } from '@renderer/lib/currentChapter'
-import { chapterCountLabel, formatBytes, formatSpeed, formatTime } from '@renderer/lib/format'
+import { chapterCountLabel, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 import { Player } from './Player'
@@ -36,6 +36,9 @@ import { runTapeAction } from '@renderer/lib/runTapeAction'
 import { TapeActionResults } from './TapeActionResults'
 import { LayoutWriteResult } from './LayoutWriteResult'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
+import { useI18n, type UiTranslator } from '@renderer/i18n/I18nContext'
+import { joinMessages, message, type Message } from '@shared/i18n/translate'
+import type { MessageKey } from '@shared/i18n/catalogues'
 
 /** Seconds the Left/Right arrows move the playhead. */
 const SEEK_STEP_SECONDS = 10
@@ -64,8 +67,8 @@ export function DetailPane({
   onScanPage: (url: string) => void
 }) {
   const [sidecar, setSidecar] = useState<SidecarRaw | null>(null)
-  const [sidecarError, setSidecarError] = useState<string | null>(null)
-  const [playbackError, setPlaybackError] = useState<string | null>(null)
+  const [sidecarError, setSidecarError] = useState<Message | null>(null)
+  const [playbackError, setPlaybackError] = useState<Message | null>(null)
   const [showRefresh, setShowRefresh] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [showExport, setShowExport] = useState(false)
@@ -75,6 +78,7 @@ export function DetailPane({
   const [renaming, setRenaming] = useState(false)
   const resumeRef = useRef<{ at: number; play: boolean } | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
+  const t = useI18n()
   const { copied, copy: copyUrl } = useCopyTapeSourceUrl(tape.id, tape.sourceUrl)
   const progress = useTapesStore((s) => s.progress[tape.id])
   const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
@@ -105,7 +109,7 @@ export function DetailPane({
     let cancelled = false
     ipcInvoke('library:getSidecar', { tapeId: tape.id })
       .then((s) => { if (!cancelled) setSidecar(s) })
-      .catch((err) => { if (!cancelled) setSidecarError(presentFailure(err, 'Tape details could not be loaded. The media file is unchanged; select the tape again to retry.', 'tape sidecar load failed')) })
+      .catch((err) => { if (!cancelled) setSidecarError(presentFailure(err, message('detail.sidecarLoadFailed'), 'tape sidecar load failed')) })
     return () => { cancelled = true }
   }, [tape.id, tape.state, tape.sidecarFilename])
 
@@ -118,7 +122,7 @@ export function DetailPane({
     return parsed.success ? parsed.data : []
   }, [sidecar])
 
-  const mediaMeta = mediaMetaLine(sidecar)
+  const mediaMeta = mediaMetaLine(sidecar, t)
   const chapterLabel = chapterCountLabel(tape.chapterCount)
   const description = (() => {
     const d = sidecar?.['description']
@@ -187,7 +191,7 @@ export function DetailPane({
       tape.id,
       'cancel',
       'download cancellation failed',
-      'The download could not be cancelled. It may still be running; try again.',
+      message('detail.cancelFailed'),
       () => ipcInvoke('downloads:cancel', { tapeId: tape.id }),
     )
   }
@@ -196,7 +200,7 @@ export function DetailPane({
       tape.id,
       'retry',
       'download retry failed',
-      'This tape could not be queued again. Its current state is unchanged; try again.',
+      message('detail.retryFailed'),
       () => ipcInvoke('downloads:retry', { tapeId: tape.id }),
     )
   }
@@ -205,7 +209,7 @@ export function DetailPane({
       tape.id,
       'open',
       'external player open failed',
-      'This tape could not be opened in the external player. Choose another player in Settings or try again.',
+      message('detail.openExternalFailed'),
       () => ipcInvoke('library:playExternal', { tapeId: tape.id }),
     )
   }
@@ -214,7 +218,7 @@ export function DetailPane({
       tape.id,
       'reveal',
       'tape reveal failed',
-      'This tape could not be shown in its folder. The tape is unchanged; try again.',
+      message('detail.revealFailed'),
       () => ipcInvoke('library:reveal', { tapeId: tape.id }),
     )
   }
@@ -317,7 +321,7 @@ export function DetailPane({
             tape.id,
             'retry',
             'download retry failed',
-            'This tape could not be queued again. Its current state is unchanged; try again.',
+            message('detail.retryFailed'),
             () => ipcInvoke('downloads:retry', { tapeId: tape.id }),
           )
         }
@@ -358,7 +362,7 @@ export function DetailPane({
                   <button
                     onClick={() => setInfoOpen((v) => !v)}
                     aria-expanded={infoOpen}
-                    aria-label={infoOpen ? 'Hide details' : 'Show details'}
+                    aria-label={t.t(infoOpen ? 'detail.hideDetails' : 'detail.showDetails')}
                     className="group flex h-7 w-5 shrink-0 items-center justify-center"
                   >
                     <svg
@@ -389,7 +393,7 @@ export function DetailPane({
                   {/* Always visible: the media line for a downloaded tape (its "status"
                       is just "In library", which says nothing), otherwise the status. */}
                   <p className="mt-0.5 truncate text-xs text-fg-muted">
-                    {downloaded && mediaMeta ? mediaMeta : headerStatus(tape, progress, stalled)}
+                    {downloaded && mediaMeta ? mediaMeta : t.text(headerStatus(tape, progress, stalled, t))}
                   </p>
                 </div>
               </div>
@@ -410,25 +414,25 @@ export function DetailPane({
                   {tape.uploader && (
                     <div className="select-text break-words">
                       {tape.uploader}
-                      {chapterLabel && <span className="text-fg-subtle"> · {chapterLabel}</span>}
+                      {chapterLabel && <span className="text-fg-subtle"> · {t.text(chapterLabel)}</span>}
                     </div>
                   )}
                 </div>
               ) : (
                 <dl className="mt-2 space-y-1 pl-6 text-xs text-fg">
                   {tape.uploader && (
-                    <DetailRow label="Uploader">
+                    <DetailRow label={t.t('detail.uploader')}>
                       {tape.uploader}
-                      {chapterLabel && <span className="text-fg-subtle"> · {chapterLabel}</span>}
+                      {chapterLabel && <span className="text-fg-subtle"> · {t.text(chapterLabel)}</span>}
                     </DetailRow>
                   )}
                   {tape.durationSeconds != null && (
-                    <DetailRow label="Duration">{formatTime(tape.durationSeconds)}</DetailRow>
+                    <DetailRow label={t.t('detail.duration')}>{formatTime(tape.durationSeconds)}</DetailRow>
                   )}
                   {/* Source is the heading already when there's no title, so only show it
                       here as an opening action when a title occupies the heading. */}
                   {tape.title && (
-                    <DetailRow label="Source">
+                    <DetailRow label={t.t('detail.source')}>
                       <button
                         type="button"
                         onClick={() => void openSourceUrl()}
@@ -439,7 +443,7 @@ export function DetailPane({
                     </DetailRow>
                   )}
                   {tape.name && (
-                    <DetailRow label="Name">
+                    <DetailRow label={t.t('detail.name')}>
                       <span className="select-text">{tape.name}</span>
                     </DetailRow>
                   )}
@@ -452,7 +456,7 @@ export function DetailPane({
             {twoColumnHeader && (
               <div className="min-w-0">
                 <PassiveScrollRegion
-                  label="Tape description"
+                  label={t.t('detail.descriptionLabel')}
                   className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap break-words pr-1 text-xs text-fg"
                 >
                   {description}
@@ -468,14 +472,14 @@ export function DetailPane({
             through its states (no growing/shrinking) and the buttons never shift. */}
         {tape.state === 'downloaded' ? (
           playbackError ? (
-            <CaptionedPanel kind="error" caption="This tape couldn’t be played" fill>
+            <CaptionedPanel kind="error" caption={t.t('detail.playbackFailedCaption')} fill>
               <PassiveScrollRegion
-                label="Playback error details"
+                label={t.t('detail.playbackErrorLabel')}
                 className="min-h-0 flex-1 overflow-auto p-4"
               >
-                <pre className="whitespace-pre-wrap break-words text-xs text-fg">{playbackError}</pre>
+                <pre className="whitespace-pre-wrap break-words text-xs text-fg">{t.text(playbackError)}</pre>
                 <p className="mt-3 text-xs text-fg-muted">
-                  Try “Open in player” below for the system player, or reveal the session log from the menu for the full record.
+                  {t.t('detail.playbackFailedHint', { openInPlayer: t.t('detail.openInPlayer') })}
                 </p>
               </PassiveScrollRegion>
             </CaptionedPanel>
@@ -495,16 +499,15 @@ export function DetailPane({
             </div>
           )
         ) : tape.state === 'listing' ? (
-          <CaptionedPanel kind="info" caption="This page lists several videos" fill>
+          <CaptionedPanel kind="info" caption={t.t('detail.listingCaption')} fill>
             <p className="p-5 text-sm leading-relaxed text-fg">
-              TapeBox adds one video at a time. Use <strong>Scan page</strong> below
-              to see its videos and pick which to add.
+              {t.rich('detail.listingBody', { scanPage: <strong>{t.t('detail.scanPage')}</strong> })}
             </p>
           </CaptionedPanel>
         ) : tape.state === 'paused' ? (
-          <CaptionedPanel kind="warning" caption="Paused" fill>
+          <CaptionedPanel kind="warning" caption={t.t('tapeState.paused')} fill>
             <p className="p-5 text-sm leading-relaxed text-fg">
-              Auto-start is off, so it won't download until you resume it.
+              {t.t('detail.pausedBody')}
             </p>
           </CaptionedPanel>
         ) : (
@@ -524,43 +527,43 @@ export function DetailPane({
         <div className="mt-auto flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-4 pt-3">
           {/* Primary: re-engage / resolve the current state. */}
           {(tape.state === 'queued' || tape.state === 'probing' || tape.state === 'downloading') && (
-            <ActionButton onClick={cancel}>Cancel</ActionButton>
+            <ActionButton onClick={cancel}>{t.t('common.cancel')}</ActionButton>
           )}
           {tape.state === 'failed' && (
-            <ActionButton onClick={retry}>Retry</ActionButton>
+            <ActionButton onClick={retry}>{t.t('detail.retry')}</ActionButton>
           )}
           {tape.state === 'paused' && (
-            <ActionButton onClick={retry}>Resume</ActionButton>
+            <ActionButton onClick={retry}>{t.t('detail.resume')}</ActionButton>
           )}
           {tape.state === 'listing' && (
-            <ActionButton onClick={() => onScanPage(tape.sourceUrl)}>Scan page</ActionButton>
+            <ActionButton onClick={() => onScanPage(tape.sourceUrl)}>{t.t('detail.scanPage')}</ActionButton>
           )}
           {tape.state === 'downloaded' && (
             <>
               {/* Use the file. */}
-              <ActionButton onClick={() => void openExternal()}>Open in player</ActionButton>
-              <ActionButton onClick={() => void revealFile()}>Show in folder</ActionButton>
+              <ActionButton onClick={() => void openExternal()}>{t.t('detail.openInPlayer')}</ActionButton>
+              <ActionButton onClick={() => void revealFile()}>{t.t('detail.showInFolder')}</ActionButton>
               {/* Housekeep: refresh first (rename and export both benefit from
                   up-to-date metadata), then rename, then export. */}
-              <ActionButton onClick={() => setShowRefresh(true)}>Refresh metadata</ActionButton>
-              <ActionButton onClick={() => setShowRename(true)}>Rename</ActionButton>
-              <ActionButton onClick={() => setShowExport(true)}>Export</ActionButton>
+              <ActionButton onClick={() => setShowRefresh(true)}>{t.t('detail.refreshMetadata')}</ActionButton>
+              <ActionButton onClick={() => setShowRename(true)}>{t.t('detail.rename')}</ActionButton>
+              <ActionButton onClick={() => setShowExport(true)}>{t.t('detail.export')}</ActionButton>
               {/* Organize, once the work is done. */}
               {tape.archivedAtUtc ? (
                 <>
                   <MoveToBoxButton tape={tape} />
-                  <ActionButton onClick={unarchive}>Move to Inbox</ActionButton>
+                  <ActionButton onClick={unarchive}>{t.t('detail.moveToInbox')}</ActionButton>
                 </>
               ) : (
-                <ActionButton onClick={archive}>Archive</ActionButton>
+                <ActionButton onClick={archive}>{t.t('detail.archive')}</ActionButton>
               )}
             </>
           )}
           {/* Source link — available for any tape, in every state. */}
-          <ActionButton onClick={() => void openSourceUrl()}>Open URL</ActionButton>
-          <ActionButton onClick={() => void copyUrl()}>{copied ? 'Copied' : 'Copy URL'}</ActionButton>
+          <ActionButton onClick={() => void openSourceUrl()}>{t.t('detail.openUrl')}</ActionButton>
+          <ActionButton onClick={() => void copyUrl()}>{t.t(copied ? 'detail.copied' : 'detail.copyUrl')}</ActionButton>
           {/* Destructive: always last, pushed to the far right. */}
-          <ActionButton onClick={() => onRequestRemove(tape)} danger className="ml-auto">Remove</ActionButton>
+          <ActionButton onClick={() => onRequestRemove(tape)} danger className="ml-auto">{t.t('common.remove')}</ActionButton>
         </div>
       </div>
 
@@ -582,13 +585,13 @@ export function DetailPane({
             onResize={(w) => void patchLayout({ chaptersPaneWidth: w }, false)}
             onCommit={(w) => void patchLayout({ chaptersPaneWidth: w }, true)}
           />
-          <h3 className="mb-2 shrink-0 text-sm font-medium text-fg">Chapters</h3>
+          <h3 className="mb-2 shrink-0 text-sm font-medium text-fg">{t.t('detail.chapters')}</h3>
           {sidecarError ? (
             <PassiveScrollRegion
-              label="Chapter error details"
+              label={t.t('detail.chapterErrorLabel')}
               className="min-h-0 flex-1 overflow-y-auto"
             >
-              <p className="text-xs text-danger-fg">{sidecarError}</p>
+              <p className="text-xs text-danger-fg">{t.text(sidecarError)}</p>
             </PassiveScrollRegion>
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -618,21 +621,21 @@ export function DetailPane({
 /** Stable empty array so a tape with no buffered log doesn't churn the selector. */
 const NO_ENTRIES: LogEntry[] = []
 
-const WORKING_PLACEHOLDER: Partial<Record<TapeState, string>> = {
-  queued: 'Waiting for a free download slot…',
-  probing: 'Fetching video info…',
-  ready: 'Starting download…',
-  downloading: 'Starting download…',
+const WORKING_PLACEHOLDER: Partial<Record<TapeState, MessageKey>> = {
+  queued: 'detail.waitingForSlot',
+  probing: 'detail.fetchingInfo',
+  ready: 'detail.startingDownload',
+  downloading: 'detail.startingDownload',
 }
 
 /** The one-line status under the heading: the shared status label, plus the live
  *  download speed when downloading and an Archived suffix when archived. */
-function headerStatus(tape: Tape, progress: ProgressEntry | undefined, stalled: boolean): string {
+function headerStatus(tape: Tape, progress: ProgressEntry | undefined, stalled: boolean, t: UiTranslator): Message {
   let base = tapeStatusLabel(tape, progress, stalled)
   if (progress?.phase === 'downloading' && progress.speedBps) {
-    base += ` · ${formatSpeed(progress.speedBps)}`
+    base = joinMessages(base, t.bytesPerSecond(progress.speedBps))
   }
-  return tape.archivedAtUtc ? `${base} · Archived` : base
+  return tape.archivedAtUtc ? joinMessages(base, message('filter.archived')) : base
 }
 
 /** A label/value row in the disclosed detail list. */
@@ -662,6 +665,7 @@ function DownloadLogPanel({
   progress: ProgressEntry | undefined
   entries: LogEntry[]
 }) {
+  const t = useI18n()
   const failed = tape.state === 'failed'
   const downloading = progress?.phase === 'downloading'
   const fallback = entries.length === 0 && failed
@@ -671,7 +675,7 @@ function DownloadLogPanel({
   return (
     <CaptionedPanel
       kind={failed ? 'error' : 'neutral'}
-      caption={failed ? 'Download failed' : tape.state === 'queued' ? 'Queued' : 'Working…'}
+      caption={t.t(failed ? 'detail.downloadFailed' : tape.state === 'queued' ? 'tapeState.queued' : 'common.working')}
       fill
     >
       {isProcessing(tape.state) && (
@@ -684,11 +688,11 @@ function DownloadLogPanel({
         </div>
       )}
       <PassiveScrollRegion
-        label="Download log"
+        label={t.t('detail.downloadLog')}
         className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs"
       >
         {fallback != null ? (
-          <pre className="whitespace-pre-wrap break-words text-fg">{fallback}</pre>
+          <pre className="whitespace-pre-wrap break-words text-fg">{t.text(fallback)}</pre>
         ) : entries.length > 0 ? (
           <ul className="space-y-0.5">
             {entries.map((e, i) => (
@@ -699,12 +703,12 @@ function DownloadLogPanel({
                   (e.kind === 'error' ? 'text-danger-fg' : 'text-fg-muted')
                 }
               >
-                {e.text}
+                {e.kind === 'error' ? t.text(e.text) : e.text}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-fg-subtle">{WORKING_PLACEHOLDER[tape.state] ?? 'Working…'}</p>
+          <p className="text-fg-subtle">{t.t(WORKING_PLACEHOLDER[tape.state] ?? 'common.working')}</p>
         )}
       </PassiveScrollRegion>
     </CaptionedPanel>
@@ -714,7 +718,7 @@ function DownloadLogPanel({
 /** A one-line technical summary, outside-in: container · codec · frame size · fps
  *  · duration · size. Prefers the ffmpeg-probed `tapebox.media` block, falling
  *  back to yt-dlp's own fields. */
-function mediaMetaLine(sidecar: SidecarRaw | null): string | null {
+function mediaMetaLine(sidecar: SidecarRaw | null, t: UiTranslator): string | null {
   if (!sidecar) return null
   const media = (sidecar.tapebox?.['media'] ?? null) as Record<string, unknown> | null
   const pick = (key: string): unknown => media?.[key] ?? sidecar[key]
@@ -735,7 +739,7 @@ function mediaMetaLine(sidecar: SidecarRaw | null): string | null {
   const duration = num(pick('duration'))
   if (duration !== null) parts.push(formatTime(duration))
   const size = num(sidecar['filesize']) ?? num(sidecar['filesize_approx'])
-  if (size !== null) parts.push(formatBytes(size))
+  if (size !== null) parts.push(t.bytes(size))
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
@@ -770,12 +774,12 @@ function ActionButton({
 }
 
 /** Present stable playback copy while preserving browser diagnostics in the log. */
-function describeMediaError(v: HTMLVideoElement): string {
-  const labels: Record<number, string> = {
-    1: 'Playback aborted',
-    2: 'Network error while loading the file',
-    3: 'Decode error — the file may be corrupt or use an unsupported encoding',
-    4: 'Source not supported — the container or codec can’t be played here',
+function describeMediaError(v: HTMLVideoElement): Message {
+  const labels: Record<number, MessageKey> = {
+    1: 'detail.mediaAborted',
+    2: 'detail.mediaNetwork',
+    3: 'detail.mediaDecode',
+    4: 'detail.mediaUnsupported',
   }
   const err = v.error
   log.error('media playback failed', {
@@ -785,5 +789,5 @@ function describeMediaError(v: HTMLVideoElement): string {
     networkState: v.networkState,
     readyState: v.readyState,
   })
-  return err ? (labels[err.code] ?? 'This media could not be played.') : 'This media could not be played.'
+  return message((err ? labels[err.code] : undefined) ?? 'detail.mediaFailed')
 }

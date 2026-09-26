@@ -8,6 +8,7 @@ vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
 import { useCopyTapeSourceUrl } from '@renderer/lib/useCopyTapeSourceUrl'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
+import { inEnglishAll } from '../../helpers/i18n'
 
 let writeText: ReturnType<typeof vi.fn>
 let root: Root
@@ -70,7 +71,7 @@ describe('Copy URL acknowledgement ownership', () => {
     await act(async () => { resolveOlder(); await olderCopy })
 
     expect(hook.copied).toBe(false)
-    expect(useTapeActionResultsStore.getState().byTape['tape-current']).toEqual({
+    expect(inEnglishAll(useTapeActionResultsStore.getState().byTape['tape-current'])).toEqual({
       'copy-url': 'The source URL could not be copied. Try Copy URL again.',
     })
   })

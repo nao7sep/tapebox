@@ -8,6 +8,7 @@ import * as session from '@main/store/session'
 import { paths } from '@main/paths'
 import { reconcileWakeLock } from '@main/power-blocker'
 import { applyThemePreference } from '@main/theme'
+import { applyLanguagePreference } from '@main/i18n'
 import {
   completeLibraryRelocation,
   relocateLibrary,
@@ -22,6 +23,7 @@ import { SettingsSchema, type Settings } from '@shared/settings'
 import { UserFacingError } from '@main/user-facing-error'
 import { withLibraryMove } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
+import { message } from '@shared/i18n/translate'
 
 /**
  * The flat library files the app owns and tracks, as basenames — every tape's
@@ -60,7 +62,10 @@ function effectiveLibraryDir(libraryDir: string): string {
  * double-clicked build is `/` (storage-path-conventions). The Choose… picker
  * always yields an absolute path, so this only ever rejects a hand-typed value.
  */
-function normalizeUserDir(label: string, value: string): string {
+function normalizeUserDir(
+  notAbsolute: 'errors.libraryFolderNotAbsolute' | 'errors.exportFolderNotAbsolute',
+  value: string,
+): string {
   const trimmed = value.trim()
   if (trimmed === '') return ''
   let expanded = trimmed
@@ -69,11 +74,7 @@ function normalizeUserDir(label: string, value: string): string {
     expanded = join(homedir(), expanded.slice(2))
   }
   if (!isAbsolute(expanded)) {
-    throw new UserFacingError(
-      'invalid',
-      `${label} must be an absolute path (or left blank for the default). ` +
-        'Use the Choose… button, or type a full path or one starting with ~.',
-    )
+    throw new UserFacingError('invalid', message(notAbsolute))
   }
   return expanded
 }
@@ -138,10 +139,10 @@ export function registerSettingsHandlers(): void {
     // join and resolve against the working directory (storage-path-conventions).
     const normalized: Partial<Settings> = { ...patch }
     if (patch.libraryDir !== undefined) {
-      normalized.libraryDir = normalizeUserDir('Library folder', patch.libraryDir)
+      normalized.libraryDir = normalizeUserDir('errors.libraryFolderNotAbsolute', patch.libraryDir)
     }
     if (patch.defaultExportDir !== undefined) {
-      normalized.defaultExportDir = normalizeUserDir('Default export folder', patch.defaultExportDir)
+      normalized.defaultExportDir = normalizeUserDir('errors.exportFolderNotAbsolute', patch.defaultExportDir)
     }
     // Validate the full merged result BEFORE touching any files, so an invalid
     // sibling field in the same patch can't leave the library moved but the setting
@@ -181,8 +182,7 @@ export function registerSettingsHandlers(): void {
 type SettingsUpdateResult = IpcCalls['settings:update']['res']
 
 /** Shown when the new library folder is committed but old copies remain in the previous one. */
-const OBSOLETE_SOURCES_WARNING =
-  'Settings were saved and the library now uses the new folder, but some files could not be removed from the previous folder.'
+const OBSOLETE_SOURCES_WARNING = message('errors.libraryOldCopiesKept')
 
 async function applySettingsPatch(
   normalized: Partial<Settings>,
@@ -210,8 +210,10 @@ async function applySettingsPatch(
     }
     throw saveError
   }
-  // Settings apply on Save, the theme included (app-chrome conventions, Theme).
+  // Settings apply on Save, the theme (app-chrome conventions, Theme) and the
+  // language (localization-conventions) included.
   applyThemePreference(next.theme)
+  applyLanguagePreference(next.language)
   // Flipping autostart on should start anything already waiting.
   if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
   // Toggling keep-awake off mid-playback must release the held wake lock now

@@ -6,7 +6,6 @@ import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import type { IpcEvents } from '@shared/ipc-contract'
-import { formatBytes } from '@renderer/lib/format'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useToastStore } from '@renderer/store/toast'
@@ -25,6 +24,10 @@ import {
   InlineError,
 } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
+import { CATALOGUES, type MessageKey } from '@shared/i18n/catalogues'
+import { LANGUAGES, normalizeLanguagePreference } from '@shared/i18n/languages'
 
 type Props = { onClose: () => void }
 type Tab = 'general' | 'ai' | 'ytdlp'
@@ -53,15 +56,16 @@ export function SettingsModal({ onClose }: Props) {
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Message | null>(null)
   const [busy, setBusy] = useState(false)
+  const t = useI18n()
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [confirmMove, setConfirmMove] = useState<{ count: number } | null>(null)
   const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null)
   const [stoppingMove, setStoppingMove] = useState(false)
   // Read by save() after the rejected update, so a requested stop is not reported as a failure.
   const stopRequested = useRef(false)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<Message | null>(null)
 
   function load() {
     setLoadError(null)
@@ -77,7 +81,7 @@ export function SettingsModal({ onClose }: Props) {
     }, (error) => {
       setLoadError(presentFailure(
         error,
-        'Settings could not be loaded. No values have been assumed; try again.',
+        message('settings.loadFailed'),
         'settings dialog hydration failed',
       ))
     })
@@ -168,14 +172,12 @@ export function SettingsModal({ onClose }: Props) {
       onClose()
     } catch (err) {
       if (stopRequested.current && !settingsSaved) {
-        setError('The library move was stopped. The library stays in its current folder and no setting was saved.')
+        setError(message('settings.moveStopped'))
         return
       }
       setError(presentFailure(
         err,
-        settingsSaved
-          ? 'The settings were saved, but the API key change was not. Review the form and try again.'
-          : 'Settings could not be saved. Your changes are still shown; try again.',
+        message(settingsSaved ? 'settings.apiKeySaveFailed' : 'settings.saveFailed'),
         settingsSaved ? 'API key save failed' : 'settings save failed',
       ))
     } finally {
@@ -193,15 +195,15 @@ export function SettingsModal({ onClose }: Props) {
 
   if (!draft) {
     return (
-      <Modal title="Settings" onClose={onClose} size="2xl">
+      <Modal title={t.t('settings.title')} onClose={onClose} size="2xl">
         {loadError ? (
           <div className="space-y-3">
-            <InlineError>{loadError}</InlineError>
-            <Button variant="secondary" onClick={load}>Try again</Button>
+            <InlineError>{t.text(loadError)}</InlineError>
+            <Button variant="secondary" onClick={load}>{t.t('common.tryAgain')}</Button>
           </div>
         ) : (
           <p className="flex items-center gap-2 text-sm text-fg">
-            <Spinner /> Loading…
+            <Spinner /> {t.t('common.loading')}
           </p>
         )}
       </Modal>
@@ -213,15 +215,15 @@ export function SettingsModal({ onClose }: Props) {
     <>
       {moving ? (
         <Button variant="ghost" onClick={stopMove} disabled={stoppingMove}>
-          {stoppingMove ? 'Stopping…' : 'Stop Move'}
+          {t.t(stoppingMove ? 'settings.stoppingMove' : 'settings.stopMove')}
         </Button>
       ) : (
         <Button variant="ghost" onClick={requestClose} disabled={busy}>
-          Cancel
+          {t.t('common.cancel')}
         </Button>
       )}
       <Button variant="primary" onClick={requestSave} disabled={!dirty} loading={busy}>
-        {moving ? 'Moving…' : busy ? 'Saving…' : 'Save'}
+        {t.t(moving ? 'settings.moving' : busy ? 'common.saving' : 'common.save')}
       </Button>
     </>
   )
@@ -229,7 +231,7 @@ export function SettingsModal({ onClose }: Props) {
   return (
     <>
       <Modal
-        title="Settings"
+        title={t.t('settings.title')}
         onClose={requestClose}
         size="2xl"
         footer={footer}
@@ -275,19 +277,23 @@ export function SettingsModal({ onClose }: Props) {
         {moving && (
           <p className="mt-4 flex items-center gap-2 text-sm text-fg" role="status">
             <Spinner />
-            Moving library: {moveProgress.filesDone} of {moveProgress.filesTotal} files
-            ({formatBytes(moveProgress.bytesDone)} of {formatBytes(moveProgress.bytesTotal)})
+            {t.t('settings.moveProgress', {
+              done: moveProgress.filesDone,
+              count: moveProgress.filesTotal,
+              bytesDone: t.bytes(moveProgress.bytesDone),
+              bytesTotal: t.bytes(moveProgress.bytesTotal),
+            })}
           </p>
         )}
-        {error && <InlineError className="mt-4">{error}</InlineError>}
+        {error && <InlineError className="mt-4">{t.text(error)}</InlineError>}
       </Modal>
 
       {confirmDiscard && (
         <ConfirmModal
-          title="Unsaved changes"
-          message="Discard your changes?"
-          cancelLabel="Keep editing"
-          confirmLabel="Discard"
+          title={t.t('settings.unsavedTitle')}
+          message={t.t('settings.unsavedMessage')}
+          cancelLabel={t.t('settings.keepEditing')}
+          confirmLabel={t.t('settings.discard')}
           danger
           onCancel={() => setConfirmDiscard(false)}
           onConfirm={() => {
@@ -299,13 +305,9 @@ export function SettingsModal({ onClose }: Props) {
 
       {confirmMove && (
         <ConfirmModal
-          title="Move library?"
-          message={
-            `This will move ${confirmMove.count} ${confirmMove.count === 1 ? 'tape' : 'tapes'} to the new folder. ` +
-            `The move must finish completely before the new folder is saved.`
-          }
-          cancelLabel="Cancel"
-          confirmLabel="Move"
+          title={t.t('settings.moveTitle')}
+          message={t.t('settings.moveMessage', { count: confirmMove.count })}
+          confirmLabel={t.t('settings.move')}
           onCancel={() => setConfirmMove(null)}
           onConfirm={() => void save()}
         />
@@ -329,6 +331,7 @@ function pickEditable(s: Settings) {
     deleteAfterExport: s.deleteAfterExport,
     uiFontFamily: s.uiFontFamily,
     theme: s.theme,
+    language: s.language,
     ai: s.ai,
     prompts: s.prompts,
     ytdlpArgs: s.ytdlpArgs,
@@ -336,16 +339,19 @@ function pickEditable(s: Settings) {
   }
 }
 
-const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string }> = [
-  { value: 'system', label: 'System' },
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
+// The prompt's template tokens, literal in every language.
+const SLUG_TOKENS = ['{title}', '{uploader}', '{description}']
+
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: MessageKey }> = [
+  { value: 'system', label: 'settings.themeSystem' },
+  { value: 'light', label: 'settings.themeLight' },
+  { value: 'dark', label: 'settings.themeDark' },
 ]
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'general', label: 'General' },
-  { id: 'ai', label: 'AI' },
-  { id: 'ytdlp', label: 'yt-dlp' },
+const TABS: { id: Tab; label: MessageKey }[] = [
+  { id: 'general', label: 'settings.tabGeneral' },
+  { id: 'ai', label: 'settings.tabAi' },
+  { id: 'ytdlp', label: 'settings.tabYtdlp' },
 ]
 
 // A vertical tablist: one tab stop (the active tab via roving tabindex), Up/Down
@@ -353,7 +359,8 @@ const TABS: { id: Tab; label: string }[] = [
 // jump to the ends, and the arrows stop at the ends rather than wrapping.
 function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   const listRef = useRef<HTMLDivElement>(null)
-  const activeIndex = TABS.findIndex((t) => t.id === tab)
+  const activeIndex = TABS.findIndex((entry) => entry.id === tab)
+  const t = useI18n()
 
   const focusTab = (index: number) => {
     ;(
@@ -380,20 +387,20 @@ function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
       ref={listRef}
       role="tablist"
       aria-orientation="vertical"
-      aria-label="Settings sections"
+      aria-label={t.t('settings.sections')}
       onKeyDown={onKeyDown}
       className="w-32 shrink-0 space-y-0.5"
     >
-      {TABS.map((t, i) => {
-        const selected = tab === t.id
+      {TABS.map((entry, i) => {
+        const selected = tab === entry.id
         return (
           <button
-            key={t.id}
+            key={entry.id}
             role="tab"
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             data-tab-index={i}
-            onClick={() => onTab(t.id)}
+            onClick={() => onTab(entry.id)}
             className={
               'block w-full rounded px-3 py-1.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-muted ' +
               (selected
@@ -401,7 +408,7 @@ function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
                 : 'text-fg hover:bg-hover hover:text-fg-strong')
             }
           >
-            {t.label}
+            {t.t(entry.label)}
           </button>
         )
       })}
@@ -422,37 +429,57 @@ function GeneralTab({
   onPatch: (p: Partial<Settings>) => void
   defaultLibraryDir: string
 }) {
-  const [pickerError, setPickerError] = useState<string | null>(null)
+  const [pickerError, setPickerError] = useState<Message | null>(null)
+  const t = useI18n()
 
   async function chooseExportDir() {
     setPickerError(null)
     try {
-      const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose default export folder' })
+      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickExportFolder') })
       if (dir) onPatch({ defaultExportDir: dir })
     } catch (error) {
-      setPickerError(presentFailure(error, 'The folder picker could not be opened. Try again.', 'settings export folder picker failed'))
+      setPickerError(presentFailure(error, message('common.folderPickerFailed'), 'settings export folder picker failed'))
     }
   }
   async function chooseLibraryDir() {
     setPickerError(null)
     try {
-      const dir = await ipcInvoke('dialog:pickDirectory', { title: 'Choose library folder' })
+      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickLibraryFolder') })
       if (dir) onPatch({ libraryDir: dir })
     } catch (error) {
-      setPickerError(presentFailure(error, 'The folder picker could not be opened. Try again.', 'settings library folder picker failed'))
+      setPickerError(presentFailure(error, message('common.folderPickerFailed'), 'settings library folder picker failed'))
     }
   }
   return (
     <div className="space-y-4">
       {pickerError && (
-        <InlineError onDismiss={() => setPickerError(null)} closeLabel="Close folder picker result">
-          {pickerError}
+        <InlineError onDismiss={() => setPickerError(null)} closeLabel={t.t('settings.closePickerResult')}>
+          {t.text(pickerError)}
         </InlineError>
       )}
+      {/* Each language is listed by its own name, in its own script, so a reader
+          of any of them can find it whatever language is showing. Staged in the
+          draft and applied on Save with the rest of Settings. */}
+      <label className="block">
+        <span className="text-xs font-medium text-fg">{t.t('settings.language')}</span>
+        <select
+          value={draft.language}
+          disabled={busy}
+          onChange={(e) => onPatch({ language: normalizeLanguagePreference(e.target.value) })}
+          className={`mt-1 block w-full ${INPUT_LINE_CLASS}`}
+        >
+          <option value="system">{t.t('settings.languageSystem')}</option>
+          {LANGUAGES.map((language) => (
+            <option key={language} value={language} lang={language}>
+              {CATALOGUES[language]['language.name'] as string}
+            </option>
+          ))}
+        </select>
+      </label>
       {/* A native radio group: one tab stop, arrow keys move and select. Staged in
           the draft and applied on Save with the rest of Settings. */}
       <fieldset className="space-y-1.5" disabled={busy}>
-        <legend className="mb-1 text-xs font-medium text-fg">Theme</legend>
+        <legend className="mb-1 text-xs font-medium text-fg">{t.t('settings.theme')}</legend>
         <div className="flex flex-wrap gap-x-5 gap-y-1">
           {THEME_OPTIONS.map(({ value, label }) => (
             <label key={value} className="flex items-center gap-2 text-sm">
@@ -463,33 +490,33 @@ function GeneralTab({
                 checked={draft.theme === value}
                 onChange={() => onPatch({ theme: value })}
               />
-              {label}
+              {t.t(label)}
             </label>
           ))}
         </div>
-        <p className="text-xs text-fg-muted">System follows the OS appearance.</p>
+        <p className="text-xs text-fg-muted">{t.t('settings.themeHint')}</p>
       </fieldset>
       <div>
         <TextField
-          label="UI font"
+          label={t.t('settings.uiFont')}
           value={draft.uiFontFamily}
-          placeholder="Blank = default system font"
+          placeholder={t.t('settings.uiFontPlaceholder')}
           disabled={busy}
           onChange={(v) => onPatch({ uiFontFamily: v })}
         />
         <p className="mt-1 text-xs text-fg-muted">
-          Comma-separated font families; the first one your system has is used. Blank uses the built-in default.
+          {t.t('settings.uiFontHint')}
         </p>
       </div>
       <Toggle
-        label="Autostart downloads"
-        description="Newly added tapes start downloading immediately. Off = added as paused."
+        label={t.t('settings.autostart')}
+        description={t.t('settings.autostartHint')}
         checked={draft.autoStartDownloads}
         disabled={busy}
         onChange={(v) => onPatch({ autoStartDownloads: v })}
       />
       <NumberField
-        label="Max concurrent downloads"
+        label={t.t('settings.maxConcurrent')}
         value={draft.maxConcurrentDownloads}
         min={1}
         max={8}
@@ -497,7 +524,7 @@ function GeneralTab({
         onChange={(v) => onPatch({ maxConcurrentDownloads: v })}
       />
       <div>
-        <div className="text-xs font-medium text-fg">Library folder</div>
+        <div className="text-xs font-medium text-fg">{t.t('settings.libraryFolder')}</div>
         <div className="mt-1 flex items-center gap-2">
           <input
             type="text"
@@ -509,79 +536,78 @@ function GeneralTab({
             className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
           <Button variant="secondary" onClick={() => void chooseLibraryDir()} disabled={busy}>
-            Choose…
+            {t.t('common.choose')}
           </Button>
         </div>
         <p className="mt-1 text-xs text-fg-muted">
-          Where tapes are saved. Changing this moves your existing tapes to the new
-          folder. Not available while downloads, imports, renames or exports are running.
+          {t.t('settings.libraryFolderHint')}
         </p>
       </div>
       <Toggle
-        label="Autoplay"
-        description="Start playback automatically when a downloaded tape is opened."
+        label={t.t('settings.autoplay')}
+        description={t.t('settings.autoplayHint')}
         checked={draft.autoplay}
         disabled={busy}
         onChange={(v) => onPatch({ autoplay: v })}
       />
       <Toggle
-        label="Play sound"
-        description="Play video audio. When off, every video is muted and the volume control can't unmute it."
+        label={t.t('settings.playSound')}
+        description={t.t('settings.playSoundHint')}
         checked={draft.playSound}
         disabled={busy}
         onChange={(v) => onPatch({ playSound: v })}
       />
       <Toggle
-        label="Keep the computer awake while playing"
-        description="Hold a system wake lock while a tape is playing, so the screen won't dim and the computer won't sleep mid-watch. Released as soon as playback stops."
+        label={t.t('settings.keepAwake')}
+        description={t.t('settings.keepAwakeHint')}
         checked={draft.keepAwakeWhilePlaying}
         disabled={busy}
         onChange={(v) => onPatch({ keepAwakeWhilePlaying: v })}
       />
       <TextField
-        label="External player"
+        label={t.t('settings.externalPlayer')}
         value={draft.externalPlayer}
-        placeholder="Blank = system default (e.g. VLC)"
+        placeholder={t.t('settings.externalPlayerPlaceholder')}
         disabled={busy}
         onChange={(v) => onPatch({ externalPlayer: v })}
       />
       <div>
-        <div className="text-xs font-medium text-fg">Default export folder</div>
+        <div className="text-xs font-medium text-fg">{t.t('settings.defaultExportFolder')}</div>
         <div className="mt-1 flex items-center gap-2">
           <input
             type="text"
             value={draft.defaultExportDir}
             onChange={(e) => onPatch({ defaultExportDir: e.target.value })}
-            placeholder="Blank = ask each time"
+            placeholder={t.t('settings.defaultExportPlaceholder')}
             spellCheck={false}
             disabled={busy}
             className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
           <Button variant="secondary" onClick={() => void chooseExportDir()} disabled={busy}>
-            Choose…
+            {t.t('common.choose')}
           </Button>
         </div>
         <p className="mt-1 text-xs text-fg-muted">
-          Where Export copies a tape's files. Blank means the export dialog asks each time.
+          {t.t('settings.defaultExportHint')}
         </p>
       </div>
       <Toggle
-        label="Delete from library after export"
-        description="After copying a tape's files out, remove it from TapeBox (respecting the Trash setting below). Off = keep the copy in the library too."
+        label={t.t('export.deleteAfter')}
+        description={t.t('settings.deleteAfterExportHint')}
         checked={draft.deleteAfterExport}
         disabled={busy}
         onChange={(v) => onPatch({ deleteAfterExport: v })}
       />
       <Toggle
-        label="Confirm before removing"
-        description="Ask for confirmation before a tape is removed."
+        label={t.t('settings.confirmRemove')}
+        description={t.t('settings.confirmRemoveHint')}
         checked={draft.confirmRemove}
         disabled={busy}
         onChange={(v) => onPatch({ confirmRemove: v })}
       />
       <Toggle
-        label="Move removed tapes to Trash"
-        description="Removed tapes go to the OS Trash (recoverable). Off = deleted permanently."
+        label={t.t('settings.trashOnRemove')}
+        description={t.t('settings.trashOnRemoveHint')}
         checked={draft.trashOnRemove}
         disabled={busy}
         onChange={(v) => onPatch({ trashOnRemove: v })}
@@ -617,6 +643,7 @@ function AiTab({
 }) {
   const keyIsSet = hadKey && !wantsClearKey && apiKeyDraft.length === 0
   const willClear = wantsClearKey && apiKeyDraft.length === 0
+  const t = useI18n()
 
   function resetModelToDefault() {
     onAiPatch({ model: DEFAULT_AI_MODEL })
@@ -625,11 +652,11 @@ function AiTab({
   return (
     <div className="space-y-4">
       <p className="text-sm text-fg">
-        Used to suggest a file slug from each tape&apos;s title. TapeBox currently supports OpenAI-compatible providers only.
+        {t.t('settings.aiIntro')}
       </p>
 
       <TextField
-        label="Base URL"
+        label={t.t('settings.baseUrl')}
         value={ai.baseUrl}
         placeholder={DEFAULT_AI_BASE_URL}
         disabled={busy}
@@ -637,8 +664,8 @@ function AiTab({
       />
 
       <div>
-        <div className="text-xs font-medium text-fg">API key</div>
-        {keyIsSet && <div className="mt-0.5 text-xs text-fg">Key is set</div>}
+        <div className="text-xs font-medium text-fg">{t.t('settings.apiKey')}</div>
+        {keyIsSet && <div className="mt-0.5 text-xs text-fg">{t.t('settings.apiKeySet')}</div>}
         <div className="mt-1 flex items-center gap-2">
           <input
             type="password"
@@ -651,17 +678,17 @@ function AiTab({
           />
           {keyIsSet && (
             <Button variant="dangerOutline" onClick={onClearKey} disabled={busy}>
-              Clear
+              {t.t('settings.clearKey')}
             </Button>
           )}
         </div>
         {willClear && (
-          <p className="mt-1 text-xs text-warning-fg">Key will be cleared on save.</p>
+          <p className="mt-1 text-xs text-warning-fg">{t.t('settings.apiKeyWillClear')}</p>
         )}
       </div>
 
       <div>
-        <label htmlFor="settings-ai-model" className="text-xs font-medium text-fg">Model</label>
+        <label htmlFor="settings-ai-model" className="text-xs font-medium text-fg">{t.t('settings.model')}</label>
         <div className="mt-1 flex items-center gap-2">
           <input
             id="settings-ai-model"
@@ -681,13 +708,13 @@ function AiTab({
             disabled={busy || ai.model === DEFAULT_AI_MODEL}
             onClick={resetModelToDefault}
           >
-            Reset model
+            {t.t('settings.resetModel')}
           </Button>
         </div>
       </div>
 
       <div className="border-t border-line pt-4">
-        <Field label="Slug prompt">
+        <Field label={t.t('settings.slugPrompt')}>
           <textarea
             value={prompts.slug}
             rows={7}
@@ -698,8 +725,11 @@ function AiTab({
           />
           <div className="mt-1 flex items-center justify-between gap-2">
             <p className="text-xs text-fg">
-              Tokens: <code>{'{title}'}</code>, <code>{'{uploader}'}</code>,{' '}
-              <code>{'{description}'}</code>.
+              {t.rich('settings.slugTokens', {
+                tokens: new Intl.ListFormat(t.locale, { style: 'narrow', type: 'conjunction' })
+                  .formatToParts(SLUG_TOKENS)
+                  .map((part, index) => (part.type === 'element' ? <code key={index}>{part.value}</code> : part.value)),
+              })}
             </p>
             <Button
               variant="secondary"
@@ -707,7 +737,7 @@ function AiTab({
               disabled={busy || prompts.slug === DEFAULT_SLUG_PROMPT}
               onClick={() => onPromptsPatch({ slug: DEFAULT_SLUG_PROMPT })}
             >
-              Reset slug prompt
+              {t.t('settings.resetSlugPrompt')}
             </Button>
           </div>
         </Field>
@@ -737,15 +767,16 @@ function YtdlpTab({
   function removeProfile(id: string) {
     onPatch({ siteProfiles: draft.siteProfiles.filter((p) => p.id !== id) })
   }
+  const t = useI18n()
 
   return (
     <div className="space-y-4">
       <p className="text-xs text-fg-muted">
-        TapeBox&apos;s own flags (output, info json) always win on conflict.
+        {t.t('settings.ytdlpIntro')}
       </p>
 
       <div>
-        <div className="text-xs font-medium text-fg">Global arguments</div>
+        <div className="text-xs font-medium text-fg">{t.t('settings.globalArgs')}</div>
         <div className="mt-1">
           <AutoTextarea
             value={draft.ytdlpArgs}
@@ -757,24 +788,21 @@ function YtdlpTab({
           />
         </div>
         <p className="mt-1 text-xs text-fg-muted">
-          One flag per line (or space-separated). Quote any value that contains
-          spaces. Backslashes are literal — not line-continuations — so Windows
-          paths work as written.
+          {t.t('settings.globalArgsHint')}
         </p>
       </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-fg">Site profiles</div>
+          <div className="text-xs font-medium text-fg">{t.t('settings.siteProfiles')}</div>
           <Button variant="secondary" size="sm" onClick={addProfile} disabled={busy}>
-            Add profile
+            {t.t('settings.addProfile')}
           </Button>
         </div>
 
         {draft.siteProfiles.length === 0 && (
           <p className="text-xs text-fg-muted">
-            No site profiles yet. Add one to apply extra yt-dlp flags only to URLs that match a
-            pattern — handy for a site that needs a specific header or format.
+            {t.t('settings.noProfiles')}
           </p>
         )}
 
@@ -784,20 +812,20 @@ function YtdlpTab({
               <input
                 value={p.name}
                 onChange={(e) => patchProfile(p.id, { name: e.target.value })}
-                placeholder="Name"
+                placeholder={t.t('settings.profileName')}
                 spellCheck={false}
                 disabled={busy}
                 className={`flex-1 ${INPUT_LINE_CLASS}`}
               />
               <Button variant="dangerOutline" size="sm" onClick={() => removeProfile(p.id)} disabled={busy}>
-                Remove
+                {t.t('common.remove')}
               </Button>
             </div>
             <div className="flex items-center gap-2">
               <input
                 value={p.urlPattern}
                 onChange={(e) => patchProfile(p.id, { urlPattern: e.target.value })}
-                placeholder="example.com (or a regex)"
+                placeholder={t.t('settings.profilePattern')}
                 spellCheck={false}
                 disabled={busy}
                 className={`flex-1 ${INPUT_LINE_CLASS}`}
@@ -809,7 +837,7 @@ function YtdlpTab({
                   onChange={(e) => patchProfile(p.id, { isRegex: e.target.checked })}
                   disabled={busy}
                 />
-                Regex
+                {t.t('settings.regex')}
               </label>
             </div>
             <AutoTextarea
@@ -823,7 +851,7 @@ function YtdlpTab({
             <AutoTextarea
               value={p.comment}
               onChange={(v) => patchProfile(p.id, { comment: v })}
-              placeholder="Comment (optional)"
+              placeholder={t.t('settings.profileComment')}
               disabled={busy}
             />
           </div>

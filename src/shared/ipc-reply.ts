@@ -10,7 +10,11 @@
  *
  * Pure and node-free, so main (handle), the renderer (ipc/client) and tests share
  * the one definition.
+ *
+ * The presentation copy is a message descriptor (a catalogue key plus values),
+ * never finished words, so it renders in the window's current language.
  */
+import { createTranslator, type Message } from './i18n/translate'
 
 /**
  * Why a call failed, where the difference matters to the user:
@@ -24,13 +28,16 @@
 export type IpcFailureCode = 'refused' | 'invalid' | 'conflict' | 'provider' | 'internal'
 
 export type IpcFailure =
-  | { code: Exclude<IpcFailureCode, 'internal'>; userMessage: string }
+  | { code: Exclude<IpcFailureCode, 'internal'>; userMessage: Message }
   | { code: 'internal'; userMessage: null }
 
 export type IpcReply<T> = { ok: true; value: T } | { ok: false; failure: IpcFailure }
 
-/** Stable copy for a failure that carries none of its own. */
+/** Diagnostic text for a failure that carries no copy of its own. */
 export const INTERNAL_FAILURE_MESSAGE = 'The operation could not be completed.'
+
+// An error's own message is diagnostic text, and diagnostics stay English.
+const ENGLISH = createTranslator('en')
 
 /**
  * A failed IPC call as the caller sees it. `userMessage` is present only when main
@@ -38,10 +45,12 @@ export const INTERNAL_FAILURE_MESSAGE = 'The operation could not be completed.'
  */
 export class IpcCallError extends Error {
   readonly code: IpcFailureCode
-  readonly userMessage: string | null
+  readonly userMessage: Message | null
 
   constructor(readonly channel: string, failure: IpcFailure) {
-    super(failure.userMessage ?? INTERNAL_FAILURE_MESSAGE)
+    // The error's message is the English copy, for diagnostics; a surface renders
+    // userMessage in the window's language instead.
+    super(failure.userMessage === null ? INTERNAL_FAILURE_MESSAGE : ENGLISH.text(failure.userMessage))
     this.name = 'IpcCallError'
     this.code = failure.code
     this.userMessage = failure.userMessage

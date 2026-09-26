@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
 import { LAYOUT_BOUNDS, detailPaneWidth, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT, CONTENT_MIN_HEIGHT } from '@shared/layout'
 import { applyInitialSyncState, pullInitialSyncState, startIpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
@@ -55,7 +57,8 @@ function lastCheckedStale(statuses: BinaryStatus[]): boolean {
 }
 
 export default function App() {
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const t = useI18n()
+  const [loadError, setLoadError] = useState<Message | null>(null)
   const [ready, setReady] = useState(false)
   const hydrationGeneration = useRef(0)
   const loading = !ready && !loadError
@@ -73,7 +76,7 @@ export default function App() {
         if (hydrationGeneration.current !== generation) return
         setLoadError(presentFailure(
           error,
-          'TapeBox could not load the library and settings. Nothing has been changed; try again.',
+          message('app.hydrationFailed'),
           'application hydration failed',
         ))
       },
@@ -97,16 +100,16 @@ export default function App() {
         </header>
         <div className="flex min-h-0 flex-1 items-center justify-center p-8">
           {loading ? (
-            <p className="flex items-center gap-2 text-sm text-fg"><Spinner /> Loading…</p>
+            <p className="flex items-center gap-2 text-sm text-fg"><Spinner /> {t.t('common.loading')}</p>
           ) : (
             <div className="w-full max-w-xl space-y-3">
-              <InlineError>{loadError}</InlineError>
+              <InlineError>{loadError && t.text(loadError)}</InlineError>
               <button
                 type="button"
                 onClick={hydrate}
                 className="rounded border border-line-strong bg-raised px-3 py-1.5 text-sm text-fg-strong hover:bg-raised-hover"
               >
-                Try again
+                {t.t('common.tryAgain')}
               </button>
             </div>
           )}
@@ -119,6 +122,7 @@ export default function App() {
 }
 
 function HydratedApp() {
+  const t = useI18n()
   const tapes = useTapesStore((s) => s.tapes)
   const selectedId = useSelectionStore((s) => s.selectedId)
   const select = useSelectionStore((s) => s.select)
@@ -130,7 +134,7 @@ function HydratedApp() {
   const [showAbout, setShowAbout] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showScanPage, setShowScanPage] = useState(false)
-  const [revealLogError, setRevealLogError] = useState<string | null>(null)
+  const [revealLogError, setRevealLogError] = useState<Message | null>(null)
   const [pageInitialUrl, setPageInitialUrl] = useState('')
   const decidedFirstRun = useRef(false)
   const startedAutoCheck = useRef(false)
@@ -164,7 +168,7 @@ function HydratedApp() {
 
   async function importFiles() {
     try {
-      const picked = await ipcInvoke('dialog:pickFiles', { title: 'Import tapes — pick their .json sidecars' })
+      const picked = await ipcInvoke('dialog:pickFiles', { title: t.t('app.importPickerTitle') })
       if (picked.length === 0) return
       // Imported tapes enter Inbox, so show the same receiving collection that owns
       // the drop path before the shared admission/operation reports its result.
@@ -177,7 +181,7 @@ function HydratedApp() {
       useFilterStore.getState().setFilter('inbox')
       await importMedia(
         [],
-        [{ path: 'Import files', reason: presentFailure(error, 'The file picker could not be opened. Try importing again.', 'import file picker failed'), severity: 'error' }],
+        [{ path: message('menu.importFiles'), reason: presentFailure(error, message('app.importPickerFailed'), 'import file picker failed'), severity: 'error' }],
         { operationKey: 'picker', entryKey: 'picker' },
       )
     }
@@ -190,7 +194,7 @@ function HydratedApp() {
     } catch (error) {
       setRevealLogError(presentFailure(
         error,
-        'The session log could not be shown in its folder. Try again.',
+        message('app.revealLogFailed'),
         'session log reveal failed',
       ))
     }
@@ -253,9 +257,9 @@ function HydratedApp() {
           <InlineError
             className="mx-4 my-2 shrink-0"
             onDismiss={() => setRevealLogError(null)}
-            closeLabel="Close session log result"
+            closeLabel={t.t('app.closeRevealLogResult')}
           >
-            {revealLogError}
+            {t.text(revealLogError)}
           </InlineError>
         )}
 
@@ -293,7 +297,7 @@ function HydratedApp() {
           </aside>
           <PassiveScrollRegion
             as="section"
-            label="Tape details"
+            label={t.t('app.tapeDetails')}
             className="flex-1 overflow-y-auto min-w-0"
             style={{ minWidth: detailPaneWidth.min }}
           >
@@ -306,7 +310,7 @@ function HydratedApp() {
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-sm text-fg">
-                Select a tape from the list.
+                {t.t('app.selectTape')}
               </div>
             )}
           </PassiveScrollRegion>

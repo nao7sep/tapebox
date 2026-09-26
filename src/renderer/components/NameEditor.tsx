@@ -6,14 +6,17 @@ import { describeError } from '@shared/error'
 import { Button, Field, INPUT_LINE_CLASS } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
+import type { MessageKey } from '@shared/i18n/catalogues'
 
 /** The source fields an AI name suggestion can draw on. */
 type SourceField = 'title' | 'uploader' | 'description'
 
-const SOURCE_FIELDS: { key: SourceField; label: string }[] = [
-  { key: 'title', label: 'Title' },
-  { key: 'uploader', label: 'Uploader' },
-  { key: 'description', label: 'Description' },
+const SOURCE_FIELDS: { key: SourceField; label: MessageKey }[] = [
+  { key: 'title', label: 'refresh.titleField' },
+  { key: 'uploader', label: 'detail.uploader' },
+  { key: 'description', label: 'refresh.description' },
 ]
 
 /**
@@ -34,8 +37,8 @@ export function NameEditor({
   onChange,
   disabled = false,
   onGeneratingChange,
-  label = 'Name',
-  placeholder = 'file-name',
+  label,
+  placeholder,
   hint,
 }: {
   tape: Tape
@@ -52,7 +55,8 @@ export function NameEditor({
   const [generating, setGenerating] = useState(false)
   // The in-flight suggestion's id, so Stop and unmount can cancel exactly it.
   const requestRef = useRef<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Message | null>(null)
+  const t = useI18n()
   const [description, setDescription] = useState<string | null>(null)
   const [include, setInclude] = useState<Record<SourceField, boolean>>({
     title: !!tape.title,
@@ -107,7 +111,7 @@ export function NameEditor({
     } catch (err) {
       // A stopped or abandoned request is the user's choice, not a failure.
       if (requestRef.current === requestId) {
-        setError(presentFailure(err, 'A name could not be suggested. Check the AI settings and try again.', 'AI name suggestion failed'))
+        setError(presentFailure(err, message('nameEditor.suggestFailed'), 'AI name suggestion failed'))
       }
     } finally {
       if (requestRef.current === requestId) {
@@ -130,12 +134,12 @@ export function NameEditor({
   return (
     <div className="space-y-4">
       <div>
-        <Field label={label}>
+        <Field label={label ?? t.t('detail.name')}>
           <input
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
+            placeholder={placeholder ?? t.t('nameEditor.placeholder')}
             spellCheck={false}
             disabled={busy}
             className={`w-full ${INPUT_LINE_CLASS}`}
@@ -149,10 +153,10 @@ export function NameEditor({
           {/* Header row mirrors the Site profiles header: section label left, action
               right. The button reads naturally next to "Suggest with AI from …". */}
           <div className="flex items-center justify-between">
-            <div className="text-xs font-medium text-fg">Suggest with AI from</div>
+            <div className="text-xs font-medium text-fg">{t.t('nameEditor.suggestFrom')}</div>
             {generating ? (
               <Button variant="secondary" size="sm" onClick={stop}>
-                Stop
+                {t.t('common.stop')}
               </Button>
             ) : (
               <Button
@@ -161,7 +165,7 @@ export function NameEditor({
                 onClick={() => void suggest()}
                 disabled={busy || !canSuggest}
               >
-                Suggest
+                {t.t('nameEditor.suggest')}
               </Button>
             )}
           </div>
@@ -173,7 +177,7 @@ export function NameEditor({
             {availableFields.map(({ key, label: fieldLabel }) => (
               <SourceRow
                 key={key}
-                label={fieldLabel}
+                label={t.t(fieldLabel)}
                 value={sourceValue[key]!}
                 checked={include[key]}
                 disabled={busy}
@@ -186,7 +190,7 @@ export function NameEditor({
       )}
 
       {error && (
-        <p className="rounded border border-danger-line bg-danger-tint px-3 py-2 text-xs text-danger-fg">{error}</p>
+        <p className="rounded border border-danger-line bg-danger-tint px-3 py-2 text-xs text-danger-fg">{t.text(error)}</p>
       )}
     </div>
   )
@@ -218,6 +222,7 @@ function SourceRow({
   scrollable?: boolean
   onChange: (checked: boolean) => void
 }) {
+  const t = useI18n()
   return (
     <>
       <dt>
@@ -229,7 +234,7 @@ function SourceRow({
       <dd className="min-w-0">
         {scrollable ? (
           <PassiveScrollRegion
-            label={`${label} source value`}
+            label={t.t('nameEditor.sourceValue', { field: label })}
             className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded border border-line-subtle p-2 text-xs text-fg"
           >
             {value}

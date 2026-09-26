@@ -17,6 +17,7 @@ import { runCancellable } from '@main/work-registry'
 import { withLibraryWrite } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
+import { message } from '@shared/i18n/translate'
 
 /**
  * export:files — copy a tape out of the library, verbatim. No transcoding:
@@ -70,7 +71,7 @@ async function exportTape(
   const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
   for (const dst of writtenPaths) {
     if (await caseInsensitiveSiblingExists(dst)) {
-      throw new UserFacingError('conflict', `A file already exists at the destination: ${dst}`)
+      throw new UserFacingError('conflict', message('errors.exportDestinationExists', { path: dst }))
     }
   }
 
@@ -118,7 +119,7 @@ async function exportTape(
   if (deleteFromApp) {
     const { failed } = await removeTapes([tapeId], true)
     if (failed.length > 0) {
-      throw new UserFacingError('conflict', 'The tape was exported, but its original files could not be removed from the library.')
+      throw new UserFacingError('conflict', message('errors.exportOriginalsKept'))
     }
   }
 

@@ -1,4 +1,6 @@
 import { Menu, MenuItem } from '@renderer/components/Menu'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import type { MessageKey } from '@shared/i18n/catalogues'
 
 type Props = {
   onScanPage: () => void
@@ -16,25 +18,26 @@ type Props = {
  * outside click, focus return to the trigger).
  */
 export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortcuts, onAbout, onRevealLog }: Props) {
-  const entries: { label: string; action: () => void }[] = [
-    { label: 'Scan a page', action: onScanPage },
-    { label: 'Import files', action: onImport },
-    { label: 'Settings', action: onSettings },
-    { label: 'Managed tools', action: onTools },
-    { label: 'Keyboard shortcuts', action: onShortcuts },
-    { label: 'Reveal session log', action: onRevealLog },
-    { label: 'About', action: onAbout },
+  const t = useI18n()
+  const entries: { label: MessageKey; action: () => void }[] = [
+    { label: 'menu.scanPage', action: onScanPage },
+    { label: 'menu.importFiles', action: onImport },
+    { label: 'menu.settings', action: onSettings },
+    { label: 'menu.tools', action: onTools },
+    { label: 'menu.shortcuts', action: onShortcuts },
+    { label: 'menu.revealLog', action: onRevealLog },
+    { label: 'menu.about', action: onAbout },
   ]
 
   return (
     <Menu
-      label="Main menu"
+      label={t.t('menu.label')}
       align="right"
       trigger={({ ref, ...props }) => (
         <button
           {...props}
           ref={ref}
-          aria-label="Menu"
+          aria-label={t.t('menu.button')}
           className="flex items-center justify-center rounded-md p-2 -m-2 hover:bg-raised"
         >
           <svg width="24" height="24" viewBox="3 3 18 18" aria-hidden="true">
@@ -61,7 +64,7 @@ export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortc
     >
       {entries.map(({ label, action }) => (
         <MenuItem key={label} onSelect={action}>
-          {label}
+          {t.t(label)}
         </MenuItem>
       ))}
     </Menu>

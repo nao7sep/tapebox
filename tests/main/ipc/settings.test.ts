@@ -3,6 +3,8 @@ import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings, type Settings } from '@shared/settings'
+import type { Message } from '@shared/i18n/translate'
+import { inEnglish } from '../../helpers/i18n'
 
 // The settings:update boundary owns two load-bearing safety behaviors that are
 // otherwise untested:
@@ -23,6 +25,7 @@ import { defaultSettings, type Settings } from '@shared/settings'
 
 const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn() }))
+vi.mock('@main/i18n', () => ({ applyLanguagePreference: vi.fn() }))
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
@@ -74,10 +77,10 @@ vi.mock('@main/io/logger', () => ({
 const { registerSettingsHandlers } = await import('@main/ipc/settings')
 const { isLibraryMoving, tryClaimLibraryWrite } = await import('@main/library-writes')
 
-function update(patch: Partial<Settings>): Promise<{ settings: Settings; warning: string | null }> {
+function update(patch: Partial<Settings>): Promise<{ settings: Settings; warning: Message | null }> {
   const fn = handlers.get('settings:update')
   if (!fn) throw new Error('settings:update was not registered')
-  return Promise.resolve(fn(patch) as { settings: Settings; warning: string | null })
+  return Promise.resolve(fn(patch) as { settings: Settings; warning: Message | null })
 }
 
 let base: Settings
@@ -233,8 +236,8 @@ describe('settings:update — relocation refused while library writes run', () =
 
     const result = await update({ libraryDir: '/data/new-library' })
     expect(result.settings.libraryDir).toBe('/data/new-library')
-    expect(result.warning).toMatch(/saved and the library now uses the new folder/)
-    expect(result.warning).not.toContain(sourcePath)
+    expect(inEnglish(result.warning)).toMatch(/saved and the library now uses the new folder/)
+    expect(inEnglish(result.warning)).not.toContain(sourcePath)
     expect(JSON.stringify(logError.mock.calls)).toContain(sourcePath)
     expect(updateSettings).toHaveBeenCalledOnce()
     expect(rollbackLibraryRelocation).not.toHaveBeenCalled()

@@ -35,6 +35,7 @@ import { downloadWithProgress } from './http'
 import { extractFileFromZip } from './archive'
 import { verifyBinaryIntegrity } from './integrity'
 import { assertArm64Slice } from './arch'
+import { message } from '@shared/i18n/translate'
 
 /**
  * Per-binary install / update orchestration.
@@ -199,7 +200,7 @@ export async function checkForUpdates(signal?: AbortSignal): Promise<BinaryCheck
         // A failed check writes NOTHING (managed-runtime-dependencies-conventions):
         // no version, no timestamp, no error state — the displayed wording stays at
         // the last successful knowledge. Log it and move on.
-        failures.push({ name, message: `${name} could not be checked. Its installed version and last known update status are unchanged.` })
+        failures.push({ name, message: message('tools.checkFailed', { tool: name }) })
         log.warn('binary update check failed', { name, error: describeError(err) })
       }
     }),
@@ -229,7 +230,7 @@ export async function installOrUpdate(
         AbortSignal.timeout(BINARY_ACQUIRE_TIMEOUT_MS),
       ])
       let outcome: 'installed' | 'cancelled' | 'failed' = 'installed'
-      let failure = ''
+      const failure = message('tools.installFailed', { tool: name })
       try {
         await performInstall(name, operationId, signal)
       } catch (err) {
@@ -240,7 +241,6 @@ export async function installOrUpdate(
           outcome = 'cancelled'
         } else {
           outcome = 'failed'
-          failure = `${name} could not be installed or updated. The existing tool, if any, is unchanged; try again.`
           log.warn('binary install failed', { name, operationId, error: describeError(err) })
         }
       }
@@ -259,7 +259,7 @@ export async function installOrUpdate(
     // A second renderer or an unexpected caller can still race the per-tool claim.
     // It receives a correlated terminal result and current facts; it never creates
     // an unowned rejected promise in the management view.
-    const error = `${name} is already being installed or updated. Wait for that operation to finish.`
+    const error = message('tools.installBusy', { tool: name })
     log.warn('binary install request refused', { name, operationId, error: describeError(err) })
     return { outcome: 'failed', operationId, status: await getStatus(name), error }
   }

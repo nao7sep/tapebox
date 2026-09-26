@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
+import { inEnglish } from '../../helpers/i18n'
 
 describe('classifyImport', () => {
   it('rejects anything without a string tapebox.sourceUrl', () => {
@@ -15,7 +16,7 @@ describe('classifyImport', () => {
   it('rejects a sidecar that does not name its media file', () => {
     const result = classifyImport({ tapebox: { sourceUrl: 'http://x' } })
     expect(result.status).toBe('reject')
-    if (result.status === 'reject') expect(result.reason).toMatch(/name its media file/)
+    if (result.status === 'reject') expect(inEnglish(result.reason)).toMatch(/name its media file/)
   })
 
   it('accepts and pulls out source url, media, and optional thumbnail', () => {

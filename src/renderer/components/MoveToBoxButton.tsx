@@ -3,10 +3,11 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { Menu, MenuItem } from '@renderer/components/Menu'
-import { UNBOXED_LABEL } from '@shared/box-names'
 import { CheckIcon, PlusIcon } from './Icon'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message } from '@shared/i18n/translate'
 
 /**
  * Files an archived tape into a box (or Unboxed, or a brand-new box) via a small
@@ -19,6 +20,7 @@ import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
 export function MoveToBoxButton({ tape }: { tape: Tape }) {
   const boxes = useBoxesStore((s) => s.boxes)
   const sorted = [...boxes].sort((a, b) => a.order - b.order)
+  const t = useI18n()
 
   function moveTo(boxId: string | null) {
     moveTapeToBox(tape, boxId, 'tape')
@@ -27,7 +29,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
   async function newBoxAndMove() {
     useTapeActionResultsStore.getState().setResult(tape.id, 'placement', null)
     try {
-      const box = await ipcInvoke('boxes:create', { name: 'New box' })
+      const box = await ipcInvoke('boxes:create', { name: t.t('boxes.newBoxName') })
       moveTapeToBox(tape, box.id, 'tape')
     } catch (error) {
       useTapeActionResultsStore.getState().setResult(
@@ -35,7 +37,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
         'placement',
         presentFailure(
           error,
-          'A new box could not be created, so this tape was not moved. Try again.',
+          message('boxes.newBoxAndMoveFailed'),
           'box creation for tape placement failed',
         ),
       )
@@ -44,7 +46,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
 
   return (
     <Menu
-      label="Move to box"
+      label={t.t('boxes.moveToBox')}
       placement="top"
       maxHeight={256}
       contentClassName="w-52 rounded-md border border-line bg-panel py-1 shadow-xl"
@@ -54,13 +56,13 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
           ref={ref}
           className="rounded border border-line px-3 py-1.5 text-xs text-fg-emphasis transition hover:border-line-hover hover:bg-hover"
         >
-          Move to box
+          {t.t('boxes.moveToBox')}
         </button>
       )}
     >
       <MenuItem onSelect={() => moveTo(null)} className={itemClass(tape.boxId === null)}>
         {tape.boxId === null ? <CheckIcon className="mr-1.5" /> : null}
-        {UNBOXED_LABEL}
+        {t.t('boxes.unboxed')}
       </MenuItem>
       {sorted.map((g) => (
         <MenuItem key={g.id} onSelect={() => moveTo(g.id)} className={itemClass(tape.boxId === g.id)}>
@@ -71,7 +73,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
       <div className="my-1 border-t border-line" role="separator" />
       <MenuItem onSelect={() => void newBoxAndMove()} className="whitespace-nowrap">
         <PlusIcon className="mr-1.5" />
-        New box
+        {t.t('boxes.newBox')}
       </MenuItem>
     </Menu>
   )

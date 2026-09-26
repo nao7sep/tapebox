@@ -2,6 +2,7 @@ import { extname } from 'node:path'
 import { nanoid } from 'nanoid'
 
 import { portableFilenameIdentity, sanitizeFilename } from '@main/core/filename'
+import { message, type Message } from '@shared/i18n/translate'
 
 // The pure naming/file-op planning behind `library:rename`, lifted out of the IPC
 // handler so the derived names, the no-op short-circuit, and — critically — the
@@ -21,7 +22,7 @@ export interface RenamePlanItem {
 
 export type RenamePlan =
   | { status: 'noop' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: Message }
   | {
       status: 'rename'
       cleanName: string
@@ -39,7 +40,7 @@ export function planRename(
   // and strips only reserved characters. Empty after that = no real name.
   const cleanName = sanitizeFilename(rawName)
   if (!cleanName) {
-    return { status: 'error', message: 'Name is empty after removing characters the filesystem rejects.' }
+    return { status: 'error', message: message('errors.nameEmpty') }
   }
 
   const newMediaName = `${cleanName}${extname(tape.filename)}`
@@ -79,7 +80,7 @@ export function planRename(
   if (collided) {
     return {
       status: 'error',
-      message: `Renaming would map two of this tape's files to the same name: ${collided}.`,
+      message: message('errors.renameNameCollision', { name: collided }),
     }
   }
 

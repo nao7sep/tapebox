@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Settings } from '@shared/settings'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { message, type Message } from '@shared/i18n/translate'
 
 export type WritablePlaybackSetting = 'autoplay' | 'playSound'
 
@@ -13,11 +14,11 @@ export type WritablePlaybackSetting = 'autoplay' | 'playSound'
  */
 type SettingsState = {
   settings: Settings | null
-  writeErrors: Partial<Record<WritablePlaybackSetting, string>>
+  writeErrors: Partial<Record<WritablePlaybackSetting, Message>>
   saving: Partial<Record<WritablePlaybackSetting, boolean>>
   setSettings: (settings: Settings) => void
   setHydratedSettings: (settings: Settings) => void
-  setWriteError: (field: WritablePlaybackSetting, message: string | null) => void
+  setWriteError: (field: WritablePlaybackSetting, message: Message | null) => void
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -34,9 +35,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   }),
 }))
 
-const FAILURE_COPY: Record<WritablePlaybackSetting, string> = {
-  autoplay: 'The autoplay setting was not saved. The previous setting remains in use; try again.',
-  playSound: 'The sound setting was not saved. The previous setting remains in use; try again.',
+const FAILURE_COPY: Record<WritablePlaybackSetting, Message> = {
+  autoplay: message('playback.autoplaySaveFailed'),
+  playSound: message('playback.soundSaveFailed'),
 }
 
 /**

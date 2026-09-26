@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { Message } from '@shared/i18n/translate'
 
 /**
  * Live yt-dlp output for in-progress (and just-failed) downloads, keyed by tape.
@@ -8,7 +9,8 @@ import { create } from 'zustand'
  * and is dropped once the tape lands in the library.
  */
 
-export type LogEntry = { kind: 'line' | 'error'; text: string }
+// A line is yt-dlp's own output, shown as it printed it; an error is app copy.
+export type LogEntry = { kind: 'line'; text: string } | { kind: 'error'; text: Message }
 
 /** Bound per-tape history so a chatty or stuck download can't grow unbounded. */
 const MAX_ENTRIES = 300

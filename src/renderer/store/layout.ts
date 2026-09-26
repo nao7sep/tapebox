@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Layout } from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { message, type Message } from '@shared/i18n/translate'
 
 /**
  * Renderer-side mirror of persisted view state. It stays null until the required
@@ -13,9 +14,9 @@ export type LayoutField = keyof Layout
 type LayoutState = {
   layout: Layout | null
   persistedLayout: Layout | null
-  writeErrors: Partial<Record<LayoutField, string>>
+  writeErrors: Partial<Record<LayoutField, Message>>
   setHydratedLayout: (layout: Layout) => void
-  setWriteError: (field: LayoutField, message: string | null) => void
+  setWriteError: (field: LayoutField, message: Message | null) => void
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
@@ -33,11 +34,11 @@ export const useLayoutStore = create<LayoutState>((set) => ({
 
 const revisions: Partial<Record<LayoutField, number>> = {}
 
-const FAILURE_COPY: Record<LayoutField, string> = {
-  leftPaneWidth: 'The library pane size was not saved. Its previous size is back; try resizing it again.',
-  chaptersPaneWidth: 'The chapters pane size was not saved. Its previous size is back; try resizing it again.',
-  archiveBoxesHeight: 'The boxes pane size was not saved. Its previous size is back; try resizing it again.',
-  volume: 'The playback volume was not saved. Its previous level is back; adjust it again.',
+const FAILURE_COPY: Record<LayoutField, Message> = {
+  leftPaneWidth: message('layout.leftPaneSaveFailed'),
+  chaptersPaneWidth: message('layout.chaptersPaneSaveFailed'),
+  archiveBoxesHeight: message('layout.boxesPaneSaveFailed'),
+  volume: message('layout.volumeSaveFailed'),
 }
 
 /**

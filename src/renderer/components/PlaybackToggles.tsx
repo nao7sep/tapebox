@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useSettingsStore, savePlaybackSettings } from '@renderer/store/settings'
 import { InlineError } from '@renderer/components/ui'
+import { useI18n } from '@renderer/i18n/I18nContext'
 
 /**
  * App-wide playback toggles, shown at the right of the Inbox/Archived row. Both
@@ -13,13 +14,14 @@ export function PlaybackToggles() {
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
   const savingAutoplay = useSettingsStore((s) => !!s.saving.autoplay)
   const savingSound = useSettingsStore((s) => !!s.saving.playSound)
+  const t = useI18n()
 
   return (
     <div className="flex items-center gap-1.5">
       <ToggleButton
         on={autoplay}
         accent="text-autoplay-on"
-        title={autoplay ? 'Autoplay: on' : 'Autoplay: off'}
+        title={t.t(autoplay ? 'playback.autoplayOn' : 'playback.autoplayOff')}
         onClick={() => void savePlaybackSettings({ autoplay: !autoplay })}
         disabled={savingAutoplay}
         icon={autoplay ? <AutoplayOn /> : <AutoplayOff />}
@@ -27,7 +29,7 @@ export function PlaybackToggles() {
       <ToggleButton
         on={playSound}
         accent="text-sound-on"
-        title={playSound ? 'Sound: on' : 'Sound: off'}
+        title={t.t(playSound ? 'playback.soundOn' : 'playback.soundOff')}
         onClick={() => void savePlaybackSettings({ playSound: !playSound })}
         disabled={savingSound}
         icon={playSound ? <SoundOn /> : <SoundOff />}
@@ -40,17 +42,18 @@ export function PlaybackSettingResults() {
   const autoplay = useSettingsStore((s) => s.writeErrors.autoplay)
   const playSound = useSettingsStore((s) => s.writeErrors.playSound)
   const setWriteError = useSettingsStore((s) => s.setWriteError)
+  const t = useI18n()
   if (!autoplay && !playSound) return null
   return (
     <div className="space-y-2 border-t border-line px-3 py-2">
       {autoplay && (
-        <InlineError onDismiss={() => setWriteError('autoplay', null)} closeLabel="Close autoplay save result">
-          {autoplay}
+        <InlineError onDismiss={() => setWriteError('autoplay', null)} closeLabel={t.t('playback.closeAutoplayResult')}>
+          {t.text(autoplay)}
         </InlineError>
       )}
       {playSound && (
-        <InlineError onDismiss={() => setWriteError('playSound', null)} closeLabel="Close sound save result">
-          {playSound}
+        <InlineError onDismiss={() => setWriteError('playSound', null)} closeLabel={t.t('playback.closeSoundResult')}>
+          {t.text(playSound)}
         </InlineError>
       )}
     </div>

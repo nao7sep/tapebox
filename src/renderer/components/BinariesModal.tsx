@@ -11,6 +11,9 @@ import { ROLE_TEXT_CLASS } from '@renderer/lib/status-role'
 import { Modal } from '@renderer/components/Modal'
 import { Button, InlineError, Spinner, Toggle } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
+import { useI18n, type UiTranslator } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
+import type { MessageKey } from '@shared/i18n/catalogues'
 
 /**
  * The management surface for yt-dlp / ffmpeg / Deno (managed-runtime-dependencies-
@@ -42,7 +45,8 @@ export function BinariesModal() {
   const cancelCheck = useBinariesStore((s) => s.cancelCheck)
   const closeModal = useBinariesStore((s) => s.closeModal)
   const settings = useSettingsStore((s) => s.settings)
-  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [settingsError, setSettingsError] = useState<Message | null>(null)
+  const t = useI18n()
 
   const checkUpdatesAtLaunch = settings?.checkUpdatesAtLaunch ?? true
 
@@ -54,49 +58,53 @@ export function BinariesModal() {
       const { settings: next } = await ipcInvoke('settings:update', { checkUpdatesAtLaunch: check })
       useSettingsStore.getState().setSettings(next)
     } catch (err) {
-      setSettingsError(presentFailure(err, 'The update-check setting was not saved. The previous setting remains in use; try again.', 'tool update setting save failed'))
+      setSettingsError(presentFailure(err, message('tools.gateSaveFailed'), 'tool update setting save failed'))
     }
   }
 
-  const acquisitionError = Object.entries(errors)
-    .map(([name, error]) => `${name}: ${error}`)
-    .join('; ')
-  const visibleError = (settingsError ?? checkError ?? acquisitionError) || null
+  // One line per failed tool, each naming its tool through the same entry.
+  const toolLines = (failures: Array<[string, Message]>) =>
+    failures.map(([tool, reason]) => t.t('tools.toolReason', { tool, reason }))
+  const acquisitionErrors = toolLines(Object.entries(errors) as Array<[string, Message]>)
+  const visibleError = settingsError
+    ? t.text(settingsError)
+    : checkError
+      ? t.text(checkError)
+      : acquisitionErrors.length > 0 ? acquisitionErrors.join('\n') : null
 
   return (
     <Modal
-      title="Managed tools"
+      title={t.t('tools.title')}
       onClose={closeModal}
       size="2xl"
       fitContent
       footer={
         <Button variant="ghost" onClick={closeModal}>
-          Close
+          {t.t('common.close')}
         </Button>
       }
     >
       <p className="text-sm text-fg">
-        yt-dlp downloads media and ffmpeg processes it; Deno is the JavaScript runtime
-        yt-dlp uses for sites that need it.
+        {t.t('tools.intro')}
       </p>
 
       <div className="mt-5">
         <Toggle
-          label="Check for tool updates on launch"
-          description="Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches."
+          label={t.t('tools.checkOnLaunch')}
+          description={t.t('tools.checkOnLaunchHint')}
           checked={checkUpdatesAtLaunch}
           onChange={(v) => void saveGate(v)}
         />
       </div>
 
       <div className="mt-5 flex items-center justify-between text-xs text-fg">
-        <span>{lastCheckedHint(statuses, checking, checkFailures?.map((failure) => failure.name) ?? null)}</span>
+        <span>{lastCheckedHint(statuses, checking, checkFailures?.map((failure) => failure.name) ?? null, t)}</span>
         {checking ? (
           <Button variant="ghost" size="sm" disabled={checkCancelling} onClick={() => void cancelCheck()}>
-            {checkCancelling ? 'Cancelling…' : 'Cancel check'}
+            {t.t(checkCancelling ? 'tools.cancelling' : 'tools.cancelCheck')}
           </Button>
         ) : (
-          <Button variant="secondary" size="sm" onClick={() => void checkUpdates()}>Check for updates</Button>
+          <Button variant="secondary" size="sm" onClick={() => void checkUpdates()}>{t.t('tools.checkForUpdates')}</Button>
         )}
       </div>
 
@@ -105,9 +113,9 @@ export function BinariesModal() {
       <table className="mt-5 w-full table-fixed text-sm">
         <thead>
           <tr className="text-left text-xs font-medium text-fg">
-            <th className="w-1/4 pb-3">Tool</th>
-            <th className="w-1/4 pb-3">Installed</th>
-            <th className="w-1/4 pb-3">Latest</th>
+            <th className="w-1/4 pb-3">{t.t('tools.columnTool')}</th>
+            <th className="w-1/4 pb-3">{t.t('tools.columnInstalled')}</th>
+            <th className="w-1/4 pb-3">{t.t('tools.columnLatest')}</th>
             <th className="w-1/4 pb-3" />
           </tr>
         </thead>
@@ -130,9 +138,9 @@ export function BinariesModal() {
 
       {(visibleError || (checkFailures && checkFailures.length > 0)) && (
         <InlineError className="mt-5">
-          {visibleError ?? `Check incomplete — ${checkFailures!
-            .map((failure) => `${failure.name}: ${failure.message}`)
-            .join('; ')}`}
+          {visibleError ?? t.t('tools.checkIncompleteDetail', {
+            details: toolLines(checkFailures!.map((failure) => [failure.name, failure.message])).join('\n'),
+          })}
         </InlineError>
       )}
     </Modal>
@@ -150,7 +158,7 @@ function BinaryRow({
   onCancel,
 }: {
   status: BinaryStatus
-  progress: { percent: number; phase: string } | undefined
+  progress: { percent: number; phase: Phase } | undefined
   pending: boolean
   cancelling: boolean
   terminalOutcome: 'cancelled' | undefined
@@ -160,34 +168,35 @@ function BinaryRow({
 }) {
   const d = derivedOf(status)
   const label = acquireLabel(d.state, status.installedVersion)
+  const t = useI18n()
 
   return (
     <tr className="border-t border-line">
       <td className="py-3 font-medium">{status.name}</td>
-      <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d)}</td>
-      <td className="py-3 text-fg">{latestText(status, checking)}</td>
+      <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d, t)}</td>
+      <td className="py-3 text-fg">{latestText(status, checking, t)}</td>
       <td className="py-3 text-right">
         {progress || pending ? (
           <span className="inline-flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 text-xs text-fg">
               <Spinner />
               {cancelling
-                ? 'Cancelling…'
+                ? t.t('tools.cancelling')
                 : progress
-                  ? `${phaseLabel(progress.phase)} ${progress.percent}%`
-                  : 'Working…'}
+                  ? t.t(PHASE_LABEL[progress.phase], { percent: progress.percent })
+                  : t.t('common.working')}
             </span>
             <Button variant="ghost" size="sm" disabled={cancelling} onClick={onCancel}>
-              Cancel
+              {t.t('common.cancel')}
             </Button>
           </span>
         ) : label ? (
           <span className="inline-flex items-center gap-2">
             {terminalOutcome === 'cancelled' && (
-              <span className="text-xs text-fg">Cancelled</span>
+              <span className="text-xs text-fg">{t.t('tools.cancelled')}</span>
             )}
             <Button variant="warm" size="sm" onClick={onInstall}>
-              {label}
+              {t.t(label)}
             </Button>
           </span>
         ) : null}
@@ -198,9 +207,9 @@ function BinaryRow({
 
 /** The installed-version cell text. A present tool whose version could not be read
  *  says so — it is not absent, and it is not silently assumed current. */
-function installedText(status: BinaryStatus, d: DerivedStatus): string {
-  if (d.state === 'not-installed') return 'Not installed'
-  return displayArtifactIdentity(status.installedVersion) ?? 'Version unreadable'
+function installedText(status: BinaryStatus, d: DerivedStatus, t: UiTranslator): string {
+  if (d.state === 'not-installed') return t.t('tools.notInstalled')
+  return displayArtifactIdentity(status.installedVersion) ?? t.t('tools.versionUnreadable')
 }
 
 /** Colour the installed cell by role so a to-do reads as amber at a glance. */
@@ -212,17 +221,21 @@ function installedClass(d: DerivedStatus): string {
  *  latest. Keyed off the fact itself rather than the state, because a tool can now
  *  be installed-unchecked WITH a successful check behind it — when the check
  *  landed but the installed version could not be read. */
-function latestText(status: BinaryStatus, checking: boolean): string {
-  if (checking) return 'Checking…'
-  return displayArtifactIdentity(status.latestKnownVersion) ?? 'Not checked'
+function latestText(status: BinaryStatus, checking: boolean, t: UiTranslator): string {
+  if (checking) return t.t('tools.checking')
+  return displayArtifactIdentity(status.latestKnownVersion) ?? t.t('tools.notChecked')
 }
 
 function displayArtifactIdentity(identity: string | null): string | null {
   return identity?.match(/^Latest Auto-Build \((.+)\)$/)?.[1] ?? identity
 }
 
-function phaseLabel(phase: string): string {
-  return phase.length === 0 ? phase : phase[0].toUpperCase() + phase.slice(1)
+type Phase = 'download' | 'verify' | 'install'
+
+const PHASE_LABEL: Record<Phase, MessageKey> = {
+  download: 'tools.phaseDownload',
+  verify: 'tools.phaseVerify',
+  install: 'tools.phaseInstall',
 }
 
 /**
@@ -234,10 +247,10 @@ function phaseLabel(phase: string): string {
  * answer. A present tool that simply hasn't been checked keeps its quiet row; the
  * Check button above is that one's action.
  */
-function acquireLabel(state: DependencyState, installedVersion: string | null): string | null {
-  if (state === 'not-installed') return 'Install'
-  if (state === 'update-available') return 'Update'
-  if (state === 'installed-unchecked' && installedVersion === null) return 'Update'
+function acquireLabel(state: DependencyState, installedVersion: string | null): MessageKey | null {
+  if (state === 'not-installed') return 'tools.install'
+  if (state === 'update-available') return 'tools.update'
+  if (state === 'installed-unchecked' && installedVersion === null) return 'tools.update'
   return null
 }
 
@@ -245,21 +258,23 @@ function lastCheckedHint(
   statuses: BinaryStatus[],
   checking: boolean,
   failedNames: BinaryName[] | null,
+  t: UiTranslator,
 ): string {
-  if (checking) return 'Checking…'
+  if (checking) return t.t('tools.checking')
   if (failedNames && failedNames.length > 0) {
-    return `Check incomplete — ${failedNames.join(', ')} failed.`
+    return t.t('tools.checkIncomplete', { tools: t.list(failedNames), count: failedNames.length })
   }
-  const timestamps = statuses.map((s) => s.lastCheckedAtUtc).filter((t): t is string => !!t)
-  if (timestamps.length === 0) return 'Never checked for updates.'
+  const timestamps = statuses.map((s) => s.lastCheckedAtUtc).filter((stamp): stamp is string => !!stamp)
+  if (timestamps.length === 0) return t.t('tools.neverChecked')
   const latest = timestamps.sort().at(-1)!
-  return `Last checked ${relativeTime(latest)}.`
+  return t.t('tools.lastChecked', { when: relativeTime(latest, t) })
 }
 
-function relativeTime(utcIso: string): string {
+/** How long ago, in the reader's language ("now" under a minute). */
+function relativeTime(utcIso: string, t: UiTranslator): string {
   const diffSec = Math.max(0, Math.floor((Date.now() - Date.parse(utcIso)) / 1000))
-  if (diffSec < 60) return 'just now'
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} h ago`
-  return `${Math.floor(diffSec / 86400)} days ago`
+  if (diffSec < 60) return t.relativeTime(0, 'second')
+  if (diffSec < 3600) return t.relativeTime(Math.floor(diffSec / 60), 'minute')
+  if (diffSec < 86400) return t.relativeTime(Math.floor(diffSec / 3600), 'hour')
+  return t.relativeTime(Math.floor(diffSec / 86400), 'day')
 }

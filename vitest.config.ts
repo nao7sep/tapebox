@@ -25,6 +25,8 @@ export default defineConfig({
     // opt into jsdom per file via a `// @vitest-environment jsdom` pragma.
     environment: 'node',
     include: ['tests/**/*.test.{ts,tsx}'],
+    // The rendered-key gate watches every test that mounts the interface.
+    setupFiles: ['tests/setup/rendered-keys.ts'],
     // tests/live runs the real yt-dlp, ffmpeg, and OpenAI; only
     // vitest.live.config.ts, run by npm run test:full, includes it.
     exclude: [...configDefaults.exclude, 'tests/live/**'],

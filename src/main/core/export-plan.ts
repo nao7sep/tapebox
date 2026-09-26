@@ -1,13 +1,14 @@
 import { extname, isAbsolute } from 'node:path'
 
 import { sanitizeFilename } from '@main/core/filename'
+import { message, type Message } from '@shared/i18n/translate'
 
 // The pure destination-naming decision behind `export:files`, lifted out of the
 // IPC handler: the sanitized name, the destination filenames, the absolute-path
 // requirement, and the same intra-plan collision guard the rename path uses.
 
 export type ExportPlan =
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: Message }
   | { status: 'ok'; cleanName: string; mediaName: string; sidecarName: string; thumbName: string | null }
 
 export function planExport(
@@ -17,13 +18,13 @@ export function planExport(
 ): ExportPlan {
   const cleanName = sanitizeFilename(rawName)
   if (!cleanName) {
-    return { status: 'error', message: 'Name is empty after removing characters the filesystem rejects.' }
+    return { status: 'error', message: message('errors.nameEmpty') }
   }
 
   // The destination is a GUI-supplied folder; require it absolute so a relative
   // value can never join against the working directory (storage-path-conventions).
   if (!isAbsolute(destinationDir)) {
-    return { status: 'error', message: `Export destination must be an absolute folder path: ${destinationDir}` }
+    return { status: 'error', message: message('errors.exportDestinationRelative', { path: destinationDir }) }
   }
 
   const mediaName = `${cleanName}${extname(tape.filename)}`
@@ -38,7 +39,7 @@ export function planExport(
   if (collided) {
     return {
       status: 'error',
-      message: `Exporting would write two of this tape's files to the same name: ${collided}.`,
+      message: message('errors.exportNameCollision', { name: collided }),
     }
   }
 

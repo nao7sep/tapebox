@@ -4,6 +4,7 @@ import { emit } from './events'
 import * as session from '@main/store/session'
 import { log } from '@main/io/logger'
 import { boxNameError, normalizeBoxName, uniqueBoxName } from '@shared/box-names'
+import { mainTranslator } from '@main/i18n'
 import { frontOrders } from '@shared/order'
 import type { Box, Tape } from '@shared/domain'
 
@@ -20,7 +21,9 @@ export function registerBoxHandlers(): void {
     const order = boxes.reduce((max, g) => Math.max(max, g.order), -1) + 1
     // Seed with a unique, non-reserved name so the inline edit that follows
     // always starts from a valid name the user can overtype.
-    const finalName = uniqueBoxName(normalizeBoxName(name) || 'New box', boxes.map((g) => g.name))
+    // A new box's default name is interface text, given in the window's language
+    // by the renderer; main's fallback uses the interface language too.
+    const finalName = uniqueBoxName(normalizeBoxName(name) || mainTranslator().t('boxes.newBoxName'), boxes.map((g) => g.name))
     const box: Box = { id: nanoid(10), name: finalName, order }
     session.upsertBox(box)
     emit('boxes:changed', session.getBoxes())
@@ -37,7 +40,7 @@ export function registerBoxHandlers(): void {
     // Authoritative guard; the renderer validates inline, but main is the
     // source of truth (reserved words + case-insensitive uniqueness).
     const err = boxNameError(trimmed, boxes.filter((g) => g.id !== boxId).map((g) => g.name))
-    if (err) throw new Error(err)
+    if (err) throw new Error(`box name rejected: ${err.key}`)
     const updated = { ...box, name: trimmed }
     session.upsertBox(updated)
     emit('boxes:changed', session.getBoxes())

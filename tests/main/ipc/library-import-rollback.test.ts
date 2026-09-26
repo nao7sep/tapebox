@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
+import type { Message } from '@shared/i18n/translate'
+import { inEnglish } from '../../helpers/i18n'
 
 const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
@@ -112,12 +114,12 @@ describe('library:import rollback ownership', () => {
       paths: [join(sourceDir, 'clip.json'), join(sourceDir, 'clip.mp4')],
     }) as {
       imported: Tape[]
-      issues: { reason: string }[]
+      issues: { reason: Message }[]
     }
 
     expect(result.imported).toEqual([])
     expect(result.issues).toHaveLength(1)
-    expect(result.issues[0]?.reason).toBe(
+    expect(inEnglish(result.issues[0]?.reason)).toBe(
       'The tape files could not be copied completely. Check the library folder and the log before trying again.',
     )
     expect(await readFile(join(state.libraryDir, 'clip.mp4'), 'utf8')).toBe('external winner')
@@ -132,14 +134,14 @@ describe('library:import rollback ownership', () => {
     state.cleanupThrows = true
     const result = await handlers.get('library:import')!({ paths: [join(sourceDir, 'clip.json')] }) as {
       imported: Tape[]
-      issues: { reason: string }[]
+      issues: { reason: Message }[]
     }
 
     expect(result.imported).toEqual([])
-    expect(result.issues[0]?.reason).toBe(
+    expect(inEnglish(result.issues[0]?.reason)).toBe(
       'The tape files could not be copied completely. Check the library folder and the log before trying again.',
     )
-    expect(result.issues[0]?.reason).not.toMatch(/sidecar|private|import-recovery/)
+    expect(inEnglish(result.issues[0]?.reason)).not.toMatch(/sidecar|private|import-recovery/)
     expect(mainLog.error).toHaveBeenCalledWith(
       'import bundle copy and rollback failed',
       expect.objectContaining({
@@ -166,11 +168,12 @@ describe('library:import rollback ownership', () => {
         join(sourceDir, 'clip.mp4'),
         join(sourceDir, 'poster.jpg'),
       ],
-    }) as { imported: Tape[]; issues: Array<{ path: string; reason: string; severity: string }> }
+    }) as { imported: Tape[]; issues: Array<{ path: string; reason: Message; severity: string }> }
+    const issues = result.issues.map((issue) => ({ ...issue, reason: inEnglish(issue.reason) }))
 
     expect(result.imported).toHaveLength(1)
     expect(result.imported[0]?.thumbnailFilename).toBeNull()
-    expect(result.issues).toEqual([
+    expect(issues).toEqual([
       expect.objectContaining({
         path: join(sourceDir, 'poster.jpg'),
         reason: expect.stringContaining('thumbnail could not be copied'),

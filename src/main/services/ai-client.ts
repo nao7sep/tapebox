@@ -5,6 +5,7 @@ import { withRetry } from '@main/io/retry'
 import { AI_REQUEST_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
 import { UserFacingError } from '@main/user-facing-error'
 import { resolveApiKey } from './api-keys'
+import { message } from '@shared/i18n/translate'
 
 /**
  * Slug generation against the single OpenAI-compatible endpoint configured in
@@ -22,7 +23,7 @@ export async function generateSlug(
 ): Promise<string> {
   const { ai, prompts } = getSettings()
   const apiKey = await resolveApiKey(['openai'])
-  if (!apiKey) throw new UserFacingError('refused', 'No AI API key is set. Add one in Settings › AI, then try again.')
+  if (!apiKey) throw new UserFacingError('refused', message('errors.aiNoKey'))
 
   const client = new OpenAI({
     apiKey,
@@ -82,22 +83,22 @@ type CompletionChoice = {
 /** Return only a complete, accepted text result. Provider-declared refusal and
  * truncation reasons are checked before content so partial text is never accepted. */
 export function completionText(choice: CompletionChoice): string {
-  const message = choice?.message
+  const choiceMessage = choice?.message
   // A refusal (or content-filter) comes back as a `refusal` string with null content;
   // surface its reason rather than a generic "empty response".
-  if (message?.refusal) {
-    throw new UserFacingError('provider', `The AI declined to suggest a name: ${message.refusal}`)
+  if (choiceMessage?.refusal) {
+    throw new UserFacingError('provider', message('errors.aiRefused', { reason: choiceMessage.refusal }))
   }
   if (choice?.finish_reason === 'content_filter') {
-    throw new UserFacingError('provider', "The AI declined to suggest a name (the provider's content filter stopped it).")
+    throw new UserFacingError('provider', message('errors.aiContentFilter'))
   }
   if (choice?.finish_reason === 'length') {
-    throw new UserFacingError('provider', 'The AI response was cut off before it finished. Try again, or shorten the prompt.')
+    throw new UserFacingError('provider', message('errors.aiCutOff'))
   }
   // Content can be null or a non-string structured part; only a non-empty string is usable.
-  const content = message?.content
+  const content = choiceMessage?.content
   if (typeof content !== 'string' || content.trim() === '') {
-    throw new UserFacingError('provider', 'The AI returned no usable text. Try again, or check the model in Settings › AI.')
+    throw new UserFacingError('provider', message('errors.aiNoText'))
   }
   return content.trim()
 }
@@ -111,12 +112,12 @@ export function completionText(choice: CompletionChoice): string {
  */
 export function aiRequestFailure(err: unknown): Error {
   if (err instanceof OpenAI.APIConnectionTimeoutError) {
-    return new UserFacingError('provider', 'The AI provider did not respond in time. Try again later.', { cause: err })
+    return new UserFacingError('provider', message('errors.aiTimeout'), { cause: err })
   }
   if (err instanceof OpenAI.APIConnectionError) {
     return new UserFacingError(
       'provider',
-      'The AI provider could not be reached. Check the base URL in Settings › AI and your connection.',
+      message('errors.aiUnreachable'),
       { cause: err },
     )
   }
@@ -126,8 +127,8 @@ export function aiRequestFailure(err: unknown): Error {
     return new UserFacingError(
       'provider',
       reason
-        ? `The AI provider returned an error (HTTP ${err.status}): ${reason}`
-        : `The AI provider returned an error (HTTP ${err.status}). Check the model and API key in Settings › AI.`,
+        ? message('errors.aiHttpReason', { status: String(err.status), reason })
+        : message('errors.aiHttp', { status: String(err.status) }),
       { cause: err },
     )
   }

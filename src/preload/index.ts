@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron
 import type { LogMessage } from '@shared/log'
 import type { TapeBoxApi } from '@shared/bridge'
 import { WINDOW_ACTIVITY_CHANNEL } from '@shared/window-activity'
+import { LANGUAGE_ENVIRONMENT_CHANNEL } from '@shared/i18n/environment'
+import type { LanguageEnvironment } from '@shared/i18n/languages'
 
 /**
  * Generic bridge. The renderer wraps these in typed helpers
@@ -17,6 +19,9 @@ import { WINDOW_ACTIVITY_CHANNEL } from '@shared/window-activity'
  * (main registers its IPC handlers before the window loads), so the renderer can
  * skip forwarding debug lines a packaged release would only drop. `=== true`
  * keeps it fail-open: an undefined reply leaves debug forwarding on.
+ *
+ * languageEnvironment is read the same way, so the window's first words are
+ * already in the interface language (localization-conventions).
  */
 const api = {
   invoke(channel: string, req: unknown): Promise<unknown> {
@@ -41,6 +46,7 @@ const api = {
     ipcRenderer.send('log:write', message)
   },
   isDebugEnabled: ipcRenderer.sendSync('log:debug-enabled') !== false,
+  languageEnvironment: ipcRenderer.sendSync(LANGUAGE_ENVIRONMENT_CHANNEL) as LanguageEnvironment,
 } satisfies TapeBoxApi
 
 contextBridge.exposeInMainWorld('tapebox', api)

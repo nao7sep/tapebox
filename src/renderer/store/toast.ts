@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import type { Message } from '@shared/i18n/translate'
 
 /**
  * App toasts (replaces native alert()). Producers call notify(); the surfaces
@@ -15,13 +16,13 @@ import { nanoid } from 'nanoid'
  */
 
 export type ToastKind = 'info' | 'error'
-export type Toast = { id: string; text: string; kind: ToastKind }
+export type Toast = { id: string; text: Message; kind: ToastKind }
 
 const INFO_TTL_MS = 6000
 
 type ToastState = {
   toasts: Toast[]
-  notify: (text: string, kind?: ToastKind, ttlMs?: number) => void
+  notify: (text: Message, kind?: ToastKind, ttlMs?: number) => void
   dismiss: (id: string) => void
 }
 

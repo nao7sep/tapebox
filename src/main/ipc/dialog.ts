@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog } from 'electron'
 import { handle } from './handle'
+import { mainTranslator } from '@main/i18n'
 
 export function registerDialogHandlers(): void {
   handle('dialog:pickDirectory', async ({ title }) => {
@@ -21,9 +22,10 @@ export function registerDialogHandlers(): void {
     const parent = BrowserWindow.getFocusedWindow() ?? undefined
     // Import is sidecar-driven: the user picks the .json sidecars and each names its
     // own media + thumbnail, which the importer reads from beside it.
+    const t = mainTranslator()
     const filters = [
-      { name: 'TapeBox sidecar', extensions: ['json'] },
-      { name: 'All files', extensions: ['*'] },
+      { name: t.t('dialog.sidecarFilter'), extensions: ['json'] },
+      { name: t.t('dialog.allFilesFilter'), extensions: ['*'] },
     ]
     const result = parent
       ? await dialog.showOpenDialog(parent, { title, filters, properties: ['openFile', 'multiSelections'] })

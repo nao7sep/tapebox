@@ -4,6 +4,7 @@ import { acquireScrollLock, releaseScrollLock } from '@renderer/lib/scrollLock'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import { CloseIcon } from './Icon'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
+import { useI18n } from '@renderer/i18n/I18nContext'
 
 /**
  * Three tiers, by content:
@@ -55,6 +56,7 @@ export function Modal({ title,
   titleHidden = false, onClose, children, footer, size = 'md', fitContent = false, closeDisabled = false }: ModalProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
   const titleId = useId()
+  const t = useI18n()
 
   // Focus containment + scroll lock for the modal's lifetime. Mount-only: the
   // open-time focus capture and the restore on close must each happen exactly
@@ -139,7 +141,7 @@ export function Modal({ title,
           <button
             onClick={onClose}
             disabled={closeDisabled}
-            aria-label="Close"
+            aria-label={t.t('common.close')}
             className="grid h-8 w-8 place-items-center rounded border-0 bg-transparent p-0 text-lg leading-none text-fg hover:bg-raised hover:text-fg-strong focus-visible:bg-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fg disabled:opacity-40"
           >
             <CloseIcon />
@@ -147,7 +149,7 @@ export function Modal({ title,
         </header>
 
         <PassiveScrollRegion
-          label={`${title} content`}
+          label={t.t('common.contentOf', { title })}
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6"
         >
           {children}

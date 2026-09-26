@@ -5,12 +5,15 @@ import { ExternalLinkIcon } from './Icon'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useRef, useState } from 'react'
+import { useI18n } from '@renderer/i18n/I18nContext'
+import { message, type Message } from '@shared/i18n/translate'
 
 const GITHUB_URL = 'https://github.com/nao7sep/tapebox'
 
 export function AboutModal({ onClose }: { onClose: () => void }) {
   const version = useRuntimeStore((s) => s.info?.version)
-  const [linkErrors, setLinkErrors] = useState<Record<'repository' | 'issues', string | undefined>>({
+  const t = useI18n()
+  const [linkErrors, setLinkErrors] = useState<Record<'repository' | 'issues', Message | undefined>>({
     repository: undefined,
     issues: undefined,
   })
@@ -23,46 +26,44 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
       if (linkAttempts.current[owner] !== attempt) return
       setLinkErrors((current) => ({ ...current, [owner]: undefined }))
     } catch (error) {
-      const message = presentFailure(
+      const failure = presentFailure(
         error,
-        owner === 'repository'
-          ? 'GitHub could not be opened in your browser. Try again.'
-          : 'Report an issue could not be opened in your browser. Try again.',
+        message(owner === 'repository' ? 'about.repositoryOpenFailed' : 'about.issuesOpenFailed'),
         'About link open failed',
       )
       if (linkAttempts.current[owner] !== attempt) return
-      setLinkErrors((current) => ({ ...current, [owner]: message }))
+      setLinkErrors((current) => ({ ...current, [owner]: failure }))
     }
   }
   return (
     <Modal
-      title="About TapeBox"
+      title={t.t('nativeMenu.about', { app: 'TapeBox' })}
       titleHidden
       onClose={onClose}
       size="md"
       footer={
         <Button variant="ghost" onClick={onClose}>
-          Close
+          {t.t('common.close')}
         </Button>
       }
     >
       <div className="space-y-4 text-sm">
         <div>
           <p className="text-[26px] font-semibold leading-tight tracking-tight text-fg-strong">TapeBox</p>
-          {version && <p className="mt-0.5 text-sm text-fg-muted">Version {version}</p>}
-          <p className="mt-3 text-fg">A local media library with web import.</p>
+          {version && <p className="mt-0.5 text-sm text-fg-muted">{t.t('about.version', { version })}</p>}
+          <p className="mt-3 text-fg">{t.t('about.tagline')}</p>
         </div>
         <div className="flex gap-4">
           <button type="button" onClick={() => void openLink('repository', GITHUB_URL)} className="whitespace-nowrap bg-transparent p-0 text-fg hover:text-fg-strong">
             GitHub <ExternalLinkIcon />
           </button>
           <button type="button" onClick={() => void openLink('issues', `${GITHUB_URL}/issues`)} className="whitespace-nowrap bg-transparent p-0 text-fg hover:text-fg-strong">
-            Report an issue <ExternalLinkIcon />
+            {t.t('about.reportIssue')} <ExternalLinkIcon />
           </button>
         </div>
-        {linkErrors.repository && <InlineError onDismiss={() => setLinkErrors((current) => ({ ...current, repository: undefined }))} closeLabel="Close GitHub result">{linkErrors.repository}</InlineError>}
-        {linkErrors.issues && <InlineError onDismiss={() => setLinkErrors((current) => ({ ...current, issues: undefined }))} closeLabel="Close Report an issue result">{linkErrors.issues}</InlineError>}
-        <p className="text-fg">© 2026 Yoshinao Inoguchi — GNU GPL v3 or later</p>
+        {linkErrors.repository && <InlineError onDismiss={() => setLinkErrors((current) => ({ ...current, repository: undefined }))} closeLabel={t.t('about.closeRepositoryResult')}>{t.text(linkErrors.repository)}</InlineError>}
+        {linkErrors.issues && <InlineError onDismiss={() => setLinkErrors((current) => ({ ...current, issues: undefined }))} closeLabel={t.t('about.closeIssuesResult')}>{t.text(linkErrors.issues)}</InlineError>}
+        <p className="text-fg">{t.t('about.copyright')}</p>
       </div>
     </Modal>
   )

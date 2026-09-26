@@ -1,4 +1,5 @@
 import type { LogMessage } from './log'
+import type { LanguageEnvironment } from './i18n/languages'
 
 /**
  * The contextBridge surface preload exposes on `window.tapebox`.
@@ -21,4 +22,5 @@ export interface TapeBoxApi {
   pathForFile(file: File): string
   log(message: LogMessage): void
   isDebugEnabled: boolean
+  languageEnvironment: LanguageEnvironment
 }

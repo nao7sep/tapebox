@@ -5,9 +5,12 @@ import { describeError } from '@shared/error'
 
 export interface PlainMessageDialogOptions {
   owner?: BrowserWindow
+  /** The interface language the words are in, declared as the page's lang. */
+  language: string
   title: string
   message: string
   detail?: string
+  closeLabel: string
 }
 
 const CLOSE_URL = 'https://tapebox-dialog.invalid/close'
@@ -79,14 +82,14 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
 }
 
 export function renderPlainMessageDialogHtml(options: PlainMessageDialogOptions): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
+  return `<!doctype html><html lang="${escapeHtml(options.language)}"><head><meta charset="utf-8"><style>
     :root{color-scheme:light;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#ffffff;color:#09090b}
     *{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}.dialog{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
     .header{padding:24px 24px 12px}.body{min-height:0;overflow:auto;padding:0 24px;display:flex;flex-direction:column;gap:12px}
     h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:#52525b}
     .actions{display:flex;justify-content:flex-end;padding:12px 24px 24px}.button{color:#18181b;border:1px solid #8a8a93;border-radius:6px;padding:7px 16px;background:#efeff1;font:inherit}.button:hover,.button:focus{background:#e4e4e7;outline:2px solid #52525b;outline-offset:2px}
     @media (prefers-color-scheme:dark){:root{color-scheme:dark;background:#09090b;color:#f4f4f5}.detail{color:#a1a1aa}.button{color:#f4f4f5;border-color:#3f3f46;background:#27272a}.button:hover,.button:focus{background:#3f3f46;outline-color:#a1a1aa}}
-  </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ''}</section><footer class="actions" id="dialog-footer"><button id="close" class="button" type="button" onclick="location.href='${CLOSE_URL}'">OK</button></footer></main></body></html>`
+  </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ''}</section><footer class="actions" id="dialog-footer"><button id="close" class="button" type="button" onclick="location.href='${CLOSE_URL}'">${escapeHtml(options.closeLabel)}</button></footer></main></body></html>`
 }
 
 function escapeHtml(value: string): string {

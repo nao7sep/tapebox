@@ -14,6 +14,7 @@ vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
 import { TapeImportReceiver } from '@renderer/components/TapeImportReceiver'
 import { useImportResultStore } from '@renderer/store/importResult'
+import { message } from '@shared/i18n/translate'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -81,7 +82,7 @@ describe('TapeImportReceiver', () => {
   it('renders a persistent prominent duplicate result beside the receiver', () => {
     act(() => useImportResultStore.getState().settle({ operationKey: 'duplicate', entryKey: 'drop' }, {
       imported: [],
-      issues: [{ path: '/tmp/sample.json', reason: 'already in library', severity: 'information' }],
+      issues: [{ path: '/tmp/sample.json', reason: message('import.alreadyInLibrary'), severity: 'information' }],
     }))
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!
@@ -92,7 +93,7 @@ describe('TapeImportReceiver', () => {
   it('uses warning styling only for recoverable attention', () => {
     act(() => useImportResultStore.getState().settle({ operationKey: 'unsupported', entryKey: 'drop' }, {
       imported: [],
-      issues: [{ path: '/tmp/notes.txt', reason: 'Unsupported', severity: 'warning' }],
+      issues: [{ path: '/tmp/notes.txt', reason: message('import.unsupportedFile'), severity: 'warning' }],
     }))
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!
@@ -102,7 +103,7 @@ describe('TapeImportReceiver', () => {
   it('announces an import error assertively with structural severity', () => {
     act(() => useImportResultStore.getState().settle({ operationKey: 'failed', entryKey: 'drop' }, {
       imported: [],
-      issues: [{ path: '/tmp/broken.json', reason: 'Unreadable', severity: 'error' }],
+      issues: [{ path: '/tmp/broken.json', reason: message('import.sidecarUnreadable'), severity: 'error' }],
     }))
 
     const alert = host.querySelector<HTMLElement>('[role="alert"]')!
@@ -113,7 +114,7 @@ describe('TapeImportReceiver', () => {
   it('describes a successful import with duplicates as information, not failure', () => {
     act(() => useImportResultStore.getState().settle({ operationKey: 'mixed', entryKey: 'drop' }, {
       imported: [{ id: 'new-tape' } as never],
-      issues: [{ path: '/tmp/old.json', reason: 'already in library', severity: 'information' }],
+      issues: [{ path: '/tmp/old.json', reason: message('import.alreadyInLibrary'), severity: 'information' }],
     }))
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!

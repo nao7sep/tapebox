@@ -7,6 +7,7 @@ import {
   inspectExternalFileOffer,
   resolveDroppedPaths,
 } from '@renderer/lib/externalDrop'
+import { message } from '@shared/i18n/translate'
 
 describe('external drop boundary', () => {
   it('keeps every protected or inspectable file offer deliverable', () => {
@@ -75,8 +76,8 @@ describe('external drop boundary', () => {
     expect(resolveDroppedPaths([], () => '')).toMatchObject({
       paths: [],
       issues: [{
-        path: 'Dropped files',
-        reason: expect.stringContaining('not available'),
+        path: message('drop.droppedFiles'),
+        reason: message('drop.notLocalFiles'),
         severity: 'warning',
       }],
     })

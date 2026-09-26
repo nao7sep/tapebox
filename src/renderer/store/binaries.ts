@@ -1,3 +1,4 @@
+import { message, type Message } from '@shared/i18n/translate'
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type {
@@ -31,7 +32,7 @@ type BinariesState = {
   /** Application-owned attempts. Their lifetime is independent of the modal. */
   active: Partial<Record<BinaryName, ActiveAcquisition>>
   /** Terminal acquisition/cancellation failures retained until retry. */
-  errors: Partial<Record<BinaryName, string>>
+  errors: Partial<Record<BinaryName, Message>>
   /** Non-error terminal outcomes whose stable artifact facts are unchanged. */
   terminalOutcomes: Partial<Record<BinaryName, TerminalOutcome>>
   /** Per-row application revision used to keep a concurrent check snapshot from
@@ -42,7 +43,7 @@ type BinariesState = {
   /** An update check is in flight (startup auto-check or modal-opened check). */
   checking: boolean
   checkCancelling: boolean
-  checkError: string | null
+  checkError: Message | null
   /** Failures from the most recently completed launch/manual check in this session. */
   checkFailures: BinaryCheckFailure[] | null
   setStatuses: (s: BinaryStatus[]) => void
@@ -153,7 +154,7 @@ export const useBinariesStore = create<BinariesState>((set, get) => ({
         return {
           active: withoutKey(state.active, name),
           progress: withoutKey(state.progress, name),
-          errors: { ...state.errors, [name]: presentFailure(error, `${name} could not be installed or updated. The existing tool, if any, is unchanged; try again.`, 'managed tool update failed') },
+          errors: { ...state.errors, [name]: presentFailure(error, message('tools.installFailed', { tool: name }), 'managed tool update failed') },
           terminalOutcomes: withoutKey(state.terminalOutcomes, name),
         }
       })
@@ -197,7 +198,7 @@ export const useBinariesStore = create<BinariesState>((set, get) => ({
                 ...state.active,
                 [name]: { ...active, cancelling: false },
               },
-              errors: { ...state.errors, [name]: presentFailure(error, `${name} cancellation could not be confirmed. Wait for the operation to settle, then try again.`, 'managed tool cancellation failed') },
+              errors: { ...state.errors, [name]: presentFailure(error, message('tools.cancelUnconfirmed', { tool: name }), 'managed tool cancellation failed') },
             }
           : state,
       )
@@ -224,7 +225,7 @@ export const useBinariesStore = create<BinariesState>((set, get) => ({
         }))
       }
     } catch (error) {
-      set({ checkError: presentFailure(error, 'Tool updates could not be checked. Installed tools are unchanged; try again later.', 'managed tool update check failed') })
+      set({ checkError: presentFailure(error, message('tools.checkRequestFailed'), 'managed tool update check failed') })
     } finally {
       set({ checking: false, checkCancelling: false })
     }
@@ -236,7 +237,7 @@ export const useBinariesStore = create<BinariesState>((set, get) => ({
       const result = await ipcInvoke('binaries:cancelCheck')
       if (result.outcome === 'not-running') set({ checkCancelling: false })
     } catch (error) {
-      set({ checkCancelling: false, checkError: presentFailure(error, 'The update check could not be cancelled yet. Wait for it to finish.', 'managed tool check cancellation failed') })
+      set({ checkCancelling: false, checkError: presentFailure(error, message('tools.checkCancelFailed'), 'managed tool check cancellation failed') })
     }
   },
   openModal: () => set({ modalOpen: true }),
@@ -280,7 +281,7 @@ export function binariesNeedAttention(statuses: BinaryStatus[]): boolean {
   return statuses.some((s) => s.name !== 'deno' && derivedOf(s).state === 'not-installed')
 }
 
-export type ToolsSummary = { role: Role; text: string; actionable: boolean }
+export type ToolsSummary = { role: Role; text: Message; actionable: boolean }
 
 /**
  * The single roll-up for the status bar: the worst role across all binaries
@@ -294,12 +295,11 @@ export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
   const role = rollupRole(derived.map((d) => d.role))
 
   const count = (pred: (d: DerivedStatus) => boolean) => derived.filter(pred).length
-  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
   if (role === 'warning') {
     const absent = count((d) => d.state === 'not-installed')
-    if (absent > 0) return { role, text: `${plural(absent, "tool isn’t", "tools aren’t")} installed`, actionable: true }
-    return { role, text: `${plural(count((d) => d.state === 'update-available'), 'update', 'updates')} available`, actionable: true }
+    if (absent > 0) return { role, text: message('tools.summaryNotInstalled', { count: absent }), actionable: true }
+    return { role, text: message('tools.summaryUpdates', { count: count((d) => d.state === 'update-available') }), actionable: true }
   }
   if (role === 'info') {
     // A present tool whose own version could not be read is a different story from
@@ -308,12 +308,12 @@ export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
     // says which one it is rather than defaulting to the quieter wording.
     const unreadable = statuses.filter((s) => s.present && s.installedVersion === null).length
     if (unreadable > 0) {
-      return { role, text: `${plural(unreadable, 'tool', 'tools')} couldn’t be read`, actionable: true }
+      return { role, text: message('tools.summaryUnreadable', { count: unreadable }), actionable: true }
     }
     if (statuses.some((s) => s.name === 'deno' && !s.present)) {
-      return { role, text: 'Optional tool isn’t installed', actionable: true }
+      return { role, text: message('tools.summaryOptionalMissing'), actionable: true }
     }
-    return { role, text: 'Updates not checked', actionable: false }
+    return { role, text: message('tools.summaryUnchecked'), actionable: false }
   }
-  return { role: 'none', text: 'Tools ready', actionable: false }
+  return { role: 'none', text: message('tools.summaryReady'), actionable: false }
 }

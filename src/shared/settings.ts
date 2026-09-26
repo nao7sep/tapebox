@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { stripUrlCredentials } from './url'
+import { LANGUAGE_PREFERENCES } from './i18n/languages'
 
 // The per-binary managed-dependency facts (installed/latest versions, last-check
 // time) are NOT config — they are app-recorded facts and live in their own
@@ -180,6 +181,12 @@ const SettingsObjectSchema = z.object({
   // instead of failing the whole file, so a config from before this setting (or
   // from a newer build) loads untouched.
   theme: z.enum(THEME_PREFERENCES).catch('system'),
+
+  // The interface language (localization-conventions): System follows the
+  // computer's language on every launch; otherwise one of the shipped languages'
+  // tags. Applied on Save with the rest of Settings. A missing, retired or
+  // hand-edited value follows the computer instead of failing the whole file.
+  language: z.enum(LANGUAGE_PREFERENCES).catch('system'),
 })
 
 export const SettingsPatchSchema = SettingsObjectSchema.partial()
@@ -228,6 +235,7 @@ export function defaultSettings(): Settings {
     deleteAfterExport: true,
     uiFontFamily: '',
     theme: 'system',
+    language: 'system',
   }
 }
 
@@ -276,5 +284,6 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     siteProfileCount: s.siteProfiles.length,
     uiFontFamily: s.uiFontFamily,
     theme: s.theme,
+    language: s.language,
   }
 }
