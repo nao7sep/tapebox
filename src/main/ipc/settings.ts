@@ -20,6 +20,7 @@ import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import { SettingsSchema, type Settings } from '@shared/settings'
 import { UserFacingError } from '@main/user-facing-error'
+import { withLibraryMove } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 
 /**
@@ -85,31 +86,29 @@ function normalizeUserDir(label: string, value: string): string {
  * the old libraryDir and every catalog-visible source coherent; a no-op (effective
  * dir unchanged) returns immediately and the normal update proceeds.
  *
- * In-flight downloads are refused, not drained: a job finalizes its media, sidecar,
- * and thumbnail straight into the current library dir, so moving the library out
- * from under one would strand or lose those files. Refusing is the simpler safe
- * option — the user finishes or stops downloads, then relocates.
+ * It runs inside the library write gate (library-writes.ts), which refuses it while
+ * any download, import, rename or export is writing into the current folder and
+ * holds new ones off until the settings commit, so nothing is stranded in the old
+ * folder.
  */
 type CompletedRelocation = { fromDir: string; files: RelocatedFile[] }
 
 /** Work-registry key for the one library move that can be in flight. */
 const LIBRARY_MOVE_KEY = 'library-move'
 
+/** True when applying `patch` would change the effective library folder. */
+function movesLibrary(patch: Partial<Settings>): boolean {
+  if (patch.libraryDir === undefined) return false
+  return resolve(config.getLibraryDir()) !== resolve(effectiveLibraryDir(patch.libraryDir))
+}
+
 async function relocateIfLibraryDirChanged(
   patch: Partial<Settings>,
   signal: AbortSignal,
 ): Promise<CompletedRelocation | null> {
-  if (patch.libraryDir === undefined) return null
+  if (!movesLibrary(patch)) return null
   const fromDir = config.getLibraryDir()
-  const toDir = effectiveLibraryDir(patch.libraryDir)
-  if (resolve(fromDir) === resolve(toDir)) return null
-
-  if (queue.activeCount() > 0) {
-    throw new UserFacingError(
-      'refused',
-      "Can't move the library while downloads are running. Finish or stop them first, then change the library folder.",
-    )
-  }
+  const toDir = effectiveLibraryDir(patch.libraryDir!)
 
   const entries = trackedLibraryFiles()
   log.info('relocating library', { from: fromDir, to: toDir, files: entries.length })
@@ -149,16 +148,23 @@ export function registerSettingsHandlers(): void {
     // unsaved. updateSettings re-validates too (this doesn't replace it); doing it
     // here just guarantees the move only runs for a patch that will persist.
     SettingsSchema.parse({ ...config.getSettings(), ...normalized })
-    // Move the library first; if it throws (collision, in-flight downloads, a
-    // failed-and-rolled-back move) the new libraryDir is never committed, so the
+    // Move the library first; if it throws (collision, library writes in flight,
+    // a failed-and-rolled-back move) the new libraryDir is never committed, so the
     // renderer surfaces the error and the catalog still points at the old folder.
-    // The queue is held for the whole move and settings commit so no download
-    // starts writing into the old folder meanwhile. Stop (settings:cancelLibraryMove)
-    // or quitting aborts the copy and rolls back every file already published.
-    return queue.holdWhile(() => runCancellable(
+    // The write gate is held for the whole move and settings commit so no download,
+    // import or rename writes into the old folder meanwhile; the queue catches up
+    // after. Stop (settings:cancelLibraryMove) or quitting aborts the copy and rolls
+    // back every file already published.
+    const apply = () => runCancellable(
       (signal) => applySettingsPatch(normalized, wasAutostart, signal),
       LIBRARY_MOVE_KEY,
-    ))
+    )
+    if (!movesLibrary(normalized)) return apply()
+    try {
+      return await withLibraryMove(apply)
+    } finally {
+      queue.tick()
+    }
   })
   handle('settings:cancelLibraryMove', async () => {
     cancelWork(LIBRARY_MOVE_KEY)

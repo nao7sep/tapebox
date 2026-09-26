@@ -40,7 +40,7 @@ type Tab = 'general' | 'ai' | 'ytdlp'
  * field's placeholder); a set value points the library at a custom folder. Changing
  * it moves every existing tape's files to the new folder as part of Save (main does
  * the move, then commits the setting), so a confirm prompts first; the move is
- * refused while downloads are running. While it runs, the dialog shows its
+ * refused while downloads, imports, renames or exports are running. While it runs, the dialog shows its
  * progress and offers Stop Move, which rolls the copies back.
  */
 
@@ -514,7 +514,7 @@ function GeneralTab({
         </div>
         <p className="mt-1 text-xs text-fg-muted">
           Where tapes are saved. Changing this moves your existing tapes to the new
-          folder. Not available while downloads are running.
+          folder. Not available while downloads, imports, renames or exports are running.
         </p>
       </div>
       <Toggle

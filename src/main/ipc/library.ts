@@ -26,6 +26,7 @@ import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
 import { runCancellable } from '@main/work-registry'
+import { withLibraryWrite } from '@main/library-writes'
 import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
@@ -133,7 +134,8 @@ export function registerLibraryHandlers(): void {
     child.unref()
   })
 
-  handle('library:rename', ({ tapeId, name }) => runCancellable((signal) => renameTape(tapeId, name, signal)))
+  handle('library:rename', ({ tapeId, name }) => runCancellable((signal) =>
+    withLibraryWrite((libraryDir) => renameTape(tapeId, name, libraryDir, signal))))
 
   handle('library:probeMetadata', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
@@ -153,11 +155,10 @@ export function registerLibraryHandlers(): void {
     }
   })
 
-  handle('library:applyMetadata', async ({ tapeId, metadata }) => {
+  // Writes the sidecar and may save a poster into the library, so it holds a write claim.
+  handle('library:applyMetadata', ({ tapeId, metadata }) => withLibraryWrite(async (dir) => {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
-
-    const dir = getLibraryDir()
 
     // The description lives in the sidecar (yt-dlp's info.json field), not on the
     // tape, so the accepted description is written there. Best-effort: a sidecar
@@ -207,12 +208,13 @@ export function registerLibraryHandlers(): void {
     emit('tapes:updated', updated)
     log.info('applied refreshed metadata', { tapeId: tape.id })
     return updated
-  })
+  }))
 
   // Sidecar-driven import: the whole selection arrives here so this filesystem-owning
   // boundary can tell referenced bundle companions from unsupported extras. One
   // sidecar = one tape, so a duplicate is reported once, not once per selected file.
-  handle('library:import', ({ paths }) => runCancellable((signal) => importBundles(paths, signal)))
+  handle('library:import', ({ paths }) => runCancellable((signal) =>
+    withLibraryWrite((libraryDir) => importBundles(paths, libraryDir, signal))))
 }
 
 /**
@@ -220,8 +222,7 @@ export function registerLibraryHandlers(): void {
  * a temp that is linked into place where the library supports hard links), and
  * quitting stops the import between chunks, rolling back the bundle in progress.
  */
-async function importBundles(paths: string[], signal: AbortSignal): Promise<ImportResult> {
-  const libraryDir = getLibraryDir()
+async function importBundles(paths: string[], libraryDir: string, signal: AbortSignal): Promise<ImportResult> {
   const hardLinks = await directorySupportsHardLinks(libraryDir)
   const imported: Tape[] = []
   const issues: ImportIssue[] = []
@@ -429,7 +430,7 @@ async function importBundles(paths: string[], signal: AbortSignal): Promise<Impo
  * cost does not grow with the video. Quitting aborts it before the catalog commit,
  * which rolls the new names back.
  */
-async function renameTape(tapeId: string, name: string, signal: AbortSignal): Promise<Tape> {
+async function renameTape(tapeId: string, name: string, libraryDir: string, signal: AbortSignal): Promise<Tape> {
   const tape = session.getTape(tapeId)
   if (!tape) throw new Error(`Tape not found: ${tapeId}`)
   if (!tape.filename || !tape.sidecarFilename) {
@@ -447,7 +448,6 @@ async function renameTape(tapeId: string, name: string, signal: AbortSignal): Pr
   if (plan.status === 'noop') return tape
 
   const { cleanName } = plan
-  const libraryDir = getLibraryDir()
   const p = (rel: string) => join(libraryDir, rel)
   const nowUtc = nowUtcIso()
 
@@ -600,12 +600,19 @@ async function renameTape(tapeId: string, name: string, signal: AbortSignal): Pr
  * Shared by library:remove and Export's "delete from app" (export copies the
  * files out, then calls this to take the tape out of the library).
  */
-export async function removeTapes(
+export function removeTapes(
+  tapeIds: string[],
+  deleteFiles: boolean,
+): Promise<{ removed: string[]; failed: string[] }> {
+  return withLibraryWrite((libraryDir) => removeTapesFrom(libraryDir, tapeIds, deleteFiles))
+}
+
+async function removeTapesFrom(
+  libraryDir: string,
   tapeIds: string[],
   deleteFiles: boolean,
 ): Promise<{ removed: string[]; failed: string[] }> {
   const settings = getSettings()
-  const libraryDir = getLibraryDir()
   const removed: string[] = []
   const failed: string[] = []
 

@@ -48,19 +48,44 @@ function queued(id: string): Tape {
   return { id, state: 'queued', sourceUrl: `https://example.com/${id}` } as Tape
 }
 
-describe('queue hold', () => {
-  it('starts no job while held and catches up once released', async () => {
+describe('queue and library moves', () => {
+  it('starts no job while the library moves and catches up on the next tick', async () => {
     vi.resetModules()
     const queue = await import('@main/queue/manager')
+    const { withLibraryMove } = await import('@main/library-writes')
     tapes.push(queued('h1'))
     let startedWhileHeld: string[] = []
-    await queue.holdWhile(async () => {
+    await withLibraryMove(async () => {
       queue.tick()
       startedWhileHeld = [...jobs.started]
     })
+    queue.tick()
     expect(startedWhileHeld).toEqual([])
     expect(jobs.started).toEqual(['h1'])
     await queue.shutdown()
+    tapes.length = 0
+    jobs.started.length = 0
+    jobs.stopped.length = 0
+    jobs.settled.length = 0
+  })
+})
+
+describe('library move while a download runs', () => {
+  it('is refused until the running job has settled', async () => {
+    vi.resetModules()
+    const queue = await import('@main/queue/manager')
+    const { withLibraryMove } = await import('@main/library-writes')
+    tapes.push(queued('m1'))
+    queue.tick()
+    expect(jobs.started).toEqual(['m1'])
+
+    const move = vi.fn(async () => {})
+    await expect(withLibraryMove(move)).rejects.toThrow("Can't move the library while downloads")
+    expect(move).not.toHaveBeenCalled()
+
+    await queue.shutdown()
+    await withLibraryMove(move)
+    expect(move).toHaveBeenCalledOnce()
     tapes.length = 0
     jobs.started.length = 0
     jobs.stopped.length = 0

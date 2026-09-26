@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { handle } from './handle'
 import { caseInsensitiveSiblingExists, removeTapes } from './library'
 import * as session from '@main/store/session'
-import { getLibraryDir } from '@main/store/config'
 import { planExport } from '@main/core/export-plan'
 import { SidecarTapeBoxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
@@ -15,6 +14,7 @@ import {
   type FileClaim,
 } from '@main/io/atomic-file'
 import { runCancellable } from '@main/work-registry'
+import { withLibraryWrite } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 
@@ -31,7 +31,10 @@ import { UserFacingError } from '@main/user-facing-error'
  * Trash setting), making export a "move out".
  */
 export function registerExportHandlers(): void {
-  handle('export:files', (req) => runCancellable((signal) => exportTape(req, signal)))
+  // Holds a library write claim: the export reads the library's files and, with
+  // deleteFromApp, removes them, so a library move must not run underneath it.
+  handle('export:files', (req) => runCancellable((signal) =>
+    withLibraryWrite((libraryDir) => exportTape(req, libraryDir, signal))))
 }
 
 /**
@@ -42,6 +45,7 @@ export function registerExportHandlers(): void {
  */
 async function exportTape(
   { tapeId, destinationDir, name, deleteFromApp }: IpcCalls['export:files']['req'],
+  libDir: string,
   signal: AbortSignal,
 ): Promise<IpcCalls['export:files']['res']> {
   const tape = session.getTape(tapeId)
@@ -57,7 +61,6 @@ async function exportTape(
   if (plan.status === 'error') throw new UserFacingError('invalid', plan.message)
   const { cleanName, mediaName, sidecarName, thumbName: newThumbName } = plan
 
-  const libDir = getLibraryDir()
   const mediaDst = join(destinationDir, mediaName)
   const sidecarDst = join(destinationDir, sidecarName)
   const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null

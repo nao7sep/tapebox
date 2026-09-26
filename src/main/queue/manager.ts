@@ -3,6 +3,7 @@ import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
 import { stripUrlCredentials } from '@shared/url'
+import { isLibraryMoving, tryClaimLibraryWrite } from '@main/library-writes'
 import { Job } from './job'
 import { selectTapesToStart } from './schedule'
 
@@ -25,20 +26,28 @@ import { selectTapesToStart } from './schedule'
 
 const active = new Map<string, Job>()
 let stopped = false
-let holds = 0
 
+/**
+ * Start what the concurrency cap allows. Each job holds a library write claim for
+ * its whole run (it finalizes straight into the library folder), so a library move
+ * refuses while any runs; during a move nothing starts, and the move's owner ticks
+ * again when it ends.
+ */
 export function tick(): void {
-  if (stopped || holds > 0) return
+  if (stopped || isLibraryMoving()) return
   const max = getSettings().maxConcurrentDownloads
   const toStart = selectTapesToStart(session.getTapes(), new Set(active.keys()), max)
 
   for (const tape of toStart) {
+    const release = tryClaimLibraryWrite()
+    if (!release) return
     const job = new Job(tape)
     active.set(tape.id, job)
     log.info('job start', { tapeId: tape.id, url: stripUrlCredentials(tape.sourceUrl) })
     void job
       .run()
       .finally(() => {
+        release()
         active.delete(tape.id)
         tick()
       })
@@ -83,33 +92,6 @@ export async function shutdown(): Promise<void> {
 
 export function isActive(tapeId: string): boolean {
   return active.has(tapeId)
-}
-
-/**
- * How many jobs are running right now (probing/downloading/finalizing). Used to
- * refuse a library relocation while any download is in flight — a job finalizes
- * straight into the current library dir, so moving the library underneath it would
- * strand or lose its files. The catalog's queued/paused tapes are NOT counted: they
- * own no on-disk files yet and the next tick() simply picks them up against the new
- * dir after the move.
- */
-export function activeCount(): number {
-  return active.size
-}
-
-/**
- * Run `work` while the queue starts no new job, then let it catch up. A library
- * move holds the queue so no download starts writing into the old folder while
- * its files are being copied to the new one.
- */
-export async function holdWhile<T>(work: () => Promise<T>): Promise<T> {
-  holds += 1
-  try {
-    return await work()
-  } finally {
-    holds -= 1
-    tick()
-  }
 }
 
 /**

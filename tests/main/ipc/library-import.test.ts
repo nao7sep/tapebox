@@ -50,6 +50,7 @@ vi.mock('@main/io/logger', () => ({ log }))
 vi.mock('@main/ipc/events', () => ({ emit }))
 
 const { registerLibraryHandlers } = await import('@main/ipc/library')
+const { withLibraryMove } = await import('@main/library-writes')
 
 let root: string
 let sourceDir: string
@@ -177,6 +178,19 @@ describe('importing a bundle', () => {
     expect(result.imported[0]!.thumbnailFilename).toBeNull()
     expect(result.issues).toEqual([expect.objectContaining({ path: join(sourceDir, 'poster.jpg'), severity: 'warning' })])
     expect((await readdir(state.libraryDir)).sort()).toEqual(['holiday.json', 'holiday.mp4'])
+  })
+
+  it('is refused while the library is being moved, and copies nothing into the old folder', async () => {
+    const sidecar = await stageBundle({ stem: 'late' })
+    let finishMove!: () => void
+    const moving = withLibraryMove(() => new Promise<void>((resolve) => { finishMove = resolve }))
+
+    await expect(importPaths(sidecar)).rejects.toThrow('The library is being moved to a new folder.')
+
+    finishMove()
+    await moving
+    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(state.tapes).toEqual([])
   })
 
   it('names the library copies after the media file, not after the sidecar', async () => {
