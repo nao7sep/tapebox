@@ -3,6 +3,7 @@ import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { withRetry } from '@main/io/retry'
 import { AI_REQUEST_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
+import { UserFacingError } from '@main/user-facing-error'
 import { resolveApiKey } from './api-keys'
 
 /**
@@ -21,7 +22,7 @@ export async function generateSlug(
 ): Promise<string> {
   const { ai, prompts } = getSettings()
   const apiKey = await resolveApiKey(['openai'])
-  if (!apiKey) throw new Error('No AI API key configured')
+  if (!apiKey) throw new UserFacingError('refused', 'No AI API key is set. Add one in Settings › AI, then try again.')
 
   const client = new OpenAI({
     apiKey,
@@ -48,18 +49,25 @@ export async function generateSlug(
   // and some reject a non-default `temperature` outright. Every instruction
   // (length cap, format, what to ignore) already lives in the prompt, so none of
   // those knobs is needed; slugifyAscii + sanitizeFilename bound the result anyway.
-  const res = await withRetry(
-    HTTP_RETRY,
-    () =>
-      client.chat.completions.create(
-        {
-          model: ai.model,
-          messages: [{ role: 'user', content: userPrompt }],
-        },
-        { signal },
-      ),
-    { signal, isRetryable: isRetryableAiError },
-  )
+  let res: Awaited<ReturnType<typeof client.chat.completions.create>>
+  try {
+    res = await withRetry(
+      HTTP_RETRY,
+      () =>
+        client.chat.completions.create(
+          {
+            model: ai.model,
+            messages: [{ role: 'user', content: userPrompt }],
+          },
+          { signal },
+        ),
+      { signal, isRetryable: isRetryableAiError },
+    )
+  } catch (err) {
+    // A Stop is the user's own choice; it stays a plain abort.
+    if (signal.aborted) throw err
+    throw aiRequestFailure(err)
+  }
   // Result line for the external boundary (the request was logged above): the
   // finish_reason distinguishes a normal stop from a length/content-filter cutoff.
   log.info('ai: generateSlug response', { model: ai.model, finishReason: res.choices[0]?.finish_reason })
@@ -78,20 +86,52 @@ export function completionText(choice: CompletionChoice): string {
   // A refusal (or content-filter) comes back as a `refusal` string with null content;
   // surface its reason rather than a generic "empty response".
   if (message?.refusal) {
-    throw new Error(`The AI declined to suggest a name: ${message.refusal}`)
+    throw new UserFacingError('provider', `The AI declined to suggest a name: ${message.refusal}`)
   }
   if (choice?.finish_reason === 'content_filter') {
-    throw new Error('The AI declined to suggest a name (finish_reason: content_filter)')
+    throw new UserFacingError('provider', "The AI declined to suggest a name (the provider's content filter stopped it).")
   }
   if (choice?.finish_reason === 'length') {
-    throw new Error('The AI response was truncated (finish_reason: length)')
+    throw new UserFacingError('provider', 'The AI response was cut off before it finished. Try again, or shorten the prompt.')
   }
   // Content can be null or a non-string structured part; only a non-empty string is usable.
   const content = message?.content
   if (typeof content !== 'string' || content.trim() === '') {
-    throw new Error('AI returned no usable text')
+    throw new UserFacingError('provider', 'The AI returned no usable text. Try again, or check the model in Settings › AI.')
   }
   return content.trim()
+}
+
+/**
+ * The user-facing form of a failed request: the provider's own status and reason
+ * when it answered (a wrong model name, a key without access, a bad request), or
+ * what kept it from answering. The provider's reason is what tells the user what to
+ * fix (ai-model-routing-conventions, fail fast), so it is passed through as sent.
+ * The original error stays as the cause for the log.
+ */
+export function aiRequestFailure(err: unknown): Error {
+  if (err instanceof OpenAI.APIConnectionTimeoutError) {
+    return new UserFacingError('provider', 'The AI provider did not respond in time. Try again later.', { cause: err })
+  }
+  if (err instanceof OpenAI.APIConnectionError) {
+    return new UserFacingError(
+      'provider',
+      'The AI provider could not be reached. Check the base URL in Settings › AI and your connection.',
+      { cause: err },
+    )
+  }
+  if (err instanceof OpenAI.APIError && typeof err.status === 'number') {
+    const body = err.error as { message?: unknown } | undefined
+    const reason = typeof body?.message === 'string' && body.message.trim() ? body.message.trim() : null
+    return new UserFacingError(
+      'provider',
+      reason
+        ? `The AI provider returned an error (HTTP ${err.status}): ${reason}`
+        : `The AI provider returned an error (HTTP ${err.status}). Check the model and API key in Settings › AI.`,
+      { cause: err },
+    )
+  }
+  return err instanceof Error ? err : new Error(String(err))
 }
 
 /**
