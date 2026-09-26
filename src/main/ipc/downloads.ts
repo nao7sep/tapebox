@@ -69,11 +69,28 @@ export function registerDownloadHandlers(): void {
   })
 
   handle('downloads:retry', async ({ tapeId }) => {
-    // The download clears any stale .part at the start of every attempt, so
-    // retry and resume both just re-queue.
-    transition(tapeId, { state: 'queued', failureCode: null, lastError: null })
+    const tape = session.getTape(tapeId)
+    const patch = tape ? retryPatch(tape) : null
+    if (!patch) return
+    transition(tapeId, patch)
     queue.tick()
   })
+}
+
+/**
+ * What Retry (and Resume) does to a tape. A failed or paused download re-queues;
+ * its next attempt clears the stem's leftovers before downloading again. A failed
+ * row that already names its finished files was failed by a catalog write after the
+ * download completed (earlier versions did this), so it is restored as downloaded:
+ * re-queuing it would delete those files. Any other state is left as it is, so a
+ * stray Retry can never send a finished tape back through a download.
+ */
+export function retryPatch(tape: Tape): Partial<Tape> | null {
+  if (tape.state !== 'failed' && tape.state !== 'paused') return null
+  if (tape.state === 'failed' && tape.filename && tape.sidecarFilename) {
+    return { state: 'downloaded', failureCode: null, lastError: null, failedAtUtc: null }
+  }
+  return { state: 'queued', failureCode: null, lastError: null }
 }
 
 function transition(tapeId: string, patch: Partial<Tape>): void {

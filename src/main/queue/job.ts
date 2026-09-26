@@ -280,12 +280,14 @@ export class Job {
     })
     // The finished files are on disk; commit the row that names them before
     // reporting success, so a crash now cannot restore the tape as queued and
-    // have its next attempt delete the finished download.
-    await this.d.session.persistNow()
+    // have its next attempt delete the finished download. The download is done
+    // either way: a failed catalog write is the session store's to retry and
+    // report, never a download failure that would invite a Retry over these files.
+    const committed = await this.d.session.persistNow()
     // Close the bracket opened by 'job start': the queue logs start and the catch
     // logs failure, so without this the app's central operation — a finished
     // download — would be the one outcome absent from the session log.
-    this.d.log.info('job done', { tapeId: this.tapeId, sourceId: cur.sourceId, filename: mediaBasename })
+    this.d.log.info('job done', { tapeId: this.tapeId, sourceId: cur.sourceId, filename: mediaBasename, committed })
     this.d.emit('tapes:completed', { tapeId: this.tapeId })
   }
 }

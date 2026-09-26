@@ -35,6 +35,8 @@ import type { ImportIssue, ImportResult, SidecarRaw } from '@shared/ipc-contract
 import { UserFacingError } from '@main/user-facing-error'
 
 export function registerLibraryHandlers(): void {
+  session.onCatalogSaveFailure(() => emit('library:saveFailed', null))
+
   handle('library:list', async () => session.getTapes())
 
   handle('library:archive', async ({ tapeIds }) => {
@@ -382,7 +384,9 @@ async function importBundles(paths: string[], signal: AbortSignal): Promise<Impo
 
   if (imported.length > 0) {
     // The copied files are in the library; commit their rows before reporting,
-    // so a crash now cannot leave them unlisted and blocking a re-import.
+    // so a crash now cannot leave them unlisted and blocking a re-import. The rows
+    // are in the library either way; a failed write is the session store's to
+    // retry and report, and the window must still learn about them.
     await session.persistNow()
     emit('tapes:added', imported)
   }
@@ -621,7 +625,8 @@ export async function removeTapes(
   if (removed.length > 0) {
     session.removeTapes(removed)
     // Files are already discarded; commit the removal before reporting it, so a
-    // crash now cannot bring back rows that point at trashed files.
+    // crash now cannot bring back rows that point at trashed files. The removal
+    // stands either way; a failed write is the session store's to retry and report.
     await session.persistNow()
     emit('tapes:removed', { tapeIds: removed })
   }

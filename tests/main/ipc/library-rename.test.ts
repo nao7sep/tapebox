@@ -21,6 +21,7 @@ const renameTapeDurably = vi.hoisted(() => vi.fn())
 const logError = vi.hoisted(() => vi.fn())
 const logWarn = vi.hoisted(() => vi.fn())
 vi.mock('@main/store/session', () => ({
+  onCatalogSaveFailure: () => {},
   getTape: (id: string) => state.tape?.id === id ? state.tape : undefined,
   getTapes: () => state.tape ? [state.tape] : [],
   getBoxes: () => [],

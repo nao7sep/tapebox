@@ -12,6 +12,7 @@ const catalogMutation = vi.hoisted(() => ({
   failRenamedOnce: false,
   failReorderOnce: false,
   failBoxReorderOnce: false,
+  failOrdinaryWrites: 0,
 }))
 
 vi.mock('@main/paths', () => ({ paths: { catalog: join(testRoot, 'catalog.json') } }))
@@ -37,6 +38,10 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
         catalogMutation.failBoxReorderOnce = false
         throw new Error('box reorder disk full')
       }
+      if (catalogMutation.failOrdinaryWrites > 0) {
+        catalogMutation.failOrdinaryWrites -= 1
+        throw new Error('catalog disk full')
+      }
       return actual.writeManagedJson(...args)
     }),
   }
@@ -44,6 +49,7 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
 
 import {
   loadSession,
+  onCatalogSaveFailure,
   getBoxes,
   getTape,
   persistNow,
@@ -73,6 +79,7 @@ beforeEach(async () => {
   catalogMutation.failRenamedOnce = false
   catalogMutation.failReorderOnce = false
   catalogMutation.failBoxReorderOnce = false
+  catalogMutation.failOrdinaryWrites = 0
   await mkdir(testRoot, { recursive: true })
 })
 
@@ -217,6 +224,28 @@ describe('terminal catalog persistence', () => {
     upsertTape({ ...probed, state: 'downloaded', filename: 'fly1234567.mp4', downloadedAtUtc: '2026-01-02T00:01:00.000Z' })
     await persistNow()
     expect(writes()).toBe(3)
+  })
+
+  it('keeps a change whose save failed, reports the failure once, and writes it on the retry', async () => {
+    await loadSession()
+    const failures = vi.fn()
+    onCatalogSaveFailure(failures)
+    const finished = tape('fin1234567')
+    upsertTape(finished)
+
+    catalogMutation.failOrdinaryWrites = 2
+    await expect(persistNow()).resolves.toBe(false)
+    await expect(persistNow()).resolves.toBe(false)
+    expect(failures).toHaveBeenCalledOnce()
+    expect(getTape(finished.id)).toEqual(finished)
+
+    // A retry stays pending after the failure, so even the terminal flush writes it.
+    persistNowSync()
+    const onDisk = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8')) as { tapes: Tape[] }
+    expect(onDisk.tapes).toEqual([finished])
+
+    await expect(persistNow()).resolves.toBe(true)
+    onCatalogSaveFailure(() => {})
   })
 
   it('resumes a download an older catalog left in flight', async () => {

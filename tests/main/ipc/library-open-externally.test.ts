@@ -29,6 +29,7 @@ const state = vi.hoisted(() => ({ libraryDir: '/library', tapes: [] as Tape[], e
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
 vi.mock('@main/store/session', () => ({
+  onCatalogSaveFailure: () => {},
   getTape: (id: string) => state.tapes.find((tape) => tape.id === id),
   getTapes: () => state.tapes,
   getBoxes: () => [],

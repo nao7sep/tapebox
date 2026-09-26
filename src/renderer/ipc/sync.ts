@@ -13,6 +13,11 @@ import type { BinaryStatus, RuntimeInfo } from '@shared/ipc-contract'
 import type { Layout } from '@shared/layout'
 import type { Settings } from '@shared/settings'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
+import { useToastStore } from '@renderer/store/toast'
+
+/** Shown when main reports that library changes are not reaching disk. */
+export const LIBRARY_SAVE_FAILED_MESSAGE =
+  'Library changes could not be saved to disk. TapeBox keeps them and will try again; check that the disk has free space.'
 
 export type InitialSyncState = {
   tapes: Tape[]
@@ -67,6 +72,7 @@ export function startIpcSync(): () => void {
       })
     }),
     ipcOn('boxes:changed',    (boxes) => useBoxesStore.getState().setBoxes(boxes)),
+    ipcOn('library:saveFailed', () => useToastStore.getState().notify(LIBRARY_SAVE_FAILED_MESSAGE, 'error')),
     ipcOn('tapes:progress',  ({ tapeId, phase, percent, speedBps, etaSec }) =>
       useTapesStore.getState().setProgress(tapeId, { phase, percent, speedBps, etaSec }),
     ),

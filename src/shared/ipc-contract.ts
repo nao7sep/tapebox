@@ -272,6 +272,10 @@ export type IpcEvents = {
   // Bulk tape update (e.g. a box reorder touches many tapes at once).
   'tapes:updatedMany': Tape[]
 
+  // Library changes stopped reaching catalog.json. Sent once per failing streak;
+  // main keeps the changes and retries the save.
+  'library:saveFailed': null
+
   // The box list changed (created / renamed / deleted / reordered).
   'boxes:changed':    Box[]
 

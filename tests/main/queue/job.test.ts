@@ -55,6 +55,7 @@ function makeDeps(opts: {
   initial?: Tape[]
   probe?: JobDeps['ytdlp']['probe']
   download?: JobDeps['ytdlp']['download']
+  persistSucceeds?: boolean
 }): { deps: JobDeps; tapes: Map<string, Tape>; emits: string[]; payloads: unknown[]; errors: unknown[] } {
   const tapes = new Map<string, Tape>((opts.initial ?? []).map((t) => [t.id, t]))
   const emits: string[] = []
@@ -93,6 +94,7 @@ function makeDeps(opts: {
         // see whether a commit came before an event.
         emits.push(`persist:${[...tapes.values()].map((t) => t.state).join(',')}`)
         payloads.push(null)
+        return opts.persistSucceeds ?? true
       },
     },
     getLibraryDir: () => LIBRARY_DIR,
@@ -130,6 +132,18 @@ describe('Job lifecycle (driven with fakes)', () => {
     // The downloaded row is durable before success is reported.
     expect(emits.indexOf('persist:downloaded')).toBeGreaterThanOrEqual(0)
     expect(emits.indexOf('persist:downloaded')).toBeLessThan(emits.indexOf('tapes:completed'))
+  })
+
+  it('keeps a finished download as downloaded when the catalog write fails', async () => {
+    const t = tape({ id: 't1' })
+    const { deps, tapes, emits } = makeDeps({ initial: [t], probe: async () => video, persistSucceeds: false })
+    await new Job(t, deps).run()
+    const final = tapes.get('t1')!
+    expect(final.state).toBe('downloaded')
+    expect(final.failureCode).toBeNull()
+    expect(final.filename).toBe('t1.mp4')
+    expect(emits).toContain('tapes:completed')
+    expect(emits).not.toContain('tapes:failed')
   })
 
   it('rejects a probe whose (extractor, id) duplicates an existing tape', async () => {

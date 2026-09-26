@@ -6,7 +6,8 @@ const { ipcInvoke, ipcOn } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), ipcOn: vi.f
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn() } }))
 
-import { applyInitialSyncState, pullInitialSyncState } from '@renderer/ipc/sync'
+import { LIBRARY_SAVE_FAILED_MESSAGE, applyInitialSyncState, pullInitialSyncState, startIpcSync } from '@renderer/ipc/sync'
+import { useToastStore } from '@renderer/store/toast'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useBinariesStore } from '@renderer/store/binaries'
@@ -70,5 +71,22 @@ describe('required renderer hydration', () => {
     expect(useLayoutStore.getState().persistedLayout).toEqual(defaultLayout)
     expect(useSettingsStore.getState().settings).toEqual(settings)
     expect(useRuntimeStore.getState().info?.platform).toBe('darwin')
+  })
+})
+
+describe('live sync', () => {
+  it('keeps a notice on screen when main reports library changes are not reaching disk', () => {
+    useToastStore.setState({ toasts: [] })
+    const listeners = new Map<string, (payload: unknown) => void>()
+    ipcOn.mockImplementation((channel: string, listener: (payload: unknown) => void) => {
+      listeners.set(channel, listener)
+      return () => {}
+    })
+    const stop = startIpcSync()
+    listeners.get('library:saveFailed')!(null)
+    expect(useToastStore.getState().toasts).toEqual([
+      expect.objectContaining({ text: LIBRARY_SAVE_FAILED_MESSAGE, kind: 'error' }),
+    ])
+    stop()
   })
 })

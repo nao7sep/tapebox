@@ -21,6 +21,8 @@ import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain
  */
 
 const SAVE_DEBOUNCE_MS = 500
+/** How long a failed catalog save waits before it tries again. */
+const SAVE_RETRY_AFTER_FAILURE_MS = 30_000
 
 let cache: Session = emptySession()
 let saveTimer: NodeJS.Timeout | null = null
@@ -28,6 +30,9 @@ let loaded = false
 let persistChain: Promise<void> = Promise.resolve()
 /** Serialized durable content last written or loaded, to skip unchanged writes. */
 let lastWritten: string | null = null
+/** True from a failed catalog save until the next successful one. */
+let saveFailing = false
+let saveFailureListener: (() => void) | null = null
 
 const IN_FLIGHT_STATES: ReadonlySet<Tape['state']> = new Set(['probing', 'ready', 'downloading'])
 
@@ -52,6 +57,15 @@ async function writeCatalog(session: Session): Promise<void> {
   if (key === lastWritten) return
   await writeManagedJson(paths.catalog, durable, SessionSchema)
   lastWritten = key
+  saveFailing = false
+}
+
+/**
+ * Called once when catalog saves start failing (not again until one succeeds), so
+ * the app edge can tell the user their library changes are not reaching disk.
+ */
+export function onCatalogSaveFailure(listener: () => void): void {
+  saveFailureListener = listener
 }
 
 function emptySession(): Session {
@@ -319,9 +333,9 @@ export function removeBox(id: string): void {
   scheduleSave()
 }
 
-function scheduleSave(): void {
+function scheduleSave(delayMs = SAVE_DEBOUNCE_MS): void {
   if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => { void persistNow() }, SAVE_DEBOUNCE_MS)
+  saveTimer = setTimeout(() => { void persistNow() }, delayMs)
 }
 
 function cancelScheduledSave(): void {
@@ -332,13 +346,20 @@ function cancelScheduledSave(): void {
 }
 
 /**
- * Flush pending writes. Called on app quit; also safe to call any time.
- * No-op until a session has actually been loaded, so a startup that aborts before
- * load (e.g. an unreadable or un-quarantinable file) can never overwrite the
- * on-disk file with the empty default.
+ * Flush pending writes. Called on app quit, and right after a change that must
+ * reach disk before it is reported; also safe to call any time. No-op until a
+ * session has actually been loaded, so a startup that aborts before load (e.g. an
+ * unreadable or un-quarantinable file) can never overwrite the on-disk file with
+ * the empty default.
+ *
+ * Resolves true once the catalog on disk matches the cache. A failed write is
+ * owned here rather than by the caller: the change stays in the cache (it already
+ * happened — a finished download's files are on disk), the save is retried after
+ * {@link SAVE_RETRY_AFTER_FAILURE_MS} and at quit, the failure listener tells the
+ * user, and this resolves false.
  */
-export async function persistNow(): Promise<void> {
-  if (!loaded) return
+export async function persistNow(): Promise<boolean> {
+  if (!loaded) return true
   if (saveTimer) {
     clearTimeout(saveTimer)
     saveTimer = null
@@ -351,9 +372,15 @@ export async function persistNow(): Promise<void> {
       // tape library structure — so every changed save records through the choke point.
       await writeCatalog(cache)
     })
+    return true
   } catch (err) {
     log.error('session persist failed', { error: describeError(err) })
-    throw err
+    if (!saveTimer) scheduleSave(SAVE_RETRY_AFTER_FAILURE_MS)
+    if (!saveFailing) {
+      saveFailing = true
+      saveFailureListener?.()
+    }
+    return false
   }
 }
 

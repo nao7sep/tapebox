@@ -184,11 +184,9 @@ function shutdown(reason: string): Promise<void> {
     releaseWakeLock()
     await shutdownBinaryOperations()
     await stopInFlightWork()
-    try {
-      await persistNow()
-    } catch {
-      // already logged
-    }
+    // A failed final save is logged by the session store; the process 'exit'
+    // handler's synchronous flush makes one last attempt.
+    await persistNow()
     await layout.persistNow()
     await stopMediaServer()
     await closeBackupStore()
