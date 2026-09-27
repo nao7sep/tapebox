@@ -55,12 +55,6 @@ export function ArchiveTapeList({
                 selected={tape.id === selectedId}
                 id={kb.optionId(tape.id)}
                 onSelect={() => selectTape(tape.id)}
-                reorder={{
-                  canMoveUp: index > 0,
-                  canMoveDown: index < tapes.length - 1,
-                  onMoveUp: () => onReorder(tape.id, -1),
-                  onMoveDown: () => onReorder(tape.id, 1),
-                }}
               />
             </SortableTape>
           ))}

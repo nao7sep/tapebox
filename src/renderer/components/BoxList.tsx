@@ -16,7 +16,6 @@ import {
 import { boxNameError } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
 import { PlusIcon } from './Icon'
-import { RowMoveMenu } from './RowMoveMenu'
 import { InlineError } from './ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useBoxActionResultsStore, type BoxAction } from '@renderer/store/boxActionResults'
@@ -214,10 +213,6 @@ export function BoxList({
               onSelect={() => selectBox(g.id)}
               onRename={() => { setDraftName(g.name); setEditingId(g.id) }}
               onDelete={() => setConfirmDeleteId(g.id)}
-              canMoveUp={index > 0}
-              canMoveDown={index < sorted.length - 1}
-              onMoveUp={() => onReorder(g.id, -1)}
-              onMoveDown={() => onReorder(g.id, 1)}
             />
           ),
         )}
@@ -298,10 +293,6 @@ function SortableBoxRow({
   onSelect,
   onRename,
   onDelete,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
 }: {
   id: string
   index: number
@@ -312,10 +303,6 @@ function SortableBoxRow({
   onSelect: () => void
   onRename: () => void
   onDelete: () => void
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onMoveUp: () => void
-  onMoveDown: () => void
 }) {
   // The current hook registers transport without projecting DOM attributes, so
   // the inner option and the listbox remain the sole owners of semantics/focus.
@@ -371,7 +358,6 @@ function SortableBoxRow({
       >
         <TrashGlyph />
       </button>
-      <RowMoveMenu canMoveUp={canMoveUp} canMoveDown={canMoveDown} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
       {/* Extra left margin keeps the count clear of the delete button when the
           actions are revealed on hover, so the two don't read as one cluster. */}
       <span className="ml-1.5 shrink-0 text-xs tabular-nums text-fg-muted">{count}</span>

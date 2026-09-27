@@ -4,7 +4,6 @@ import { chapterCountLabel, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 import { TapeActionResults } from './TapeActionResults'
-import { RowMoveMenu } from './RowMoveMenu'
 import { useI18n } from '@renderer/i18n/I18nContext'
 
 type Props = {
@@ -14,9 +13,6 @@ type Props = {
   onSelect: () => void
   /** DOM id of this option, so its listbox's aria-activedescendant can target it. */
   id?: string
-  /** Move up/down, for a list whose manual order is reorderable. Omitted where
-   * the order isn't the user's to change (archive search results). */
-  reorder?: { canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void }
 }
 
 
@@ -33,7 +29,7 @@ type Props = {
  * already filtered to one side (Inbox or Archived), so the flag would be the same on
  * every row.
  */
-export function TapeRow({ tape, progress, selected, onSelect, id, reorder }: Props) {
+export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
   const palette = paletteFor(tape, selected)
   const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
   const t = useI18n()
@@ -46,7 +42,7 @@ export function TapeRow({ tape, progress, selected, onSelect, id, reorder }: Pro
       aria-selected={selected}
       onClick={onSelect}
       className={
-        'group block w-full cursor-pointer rounded-md border px-3 py-2 text-left transition ' +
+        'block w-full cursor-pointer rounded-md border px-3 py-2 text-left transition ' +
         palette
       }
     >
@@ -58,14 +54,6 @@ export function TapeRow({ tape, progress, selected, onSelect, id, reorder }: Pro
           <div className="shrink-0 text-xs tabular-nums text-fg">
             {formatTime(tape.durationSeconds)}
           </div>
-        )}
-        {reorder && (
-          <RowMoveMenu
-            canMoveUp={reorder.canMoveUp}
-            canMoveDown={reorder.canMoveDown}
-            onMoveUp={reorder.onMoveUp}
-            onMoveDown={reorder.onMoveDown}
-          />
         )}
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-fg-muted">
