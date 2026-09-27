@@ -176,7 +176,7 @@ function FieldDiff({
   const changed = probed && (current ?? '') !== (next ?? '')
   return (
     <>
-      <div className="text-fg-subtle">{label}</div>
+      <div className="whitespace-nowrap text-fg-subtle">{label}</div>
       <div className="min-w-0 break-words text-fg-muted">{current ?? '—'}</div>
       <div className={'min-w-0 break-words ' + (losing ? 'text-warning-fg' : changed ? 'text-fg-strong' : 'text-fg-muted')}>
         {probing ? <Spinner /> : next ?? '—'}
@@ -206,7 +206,7 @@ function DescriptionDiff({
   const t = useI18n()
   return (
     <>
-      <div className="text-fg-subtle">{t.t('refresh.description')}</div>
+      <div className="whitespace-nowrap text-fg-subtle">{t.t('refresh.description')}</div>
       <DescBox text={current} />
       <DescBox text={next} losing={losing} probing={probing} />
     </>

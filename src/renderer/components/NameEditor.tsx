@@ -228,7 +228,7 @@ function SourceRow({
       <dt>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-          <span className="text-fg">{label}</span>
+          <span className="whitespace-nowrap text-fg">{label}</span>
         </label>
       </dt>
       <dd className="min-w-0">
