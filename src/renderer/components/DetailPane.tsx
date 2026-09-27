@@ -14,6 +14,7 @@ import { releaseVideo } from '@renderer/lib/video'
 import { archiveTape, openTapeSourceUrl, unarchiveTape } from '@renderer/lib/tapeActions'
 import { useCopyTapeSourceUrl } from '@renderer/lib/useCopyTapeSourceUrl'
 import { isShortcutBlocked } from '@renderer/lib/dom'
+import { seekDirection } from '@renderer/lib/seekKey'
 import { log } from '@renderer/ipc/log'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { useKeepAwake } from '@renderer/lib/useKeepAwake'
@@ -40,7 +41,7 @@ import { useI18n, type UiTranslator } from '@renderer/i18n/I18nContext'
 import { joinMessages, message, type Message } from '@shared/i18n/translate'
 import type { MessageKey } from '@shared/i18n/catalogues'
 
-/** Seconds the Left/Right arrows move the playhead. */
+/** Seconds the Left/Right (or J/L) seek keys move the playhead. */
 const SEEK_STEP_SECONDS = 10
 
 /**
@@ -264,8 +265,9 @@ export function DetailPane({
 
   // Per-tape keyboard, live while a tape is open and acting on the selected tape no
   // matter which list has focus: A archives/unarchives, Backspace/Delete removes,
-  // Left/Right seek the player, Enter does the tape's primary action (play/pause;
-  // scan a page; retry/resume), and R / E / M open the housekeeping tools. Up/Down
+  // Left/Right (or YouTube's J/L) seek the player, Enter does the tape's primary
+  // action (play/pause; scan a page; retry/resume), and R / E / M open the
+  // housekeeping tools. Up/Down
   // are deliberately NOT handled here — they belong to whichever listbox has focus
   // (the chapter list jumps chapters). Suppressed while typing or while a modal owns
   // the keyboard. The handler reads live state through a ref, so it binds once.
@@ -293,15 +295,16 @@ export function DetailPane({
 
       if (e.metaKey || e.ctrlKey || e.altKey) return // remaining keys are plain only
 
-      // Left/Right seek the open video regardless of which list owns Up/Down — so
-      // seeking works the instant a tape is selected, without clicking into the player.
-      if (tape.state === 'downloaded' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      // Left/Right (or YouTube's J/L) seek the open video regardless of which list
+      // owns Up/Down — so seeking works the instant a tape is selected, without
+      // clicking into the player.
+      const direction = seekDirection(e)
+      if (tape.state === 'downloaded' && direction !== null) {
         const v = videoRef.current
         if (!v) return
         e.preventDefault()
-        const delta = e.key === 'ArrowRight' ? SEEK_STEP_SECONDS : -SEEK_STEP_SECONDS
         const max = Number.isFinite(v.duration) ? v.duration : Infinity
-        v.currentTime = Math.min(Math.max(v.currentTime + delta, 0), max)
+        v.currentTime = Math.min(Math.max(v.currentTime + direction * SEEK_STEP_SECONDS, 0), max)
         return
       }
 

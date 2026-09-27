@@ -1,6 +1,6 @@
 import { Modal } from '@renderer/components/Modal'
 import { Button } from '@renderer/components/ui'
-import { useRuntimeStore } from '@renderer/store/runtime'
+import { useModifierWord } from '@renderer/lib/useModifierWord'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import type { MessageKey } from '@shared/i18n/catalogues'
 
@@ -13,7 +13,7 @@ type Group = { title: MessageKey; note?: MessageKey; shortcuts: Shortcut[] }
  * The keyboard map, grouped by where the keys apply. Kept in sync by hand with the
  * handlers that own them — the per-list listboxes (videos / boxes / chapters, via
  * useListboxKeyboard), DetailPane (the open tape: A, Backspace/Delete, Enter/R/E/M,
- * and Left/Right seek), and useAppShortcuts (navigation).
+ * and Left/Right or J/L seek), and useAppShortcuts (navigation).
  */
 function groups(mod: string): Group[] {
   return [
@@ -45,7 +45,7 @@ function groups(mod: string): Group[] {
       title: 'shortcuts.player',
       note: 'shortcuts.playerNote',
       shortcuts: [
-        { label: 'shortcuts.seek', keys: 'Left / Right' },
+        { label: 'shortcuts.seek', keys: 'Left/J / Right/L' },
         { label: 'shortcuts.jumpChapter', keys: 'Up / Down' },
       ],
     },
@@ -64,8 +64,7 @@ export function ShortcutsModal({ onClose }: { onClose: () => void }) {
   // Both Cmd and Ctrl trigger the modifier shortcuts everywhere; show the word for
   // this platform ("Cmd" on macOS, "Ctrl" elsewhere) — the ⌘ glyph reads as noise
   // to anyone who isn't on a Mac.
-  const platform = useRuntimeStore((s) => s.info?.platform)
-  const mod = platform === 'darwin' ? 'Cmd' : 'Ctrl'
+  const mod = useModifierWord()
   const t = useI18n()
 
   return (

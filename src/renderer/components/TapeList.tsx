@@ -111,6 +111,12 @@ export function TapeList() {
                     selected={tape.id === selectedId}
                     id={kb.optionId(tape.id)}
                     onSelect={() => selectTape(tape.id)}
+                    reorder={{
+                      canMoveUp: index > 0,
+                      canMoveDown: index < visible.length - 1,
+                      onMoveUp: () => reorderTape(index, index - 1),
+                      onMoveDown: () => reorderTape(index, index + 1),
+                    }}
                   />
                 </SortableTape>
               ))}

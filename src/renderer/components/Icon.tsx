@@ -81,3 +81,14 @@ export function PlusIcon({ className }: IconProps) {
     </IconBase>
   )
 }
+
+/** The row-actions ("⋮") trigger: three stacked dots, filled rather than stroked. */
+export function MoreVerticalIcon({ className }: IconProps) {
+  return (
+    <IconBase className={className}>
+      <circle cx="12" cy="5.5" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="18.5" r="1.3" fill="currentColor" stroke="none" />
+    </IconBase>
+  )
+}
