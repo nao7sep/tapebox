@@ -188,4 +188,17 @@ describe('Menu', () => {
     expect(onSelect.a).not.toHaveBeenCalled()
     expect(menu()).toBeNull()
   })
+
+  // A menu sizes to its longest item rather than a fixed width, so a long label
+  // (e.g. "キーボードショートカット") never wraps onto a second line.
+  it('sizes to content instead of a fixed width, and never wraps an item label', async () => {
+    await mountMenu({ a: vi.fn(), b: vi.fn(), c: vi.fn() })
+    await click(trigger())
+    const popupClass = menu()!.className
+    expect(popupClass).not.toMatch(/(?:^|\s)w-\d+(?:\s|$)/)
+    expect(popupClass).toMatch(/w-max/)
+    for (const item of items()) {
+      expect(item.className).toMatch(/whitespace-nowrap/)
+    }
+  })
 })

@@ -206,7 +206,7 @@ export function Menu({
           onKeyDown={onKeyDown}
           className={
             contentClassName ??
-            'w-48 rounded-md border border-line bg-panel py-1 shadow-xl'
+            'w-max min-w-[12rem] rounded-md border border-line bg-panel py-1 shadow-xl'
           }
           style={{
             position: 'fixed',
@@ -257,7 +257,7 @@ export function MenuItem({
       // (a background, like the lists' selection) and suppress the default ring,
       // which an `overflow` container otherwise clips into stray edges.
       className={
-        'outline-none focus:bg-raised focus:text-fg-strong ' +
+        'outline-none focus:bg-raised focus:text-fg-strong whitespace-nowrap overflow-hidden text-ellipsis ' +
         (className ??
           'block w-full px-3 py-1.5 text-left text-sm text-fg hover:bg-raised hover:text-fg-strong')
       }

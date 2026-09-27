@@ -49,7 +49,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
       label={t.t('boxes.moveToBox')}
       placement="top"
       maxHeight={256}
-      contentClassName="w-52 rounded-md border border-line bg-panel py-1 shadow-xl"
+      contentClassName="w-max min-w-[13rem] rounded-md border border-line bg-panel py-1 shadow-xl"
       trigger={({ ref, ...props }) => (
         <button
           {...props}
