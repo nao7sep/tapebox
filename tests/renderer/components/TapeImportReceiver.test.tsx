@@ -122,4 +122,24 @@ describe('TapeImportReceiver', () => {
     expect(status.textContent).not.toContain('Information')
     expect(status.textContent).not.toContain('not added')
   })
+
+  // The close X sits on the title's line (the block's first line), even though
+  // the issue list under it can wrap to several lines: a top-aligned flex row,
+  // with the button's margin-top derived from the title's text-sm line height
+  // rather than an absolute offset (same mechanism as InlineError and Toaster).
+  it('centres the close button on the title line via a derived margin, not an absolute offset', () => {
+    act(() => useImportResultStore.getState().settle({ operationKey: 'failed', entryKey: 'drop' }, {
+      imported: [],
+      issues: [{ path: '/tmp/broken.json', reason: message('import.sidecarUnreadable'), severity: 'error' }],
+    }))
+
+    const alert = host.querySelector<HTMLElement>('[role="alert"]')!
+    expect(alert.className).toMatch(/\bflex\b/)
+    expect(alert.className).toMatch(/\bitems-start\b/)
+    expect(alert.className).not.toMatch(/\babsolute\b/)
+
+    const button = alert.querySelector('button')!
+    expect(button.className).not.toMatch(/\babsolute\b/)
+    expect(button.style.marginTop).toBe('calc((var(--text-sm--line-height) - 1.75rem) / 2)')
+  })
 })

@@ -38,4 +38,25 @@ describe('Toaster error results', () => {
     expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1)
     expect(document.body.textContent).toContain('The tape order was not saved.')
   })
+
+  // The close X sits on the message's first line: a top-aligned flex row, with
+  // the button's margin-top derived from the text-sm line height rather than an
+  // absolute offset that only approximates it (same mechanism as InlineError).
+  it('centres the close button on the first line via a derived margin, not an absolute offset', async () => {
+    useToastStore.getState().notify(message('app.librarySaveFailed'), 'error')
+    const container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+
+    await act(async () => root!.render(React.createElement(Toaster)))
+
+    const alert = document.querySelector('[role="alert"]')!
+    expect(alert.className).toMatch(/\bflex\b/)
+    expect(alert.className).toMatch(/\bitems-start\b/)
+    expect(alert.className).not.toMatch(/\babsolute\b/)
+
+    const button = alert.querySelector('button')!
+    expect(button.className).not.toMatch(/\babsolute\b/)
+    expect(button.style.marginTop).toBe('calc((var(--text-sm--line-height) - 1.75rem) / 2)')
+  })
 })

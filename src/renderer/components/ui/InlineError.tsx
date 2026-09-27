@@ -23,15 +23,20 @@ export function InlineError({
       id={id}
       role="alert"
       aria-atomic="true"
-      className={`relative rounded border border-danger-line bg-danger-tint py-2 pr-10 pl-3 text-xs text-danger-fg ${className}`}
+      className={`flex items-start gap-2 rounded border border-danger-line bg-danger-tint py-2 pr-3 pl-3 text-xs text-danger-fg ${className}`}
     >
-      <div className="min-w-0 whitespace-pre-wrap break-words">{children}</div>
+      <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">{children}</div>
       {onDismiss && (
         <button
           type="button"
           onClick={onDismiss}
           aria-label={closeLabel ?? t.t('common.closeResult')}
-          className="absolute top-1.5 right-2 grid h-6 w-6 place-items-center rounded border-0 bg-transparent p-0 text-danger-fg/80 hover:bg-danger-hover hover:text-danger-fg-strong focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-danger-fg"
+          // Centred on the first text line, not the whole (possibly wrapped) block: the
+          // row is top-aligned, and this nudges the button up/down by half the gap
+          // between the text-xs line height and the button's own h-6 size. Same
+          // mechanism as chachat's .cc-state-notice__dismiss margin-block.
+          style={{ marginTop: 'calc((var(--text-xs--line-height) - 1.5rem) / 2)' }}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-danger-fg/80 hover:bg-danger-hover hover:text-danger-fg-strong focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-danger-fg"
         >
           <CloseIcon />
         </button>

@@ -24,13 +24,16 @@ export function Toaster() {
           key={toast.id}
           role="alert"
           aria-atomic="true"
-          className="pointer-events-auto relative rounded-lg border border-danger-line bg-danger-banner py-3 pr-11 pl-4 text-sm text-danger-fg-strong shadow-lg"
+          className="pointer-events-auto flex items-start gap-2 rounded-lg border border-danger-line bg-danger-banner py-3 pr-4 pl-4 text-sm text-danger-fg-strong shadow-lg"
         >
-          <div className="min-w-0 whitespace-pre-wrap break-words">{t.text(toast.text)}</div>
+          <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">{t.text(toast.text)}</div>
           <button
             onClick={() => dismiss(toast.id)}
             aria-label={t.t('toast.close')}
-            className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded border-0 bg-transparent p-0 leading-none text-danger-fg/80 hover:bg-danger-hover hover:text-danger-fg-strong focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-danger-fg"
+            // Centred on the first line of the (possibly wrapped) message: see
+            // InlineError for the same margin-from-line-height mechanism.
+            style={{ marginTop: 'calc((var(--text-sm--line-height) - 1.75rem) / 2)' }}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded border-0 bg-transparent p-0 leading-none text-danger-fg/80 hover:bg-danger-hover hover:text-danger-fg-strong focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-danger-fg"
           >
             <CloseIcon />
           </button>

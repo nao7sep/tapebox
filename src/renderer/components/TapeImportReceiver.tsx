@@ -140,9 +140,9 @@ function ImportResultNotice() {
       label={t.t('import.resultLabel')}
       role={severity === 'error' ? 'alert' : 'status'}
       aria-atomic="true"
-      className={`relative m-3 mt-0 max-h-[40%] shrink-0 overflow-y-auto rounded-md border py-2.5 pr-11 pl-3 shadow-sm ${palette}`}
+      className={`flex items-start gap-2 m-3 mt-0 max-h-[40%] shrink-0 overflow-y-auto rounded-md border py-2.5 pr-3 pl-3 shadow-sm ${palette}`}
     >
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">{t.text(lead)}</p>
           <ul className={`mt-1.5 space-y-1 text-xs ${detailColor}`}>
             {result.issues.map((item, index) => (
@@ -154,15 +154,20 @@ function ImportResultNotice() {
               </li>
             ))}
           </ul>
-        <button
-          type="button"
-          onClick={clear}
-          aria-label={t.t('import.closeResult')}
-          className={`absolute top-1.5 right-2 grid h-7 w-7 place-items-center rounded border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-1 ${dismissColor}`}
-        >
-          <CloseIcon />
-        </button>
       </div>
+      <button
+        type="button"
+        onClick={clear}
+        aria-label={t.t('import.closeResult')}
+        // Centred on the title line (the block's first line), even though the
+        // detail list beneath it can wrap to several lines: top-aligned row,
+        // nudged by half the gap between the title's text-sm line height and
+        // this button's own h-7 size. Same mechanism as InlineError.
+        style={{ marginTop: 'calc((var(--text-sm--line-height) - 1.75rem) / 2)' }}
+        className={`grid h-7 w-7 shrink-0 place-items-center rounded border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-1 ${dismissColor}`}
+      >
+        <CloseIcon />
+      </button>
     </PassiveScrollRegion>
   )
 }
