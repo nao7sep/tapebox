@@ -1,6 +1,7 @@
-import { homedir } from 'node:os'
+import { createHash } from 'node:crypto'
+import { homedir, hostname } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import { chmod, mkdir, rm, stat } from 'node:fs/promises'
+import { chmod, mkdir, readdir, stat, unlink } from 'node:fs/promises'
 
 /**
  * All TapeBox app state lives under ~/.tapebox by convention — this is our own
@@ -149,13 +150,79 @@ export async function ensureDirs(): Promise<void> {
   }
 }
 
+// A short, filename-safe tag identifying this host, so a staged file's owner can
+// be told apart from a same-pid process on another machine. TAPEBOX_HOME lets the
+// storage root be relocated onto shared storage (a NAS, a container bind mount),
+// where two hosts' pid spaces overlap: pid 4021 dead on host A says nothing about
+// whether host B's pid 4021 is still downloading. Hashed rather than embedding the
+// raw hostname, which can contain characters outside the staged-name grammar
+// (spaces, dots, unicode) and would otherwise need its own escaping.
+export function hostTag(): string {
+  return createHash('sha256').update(hostname()).digest('hex').slice(0, 8)
+}
+
+// `<stem>-<hostTag>-<pid>-<discriminator>.partial` — the host tag and pid a
+// staged download's own filename must carry so a crash-left file's ownership can
+// be proven later (managed-runtime-dependencies-conventions). Matched from the
+// end so a stem containing hyphens (e.g. "yt-dlp") is still parsed correctly.
+const STAGED_NAME = /-([0-9a-f]{8})-(\d+)-[^-]+\.partial$/
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // EPERM: the process exists but belongs to another user — still alive.
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
 /**
- * Clear the disposable staging dir once at startup, so a download interrupted by a
- * crash leaves no stale partial behind, then recreate it empty. Call this ONCE from
- * the bootstrap — never from the defensive ensureDirs(), which runs mid-operation
- * and would delete an in-flight download.
+ * Remove crash-left download staging whose ownership is proven gone, then ensure
+ * the staging dir exists. Call this ONCE from the bootstrap — never from the
+ * defensive ensureDirs(), which runs mid-operation and could otherwise sweep an
+ * in-flight download.
+ *
+ * A staged file's name carries the host tag and pid of the process that created
+ * it (see downloadTempPath). A pid alone proves nothing here: TAPEBOX_HOME can
+ * point two different hosts at the same directory, where a live download's pid
+ * on one host can coincide with a dead one on another, so a file is only ever
+ * evaluated against ITS OWN host's tag, and only removed when that host is this
+ * host. Among this host's own files, ownership counts as gone when the recorded
+ * process no longer runs, or — if the file has outlived the whole acquisition's
+ * own deadline regardless of what its pid reports — because a bounded operation
+ * cannot still be legitimately in flight past its own timeout. Anything that does
+ * not parse as a staged name, or belongs to another host, is left alone; a file
+ * this sweep cannot remove is skipped rather than failing startup.
  */
-export async function resetTempDir(): Promise<void> {
-  await rm(paths.temp, { recursive: true, force: true })
+export async function sweepAbandonedStaging(operationDeadlineMs: number): Promise<void> {
   await mkdir(paths.temp, { recursive: true })
+  let names: string[]
+  try {
+    names = await readdir(paths.temp)
+  } catch {
+    return
+  }
+  const thisHostTag = hostTag()
+  const now = Date.now()
+  for (const name of names) {
+    const match = STAGED_NAME.exec(name)
+    if (!match) continue
+    const [, taggedHost, pidText] = match
+    if (taggedHost !== thisHostTag) continue
+
+    const filePath = join(paths.temp, name)
+    let ageMs: number
+    try {
+      ageMs = now - (await stat(filePath)).mtimeMs
+    } catch {
+      continue
+    }
+
+    const pid = Number(pidText)
+    const ownerAlive = Number.isSafeInteger(pid) && pid > 0 && processIsAlive(pid)
+    if (ownerAlive && ageMs <= operationDeadlineMs) continue
+
+    await unlink(filePath).catch(() => undefined)
+  }
 }

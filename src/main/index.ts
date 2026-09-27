@@ -1,7 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ensureDirs, resetTempDir } from './paths.js'
+import { ensureDirs, sweepAbandonedStaging } from './paths.js'
 import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
 import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
 import { describeError } from '@shared/error'
@@ -25,6 +25,7 @@ import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
+import { BINARY_ACQUIRE_TIMEOUT_MS } from './io/network.js'
 import {
   applyLanguagePreference,
   registerLanguageHandlers,
@@ -120,13 +121,17 @@ async function startup(): Promise<void> {
     platform: process.platform,
     arch: process.arch,
   })
-  // Clear disposable download staging once at launch (a crash-interrupted
-  // download must not leave a stale partial). It is optional startup cleanup,
-  // but its diagnostic must remain visible in this launch's log.
+  // Sweep this host's crash-left download staging once at launch (a
+  // crash-interrupted download must not leave a stale partial forever), proving
+  // ownership by host+pid before removing anything (managed-runtime-dependencies-
+  // conventions) rather than wiping the whole staging dir, which could delete
+  // another host's in-flight download on a relocated/shared TAPEBOX_HOME. It is
+  // optional startup cleanup, but its diagnostic must remain visible in this
+  // launch's log.
   try {
-    await resetTempDir()
+    await sweepAbandonedStaging(BINARY_ACQUIRE_TIMEOUT_MS)
   } catch (error) {
-    log.warn('temporary download staging could not be reset', { error: describeError(error) })
+    log.warn('temporary download staging could not be swept', { error: describeError(error) })
   }
 
   const configResult = await loadSettings()

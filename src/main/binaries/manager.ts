@@ -1,7 +1,7 @@
 import { access, chmod, constants, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { nanoid } from 'nanoid'
-import { binaryPath, ensureDirs, paths } from '@main/paths'
+import { binaryPath, ensureDirs, hostTag, paths } from '@main/paths'
 import { log } from '@main/io/logger'
 import { emit } from '@main/ipc/events'
 import { getDependencies, mutateDependencies } from '@main/store/dependencies'
@@ -43,7 +43,9 @@ import { message } from '@shared/i18n/translate'
  * Layout on disk:
  *   ~/.tapebox/bin/{name}{ext}              -- the installed executable
  *   ~/.tapebox/bin/{name}.json               -- its version sidecar, where the binary can't self-report
- *   ~/.tapebox/temp/{name}-{nanoid}.partial  -- disposable download staging (cleared on launch)
+ *   ~/.tapebox/temp/{name}-{hostTag}-{pid}-{nanoid}.partial  -- disposable download
+ *                                              staging, swept at launch once its
+ *                                              host+pid ownership is proven gone
  *
  * Install is atomic and crash-durable: download to a temp file, then prepare the
  * executable at a staging file (extract or move, then chmod) and publish it with
@@ -131,16 +133,19 @@ export async function shutdownInstalls(): Promise<void> {
 }
 
 /**
- * The `<name>-<nanoid>.partial` download-staging filename inside paths.temp —
- * `<stem>-<discriminator>.<role-extension>` per the derived-sibling-name
- * convention. nanoid(10) is the discriminator, matching the app's other
- * derived-name sites (atomic-file.ts, rename-plan.ts): never a raw Date.now()
- * epoch, which two installs started in the same millisecond could collide on.
- * Pulled out of performInstall so the shape is assertable without driving a
- * full install.
+ * The `<name>-<hostTag>-<pid>-<nanoid>.partial` download-staging filename inside
+ * paths.temp — `<stem>-<discriminator>.<role-extension>` per the derived-sibling-
+ * name convention, with the discriminator itself carrying this host's tag and
+ * process id so a crash-left file's ownership can be proven later
+ * (sweepAbandonedStaging in paths.ts) rather than swept on a bare pid match,
+ * per the managed-runtime-dependencies-conventions. nanoid(10) keeps concurrent
+ * downloads of the same binary on the same host from colliding; never a raw
+ * Date.now() epoch, which two installs started in the same millisecond could
+ * collide on. Pulled out of performInstall so the shape is assertable without
+ * driving a full install.
  */
 export function downloadTempPath(name: BinaryName): string {
-  return join(paths.temp, `${name}-${nanoid(10)}.partial`)
+  return join(paths.temp, `${name}-${hostTag()}-${process.pid}-${nanoid(10)}.partial`)
 }
 
 async function isInstalled(name: BinaryName): Promise<boolean> {

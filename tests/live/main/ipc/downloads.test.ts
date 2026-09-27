@@ -56,7 +56,8 @@ async function startApp(home: string) {
   process.env.TAPEBOX_HOME = home
   vi.resetModules()
   handlers.clear()
-  const { ensureDirs, resetTempDir } = await import('@main/paths')
+  const { ensureDirs, sweepAbandonedStaging } = await import('@main/paths')
+  const { BINARY_ACQUIRE_TIMEOUT_MS } = await import('@main/io/network')
   const { initLogger, closeLogger } = await import('@main/io/logger')
   const { loadSettings } = await import('@main/store/config')
   const { loadDependencies } = await import('@main/store/dependencies')
@@ -70,7 +71,7 @@ async function startApp(home: string) {
 
   await ensureDirs()
   initLogger({ debug: false })
-  await resetTempDir()
+  await sweepAbandonedStaging(BINARY_ACQUIRE_TIMEOUT_MS)
   await loadSettings()
   await loadDependencies()
   await session.loadSession()
