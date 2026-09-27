@@ -1,14 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fetchLatestRelease = vi.fn()
+const fetchReleases = vi.fn()
 vi.mock('@main/binaries/github', () => ({
   fetchLatestRelease: (...args: unknown[]) => fetchLatestRelease(...args),
+  fetchReleases: (...args: unknown[]) => fetchReleases(...args),
 }))
 
 const { binarySpecs } = await import('@main/binaries/registry')
 
 function release(assets: Array<{ name: string; browser_download_url: string; size: number }>) {
   return { tag_name: 'v1.2.3', name: 'Build 1.2.3', assets }
+}
+
+function autobuildRelease(assets: Array<{ name: string; browser_download_url: string; size: number }>) {
+  return { tag_name: 'autobuild-2026-08-19-19-21', name: 'Auto-Build 2026-08-19 19:21', assets }
 }
 
 const asset = (name: string) => ({
@@ -36,7 +42,10 @@ function denoName(): string {
 }
 
 describe('registry integrity is mandatory', () => {
-  beforeEach(() => fetchLatestRelease.mockReset())
+  beforeEach(() => {
+    fetchLatestRelease.mockReset()
+    fetchReleases.mockReset()
+  })
 
   it('refuses a yt-dlp release without SHA2-256SUMS', async () => {
     fetchLatestRelease.mockResolvedValue(release([asset(ytDlpName())]))
@@ -50,7 +59,9 @@ describe('registry integrity is mandatory', () => {
   })
 
   it.runIf(process.platform === 'win32')('refuses a Windows ffmpeg release without checksums.sha256', async () => {
-    fetchLatestRelease.mockResolvedValue(release([asset('ffmpeg-master-latest-win64-gpl.zip')]))
+    fetchReleases.mockResolvedValue([
+      autobuildRelease([asset('ffmpeg-N-119123-gabcdef0123-win64-gpl.zip')]),
+    ])
     await expect(binarySpecs.ffmpeg.resolveLatest()).rejects.toThrow('has no checksums.sha256')
   })
 })

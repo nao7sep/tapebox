@@ -1,4 +1,4 @@
-import { fetchLatestRelease } from './github'
+import { fetchLatestRelease, fetchReleases } from './github'
 import { fetchRedirectLocation } from '@main/io/fetch-json'
 import { assertHttpsUrl } from '@main/io/network'
 import type { BinaryName } from '@shared/ipc-contract'
@@ -215,28 +215,45 @@ async function resolveFfmpegMacOS(signal?: AbortSignal): Promise<ResolvedAsset> 
   }
 }
 
-async function resolveFfmpegWindows(signal?: AbortSignal): Promise<ResolvedAsset> {
-  const release = await fetchLatestRelease('BtbN', 'FFmpeg-Builds', signal)
-  const assetName = 'ffmpeg-master-latest-win64-gpl.zip'
-  const asset = release.assets.find((a) => a.name === assetName)
-  if (!asset) throw new Error('ffmpeg Windows asset not found')
-  // BtbN publishes a combined `checksums.sha256` (`<hash>  <file>` per line); the
-  // GPL build's line is verified at install.
+// BtbN's win64 GPL asset inside an `autobuild-*` release is named after the
+// build it carries (`ffmpeg-N-<rev>-g<hash>-win64-gpl.zip`), not the fixed
+// `ffmpeg-master-latest-win64-gpl.zip` name the rolling `latest` release
+// aliases it to. Anchored so the `-shared` variant published alongside it in
+// the same release never matches.
+const FFMPEG_WIN64_GPL_ASSET = /^ffmpeg-N-\d+-g[0-9a-f]+-win64-gpl\.zip$/
+
+/**
+ * Resolve BtbN's newest immutable build, never the mutable `latest` tag.
+ * `latest` is a GitHub Release whose tag GitHub keeps repointing at each new
+ * build — re-downloading it later can silently fetch different bytes under the
+ * same tag, which the managed-runtime-dependencies convention forbids for an
+ * executable. Every build `latest` ever points at is also published in its own
+ * right under an `autobuild-<timestamp>` tag that GitHub never moves once cut;
+ * the releases list (newest first) is walked for that tag, so the pin is the
+ * newest genuinely immutable release rather than the pointer to it.
+ */
+export async function resolveFfmpegWindows(signal?: AbortSignal): Promise<ResolvedAsset> {
+  const releases = await fetchReleases('BtbN', 'FFmpeg-Builds', signal)
+  const release = releases.find((r) => r.tag_name.startsWith('autobuild-'))
+  if (!release) throw new Error('no BtbN autobuild release found')
+  const asset = release.assets.find((a) => FFMPEG_WIN64_GPL_ASSET.test(a.name))
+  if (!asset) throw new Error(`ffmpeg Windows asset not found in ${release.tag_name}`)
+  // BtbN publishes a combined `checksums.sha256` (`<hash>  <file>` per line) inside
+  // the same release; the GPL build's own line is verified at install.
   const sums = release.assets.find((a) => a.name === 'checksums.sha256')
-  if (!sums) throw new Error('ffmpeg Windows release has no checksums.sha256')
-  // The release TAG is the constant string `latest` — a rolling pointer, not a
-  // version, so comparing it to itself would read "up to date" forever and no
-  // Windows user would ever be offered an ffmpeg update. The release NAME carries
-  // the build moment ("Latest Auto-Build (2026-08-19 19:21)") and does change,
-  // which is the only version-shaped fact this source publishes. The API permits
-  // a null name, so fall back to the tag rather than crash the check on one.
+  if (!sums) throw new Error(`ffmpeg Windows release ${release.tag_name} has no checksums.sha256`)
+  // The immutable release's TAG is the timestamp itself (`autobuild-2026-08-19-19-21`),
+  // so unlike the rolling `latest` release, comparing it directly would work — but its
+  // NAME ("Auto-Build 2026-08-19 19:21") is the friendlier display form of the same
+  // moment, so it is preferred, with the tag as a fallback for the API's permitted
+  // null name.
   return {
     version: release.name?.trim() || release.tag_name,
     downloadUrl: asset.browser_download_url,
     archive: { kind: 'zip', innerName: 'ffmpeg.exe' },
     maxDownloadBytes: 1024 * 1024 * 1024,
     maxInstalledBytes: 512 * 1024 * 1024,
-    integrity: { kind: 'sums', url: sums.browser_download_url, assetName },
+    integrity: { kind: 'sums', url: sums.browser_download_url, assetName: asset.name },
   }
 }
 
