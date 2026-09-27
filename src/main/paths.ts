@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import { mkdir, rm } from 'node:fs/promises'
+import { chmod, mkdir, rm, stat } from 'node:fs/promises'
 
 /**
  * All TapeBox app state lives under ~/.tapebox by convention — this is our own
@@ -117,15 +117,34 @@ export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
  * resolved: `paths.*` is read here, so an unusable TAPEBOX_HOME throws from this
  * awaited call and is reported by the caller, rather than at import time.
  */
+// Tightens the storage root to owner-only (0700) on POSIX, per the storage-
+// path-conventions: created that way, and tightened at each launch when an
+// existing root is broader, because derived data and logs must never be
+// readable by accounts that cannot read their sources. Windows uses its own
+// permission model and is unaffected. mkdir's own `mode` is masked by umask
+// and never changes an *existing* directory's mode, so this always re-checks
+// after creation rather than relying on the mkdir call alone. A failure to
+// tighten is logged to the console — the structured logger opens later, once
+// paths.logs exists, which this call itself is establishing — and never stops
+// the app.
+async function secureRoot(rootDir: string): Promise<void> {
+  if (process.platform === 'win32') return
+  try {
+    const info = await stat(rootDir)
+    if ((info.mode & 0o077) !== 0) {
+      await chmod(rootDir, 0o700)
+    }
+  } catch (error) {
+    console.warn(`tapebox: could not tighten storage root "${rootDir}" to owner-only (0700):`, error)
+  }
+}
+
 export async function ensureDirs(): Promise<void> {
-  const requiredDirs: readonly string[] = [
-    paths.root,
-    paths.bin,
-    paths.library,
-    paths.logs,
-    paths.temp,
-  ]
-  for (const dir of requiredDirs) {
+  await mkdir(paths.root, { recursive: true, mode: 0o700 })
+  await secureRoot(paths.root)
+
+  const otherDirs: readonly string[] = [paths.bin, paths.library, paths.logs, paths.temp]
+  for (const dir of otherDirs) {
     await mkdir(dir, { recursive: true })
   }
 }

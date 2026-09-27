@@ -1,6 +1,7 @@
+import { chmod, mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { paths, resolveStorageRoot } from '@main/paths'
 
 // The TAPEBOX_HOME storage-root resolution (storage-path-conventions). The home
@@ -82,5 +83,55 @@ describe('paths catalog file', () => {
     expect(paths.catalog).not.toBe(paths.config)
     expect(paths.catalog).not.toBe(paths.layout)
     expect(paths.catalog).not.toBe(paths.apiKeys)
+  })
+})
+
+// Storage-path-conventions: the root is owner-only (0700) on POSIX — created
+// that way, and tightened to 0700 at each launch when an existing root is
+// broader. Windows uses its own permission model, so this is skipped there.
+// The storage root is cached at module scope, so each case resets modules and
+// re-imports against its own throwaway TAPEBOX_HOME (mirrors the live
+// downloads test's startApp pattern).
+;(process.platform === 'win32' ? describe.skip : describe)('ensureDirs storage root permissions', () => {
+  it('creates a fresh storage root as owner-only (0700)', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'tapebox-root-'))
+    const home = join(base, 'profile')
+    const previous = process.env.TAPEBOX_HOME
+    process.env.TAPEBOX_HOME = home
+    vi.resetModules()
+    try {
+      const { ensureDirs, paths: freshPaths } = await import('@main/paths')
+      await ensureDirs()
+      const mode = (await stat(freshPaths.root)).mode & 0o777
+      expect(mode).toBe(0o700)
+    } finally {
+      if (previous === undefined) delete process.env.TAPEBOX_HOME
+      else process.env.TAPEBOX_HOME = previous
+      vi.resetModules()
+      await rm(base, { force: true, recursive: true })
+    }
+  })
+
+  it('tightens an existing broader storage root to 0700 on launch', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'tapebox-root-'))
+    const home = join(base, 'profile')
+    await mkdir(home, { recursive: true })
+    await chmod(home, 0o755)
+    expect((await stat(home)).mode & 0o777).toBe(0o755)
+
+    const previous = process.env.TAPEBOX_HOME
+    process.env.TAPEBOX_HOME = home
+    vi.resetModules()
+    try {
+      const { ensureDirs, paths: freshPaths } = await import('@main/paths')
+      await ensureDirs()
+      const mode = (await stat(freshPaths.root)).mode & 0o777
+      expect(mode).toBe(0o700)
+    } finally {
+      if (previous === undefined) delete process.env.TAPEBOX_HOME
+      else process.env.TAPEBOX_HOME = previous
+      vi.resetModules()
+      await rm(base, { force: true, recursive: true })
+    }
   })
 })
