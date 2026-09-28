@@ -123,7 +123,7 @@ describe('theme token contrast', () => {
     })
 
     it('keeps field outlines, focus, selection, drop rings, icons, and the scroll-bar thumb at 3:1 or more', () => {
-      for (const mark of ['field-line', 'field-focus', 'focus', 'selected', 'danger-line-hover', 'danger-fg', 'info-ring', 'warning-ring', 'autoplay-on', 'sound-on', 'scrollbar-thumb']) {
+      for (const mark of ['field-line', 'field-focus', 'focus', 'selected', 'separator', 'danger-line-hover', 'danger-fg', 'info-ring', 'warning-ring', 'autoplay-on', 'sound-on', 'scrollbar-thumb']) {
         check(mark, 'canvas', 3)
         check(mark, 'panel', 3)
       }

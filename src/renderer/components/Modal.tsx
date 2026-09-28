@@ -143,7 +143,7 @@ export function Modal({ title,
             // With the title hidden there is nothing to divide from the content,
             // so the band drops its line — and the close control stays in its
             // own corner rather than sliding into the title's place.
-            titleHidden ? 'justify-end pb-0' : 'justify-between border-b border-line'
+            titleHidden ? 'justify-end pb-0' : 'justify-between border-b border-separator'
           }`}
         >
           <h2 id={titleId} className={titleHidden ? 'sr-only' : 'text-lg font-medium'}>{title}</h2>
@@ -165,7 +165,7 @@ export function Modal({ title,
         </PassiveScrollRegion>
 
         {footer && (
-          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-line p-4">
+          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-separator p-4">
             {footer}
           </footer>
         )}

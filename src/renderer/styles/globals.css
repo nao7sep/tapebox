@@ -88,6 +88,10 @@ button:disabled {
   --color-line-strong: #a1a1aa;
   --color-line-subtle: #e4e4e7;
   --color-line-hover: #71717a;
+  /* A dialog's header/footer band line (modal-dialog-conventions): never fainter
+     than the app's own control borders, so it is the field outline's value, not
+     the quieter --color-line used for plain panel/list dividers. */
+  --color-separator: #8a8a93;
   /* The selected tape or chapter ring. */
   --color-selected: #18181b;
   /* A text field is identified by its outline alone, so it holds 3:1 against its fill and surroundings. */
@@ -185,6 +189,7 @@ button:disabled {
       --color-line-strong: #52525b;
       --color-line-subtle: #27272a;
       --color-line-hover: #71717a;
+      --color-separator: #71717a;
       --color-selected: #f4f4f5;
       --color-field-line: #71717a;
       --color-field-focus: #d4d4d8;
