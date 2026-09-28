@@ -417,11 +417,6 @@
   "scan.failed": "Não foi possível escanear a página. Verifique a URL e tente novamente mais tarde.",
   "scan.stopFailed": "Ainda não é possível parar o escaneamento. Ele pode estar em andamento; tente novamente.",
   "scan.addFailed": "Não foi possível adicionar as fitas selecionadas. A biblioteca não mudou; tente novamente.",
-  "scan.inLibraryCount": {
-    "one": "{count} já está na sua biblioteca",
-    "many": "{count} já estão na sua biblioteca",
-    "other": "{count} já estão na sua biblioteca"
-  },
   "scan.adding": "Adicionando…",
   "scan.addTapes": {
     "one": "Adicionar {count} fita",
@@ -431,11 +426,31 @@
   "scan.placeholder": "Cole a URL de uma página",
   "scan.scan": "Escanear",
   "scan.intro": "Cole a URL de uma página que lista vídeos — os envios de um criador, resultados de pesquisa, uma categoria.",
-  "scan.scanning": "escaneando…",
+  "scan.scanning": "Escaneando…",
   "scan.videosFound": {
     "one": "vídeo encontrado",
     "many": "vídeos encontrados",
     "other": "vídeos encontrados"
+  },
+  "scan.breakdownNew": {
+    "one": "{count} novo",
+    "many": "{count} novos",
+    "other": "{count} novos"
+  },
+  "scan.breakdownInLibrary": {
+    "one": "{count} já na biblioteca",
+    "many": "{count} já na biblioteca",
+    "other": "{count} já na biblioteca"
+  },
+  "scan.breakdownUnavailable": {
+    "one": "{count} indisponível",
+    "many": "{count} indisponíveis",
+    "other": "{count} indisponíveis"
+  },
+  "scan.foundSoFar": {
+    "one": "{count} encontrado até agora",
+    "many": "{count} encontrados até agora",
+    "other": "{count} encontrados até agora"
   },
   "scan.clearSelection": "Limpar seleção",
   "scan.selectAll": "Selecionar tudo",

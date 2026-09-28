@@ -379,9 +379,6 @@
   "scan.failed": "ページをスキャンできませんでした。URL を確認して、しばらくしてからもう一度お試しください。",
   "scan.stopFailed": "スキャンをまだ停止できません。実行中の可能性があります。もう一度お試しください。",
   "scan.addFailed": "選択したテープを追加できませんでした。ライブラリは変わっていません。もう一度お試しください。",
-  "scan.inLibraryCount": {
-    "other": "{count} 本はすでにライブラリにあります"
-  },
   "scan.adding": "追加中…",
   "scan.addTapes": {
     "other": "テープを {count} 本追加"
@@ -392,6 +389,18 @@
   "scan.scanning": "スキャン中…",
   "scan.videosFound": {
     "other": "本の動画が見つかりました"
+  },
+  "scan.breakdownNew": {
+    "other": "新規 {count} 本"
+  },
+  "scan.breakdownInLibrary": {
+    "other": "ライブラリ内 {count} 本"
+  },
+  "scan.breakdownUnavailable": {
+    "other": "利用不可 {count} 本"
+  },
+  "scan.foundSoFar": {
+    "other": "{count} 本が見つかりました"
   },
   "scan.clearSelection": "選択解除",
   "scan.selectAll": "すべて選択",

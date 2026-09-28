@@ -398,10 +398,6 @@
   "scan.failed": "The page could not be scanned. Check the URL and try again later.",
   "scan.stopFailed": "The scan could not be stopped yet. It may still be running; try again.",
   "scan.addFailed": "The selected tapes could not be added. The library is unchanged; try again.",
-  "scan.inLibraryCount": {
-    "one": "{count} already in your library",
-    "other": "{count} already in your library"
-  },
   "scan.adding": "Adding…",
   "scan.addTapes": {
     "one": "Add {count} tape",
@@ -410,10 +406,26 @@
   "scan.placeholder": "Paste a page URL",
   "scan.scan": "Scan",
   "scan.intro": "Paste the URL of a page that lists videos — a creator's uploads, search results, a category.",
-  "scan.scanning": "scanning…",
+  "scan.scanning": "Scanning…",
   "scan.videosFound": {
     "one": "video found",
     "other": "videos found"
+  },
+  "scan.breakdownNew": {
+    "one": "{count} new",
+    "other": "{count} new"
+  },
+  "scan.breakdownInLibrary": {
+    "one": "{count} already in the library",
+    "other": "{count} already in the library"
+  },
+  "scan.breakdownUnavailable": {
+    "one": "{count} unavailable",
+    "other": "{count} unavailable"
+  },
+  "scan.foundSoFar": {
+    "one": "{count} found so far",
+    "other": "{count} found so far"
   },
   "scan.clearSelection": "Clear",
   "scan.selectAll": "Select all",

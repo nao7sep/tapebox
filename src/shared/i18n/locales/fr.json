@@ -417,11 +417,6 @@
   "scan.failed": "Impossible d’analyser la page. Vérifiez l’URL et réessayez plus tard.",
   "scan.stopFailed": "L’analyse ne peut pas encore être arrêtée. Elle est peut-être toujours en cours\u00a0; réessayez.",
   "scan.addFailed": "Impossible d’ajouter les cassettes sélectionnées. La bibliothèque est inchangée\u00a0; réessayez.",
-  "scan.inLibraryCount": {
-    "one": "{count} déjà dans votre bibliothèque",
-    "many": "{count} déjà dans votre bibliothèque",
-    "other": "{count} déjà dans votre bibliothèque"
-  },
   "scan.adding": "Ajout…",
   "scan.addTapes": {
     "one": "Ajouter {count} cassette",
@@ -431,11 +426,31 @@
   "scan.placeholder": "Collez l’URL d’une page",
   "scan.scan": "Analyser",
   "scan.intro": "Collez l’URL d’une page qui présente des vidéos — les mises en ligne d’un créateur, des résultats de recherche, une catégorie.",
-  "scan.scanning": "analyse…",
+  "scan.scanning": "Analyse…",
   "scan.videosFound": {
     "one": "vidéo trouvée",
     "many": "vidéos trouvées",
     "other": "vidéos trouvées"
+  },
+  "scan.breakdownNew": {
+    "one": "{count} nouvelle",
+    "many": "{count} nouvelles",
+    "other": "{count} nouvelles"
+  },
+  "scan.breakdownInLibrary": {
+    "one": "{count} déjà dans la bibliothèque",
+    "many": "{count} déjà dans la bibliothèque",
+    "other": "{count} déjà dans la bibliothèque"
+  },
+  "scan.breakdownUnavailable": {
+    "one": "{count} indisponible",
+    "many": "{count} indisponibles",
+    "other": "{count} indisponibles"
+  },
+  "scan.foundSoFar": {
+    "one": "{count} trouvée pour l’instant",
+    "many": "{count} trouvées pour l’instant",
+    "other": "{count} trouvées pour l’instant"
   },
   "scan.clearSelection": "Tout désélectionner",
   "scan.selectAll": "Tout sélectionner",

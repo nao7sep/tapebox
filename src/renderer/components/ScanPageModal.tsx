@@ -194,12 +194,20 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     }
   }
 
+  // The breakdown line (new / already in the library / unavailable) drawn under
+  // the result headline once scanning finishes: entries fall into exactly one of
+  // these three per ScanResult's own fields.
   const inLibraryCount = useMemo(() => entries.filter((e) => e.alreadyInLibrary).length, [entries])
+  const unavailableCount = useMemo(() => entries.filter((e) => e.unavailable !== null).length, [entries])
+  const newCount = entries.length - inLibraryCount - unavailableCount
+  const breakdownParts: string[] = []
+  if (newCount > 0) breakdownParts.push(t.t('scan.breakdownNew', { count: newCount }))
+  if (inLibraryCount > 0) breakdownParts.push(t.t('scan.breakdownInLibrary', { count: inLibraryCount }))
+  if (unavailableCount > 0) breakdownParts.push(t.t('scan.breakdownUnavailable', { count: unavailableCount }))
+  const breakdown = t.list(breakdownParts)
+
   const footer = (
     <>
-      {inLibraryCount > 0 && (
-        <span className="mr-auto text-xs text-fg-muted">{t.t('scan.inLibraryCount', { count: inLibraryCount })}</span>
-      )}
       <Button variant="ghost" onClick={onClose} disabled={adding}>{t.t('common.cancel')}</Button>
       <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0} loading={adding}>
         {adding ? t.t('scan.adding') : t.t('scan.addTapes', { count: selected.size })}
@@ -232,21 +240,26 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
       </div>
 
       {!scanning && !scanned ? (
-        <p className="mt-3 text-center text-sm text-fg">
+        <p className="mt-3 text-sm text-fg">
           {t.t('scan.intro')}
         </p>
-      ) : (
-        <div className="mt-3 text-center">
-          <div className="text-2xl font-semibold tabular-nums text-info-fg">{entries.length}</div>
-          <div className="mt-0.5 text-xs text-fg">
-            {scanning ? t.t('scan.scanning') : t.t('scan.videosFound', { count: entries.length })}
+      ) : scanning ? (
+        <div className="mt-3">
+          <p className="text-sm text-fg">{t.t('scan.scanning')}</p>
+          <p className="mt-0.5 text-xs text-fg-muted tabular-nums">{t.t('scan.foundSoFar', { count: entries.length })}</p>
+          <div className="mt-2">
+            <IndeterminateBar />
           </div>
-          {scanning && (
-            <div className="mx-auto mt-2 max-w-[12rem]">
-              <IndeterminateBar />
-            </div>
-          )}
-          {error && <InlineError className="mt-1.5 text-left">{t.text(error)}</InlineError>}
+          {error && <InlineError className="mt-1.5">{t.text(error)}</InlineError>}
+        </div>
+      ) : (
+        <div className="mt-3">
+          <p className="text-sm text-fg">
+            <span className="font-semibold tabular-nums text-info-fg">{t.number(entries.length)}</span>{' '}
+            {t.t('scan.videosFound', { count: entries.length })}
+          </p>
+          {breakdownParts.length > 0 && <p className="mt-0.5 text-xs text-fg-muted">{breakdown}</p>}
+          {error && <InlineError className="mt-1.5">{t.text(error)}</InlineError>}
         </div>
       )}
 

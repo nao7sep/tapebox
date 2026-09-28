@@ -379,9 +379,6 @@
   "scan.failed": "페이지를 스캔할 수 없습니다. URL을 확인하고 나중에 다시 시도하십시오.",
   "scan.stopFailed": "스캔을 아직 중지할 수 없습니다. 진행 중일 수 있습니다. 다시 시도하십시오.",
   "scan.addFailed": "선택한 테이프를 추가할 수 없습니다. 라이브러리는 그대로입니다. 다시 시도하십시오.",
-  "scan.inLibraryCount": {
-    "other": "{count}개는 이미 라이브러리에 있음"
-  },
   "scan.adding": "추가하는 중…",
   "scan.addTapes": {
     "other": "테이프 {count}개 추가"
@@ -392,6 +389,18 @@
   "scan.scanning": "스캔 중…",
   "scan.videosFound": {
     "other": "개의 동영상을 찾음"
+  },
+  "scan.breakdownNew": {
+    "other": "신규 {count}개"
+  },
+  "scan.breakdownInLibrary": {
+    "other": "라이브러리에 있음 {count}개"
+  },
+  "scan.breakdownUnavailable": {
+    "other": "사용 불가 {count}개"
+  },
+  "scan.foundSoFar": {
+    "other": "지금까지 {count}개 찾음"
   },
   "scan.clearSelection": "선택 해제",
   "scan.selectAll": "모두 선택",

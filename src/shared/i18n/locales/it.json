@@ -417,11 +417,6 @@
   "scan.failed": "Impossibile scansionare la pagina. Controlla l’URL e riprova più tardi.",
   "scan.stopFailed": "Non è ancora possibile interrompere la scansione. Potrebbe essere ancora in corso; riprova.",
   "scan.addFailed": "Impossibile aggiungere le cassette selezionate. La libreria è invariata; riprova.",
-  "scan.inLibraryCount": {
-    "one": "{count} già nella libreria",
-    "many": "{count} già nella libreria",
-    "other": "{count} già nella libreria"
-  },
   "scan.adding": "Aggiunta…",
   "scan.addTapes": {
     "one": "Aggiungi {count} cassetta",
@@ -431,11 +426,31 @@
   "scan.placeholder": "Incolla l’URL di una pagina",
   "scan.scan": "Scansiona",
   "scan.intro": "Incolla l’URL di una pagina che elenca dei video: i caricamenti di un autore, i risultati di una ricerca, una categoria.",
-  "scan.scanning": "scansione…",
+  "scan.scanning": "Scansione…",
   "scan.videosFound": {
     "one": "video trovato",
     "many": "video trovati",
     "other": "video trovati"
+  },
+  "scan.breakdownNew": {
+    "one": "{count} nuovo",
+    "many": "{count} nuovi",
+    "other": "{count} nuovi"
+  },
+  "scan.breakdownInLibrary": {
+    "one": "{count} già in libreria",
+    "many": "{count} già in libreria",
+    "other": "{count} già in libreria"
+  },
+  "scan.breakdownUnavailable": {
+    "one": "{count} non disponibile",
+    "many": "{count} non disponibili",
+    "other": "{count} non disponibili"
+  },
+  "scan.foundSoFar": {
+    "one": "{count} trovato finora",
+    "many": "{count} trovati finora",
+    "other": "{count} trovati finora"
   },
   "scan.clearSelection": "Deseleziona",
   "scan.selectAll": "Seleziona tutto",

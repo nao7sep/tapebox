@@ -169,7 +169,7 @@ describe('ScanPageModal streaming', () => {
     expect(document.querySelectorAll('[role="dialog"] li')).toHaveLength(0)
     await nextFrame()
 
-    expect(document.body.textContent).toContain('3000')
+    expect(document.body.textContent).toContain('3,000 found so far')
     expect(buttonByText('Add 3,000 tapes')).toBeTruthy()
     const rows = document.querySelectorAll('[role="dialog"] li')
     expect(rows.length).toBeGreaterThan(0)

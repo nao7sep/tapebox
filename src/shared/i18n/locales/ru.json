@@ -436,12 +436,6 @@
   "scan.failed": "Не удалось отсканировать страницу. Проверьте URL и повторите попытку позже.",
   "scan.stopFailed": "Сканирование пока нельзя остановить. Возможно, оно ещё идёт; повторите попытку.",
   "scan.addFailed": "Не удалось добавить выбранные кассеты. Медиатека не изменилась; повторите попытку.",
-  "scan.inLibraryCount": {
-    "one": "{count} уже в медиатеке",
-    "few": "{count} уже в медиатеке",
-    "many": "{count} уже в медиатеке",
-    "other": "{count} уже в медиатеке"
-  },
   "scan.adding": "Добавление…",
   "scan.addTapes": {
     "one": "Добавить {count} кассету",
@@ -452,12 +446,36 @@
   "scan.placeholder": "Вставьте URL страницы",
   "scan.scan": "Сканировать",
   "scan.intro": "Вставьте URL страницы со списком видео — загрузки автора, результаты поиска, категорию.",
-  "scan.scanning": "сканирование…",
+  "scan.scanning": "Сканирование…",
   "scan.videosFound": {
     "one": "видео найдено",
     "few": "видео найдено",
     "many": "видео найдено",
     "other": "видео найдено"
+  },
+  "scan.breakdownNew": {
+    "one": "{count} новое",
+    "few": "{count} новых",
+    "many": "{count} новых",
+    "other": "{count} новых"
+  },
+  "scan.breakdownInLibrary": {
+    "one": "{count} уже в медиатеке",
+    "few": "{count} уже в медиатеке",
+    "many": "{count} уже в медиатеке",
+    "other": "{count} уже в медиатеке"
+  },
+  "scan.breakdownUnavailable": {
+    "one": "{count} недоступно",
+    "few": "{count} недоступно",
+    "many": "{count} недоступно",
+    "other": "{count} недоступно"
+  },
+  "scan.foundSoFar": {
+    "one": "{count} уже найдено",
+    "few": "{count} уже найдено",
+    "many": "{count} уже найдено",
+    "other": "{count} уже найдено"
   },
   "scan.clearSelection": "Снять выбор",
   "scan.selectAll": "Выбрать все",

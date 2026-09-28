@@ -398,10 +398,6 @@
   "scan.failed": "Die Seite konnte nicht gescannt werden. Prüfen Sie die URL und versuchen Sie es später erneut.",
   "scan.stopFailed": "Der Scan kann noch nicht gestoppt werden. Er läuft möglicherweise noch; versuchen Sie es erneut.",
   "scan.addFailed": "Die ausgewählten Bänder konnten nicht hinzugefügt werden. Die Mediathek ist unverändert; versuchen Sie es erneut.",
-  "scan.inLibraryCount": {
-    "one": "{count} bereits in Ihrer Mediathek",
-    "other": "{count} bereits in Ihrer Mediathek"
-  },
   "scan.adding": "Wird hinzugefügt …",
   "scan.addTapes": {
     "one": "{count} Band hinzufügen",
@@ -410,10 +406,26 @@
   "scan.placeholder": "URL einer Seite einfügen",
   "scan.scan": "Scannen",
   "scan.intro": "Fügen Sie die URL einer Seite ein, die Videos auflistet – die Uploads eines Kanals, Suchergebnisse, eine Kategorie.",
-  "scan.scanning": "wird gescannt …",
+  "scan.scanning": "Wird gescannt …",
   "scan.videosFound": {
     "one": "Video gefunden",
     "other": "Videos gefunden"
+  },
+  "scan.breakdownNew": {
+    "one": "{count} neu",
+    "other": "{count} neu"
+  },
+  "scan.breakdownInLibrary": {
+    "one": "{count} bereits in der Mediathek",
+    "other": "{count} bereits in der Mediathek"
+  },
+  "scan.breakdownUnavailable": {
+    "one": "{count} nicht verfügbar",
+    "other": "{count} nicht verfügbar"
+  },
+  "scan.foundSoFar": {
+    "one": "{count} bisher gefunden",
+    "other": "{count} bisher gefunden"
   },
   "scan.clearSelection": "Auswahl aufheben",
   "scan.selectAll": "Alle auswählen",

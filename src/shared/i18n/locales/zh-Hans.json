@@ -379,9 +379,6 @@
   "scan.failed": "无法扫描该网页。请检查 URL 并稍后重试。",
   "scan.stopFailed": "暂时无法停止扫描。它可能仍在进行；请重试。",
   "scan.addFailed": "无法添加所选录像带。资料库保持不变；请重试。",
-  "scan.inLibraryCount": {
-    "other": "{count} 个已在你的资料库中"
-  },
   "scan.adding": "正在添加…",
   "scan.addTapes": {
     "other": "添加 {count} 盘录像带"
@@ -392,6 +389,18 @@
   "scan.scanning": "正在扫描…",
   "scan.videosFound": {
     "other": "个视频已找到"
+  },
+  "scan.breakdownNew": {
+    "other": "{count} 个新增"
+  },
+  "scan.breakdownInLibrary": {
+    "other": "{count} 个已在资料库中"
+  },
+  "scan.breakdownUnavailable": {
+    "other": "{count} 个不可用"
+  },
+  "scan.foundSoFar": {
+    "other": "已找到 {count} 个"
   },
   "scan.clearSelection": "取消选择",
   "scan.selectAll": "全选",
