@@ -7,12 +7,14 @@ import { PassiveScrollRegion } from './PassiveScrollRegion'
 import { useI18n } from '@renderer/i18n/I18nContext'
 
 /**
- * Three tiers, by content:
- *   md  — prompts & short forms (Confirm, About, Shortcuts)
- *   2xl — data-dense panels (Settings, Scan-a-page, Required-tools, Rename, Export)
- *   4xl — wide side-by-side comparisons (Refresh metadata: current vs new)
+ * Four tiers, by content:
+ *   md    — prompts & short forms (Confirm, Shortcuts)
+ *   about — the About dialog: wide enough for the introduction line to read
+ *           comfortably in every interface language (localization-conventions)
+ *   2xl   — data-dense panels (Settings, Scan-a-page, Required-tools, Rename, Export)
+ *   4xl   — wide side-by-side comparisons (Refresh metadata: current vs new)
  */
-type ModalSize = 'md' | '2xl' | '4xl'
+type ModalSize = 'md' | 'about' | '2xl' | '4xl'
 
 type ModalProps = {
   title: string
@@ -36,6 +38,13 @@ type ModalProps = {
 
 const SIZE_CLASS: Record<ModalSize, string> = {
   md: 'max-w-md',
+  // 26.75rem panel = 380px of content once the 24px (p-6) side padding is
+  // removed. Chosen by eye against real renders in en/de/ja/ru: it is the
+  // narrowest width at which the copyright line still fits on one line (the
+  // floor), and it lands the Japanese introduction line at 2 balanced lines
+  // and German/Russian at 3, with no language stranding a short fragment
+  // alone on its last line.
+  about: 'max-w-[26.75rem]',
   '2xl': 'max-w-3xl',
   '4xl': 'max-w-5xl',
 }

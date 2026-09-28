@@ -40,7 +40,7 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
       title={t.t('nativeMenu.about', { app: 'TapeBox' })}
       titleHidden
       onClose={onClose}
-      size="md"
+      size="about"
       footer={
         <Button variant="ghost" onClick={onClose}>
           {t.t('common.close')}
