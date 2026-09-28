@@ -128,7 +128,7 @@
   "menu.tools": "도구 관리",
   "menu.shortcuts": "키보드 단축키",
   "menu.revealLog": "세션 로그 보기",
-  "menu.about": "TapeBox 정보",
+  "menu.about": "TapeBox에 관하여",
   "errorBoundary.title": "TapeBox가 이 윈도우를 열어 둘 수 없었습니다.",
   "errorBoundary.body": "윈도우를 새로 고치면 복구됩니다. 라이브러리 파일은 그대로입니다.",
   "errorBoundary.reload": "윈도우 새로 고침",

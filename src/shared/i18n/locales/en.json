@@ -131,7 +131,7 @@
   "menu.tools": "Managed tools",
   "menu.shortcuts": "Keyboard shortcuts",
   "menu.revealLog": "Reveal session log",
-  "menu.about": "About",
+  "menu.about": "About TapeBox",
   "errorBoundary.title": "TapeBox could not keep this window open.",
   "errorBoundary.body": "Reload the window to recover. Your library files are unchanged.",
   "errorBoundary.reload": "Reload window",

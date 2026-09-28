@@ -14,7 +14,7 @@
   "common.closeResult": "結果を閉じる",
   "common.working": "処理中…",
   "common.contentOf": "{title}の内容",
-  "nativeMenu.about": "{app}について",
+  "nativeMenu.about": "{app} について",
   "nativeMenu.services": "サービス",
   "nativeMenu.hide": "{app}を隠す",
   "nativeMenu.hideOthers": "ほかを隠す",
