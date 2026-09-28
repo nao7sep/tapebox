@@ -521,7 +521,7 @@
   "about.repositoryOpenFailed": "GitHub をブラウザで開けませんでした。もう一度お試しください。",
   "about.issuesOpenFailed": "問題の報告ページをブラウザで開けませんでした。もう一度お試しください。",
   "about.version": "バージョン {version}",
-  "about.tagline": "Web から取り込めるローカルのメディアライブラリ。",
+  "about.tagline": "動画をウェブから個人用ライブラリにダウンロードし、ボックスに整理して、自動再生に流されずに視聴しましょう。",
   "about.reportIssue": "問題を報告",
   "about.closeRepositoryResult": "GitHub の結果を閉じる",
   "about.closeIssuesResult": "問題の報告の結果を閉じる",

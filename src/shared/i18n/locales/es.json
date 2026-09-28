@@ -571,7 +571,7 @@
   "about.repositoryOpenFailed": "No se pudo abrir GitHub en tu navegador. Vuelve a intentarlo.",
   "about.issuesOpenFailed": "No se pudo abrir la página de incidencias en tu navegador. Vuelve a intentarlo.",
   "about.version": "Versión {version}",
-  "about.tagline": "Una biblioteca multimedia local con importación desde la web.",
+  "about.tagline": "Descarga videos de la web a una biblioteca privada, guárdalos en cajas y míralos sin que la reproducción automática te arrastre.",
   "about.reportIssue": "Notificar un problema",
   "about.closeRepositoryResult": "Cerrar mensaje de GitHub",
   "about.closeIssuesResult": "Cerrar mensaje de Notificar un problema",

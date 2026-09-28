@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "npm@12.0.2",
   "type": "module",
-  "description": "A local media library with web-import.",
+  "description": "Download videos from the web into a private library, sort them into boxes, and watch them without autoplay pulling you along.",
   "author": "Yoshinao Inoguchi <yoshinao@inoguchi.com>",
   "license": "GPL-3.0-or-later",
   "main": "out/main/index.js",

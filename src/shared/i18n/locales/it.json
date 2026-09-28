@@ -571,7 +571,7 @@
   "about.repositoryOpenFailed": "Impossibile aprire GitHub nel browser. Riprova.",
   "about.issuesOpenFailed": "Impossibile aprire la pagina delle segnalazioni nel browser. Riprova.",
   "about.version": "Versione {version}",
-  "about.tagline": "Una libreria multimediale locale con importazione dal web.",
+  "about.tagline": "Scarica i video dal web in una libreria privata, organizzali in scatole e guardali senza farti trascinare dalla riproduzione automatica.",
   "about.reportIssue": "Segnala un problema",
   "about.closeRepositoryResult": "Chiudi messaggio di GitHub",
   "about.closeIssuesResult": "Chiudi messaggio di Segnala un problema",

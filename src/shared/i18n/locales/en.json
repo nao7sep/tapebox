@@ -546,7 +546,7 @@
   "about.repositoryOpenFailed": "GitHub could not be opened in your browser. Try again.",
   "about.issuesOpenFailed": "The issue tracker could not be opened in your browser. Try again.",
   "about.version": "Version {version}",
-  "about.tagline": "A local media library with web import.",
+  "about.tagline": "Download videos from the web into a private library, sort them into boxes, and watch them without autoplay pulling you along.",
   "about.reportIssue": "Report an issue",
   "about.closeRepositoryResult": "Close GitHub result",
   "about.closeIssuesResult": "Close Report an issue result",

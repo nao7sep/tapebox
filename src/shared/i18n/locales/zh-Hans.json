@@ -521,7 +521,7 @@
   "about.repositoryOpenFailed": "无法在浏览器中打开 GitHub。请重试。",
   "about.issuesOpenFailed": "无法在浏览器中打开问题反馈页面。请重试。",
   "about.version": "版本 {version}",
-  "about.tagline": "可从网络导入的本地媒体资料库。",
+  "about.tagline": "把网络视频下载到私人资料库，整理进收纳盒，摆脱自动播放安心观看。",
   "about.reportIssue": "反馈问题",
   "about.closeRepositoryResult": "关闭 GitHub 提示",
   "about.closeIssuesResult": "关闭反馈问题提示",

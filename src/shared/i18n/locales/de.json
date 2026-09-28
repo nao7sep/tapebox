@@ -546,7 +546,7 @@
   "about.repositoryOpenFailed": "GitHub konnte nicht in Ihrem Browser geöffnet werden. Versuchen Sie es erneut.",
   "about.issuesOpenFailed": "Die Seite zum Melden von Problemen konnte nicht in Ihrem Browser geöffnet werden. Versuchen Sie es erneut.",
   "about.version": "Version {version}",
-  "about.tagline": "Eine lokale Mediathek mit Import aus dem Web.",
+  "about.tagline": "Laden Sie Videos aus dem Web in eine private Mediathek herunter, ordnen Sie sie in Boxen ein und schauen Sie sie, ohne dass die automatische Wiedergabe Sie mitreißt.",
   "about.reportIssue": "Problem melden",
   "about.closeRepositoryResult": "Meldung zu GitHub schließen",
   "about.closeIssuesResult": "Meldung zu „Problem melden“ schließen",

@@ -521,7 +521,7 @@
   "about.repositoryOpenFailed": "GitHub를 브라우저에서 열 수 없습니다. 다시 시도하십시오.",
   "about.issuesOpenFailed": "문제 신고 페이지를 브라우저에서 열 수 없습니다. 다시 시도하십시오.",
   "about.version": "버전 {version}",
-  "about.tagline": "웹에서 가져올 수 있는 로컬 미디어 라이브러리.",
+  "about.tagline": "웹의 동영상을 나만의 라이브러리로 내려받아 상자별로 정리하고, 자동 재생에 휩쓸리지 않고 시청하세요.",
   "about.reportIssue": "문제 신고",
   "about.closeRepositoryResult": "GitHub 메시지 닫기",
   "about.closeIssuesResult": "문제 신고 메시지 닫기",

@@ -571,7 +571,7 @@
   "about.repositoryOpenFailed": "Impossible d’ouvrir GitHub dans votre navigateur. Réessayez.",
   "about.issuesOpenFailed": "Impossible d’ouvrir la page de signalement dans votre navigateur. Réessayez.",
   "about.version": "Version {version}",
-  "about.tagline": "Une médiathèque locale avec importation depuis le Web.",
+  "about.tagline": "Téléchargez des vidéos depuis le Web dans une médiathèque privée, classez-les dans des boîtes et regardez-les sans que la lecture automatique vous entraîne.",
   "about.reportIssue": "Signaler un problème",
   "about.closeRepositoryResult": "Fermer le message de GitHub",
   "about.closeIssuesResult": "Fermer le message de Signaler un problème",
