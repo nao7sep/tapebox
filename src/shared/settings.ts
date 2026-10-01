@@ -248,10 +248,10 @@ export function changedSettings(original: Partial<Settings>, draft: Partial<Sett
 }
 
 /**
- * Default settings used when config.json is missing on first launch.
+ * Built-in settings used for absent or malformed sets without writing config.json.
  * libraryDir defaults to '' — an empty value means "use the default library
  * folder", which main/ resolves to paths.library via getLibraryDir(). The actual
- * path lives in main/ (path resolution stays there); the persisted default is just
+ * path lives in main/ (path resolution stays there); the built-in value is just
  * blank, exactly like defaultExportDir.
  */
 export function defaultSettings(): Settings {
