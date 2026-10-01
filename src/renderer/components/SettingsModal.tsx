@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { Settings, SettingsSets, SiteProfile, ThemePreference } from '@shared/settings'
-import { changedSettings, DEFAULT_OPENAI_ENDPOINT, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
-import { AI_ROLES, modelsFor, SUPPORTED_MODELS } from '@shared/ai-models'
+import { changedSettings, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
+import { SUPPORTED_MODELS } from '@shared/ai-models'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -57,10 +57,6 @@ export function SettingsModal({ onClose }: Props) {
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
-  const [fetchedModels, setFetchedModels] = useState<string[]>([])
-  const [refreshingModels, setRefreshingModels] = useState(false)
-  const listBusy = useRef(false)
-  const listVersion = useRef(0)
   const mounted = useRef(true)
   const [error, setError] = useState<Message | null>(null)
   const [busy, setBusy] = useState(false)
@@ -85,7 +81,6 @@ export function SettingsModal({ onClose }: Props) {
       setDraft(s)
       setHadApiKey(has)
       setDefaultLibraryDir(defaultLibDir)
-      if (mounted.current) void refreshModels(s, false)
     }, (error) => {
       if (!mounted.current) return
       setLoadError(presentFailure(
@@ -101,8 +96,6 @@ export function SettingsModal({ onClose }: Props) {
     load()
     return () => {
       mounted.current = false
-      listVersion.current++
-      void ipcInvoke('settings:cancelModelList').catch(() => {})
     }
   }, [])
 
@@ -117,31 +110,6 @@ export function SettingsModal({ onClose }: Props) {
 
   function patchDraft(patch: Partial<Settings>) {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
-  }
-
-  function invalidateModelList() {
-    listVersion.current++
-    setFetchedModels([])
-    void ipcInvoke('settings:cancelModelList').catch(() => {})
-  }
-
-  async function refreshModels(settings: Settings, force: boolean) {
-    if (listBusy.current) return
-    listBusy.current = true
-    const version = ++listVersion.current
-    setRefreshingModels(true)
-    try {
-      const ids = await ipcInvoke('settings:modelList', {
-        endpoint: settings['openai.endpoint'], force,
-        ...(apiKeyDraft ? { apiKey: apiKeyDraft } : {}),
-      })
-      if (version === listVersion.current) setFetchedModels(ids)
-    } catch (error) {
-      if (version === listVersion.current) log.warn('model list unavailable', { error: describeError(error) })
-    } finally {
-      listBusy.current = false
-      if (mounted.current) setRefreshingModels(false)
-    }
   }
 
   function patchPrompts(patch: Partial<Settings['prompts']>) {
@@ -194,11 +162,6 @@ export function SettingsModal({ onClose }: Props) {
     let settingsSaved = false
     try {
       const patch: SettingsSets = changedSettings(pickEditable(original), pickEditable(draft))
-      const model = draft['openai.slug']
-      const known = [...modelsFor('openai', AI_ROLES[0].kind).map((row) => row.id), ...fetchedModels, ...(draft.extraModelIds.openai ?? [])]
-      if (patch['openai.slug'] && !known.includes(model)) {
-        patch.extraModelIds = { ...draft.extraModelIds, openai: [...(draft.extraModelIds.openai ?? []), model] }
-      }
       if (Object.keys(patch).length > 0) {
         const { settings: updated, warning } = await ipcInvoke('settings:update', patch)
         useSettingsStore.getState().setHydratedSettings(updated)
@@ -296,11 +259,7 @@ export function SettingsModal({ onClose }: Props) {
               <AiTab
                 endpoint={draft['openai.endpoint']}
                 model={draft['openai.slug']}
-                extraIds={draft.extraModelIds.openai ?? []}
-                fetchedIds={fetchedModels}
-                refreshing={refreshingModels}
-                onRefresh={() => void refreshModels(draft, true)}
-                onEndpointChange={(value) => { invalidateModelList(); patchDraft({ 'openai.endpoint': value }) }}
+                onEndpointChange={(value) => patchDraft({ 'openai.endpoint': value })}
                 onModelChange={(value) => patchDraft({ 'openai.slug': value })}
                 onResetModel={() => patchDraft({ 'openai.slug': DEFAULT_AI_MODEL })}
                 prompts={draft.prompts}
@@ -311,12 +270,10 @@ export function SettingsModal({ onClose }: Props) {
                 apiKeyDraft={apiKeyDraft}
                 wantsClearKey={wantsClearKey}
                 onApiKeyChange={(v) => {
-                  invalidateModelList()
                   setApiKeyDraft(v)
                   if (v.length > 0) setWantsClearKey(false)
                 }}
                 onClearKey={() => {
-                  invalidateModelList()
                   setApiKeyDraft('')
                   setWantsClearKey(true)
                 }}
@@ -386,10 +343,8 @@ function pickEditable(s: Settings) {
     uiFontFamily: s.uiFontFamily,
     theme: s.theme,
     language: s.language,
-    provider: s.provider,
     'openai.endpoint': s['openai.endpoint'],
     'openai.slug': s['openai.slug'],
-    extraModelIds: s.extraModelIds,
     prompts: s.prompts,
     ytdlpArgs: s.ytdlpArgs,
     siteProfiles: s.siteProfiles,
@@ -676,7 +631,7 @@ function GeneralTab({
 // ── AI tab ──────────────────────────────────────────────────────────────────
 
 function AiTab({
-  endpoint, model, extraIds, fetchedIds, refreshing, onRefresh, onEndpointChange, onModelChange, onResetModel,
+  endpoint, model, onEndpointChange, onModelChange, onResetModel,
   prompts,
   onPromptsPatch,
   onResetPrompts,
@@ -689,10 +644,6 @@ function AiTab({
 }: {
   endpoint: string
   model: string
-  extraIds: string[]
-  fetchedIds: string[]
-  refreshing: boolean
-  onRefresh: () => void
   onEndpointChange: (value: string) => void
   onModelChange: (value: string) => void
   onResetModel: () => void
@@ -710,32 +661,22 @@ function AiTab({
   const willClear = wantsClearKey && apiKeyDraft.length === 0
   const t = useI18n()
 
-  const groups = [
-    { label: 'settings.bundledModels' as const, ids: modelsFor('openai', AI_ROLES[0].kind).map((row) => row.id) },
-    { label: 'settings.providerModels' as const, ids: fetchedIds },
-    { label: 'settings.extraModels' as const, ids: extraIds },
-  ]
-  const outOfList = !groups.some((group) => group.ids.includes(model))
+  const supported = SUPPORTED_MODELS.some((row) => row.id === model.trim().toLowerCase())
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-fg">
-        {t.t('settings.aiIntro')}
-      </p>
-      <Field label={t.t('settings.provider')}>
-        <select value="openai" disabled={busy} className={INPUT_LINE_CLASS} onChange={() => {}}>
-          <option value="openai">{t.t('settings.openai')}</option>
-        </select>
-      </Field>
       <h3 className="text-sm font-medium text-fg">{t.t('settings.openai')}</h3>
+      <p className="text-xs text-fg-muted">{t.t('settings.onlyProvider')}</p>
 
-      <TextField
-        label={t.t('settings.endpoint')}
-        value={endpoint}
-        placeholder={DEFAULT_OPENAI_ENDPOINT}
-        disabled={busy}
-        onChange={onEndpointChange}
-      />
+      <div>
+        <TextField
+          label={t.t('settings.endpoint')}
+          value={endpoint}
+          disabled={busy}
+          onChange={onEndpointChange}
+        />
+        <p className="mt-1 text-xs text-fg-muted">{t.t('settings.endpointHint')}</p>
+      </div>
 
       <div>
         <div className="text-xs font-medium text-fg">{t.t('settings.apiKey')}</div>
@@ -756,39 +697,24 @@ function AiTab({
             </Button>
           )}
         </div>
+        <p className="mt-1 text-xs text-fg-muted">{t.t('settings.apiKeyHint', { variable: 'OPENAI_API_KEY' })}</p>
         {willClear && (
           <p className="mt-1 text-xs text-warning-fg">{t.t('settings.apiKeyWillClear')}</p>
         )}
       </div>
 
       <div>
-        <label id="settings-ai-model-label" htmlFor="settings-ai-model" className="text-xs font-medium text-fg">{t.t('settings.slugModel')}</label>
+        <label htmlFor="settings-openai-slug" className="text-xs font-medium text-fg">{t.t('settings.slugModel')}</label>
         <div className="mt-1 flex items-center gap-2">
           <input
-            id="settings-ai-model"
+            id="settings-openai-slug"
             type="text"
             value={model}
-            placeholder={DEFAULT_AI_MODEL}
             spellCheck={false}
             disabled={busy}
             onChange={(e) => onModelChange(e.target.value)}
             className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
-          <select
-            aria-labelledby="settings-ai-model-label"
-            value={model}
-            disabled={busy}
-            className={`min-w-0 flex-1 ${INPUT_LINE_CLASS}`}
-            onChange={(e) => onModelChange(e.target.value)}
-          >
-            {outOfList && <option value={model}>{t.t('settings.outOfList', { id: model })}</option>}
-            {groups.map((group) => <optgroup key={group.label} label={t.t(group.label)}>
-              {group.ids.map((id) => <option key={id} value={id}>{SUPPORTED_MODELS.find((row) => row.id === id)?.kinds.includes('text-frontier') ? t.t('settings.frontierModel', { id }) : id}</option>)}
-            </optgroup>)}
-          </select>
-          <Button variant="secondary" size="sm" disabled={busy || refreshing || willClear} onClick={onRefresh}>
-            {t.t('settings.refreshModels')}
-          </Button>
           {/* A model name goes stale as providers retire models; this returns it
               to the one the current version ships (config-sets-conventions). */}
           <Button
@@ -800,6 +726,10 @@ function AiTab({
             {t.t('settings.resetModel')}
           </Button>
         </div>
+        <p className="mt-1 text-xs text-fg-muted">{t.t('settings.slugModelHint')}</p>
+        {!supported && (
+          <p className="mt-1 text-xs text-warning-fg">{t.t('settings.unsupportedModel')}</p>
+        )}
       </div>
 
       <div className="border-t border-line pt-4">

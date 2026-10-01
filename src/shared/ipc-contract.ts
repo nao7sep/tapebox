@@ -89,8 +89,6 @@ export type IpcCalls = {
   'ai:cancelSlug':   { req: { requestId: string }; res: void }
 
   // ── Settings ─────────────────────────────────────────────────────────────
-  'settings:modelList': { req: { endpoint: string; force: boolean; apiKey?: string }; res: string[] }
-  'settings:cancelModelList': { req: undefined; res: void }
   'settings:get':          { req: undefined;                         res: Settings }
   // `warning` is main-authored copy (a message descriptor) for a save that committed with a leftover
   // problem (old library copies not removed); null on a clean save.

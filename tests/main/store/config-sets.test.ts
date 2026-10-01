@@ -132,6 +132,15 @@ describe('settings by set', () => {
     })
   })
 
+  it('rejects an empty endpoint or model id and keeps the file as it is', async () => {
+    await writeFile(paths.config, JSON.stringify({ autoplay: false }))
+    await loadSettings()
+    await expect(updateSettings({ 'openai.endpoint': '' })).rejects.toThrow()
+    await expect(updateSettings({ 'openai.slug': ' \n ' })).rejects.toThrow()
+    expect(await savedSets()).toEqual({ autoplay: false })
+    expect(getSettings()).toEqual({ ...defaultSettings(), autoplay: false })
+  })
+
   it('drops the old AI set and removes only the model saved back to its built-in', async () => {
     await writeFile(paths.config, JSON.stringify({ ai: { baseUrl: 'https://old.example', model: 'old' }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
     await loadSettings()

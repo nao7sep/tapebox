@@ -9,6 +9,7 @@ vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
 
 import { SettingsModal } from '@renderer/components/SettingsModal'
+import { AI_ROLES } from '@shared/ai-models'
 import { useToastStore } from '@renderer/store/toast'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -21,7 +22,6 @@ const onClose = vi.fn()
 function stubMain(updateReply: (patch: SettingsSets) => unknown) {
   ipcInvoke.mockImplementation((channel: string, req?: unknown) => {
     if (channel === 'settings:get') return Promise.resolve(saved)
-    if (channel === 'settings:modelList') return Promise.resolve([])
     if (channel === 'settings:hasApiKey') return Promise.resolve(false)
     if (channel === 'settings:defaultLibraryDir') return Promise.resolve('/home/me/.tapebox/library')
     if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsSets))
@@ -44,6 +44,13 @@ function button(label: string): HTMLButtonElement {
 
 async function click(label: string) {
   await act(async () => button(label).click())
+}
+
+async function type(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
 }
 
 beforeEach(() => {
@@ -87,7 +94,7 @@ describe('SettingsModal', () => {
     await render()
     await click('AI')
 
-    const model = document.getElementById('settings-ai-model') as HTMLInputElement
+    const model = document.getElementById('settings-openai-slug') as HTMLInputElement
     expect(model.value).toBe('retired-model')
     await click('Reset model')
     expect(model.value).toBe(DEFAULT_AI_MODEL)
@@ -96,39 +103,40 @@ describe('SettingsModal', () => {
     await click('Save')
     const update = ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')
     expect(update![1]).toEqual({ 'openai.slug': DEFAULT_AI_MODEL })
-    expect((document.querySelector('input[placeholder="https://api.openai.com/v1"]') as HTMLInputElement).value).toBe('https://proxy.example/v1')
+    const endpoint = [...document.querySelectorAll('label')].find((label) => label.textContent === 'Endpoint')!.querySelector('input')!
+    expect(endpoint.value).toBe('https://proxy.example/v1')
   })
 
-  it('shows grouped sources and the out-of-list selection without replacing it', async () => {
-    saved.extraModelIds = { openai: ['local-model'] }
-    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
-    ipcInvoke.mockImplementation((channel: string) => {
-      if (channel === 'settings:get') return Promise.resolve(saved)
-      if (channel === 'settings:modelList') return Promise.resolve(['gpt-fetched'])
-      return Promise.resolve(false)
-    })
-    await render()
-    await click('AI')
-    const picker = document.querySelector('select[aria-labelledby="settings-ai-model-label"]') as HTMLSelectElement
-    expect([...picker.querySelectorAll('optgroup')].map((group) => group.label)).toEqual(['App suggestions', 'Provider models', 'Your extra models'])
-    expect([...picker.options].map((option) => option.value)).toEqual(['retired-model', 'gpt-6-luna', 'gpt-fetched', 'local-model'])
-    expect(picker.value).toBe('retired-model')
-    await click('Refresh models')
-    expect(ipcInvoke).toHaveBeenCalledWith('settings:modelList', { endpoint: saved['openai.endpoint'], force: true })
-  })
-
-  it('persists a typed unknown id as the selection and an extra without changing endpoint', async () => {
+  it('shows the OpenAI section alone, with no Provider control or model list', async () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
     await click('AI')
-    const input = document.getElementById('settings-ai-model') as HTMLInputElement
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'my-local-model')
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    })
+    expect(document.querySelector('h3')!.textContent).toBe('OpenAI')
+    expect(document.body.textContent).toContain('OpenAI is the only provider supported.')
+    expect(document.querySelectorAll('select')).toHaveLength(0)
+    expect(ipcInvoke.mock.calls.map(([channel]) => channel)).toEqual(['settings:get', 'settings:hasApiKey', 'settings:defaultLibraryDir'])
+  })
+
+  it('warns under the model field only while the id has no row', async () => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    await click('AI')
+    const warning = 'Not a supported model. It may not work as expected.'
+    expect(document.body.textContent).toContain(warning)
+    await type(document.getElementById('settings-openai-slug') as HTMLInputElement, ' GPT-6-Luna ')
+    expect(document.body.textContent).not.toContain(warning)
+  })
+
+  it.each(AI_ROLES)('has a model field for the $id role that saves its own set as typed', async (role) => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    await click('AI')
+    const input = document.getElementById(`settings-openai-${role.id}`) as HTMLInputElement
+    expect(input.value).toBe(saved[`openai.${role.id}`])
+    await type(input, 'my-local-model')
     await click('Save')
     expect(ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')![1]).toEqual({
-      'openai.slug': 'my-local-model', extraModelIds: { openai: ['my-local-model'] },
+      [`openai.${role.id}`]: 'my-local-model',
     })
   })
 

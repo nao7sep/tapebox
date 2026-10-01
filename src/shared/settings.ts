@@ -29,7 +29,7 @@ function isLoopbackOrHttps(raw: string): boolean {
   return false
 }
 
-export const EndpointSchema = z.string().url().refine(isLoopbackOrHttps, {
+const EndpointSchema = z.string().url().refine(isLoopbackOrHttps, {
   message: 'AI endpoint must use https (http is allowed only for a localhost endpoint).',
 })
 
@@ -128,10 +128,8 @@ const SettingsObjectSchema = z.object({
   // install and update is user-triggered in the tools modal.
   checkUpdatesAtLaunch: z.boolean(),
 
-  provider: z.literal('openai'),
   'openai.endpoint': EndpointSchema,
   'openai.slug': z.string().min(1),
-  extraModelIds: z.object({ openai: z.array(z.string().min(1)).optional() }),
 
   // Configurable AI prompts. See PromptsSettingsSchema.
   prompts: PromptsSettingsSchema,
@@ -290,10 +288,8 @@ export function defaultSettings(): Settings {
     trashOnRemove: true,
     confirmRemove: true,
     checkUpdatesAtLaunch: true,
-    provider: 'openai',
     'openai.endpoint': DEFAULT_OPENAI_ENDPOINT,
     'openai.slug': DEFAULT_AI_MODEL,
-    extraModelIds: {},
     prompts: {
       slug: DEFAULT_SLUG_PROMPT,
     },

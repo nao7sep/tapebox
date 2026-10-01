@@ -2,7 +2,6 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { handle } from './handle'
 import * as config from '@main/store/config'
-import { modelList } from '@main/services/model-lists'
 import * as apiKeys from '@main/services/api-keys'
 import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
@@ -130,9 +129,6 @@ async function relocateIfLibraryDirChanged(
 }
 
 export function registerSettingsHandlers(): void {
-  handle('settings:modelList', async (options) =>
-    runCancellable((signal) => modelList(options, signal), 'model-list:openai'))
-  handle('settings:cancelModelList', async () => { cancelWork('model-list:openai') })
   handle('settings:get', async () => config.getSettings())
   // The default library folder, shown as the placeholder when libraryDir is blank.
   handle('settings:defaultLibraryDir', async () => paths.library)

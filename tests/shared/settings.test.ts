@@ -8,9 +8,8 @@ import {
   summarizeSettings,
 } from '@shared/settings'
 
-// The Settings placeholders render these constants rather than their own copies of
-// the strings. This pins the seam: if a fresh config ever stops matching what the
-// placeholder promises, the two have drifted and one of them is lying to the user.
+// The built-in settings use these constants, which Reset model also fills in,
+// rather than their own copies of the strings.
 describe('the AI defaults have a single source', () => {
   it('uses built-in values from the named constants', () => {
     const s = defaultSettings()

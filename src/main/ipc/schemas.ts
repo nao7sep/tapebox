@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { IpcCalls } from '@shared/ipc-contract'
-import { EndpointSchema, SettingsSchema } from '@shared/settings'
+import { SettingsSchema } from '@shared/settings'
 import { LayoutSchema } from '@shared/layout'
 
 /**
@@ -82,8 +82,6 @@ export const ipcRequestSchemas = {
   'ai:cancelSlug':         z.object({ requestId: z.string().min(1) }),
 
   // ── Settings ──────────────────────────────────────────────────────────────
-  'settings:modelList': z.object({ endpoint: EndpointSchema, force: z.boolean(), apiKey: z.string().optional() }),
-  'settings:cancelModelList': z.undefined(),
   'settings:get':          z.undefined(),
   'settings:defaultLibraryDir': z.undefined(),
   'settings:update':       SettingsSchema,
