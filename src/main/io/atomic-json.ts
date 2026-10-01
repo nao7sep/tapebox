@@ -9,8 +9,8 @@ import { utcTimestampForFilenameMs } from '@shared/utc'
  * Atomic JSON read/write with zod validation.
  *
  * The write delegates to {@link writeFileAtomicVia}: write-temp -> fsync ->
- * rename -> fsync parent dir, with the temp a same-directory
- * `<stem>-<nanoid>.tmp` sibling (the atomic-write-temp-files convention).
+ * rename -> fsync parent dir, with the temp a same-directory `<stem>-<nanoid>.tmp`
+ * sibling (the atomic-write-temp-files convention).
  * Crash-safe: a partially-written temp file never replaces the target.
  *
  * There are two atomic-write entry points here, and the split is the ONE thing to
@@ -18,13 +18,12 @@ import { utcTimestampForFilenameMs } from '@shared/utc'
  *
  *   - {@link writeManagedJson} is the single managed-TEXT choke point. It is the
  *     ONLY place a data-backup record fires, strictly AFTER the rename lands, and
- *     it is what config.json / catalog.json save through. A managed-
- *     text write that bypasses it is a silent backup gap (data-backup conventions).
+ *     it is what config.json / catalog.json save through. A managed-text write
+ *     that bypasses it is a silent backup gap (data-backup conventions).
  *   - {@link writeJsonAtomic} is the raw atomic-write primitive for JSON that must
  *     NOT be recorded — the binary-bearing library sidecars, the exported bundle's
- *     sidecar, the secret api-keys.json, re-derivable dependencies.json facts, and the
- *     volatile-state layout.json.
- *     It never touches the backup store.
+ *     sidecar, the secret api-keys.json, re-derivable dependencies.json facts, and
+ *     the volatile-state layout.json. It never touches the backup store.
  *
  * Generic shape: <S extends z.ZodType> captures the actual schema so that
  * z.infer<S> resolves to the OUTPUT type (defaults applied, transforms run),
@@ -58,8 +57,8 @@ function serializeJson<S extends z.ZodType>(data: z.input<S> | z.infer<S>, schem
  * Raw atomic JSON write, NOT recorded to the data-backup store. For JSON that is
  * excluded from the backup by design-time, per-write-site decision: the binary-
  * bearing library/export sidecars, the secret api-keys.json, re-derivable
- * dependency/update facts, and the volatile-state layout.json (see the module docstring). Managed text goes through
- * {@link writeManagedJson} instead.
+ * dependency/update facts, and the volatile-state layout.json (see the module
+ * docstring). Managed text goes through {@link writeManagedJson} instead.
  */
 export async function writeJsonAtomic<S extends z.ZodType>(
   path: string,
@@ -81,9 +80,9 @@ export async function writeJsonAtomic<S extends z.ZodType>(
 /**
  * The single managed-TEXT atomic-write choke point, shared by config.json
  * (store/config.ts) and catalog.json (store/session.ts) — the app's durable,
- * user-authored text. It writes atomically
- * exactly like {@link writeJsonAtomic}, and then, **strictly AFTER the rename
- * lands**, records the exact bytes just written into the data-backup store.
+ * user-authored text. It writes atomically exactly like {@link writeJsonAtomic},
+ * and then, **strictly AFTER the rename lands**, records the exact bytes just
+ * written into the data-backup store.
  *
  * Recording after the rename (never before) is a hard rule of the data-backup
  * conventions: recording first would risk a "backup of a save that never happened"
@@ -116,7 +115,7 @@ export async function writeManagedJson<S extends z.ZodType>(
  * Move a corrupt managed file aside to its timestamped `<stem>-<stamp>.invalid`
  * sibling, preserving its bytes, and return the quarantine path. The rename
  * either lands or its failure propagates — the caller decides whether that is
- * fatal (session), a reseed precondition (config), or degradable (api-keys).
+ * fatal (session), required before recovery (config), or degradable (api-keys).
  * The one home of the quarantine naming grammar, so the three stores cannot
  * drift apart on it.
  */
