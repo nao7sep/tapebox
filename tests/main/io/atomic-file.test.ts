@@ -288,7 +288,7 @@ describe('portable no-overwrite publication', () => {
 
     await publishFileNoOverwrite(temp, join(dir, 'output.bin'), fixture.operations)
 
-    expect(Buffer.concat(fixture.published)).toEqual(bytes)
+    expect(Buffer.concat(fixture.published).equals(bytes)).toBe(true)
     expect(Math.max(...fixture.readLengths)).toBeLessThanOrEqual(256 * 1024)
     expect(fixture.operations.unlink).toHaveBeenCalledWith(temp)
   })
@@ -571,7 +571,7 @@ describe('single-pass no-overwrite copy', () => {
     const destination = join(dir, 'output.bin')
     await copyFileNoOverwrite(source, destination, { hardLinks: false }, fixture.operations)
 
-    expect(Buffer.concat(fixture.published)).toEqual(bytes)
+    expect(Buffer.concat(fixture.published).equals(bytes)).toBe(true)
     expect(fixture.operations.openExclusive).toHaveBeenCalledTimes(1)
     expect(fixture.operations.openExclusive).toHaveBeenCalledWith(destination)
     expect(fixture.operations.link).not.toHaveBeenCalled()
