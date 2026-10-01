@@ -2,7 +2,7 @@ import OpenAI from 'openai'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { withRetry } from '@main/io/retry'
-import { AI_REQUEST_TIMEOUT_MS } from '@main/io/network'
+import { AI_REQUEST_TIMEOUT_MS, AI_RETRY } from '@main/io/network'
 import { UserFacingError } from '@main/user-facing-error'
 import { resolveApiKey } from './api-keys'
 import { buildSlugRequest } from '@shared/model-routing'
@@ -49,7 +49,7 @@ export async function generateSlug(
   let res: Awaited<ReturnType<typeof client.chat.completions.create>>
   try {
     res = await withRetry(
-      { retries: 2, intervals: [2_000, 5_000] },
+      AI_RETRY,
       () =>
         client.chat.completions.create(
           buildSlugRequest(model, userPrompt),

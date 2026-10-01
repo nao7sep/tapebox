@@ -34,14 +34,24 @@ export const BINARY_ACQUIRE_TIMEOUT_MS = 30 * 60_000
 export const AI_REQUEST_TIMEOUT_MS = 120_000
 
 /**
- * Retry schedule for transient failures against well-behaved HTTP endpoints
- * (GitHub, the ffmpeg build hosts, the AI provider) — 429/5xx and connection blips, safe to
- * retry. No jitter: jitter decorrelates many clients hitting one server, and
- * there is only ever one client here.
+ * Retry schedule for transient failures against the managed-tool hosts (GitHub
+ * and the ffmpeg build hosts); each caller decides which failures are transient.
+ * No jitter: jitter decorrelates many clients hitting one server, and there is
+ * only ever one client here.
  */
 export const HTTP_RETRY: RetryPolicy = {
   retries: 3,
   intervals: [2_000, 5_000, 15_000],
+}
+
+/**
+ * Retry schedule for AI provider calls (slug generation), shorter than
+ * HTTP_RETRY because a user is waiting. The caller decides which failures are
+ * resent, and a Retry-After the provider sends replaces the interval.
+ */
+export const AI_RETRY: RetryPolicy = {
+  retries: 2,
+  intervals: [2_000, 5_000],
 }
 
 export class UnsafeUrlError extends Error {
