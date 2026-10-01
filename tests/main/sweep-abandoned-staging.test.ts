@@ -9,17 +9,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // created it, and a file is only removed when it is tagged for THIS host and its
 // process has exited, or it has outlived the whole acquisition's own deadline. It
 // must run against a redirected storage root, never the real one — so
-// TAPEBOX_HOME is pointed at a scratch dir BEFORE @main/paths is first imported
+// TAPEBOX_DATA_DIR is pointed at a scratch dir BEFORE @main/paths is first imported
 // (its storageRoot() caches on first access).
 describe('sweepAbandonedStaging', () => {
   const root = mkdtempSync(join(tmpdir(), 'tapebox-reset-'))
-  const previous = process.env.TAPEBOX_HOME
+  const previous = process.env.TAPEBOX_DATA_DIR
   let paths: (typeof import('@main/paths'))['paths']
   let hostTag: (typeof import('@main/paths'))['hostTag']
   let sweepAbandonedStaging: (typeof import('@main/paths'))['sweepAbandonedStaging']
 
   beforeAll(async () => {
-    process.env.TAPEBOX_HOME = root
+    process.env.TAPEBOX_DATA_DIR = root
     const mod = await import('@main/paths')
     paths = mod.paths
     hostTag = mod.hostTag
@@ -27,8 +27,8 @@ describe('sweepAbandonedStaging', () => {
   })
 
   afterAll(() => {
-    if (previous === undefined) delete process.env.TAPEBOX_HOME
-    else process.env.TAPEBOX_HOME = previous
+    if (previous === undefined) delete process.env.TAPEBOX_DATA_DIR
+    else process.env.TAPEBOX_DATA_DIR = previous
     rmSync(root, { recursive: true, force: true })
   })
 
@@ -50,7 +50,7 @@ describe('sweepAbandonedStaging', () => {
     // macOS caps pids below 100000 and Linux below 2^22, so this pid never runs.
     const deadPidHere = 'yt-dlp-' + tag + '-99999999-abcDEF12345.partial'
     const alivePidHere = 'yt-dlp-' + tag + '-' + process.pid + '-abcDEF12346.partial'
-    // A dead-here pid tagged for a different host: TAPEBOX_HOME can point several
+    // A dead-here pid tagged for a different host: TAPEBOX_DATA_DIR can point several
     // hosts at the same shared directory, and this host's pid table says nothing
     // about whether that other host's download is still running, so it must
     // survive the sweep untouched.

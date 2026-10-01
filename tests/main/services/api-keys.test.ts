@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// api-keys.ts resolves its file path from TAPEBOX_HOME (paths.ts), so the override
+// api-keys.ts resolves its file path from TAPEBOX_DATA_DIR (paths.ts), so the override
 // must be set BEFORE the module is imported. Point the storage root at a throwaway
 // temp dir — the override is the one path-relocation seam, the same way tests and
 // production relocate the root (storage-path-conventions).
 const root = mkdtempSync(join(tmpdir(), 'tapebox-apikeys-'))
-const prevHome = process.env.TAPEBOX_HOME
-process.env.TAPEBOX_HOME = root
+const prevHome = process.env.TAPEBOX_DATA_DIR
+process.env.TAPEBOX_DATA_DIR = root
 
 const apiKeys = await import('@main/services/api-keys')
 const apiKeysPath = join(root, 'api-keys.json')
@@ -34,8 +34,8 @@ afterEach(async () => {
 })
 
 afterAll(() => {
-  if (prevHome === undefined) delete process.env.TAPEBOX_HOME
-  else process.env.TAPEBOX_HOME = prevHome
+  if (prevHome === undefined) delete process.env.TAPEBOX_DATA_DIR
+  else process.env.TAPEBOX_DATA_DIR = prevHome
   clearOpenAiEnv()
 })
 

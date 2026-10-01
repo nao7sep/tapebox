@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { paths, resolveStorageRoot } from '@main/paths'
 
-// The TAPEBOX_HOME storage-root resolution (storage-path-conventions). The home
+// The TAPEBOX_DATA_DIR storage-root resolution (storage-path-conventions). The home
 // directory is injected so these are pure, working-directory-independent
 // assertions that never touch the real environment or filesystem. Mirrors
 // mumbler's reference implementation.
@@ -90,14 +90,14 @@ describe('paths catalog file', () => {
 // that way, and tightened to 0700 at each launch when an existing root is
 // broader. Windows uses its own permission model, so this is skipped there.
 // The storage root is cached at module scope, so each case resets modules and
-// re-imports against its own throwaway TAPEBOX_HOME (mirrors the live
+// re-imports against its own throwaway TAPEBOX_DATA_DIR (mirrors the live
 // downloads test's startApp pattern).
 ;(process.platform === 'win32' ? describe.skip : describe)('ensureDirs storage root permissions', () => {
   it('creates a fresh storage root as owner-only (0700)', async () => {
     const base = await mkdtemp(join(tmpdir(), 'tapebox-root-'))
     const home = join(base, 'profile')
-    const previous = process.env.TAPEBOX_HOME
-    process.env.TAPEBOX_HOME = home
+    const previous = process.env.TAPEBOX_DATA_DIR
+    process.env.TAPEBOX_DATA_DIR = home
     vi.resetModules()
     try {
       const { ensureDirs, paths: freshPaths } = await import('@main/paths')
@@ -105,8 +105,8 @@ describe('paths catalog file', () => {
       const mode = (await stat(freshPaths.root)).mode & 0o777
       expect(mode).toBe(0o700)
     } finally {
-      if (previous === undefined) delete process.env.TAPEBOX_HOME
-      else process.env.TAPEBOX_HOME = previous
+      if (previous === undefined) delete process.env.TAPEBOX_DATA_DIR
+      else process.env.TAPEBOX_DATA_DIR = previous
       vi.resetModules()
       await rm(base, { force: true, recursive: true })
     }
@@ -119,8 +119,8 @@ describe('paths catalog file', () => {
     await chmod(home, 0o755)
     expect((await stat(home)).mode & 0o777).toBe(0o755)
 
-    const previous = process.env.TAPEBOX_HOME
-    process.env.TAPEBOX_HOME = home
+    const previous = process.env.TAPEBOX_DATA_DIR
+    process.env.TAPEBOX_DATA_DIR = home
     vi.resetModules()
     try {
       const { ensureDirs, paths: freshPaths } = await import('@main/paths')
@@ -128,8 +128,8 @@ describe('paths catalog file', () => {
       const mode = (await stat(freshPaths.root)).mode & 0o777
       expect(mode).toBe(0o700)
     } finally {
-      if (previous === undefined) delete process.env.TAPEBOX_HOME
-      else process.env.TAPEBOX_HOME = previous
+      if (previous === undefined) delete process.env.TAPEBOX_DATA_DIR
+      else process.env.TAPEBOX_DATA_DIR = previous
       vi.resetModules()
       await rm(base, { force: true, recursive: true })
     }

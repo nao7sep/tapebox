@@ -125,7 +125,7 @@ async function startup(): Promise<void> {
   // crash-interrupted download must not leave a stale partial forever), proving
   // ownership by host+pid before removing anything (managed-runtime-dependencies-
   // conventions) rather than wiping the whole staging dir, which could delete
-  // another host's in-flight download on a relocated/shared TAPEBOX_HOME. It is
+  // another host's in-flight download on a relocated/shared TAPEBOX_DATA_DIR. It is
   // optional startup cleanup, but its diagnostic must remain visible in this
   // launch's log.
   try {

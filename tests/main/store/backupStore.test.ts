@@ -17,7 +17,7 @@
  *
  * Rows are read back with an INDEPENDENT node:sqlite connection so the store's own writes — not a mock —
  * are what the assertions see. `@main/io/logger`'s `log` is mocked with a capturing logger so warn counts
- * are exact and no test writes into the developer's home dir. TAPEBOX_HOME points every store lookup at a
+ * are exact and no test writes into the developer's home dir. TAPEBOX_DATA_DIR points every store lookup at a
  * throwaway root, and closeBackupStore() + vi.resetModules() give each test a fresh singleton.
  */
 
@@ -65,18 +65,18 @@ function readRows(root: string): Row[] {
 }
 
 let root: string
-const prev = process.env.TAPEBOX_HOME
+const prev = process.env.TAPEBOX_DATA_DIR
 
 beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), 'tapebox-backupstore-'))
-  process.env.TAPEBOX_HOME = root
+  process.env.TAPEBOX_DATA_DIR = root
   logCalls.warn.length = 0
   logCalls.error.length = 0
 })
 
 afterEach(async () => {
-  if (prev === undefined) delete process.env.TAPEBOX_HOME
-  else process.env.TAPEBOX_HOME = prev
+  if (prev === undefined) delete process.env.TAPEBOX_DATA_DIR
+  else process.env.TAPEBOX_DATA_DIR = prev
   const { closeBackupStore } = await import('@main/store/backupStore')
   await closeBackupStore()
   vi.resetModules() // fresh singleton per test so each opens against its own throwaway root
@@ -258,13 +258,13 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
   })
 
   it('logs one warn and disables recording for the session when the store cannot be opened', async () => {
-    // Point TAPEBOX_HOME at a path whose parent is a FILE, so mkdir + open cannot succeed. record must
+    // Point TAPEBOX_DATA_DIR at a path whose parent is a FILE, so mkdir + open cannot succeed. record must
     // not throw, must warn exactly once (open failure), and must no-op every subsequent call (no repeat
     // warn per save — disabled for the session).
     const { writeFileSync } = await import('node:fs')
     const blocker = path.join(root, 'blocker')
     writeFileSync(blocker, 'x') // a file where a directory would need to be
-    process.env.TAPEBOX_HOME = path.join(blocker, 'nested') // parent is a file -> mkdir/open fails
+    process.env.TAPEBOX_DATA_DIR = path.join(blocker, 'nested') // parent is a file -> mkdir/open fails
 
     const { record, flushBackupStore } = await import('@main/store/backupStore')
     expect(() => record('/whatever/catalog.json', Buffer.from('a', 'utf8'))).not.toThrow()

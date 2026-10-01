@@ -13,7 +13,7 @@ import { chmod, mkdir, readdir, stat, unlink } from 'node:fs/promises'
  * stale partial). It is deliberately named 'temp', not 'downloads' (which would read
  * as retained user data), per the managed-runtime-dependencies-conventions.
  *
- * The storage root is relocatable wholesale via TAPEBOX_HOME (storage-path-
+ * The storage root is relocatable wholesale via TAPEBOX_DATA_DIR (storage-path-
  * conventions). When that variable is set and non-empty, its value — with a
  * leading `~`/`~/` and `$VAR`/`%VAR%` references expanded, then made absolute
  * against the HOME directory (never process.cwd()) — is the root; otherwise the
@@ -50,7 +50,7 @@ export function resolveStorageRoot(rawOverride: string | undefined, homeDirector
   // collapsing the root onto the bare home directory.
   if (value.length === 0) {
     throw new Error(
-      `TAPEBOX_HOME is set to "${rawOverride}" but expands to an empty path ` +
+      `TAPEBOX_DATA_DIR is set to "${rawOverride}" but expands to an empty path ` +
         `(an unset $VAR/%VAR%?). Set it to a usable directory, or unset it to use ~/.tapebox.`,
     )
   }
@@ -70,14 +70,14 @@ export function resolveStorageRoot(rawOverride: string | undefined, homeDirector
 
 // The storage root is resolved lazily on first access — not frozen at import —
 // so resolution happens at a defined startup point with the environment fully
-// known, and an unusable TAPEBOX_HOME surfaces as a reported startup error when
+// known, and an unusable TAPEBOX_DATA_DIR surfaces as a reported startup error when
 // ensureDirs() first reads `paths.*`, never as an import-time crash with no UI.
 // Every consumer reads `paths.*` inside a function, so the first access is the
 // startup ensureDirs() call.
 let cachedRoot: string | null = null
 function storageRoot(): string {
   if (cachedRoot === null) {
-    cachedRoot = resolveStorageRoot(process.env.TAPEBOX_HOME, homedir())
+    cachedRoot = resolveStorageRoot(process.env.TAPEBOX_DATA_DIR, homedir())
   }
   return cachedRoot
 }
@@ -97,7 +97,7 @@ export const paths = {
   get dependencies()  { return join(storageRoot(), 'dependencies.json') },
   get apiKeys()       { return join(storageRoot(), 'api-keys.json') },
   // The write-through data-backup store (data-backup conventions): one add-only
-  // SQLite FILE directly under the root, resolved through the same TAPEBOX_HOME-
+  // SQLite FILE directly under the root, resolved through the same TAPEBOX_DATA_DIR-
   // aware resolver as everything else. Its `-wal`/`-shm` sidecars sit beside it.
   get backupsDb()     { return join(storageRoot(), 'backups.sqlite3') },
 }
@@ -115,7 +115,7 @@ export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
  * startup and the operation.
  *
  * This is also the defined startup point where the storage root is first
- * resolved: `paths.*` is read here, so an unusable TAPEBOX_HOME throws from this
+ * resolved: `paths.*` is read here, so an unusable TAPEBOX_DATA_DIR throws from this
  * awaited call and is reported by the caller, rather than at import time.
  */
 // Tightens the storage root to owner-only (0700) on POSIX, per the storage-
@@ -151,7 +151,7 @@ export async function ensureDirs(): Promise<void> {
 }
 
 // A short, filename-safe tag identifying this host, so a staged file's owner can
-// be told apart from a same-pid process on another machine. TAPEBOX_HOME lets the
+// be told apart from a same-pid process on another machine. TAPEBOX_DATA_DIR lets the
 // storage root be relocated onto shared storage (a NAS, a container bind mount),
 // where two hosts' pid spaces overlap: pid 4021 dead on host A says nothing about
 // whether host B's pid 4021 is still downloading. Hashed rather than embedding the
@@ -184,7 +184,7 @@ function processIsAlive(pid: number): boolean {
  * in-flight download.
  *
  * A staged file's name carries the host tag and pid of the process that created
- * it (see downloadTempPath). A pid alone proves nothing here: TAPEBOX_HOME can
+ * it (see downloadTempPath). A pid alone proves nothing here: TAPEBOX_DATA_DIR can
  * point two different hosts at the same directory, where a live download's pid
  * on one host can coincide with a dead one on another, so a file is only ever
  * evaluated against ITS OWN host's tag, and only removed when that host is this

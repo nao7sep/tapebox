@@ -1,6 +1,6 @@
 /**
  * The write-through data-backup store (data-backup conventions). It owns one add-only SQLite file,
- * `backups.sqlite3`, directly under TapeBox's storage root (`TAPEBOX_HOME` or `~/.tapebox`, resolved in
+ * `backups.sqlite3`, directly under TapeBox's storage root (`TAPEBOX_DATA_DIR` or `~/.tapebox`, resolved in
  * one place by {@link paths} — never a hardcoded path). Every managed *text* save records the exact bytes
  * it just wrote here, strictly AFTER its atomic rename lands, so the history is always as current as the
  * last save. There is no startup scan, no periodic pass, no restore path.

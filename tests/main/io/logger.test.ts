@@ -3,12 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 
-// logger.ts resolves its session path from TAPEBOX_HOME (paths.ts), so the
+// logger.ts resolves its session path from TAPEBOX_DATA_DIR (paths.ts), so the
 // override must be set BEFORE the module is imported — the same path-relocation
 // seam api-keys.test.ts uses (storage-path-conventions).
 const root = mkdtempSync(join(tmpdir(), 'tapebox-logger-'))
-const prevHome = process.env.TAPEBOX_HOME
-process.env.TAPEBOX_HOME = root
+const prevHome = process.env.TAPEBOX_DATA_DIR
+process.env.TAPEBOX_DATA_DIR = root
 
 const { initLogger, closeLogger, getCurrentLogPath, log } = await import('@main/io/logger')
 const { paths } = await import('@main/paths')
@@ -22,8 +22,8 @@ afterEach(() => {
 })
 
 afterAll(() => {
-  if (prevHome === undefined) delete process.env.TAPEBOX_HOME
-  else process.env.TAPEBOX_HOME = prevHome
+  if (prevHome === undefined) delete process.env.TAPEBOX_DATA_DIR
+  else process.env.TAPEBOX_DATA_DIR = prevHome
   rmSync(root, { recursive: true, force: true })
 })
 

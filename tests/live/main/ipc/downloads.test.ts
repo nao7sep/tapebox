@@ -53,7 +53,7 @@ type App = Awaited<ReturnType<typeof startApp>>
 
 /** Starts the main process on `home` the way src/main/index.ts does, minus the window. */
 async function startApp(home: string) {
-  process.env.TAPEBOX_HOME = home
+  process.env.TAPEBOX_DATA_DIR = home
   vi.resetModules()
   handlers.clear()
   const { ensureDirs, sweepAbandonedStaging } = await import('@main/paths')
