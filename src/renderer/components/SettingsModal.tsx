@@ -57,7 +57,6 @@ export function SettingsModal({ onClose }: Props) {
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
-  const mounted = useRef(true)
   const [error, setError] = useState<Message | null>(null)
   const [busy, setBusy] = useState(false)
   const t = useI18n()
@@ -76,13 +75,11 @@ export function SettingsModal({ onClose }: Props) {
       ipcInvoke('settings:hasApiKey'),
       ipcInvoke('settings:defaultLibraryDir'),
     ]).then(([s, has, defaultLibDir]) => {
-      if (!mounted.current) return
       setOriginal(s)
       setDraft(s)
       setHadApiKey(has)
       setDefaultLibraryDir(defaultLibDir)
     }, (error) => {
-      if (!mounted.current) return
       setLoadError(presentFailure(
         error,
         message('settings.loadFailed'),
@@ -92,11 +89,7 @@ export function SettingsModal({ onClose }: Props) {
   }
 
   useEffect(() => {
-    mounted.current = true
     load()
-    return () => {
-      mounted.current = false
-    }
   }, [])
 
   useEffect(() => ipcOn('settings:libraryMoveProgress', setMoveProgress), [])

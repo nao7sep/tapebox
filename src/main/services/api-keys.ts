@@ -9,8 +9,8 @@ import { log } from '@main/io/logger'
  * separate from settings. This is the fleet api-key-storage-conventions realized
  * for tapebox.
  *
- * tapebox uses a single key today (`'openai'` → OPENAI_API_KEY, the
- * OpenAI-compatible endpoint), but the module is the generic, id-addressed
+ * tapebox uses a single key today (`'openai'` → OPENAI_API_KEY, sent to the
+ * OpenAI endpoint or a local server), but the module is the generic, id-addressed
  * form so its contract matches every other app in the fleet.
  *
  * Contract (api-key-storage-conventions):

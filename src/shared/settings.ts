@@ -7,12 +7,12 @@ import { LANGUAGE_PREFERENCES } from './i18n/languages'
 // The per-binary managed-dependency facts (installed/latest versions, last-check
 // time) are NOT config — they are app-recorded facts and live in their own
 // dependencies.json / Dependencies type (see shared/dependencies.ts), per
-// persisted-store-separation-conventions. They used to hang off Settings.binaries.
+// persisted-store-separation-conventions.
 
 /**
- * The AI base URL must use https, so the API key is never sent in plaintext —
- * except to a loopback endpoint (a local OpenAI-compatible server like Ollama or
- * LM Studio), where http is normal and the request never leaves the machine. This
+ * The AI endpoint must use https, so the API key is never sent in plaintext —
+ * except to a loopback endpoint (a local server like Ollama or LM Studio),
+ * where http is normal and the request never leaves the machine. This
  * blocks a plaintext key leak to a remote host without breaking local endpoints.
  */
 function isLoopbackOrHttps(raw: string): boolean {
