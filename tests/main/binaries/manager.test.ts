@@ -85,7 +85,7 @@ import {
   installOrUpdate,
   shutdownInstalls,
 } from '@main/binaries/manager'
-import { binarySpecs } from '@main/binaries/registry'
+import { binaryNames, binarySpecs } from '@main/binaries/registry'
 import { mutateDependencies } from '@main/store/dependencies'
 import { freshBinaryEntry } from '@shared/dependencies'
 import { UnsafeUrlError } from '@main/io/network'
@@ -106,6 +106,7 @@ function seed(): void {
     'yt-dlp': freshBinaryEntry(),
     ffmpeg: freshBinaryEntry(),
     deno: freshBinaryEntry(),
+    lastCheckAttemptAtUtc: null,
   }
 }
 
@@ -166,7 +167,24 @@ describe('checkForUpdates — a failed check writes nothing (I3)', () => {
     controller.abort(new DOMException('cancel check', 'AbortError'))
 
     await expect(check).rejects.toMatchObject({ name: 'AbortError' })
-    expect(Object.values(depsRef.current).every((entry) => entry.lastCheckedAtUtc === null)).toBe(true)
+    expect(binaryNames.every((name) => depsRef.current[name].lastCheckedAtUtc === null)).toBe(true)
+  })
+})
+
+describe('checkForUpdates — the app-wide attempt time', () => {
+  it('is written before anything is resolved, also when every resolve fails', async () => {
+    seed()
+    const attemptsSeen: (string | null)[] = []
+    for (const name of binaryNames) {
+      vi.mocked(binarySpecs[name].resolveLatest).mockImplementation(async () => {
+        attemptsSeen.push(depsRef.current.lastCheckAttemptAtUtc)
+        throw new Error('offline')
+      })
+    }
+    await checkForUpdates()
+    expect(depsRef.current.lastCheckAttemptAtUtc).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    expect(attemptsSeen).toEqual(binaryNames.map(() => depsRef.current.lastCheckAttemptAtUtc))
+    expect(binaryNames.every((name) => depsRef.current[name].lastCheckedAtUtc === null)).toBe(true)
   })
 })
 

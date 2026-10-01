@@ -113,6 +113,8 @@ export type IpcCalls = {
   'binaries:update':       { req: { name: BinaryName; operationId: string }; res: BinaryUpdateResult }
   'binaries:cancelUpdate': { req: { name: BinaryName; operationId: string }; res: BinaryCancelResult }
   'binaries:checkUpdates': { req: undefined;                         res: BinaryCheckResult }
+  // Whether the launch check is due by the last attempt time (launchCheckDue).
+  'binaries:launchCheckDue': { req: undefined;                       res: boolean }
   'binaries:cancelCheck':  { req: undefined;                         res: BinaryCancelResult }
 
   // ── Scan (page scan) ──────────────────────────────────────────────

@@ -1,5 +1,7 @@
 import { handle } from './handle'
 import * as manager from '@main/binaries/manager'
+import { getDependencies } from '@main/store/dependencies'
+import { launchCheckDue } from '@shared/dependencies'
 
 type ActiveCheck = {
   controller: AbortController
@@ -13,6 +15,7 @@ export function registerBinaryHandlers(): void {
   handle('binaries:status', async () => manager.getAllStatuses())
   handle('binaries:update', async ({ name, operationId }) => manager.installOrUpdate(name, operationId))
   handle('binaries:cancelUpdate', async ({ name, operationId }) => manager.cancelInstall(name, operationId))
+  handle('binaries:launchCheckDue', async () => launchCheckDue(getDependencies().lastCheckAttemptAtUtc, Date.now()))
   handle('binaries:checkUpdates', async () => {
     if (shuttingDown) throw new Error('TapeBox is shutting down')
     if (activeCheck) throw new Error('Tool update check already in progress')

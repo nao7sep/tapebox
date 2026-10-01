@@ -3,13 +3,17 @@ import {
   DependenciesSchema,
   defaultDependencies,
   freshBinaryEntry,
+  launchCheckDue,
 } from '@shared/dependencies'
+
+const names = ['yt-dlp', 'ffmpeg', 'deno'] as const
 
 describe('the dependencies (managed-facts) store', () => {
   it('defaults every managed binary to never-checked', () => {
     const d = defaultDependencies()
-    expect(Object.keys(d).sort()).toEqual(['deno', 'ffmpeg', 'yt-dlp'])
-    for (const entry of Object.values(d)) {
+    expect(Object.keys(d).sort()).toEqual(['deno', 'ffmpeg', 'lastCheckAttemptAtUtc', 'yt-dlp'])
+    expect(d.lastCheckAttemptAtUtc).toBeNull()
+    for (const entry of names.map((name) => d[name])) {
       expect(entry).toEqual({
         latestKnownVersion: null,
         lastCheckedAtUtc: null,
@@ -21,7 +25,8 @@ describe('the dependencies (managed-facts) store', () => {
   // The store holds NETWORK facts only. The installed version is read from the
   // binary itself, so persisting it here is what let the two drift apart.
   it('does not persist an installed version', () => {
-    for (const entry of Object.values(defaultDependencies())) {
+    const d = defaultDependencies()
+    for (const entry of names.map((name) => d[name])) {
       expect(entry).not.toHaveProperty('installedVersion')
     }
   })
@@ -60,5 +65,30 @@ describe('the dependencies (managed-facts) store', () => {
     const { deno, ...withoutDeno } = defaultDependencies()
     void deno
     expect(DependenciesSchema.safeParse(withoutDeno).success).toBe(false)
+  })
+})
+
+describe('the launch check throttle', () => {
+  const now = Date.parse('2026-10-02T12:00:00.000Z')
+  const hoursAgo = (hours: number) => new Date(now - hours * 3_600_000).toISOString()
+
+  it('runs when the last attempt is missing, invalid, in the future, or at least 24 hours old', () => {
+    expect(launchCheckDue(null, now)).toBe(true)
+    expect(launchCheckDue('yesterday', now)).toBe(true)
+    expect(launchCheckDue('2026-10-02', now)).toBe(true)
+    expect(launchCheckDue('2026-13-40T99:00:00.000Z', now)).toBe(true)
+    expect(launchCheckDue(hoursAgo(-1), now)).toBe(true)
+    expect(launchCheckDue(hoursAgo(24), now)).toBe(true)
+    expect(launchCheckDue(hoursAgo(72), now)).toBe(true)
+  })
+
+  it('waits while the last attempt is under 24 hours old', () => {
+    expect(launchCheckDue(hoursAgo(0), now)).toBe(false)
+    expect(launchCheckDue(hoursAgo(23.99), now)).toBe(false)
+  })
+
+  it('reads a file without the attempt time as never attempted', () => {
+    const { lastCheckAttemptAtUtc: _, ...withoutAttempt } = defaultDependencies()
+    expect(DependenciesSchema.parse(withoutAttempt).lastCheckAttemptAtUtc).toBeNull()
   })
 })

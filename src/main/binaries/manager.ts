@@ -57,9 +57,9 @@ import { message } from '@shared/i18n/translate'
  * Update-check policy: dependencies.<name>.{latestKnownVersion,
  * lastCheckedAtUtc} are the single source of truth — there's no in-memory
  * cache. The modal renders what's persisted; a fresh upstream lookup happens
- * only on startup (gated by checkUpdatesAtLaunch) or via an explicit user
- * action. This keeps GitHub API hits well under the unauthenticated rate
- * limit.
+ * only on startup (gated by checkUpdatesAtLaunch and at most once a day by the
+ * last attempt time) or via an explicit user action. This keeps GitHub API hits
+ * well under the unauthenticated rate limit.
  *
  * The INSTALLED version is not among those facts: it is read back from the binary
  * itself (installed-version.ts), so it cannot drift from what is on disk. An
@@ -192,6 +192,9 @@ export async function getAllStatuses(): Promise<BinaryStatus[]> {
  */
 export async function checkForUpdates(signal?: AbortSignal): Promise<BinaryCheckResult> {
   const now = nowUtcIso()
+  // The attempt is recorded before anything is resolved, so the launch check waits
+  // a day after this one whether it succeeds, fails or never reaches the network.
+  await mutateDependencies(() => ({ lastCheckAttemptAtUtc: now }))
   const resolved = new Map<BinaryName, string>()
   const failures: BinaryCheckFailure[] = []
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { BinaryStatus } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
+import { log } from '@renderer/ipc/log'
+import { describeError } from '@shared/error'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
@@ -40,21 +41,6 @@ import { Toaster } from '@renderer/components/Toaster'
 import { TapeImportReceiver } from '@renderer/components/TapeImportReceiver'
 import { InlineError, Spinner } from '@renderer/components/ui'
 import { LayoutWriteResult } from '@renderer/components/LayoutWriteResult'
-
-/** Skip the startup auto-check if any binary was checked within this window. */
-const AUTO_CHECK_STALE_MS = 24 * 60 * 60 * 1000
-
-// The last-check times now come from the binaries:status snapshot (each status
-// mirrors the recorded dependency facts), not from settings — the facts moved to
-// their own store (persisted-store-separation-conventions).
-function lastCheckedStale(statuses: BinaryStatus[]): boolean {
-  const timestamps = statuses
-    .map((b) => b.lastCheckedAtUtc)
-    .filter((t): t is string => t !== null)
-  if (timestamps.length === 0) return true
-  const mostRecent = timestamps.sort().at(-1)!
-  return Date.now() - Date.parse(mostRecent) > AUTO_CHECK_STALE_MS
-}
 
 export default function App() {
   const t = useI18n()
@@ -201,11 +187,15 @@ function HydratedApp() {
   }
 
   useEffect(() => {
-    if (startedAutoCheck.current || !settings?.checkUpdatesAtLaunch || !lastCheckedStale(binaryStatuses)) return
+    if (startedAutoCheck.current || !settings?.checkUpdatesAtLaunch) return
     startedAutoCheck.current = true
-    // Best-effort background check the user didn't trigger. Managed tools owns
-    // its complete lifecycle and stable failure presentation.
-    void useBinariesStore.getState().checkUpdates()
+    // Best-effort background check the user didn't trigger, at most once a day by
+    // the last attempt time main keeps. Managed tools owns its complete lifecycle
+    // and stable failure presentation.
+    void ipcInvoke('binaries:launchCheckDue').then(
+      (due) => { if (due) void useBinariesStore.getState().checkUpdates() },
+      (error) => log.warn('launch check decision failed', { error: describeError(error) }),
+    )
   }, [])
 
   // Once both settings and the first status snapshot are in, do the one-shot startup

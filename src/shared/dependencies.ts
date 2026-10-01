@@ -43,12 +43,15 @@ export function freshBinaryEntry(): BinaryEntry {
 /**
  * The recorded facts for every managed binary, keyed by name. The keys match the
  * registry (yt-dlp/ffmpeg/deno); the store keeps every one present so a consumer
- * reads `dependencies[name]` without a null guard.
+ * reads `dependencies[name]` without a null guard. Beside them sits the one
+ * app-wide time of the last check attempt, automatic or manual, written
+ * immediately before the check starts; a missing one reads as null.
  */
 export const DependenciesSchema = z.object({
   'yt-dlp': BinaryEntrySchema,
   ffmpeg: BinaryEntrySchema,
   deno: BinaryEntrySchema,
+  lastCheckAttemptAtUtc: z.string().nullable().default(null),
 })
 export type Dependencies = z.infer<typeof DependenciesSchema>
 
@@ -64,5 +67,20 @@ export function defaultDependencies(): Dependencies {
     'yt-dlp': freshBinaryEntry(),
     ffmpeg:   freshBinaryEntry(),
     deno:     freshBinaryEntry(),
+    lastCheckAttemptAtUtc: null,
   }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+const UTC_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+
+/**
+ * Whether the launch check runs: only when the last attempt time is missing,
+ * invalid, in the future, or at least 24 hours old. The attempt, not a success,
+ * is what counts, so a failed or offline check still waits a day.
+ */
+export function launchCheckDue(lastCheckAttemptAtUtc: string | null, nowMs: number): boolean {
+  if (lastCheckAttemptAtUtc === null || !UTC_ISO.test(lastCheckAttemptAtUtc)) return true
+  const attemptedMs = Date.parse(lastCheckAttemptAtUtc)
+  return Number.isNaN(attemptedMs) || attemptedMs > nowMs || nowMs - attemptedMs >= DAY_MS
 }

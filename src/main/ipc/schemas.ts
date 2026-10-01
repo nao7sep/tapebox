@@ -99,6 +99,7 @@ export const ipcRequestSchemas = {
   'binaries:update':       z.object({ name: BinaryNameSchema, operationId: z.string().min(1) }),
   'binaries:cancelUpdate': z.object({ name: BinaryNameSchema, operationId: z.string().min(1) }),
   'binaries:checkUpdates': z.undefined(),
+  'binaries:launchCheckDue': z.undefined(),
   'binaries:cancelCheck':  z.undefined(),
 
   // ── Scan ──────────────────────────────────────────────────────────────────
