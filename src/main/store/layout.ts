@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
-import { writeManagedJson } from '@main/io/atomic-json'
+import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { LayoutSchema, defaultLayout, type Layout } from '@shared/layout'
@@ -63,9 +63,9 @@ export async function persistNow(): Promise<void> {
     // Snapshot inside the serialized turn so a newer cache always wins after an
     // older in-flight write. Overlapping renderer updates must not race.
     const snapshot = structuredClone(cache)
-    // layout.json is durable managed text: every save records through the shared
-    // choke point, whose per-path content dedup absorbs unchanged state.
-    await writeManagedJson(paths.layout, snapshot, LayoutSchema)
+    // layout.json is volatile state only (pane sizes, volume): the raw atomic
+    // writer saves it without recording to the backup history.
+    await writeJsonAtomic(paths.layout, snapshot, LayoutSchema)
   })
   writeQueue = write.catch(() => {})
   try { await write } catch (err) {
