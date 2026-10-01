@@ -109,7 +109,7 @@ describe('SettingsModal', () => {
     })
     await render()
     await click('AI')
-    const picker = document.querySelector('select[aria-label="Model"]') as HTMLSelectElement
+    const picker = document.querySelector('select[aria-labelledby="settings-ai-model-label"]') as HTMLSelectElement
     expect([...picker.querySelectorAll('optgroup')].map((group) => group.label)).toEqual(['App suggestions', 'Provider models', 'Your extra models'])
     expect([...picker.options].map((option) => option.value)).toEqual(['retired-model', 'gpt-6-luna', 'gpt-fetched', 'local-model'])
     expect(picker.value).toBe('retired-model')

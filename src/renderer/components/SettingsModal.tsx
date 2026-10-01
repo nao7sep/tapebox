@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { Settings, SettingsPatch, SiteProfile, ThemePreference } from '@shared/settings'
-import { changedSettings, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
+import { changedSettings, DEFAULT_OPENAI_ENDPOINT, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { AI_ROLES, modelsFor, SUPPORTED_MODELS } from '@shared/ai-models'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
@@ -740,9 +740,9 @@ function AiTab({
       <h3 className="text-sm font-medium text-fg">{t.t('settings.openai')}</h3>
 
       <TextField
-        label={t.t('settings.baseUrl')}
+        label={t.t('settings.endpoint')}
         value={endpoint}
-        placeholder={DEFAULT_AI_BASE_URL}
+        placeholder={DEFAULT_OPENAI_ENDPOINT}
         disabled={busy}
         onChange={onEndpointChange}
       />
@@ -772,7 +772,7 @@ function AiTab({
       </div>
 
       <div>
-        <label htmlFor="settings-ai-model" className="text-xs font-medium text-fg">{t.t('settings.slugModel')}</label>
+        <label id="settings-ai-model-label" htmlFor="settings-ai-model" className="text-xs font-medium text-fg">{t.t('settings.slugModel')}</label>
         <div className="mt-1 flex items-center gap-2">
           <input
             id="settings-ai-model"
@@ -785,7 +785,7 @@ function AiTab({
             className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
           <select
-            aria-label={t.t('settings.model')}
+            aria-labelledby="settings-ai-model-label"
             value={model}
             disabled={busy}
             className={`min-w-0 flex-1 ${INPUT_LINE_CLASS}`}

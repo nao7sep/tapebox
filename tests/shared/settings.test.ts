@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_AI_BASE_URL,
+  DEFAULT_OPENAI_ENDPOINT,
   DEFAULT_AI_MODEL,
   defaultSettings,
   SettingsSchema,
@@ -13,7 +13,7 @@ import {
 describe('the AI defaults have a single source', () => {
   it('uses built-in values from the named constants', () => {
     const s = defaultSettings()
-    expect(s['openai.endpoint']).toBe(DEFAULT_AI_BASE_URL)
+    expect(s['openai.endpoint']).toBe(DEFAULT_OPENAI_ENDPOINT)
     expect(s['openai.slug']).toBe(DEFAULT_AI_MODEL)
   })
 
@@ -104,7 +104,7 @@ describe('summarizeSettings', () => {
 
     expect(summarizeSettings(s)).toMatchObject({
       libraryDir: '/lib',
-      aiBaseUrl: 'https://api.example.com/v1',
+      aiEndpoint: 'https://api.example.com/v1',
       aiModel: 'gpt-x',
       maxConcurrentDownloads: 4,
       autoplay: false,
@@ -131,14 +131,14 @@ describe('summarizeSettings', () => {
     expect(serialized).not.toContain('PROFILE_SECRET')
   })
 
-  it('strips credentials from the AI baseUrl before logging it', () => {
+  it('strips credentials from the AI endpoint before logging it', () => {
     const s = defaultSettings()
-    s['openai.endpoint'] = 'https://admin:sk-BASEURL-SECRET@gateway.example/v1'
+    s['openai.endpoint'] = 'https://admin:sk-ENDPOINT-SECRET@gateway.example/v1'
     s['openai.slug'] = 'm'
 
     const summary = summarizeSettings(s)
-    expect(summary.aiBaseUrl).toBe('https://gateway.example/v1')
-    expect(JSON.stringify(summary)).not.toContain('sk-BASEURL-SECRET')
+    expect(summary.aiEndpoint).toBe('https://gateway.example/v1')
+    expect(JSON.stringify(summary)).not.toContain('sk-ENDPOINT-SECRET')
   })
 
   it('treats blank or whitespace-only ytdlpArgs as unset', () => {

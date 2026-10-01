@@ -40,7 +40,7 @@ export const EndpointSchema = z.string().url().refine(isLoopbackOrHttps, {
  * {description}. A token the user omits is simply not sent; a token left in
  * substitutes to empty when that field is unavailable.
  */
-export const DEFAULT_AI_BASE_URL = 'https://api.openai.com/v1'
+export const DEFAULT_OPENAI_ENDPOINT = 'https://api.openai.com/v1'
 export const DEFAULT_AI_MODEL = defaultModelFor('openai', AI_ROLES[0].kind)
 
 export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
@@ -255,7 +255,7 @@ export function defaultSettings(): Settings {
     confirmRemove: true,
     checkUpdatesAtLaunch: true,
     provider: 'openai',
-    'openai.endpoint': DEFAULT_AI_BASE_URL,
+    'openai.endpoint': DEFAULT_OPENAI_ENDPOINT,
     'openai.slug': DEFAULT_AI_MODEL,
     extraModelIds: {},
     prompts: {
@@ -282,7 +282,7 @@ export function defaultSettings(): Settings {
  *
  *   - The AI endpoint is logged with URL userinfo stripped (stripUrlCredentials),
  *     because a credential can ride in the `user:password@` of an otherwise
- *     reasonable baseUrl (an auth proxy / gateway), separate from the API key
+ *     reasonable endpoint (an auth proxy / gateway), separate from the API key
  *     held in its own file.
  *   - Free-text whose body could carry a credential — `ytdlpArgs` and a site
  *     profile's `args`, where a token can ride inside a header, cookie, or URL —
@@ -307,7 +307,7 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
     checkUpdatesAtLaunch: s.checkUpdatesAtLaunch,
-    aiBaseUrl: stripUrlCredentials(s['openai.endpoint']),
+    aiEndpoint: stripUrlCredentials(s['openai.endpoint']),
     aiModel: s['openai.slug'],
     externalPlayer: s.externalPlayer,
     defaultExportDir: s.defaultExportDir,
