@@ -41,7 +41,7 @@ export type InstalledVersionSource =
  * Strip vendor noise so installed and latest are compared on the same form
  * (the convention's "normalize before comparing"): martin-riedl appends
  * `-https://www.martin-riedl.de` to ffmpeg's version, and GitHub tags carry a
- * leading `v` (deno ships `v2.9.5`, whose binary reports `2.9.1`). Applied to
+ * leading `v` (deno tags `v2.9.7`, whose binary reports `2.9.7`). Applied to
  * BOTH sides — every resolved latest below, and every probe read — since the
  * two come from different sources and only agree once normalized.
  */
