@@ -187,7 +187,7 @@ describe('terminal catalog persistence', () => {
     const published = await readFile(catalogPath)
     expect(recordBeforeExit).toHaveBeenCalledOnce()
     expect(recordBeforeExit).toHaveBeenCalledWith(catalogPath, expect.any(Buffer))
-    expect(Buffer.from(recordBeforeExit.mock.calls[0]![1])).toEqual(published)
+    expect(Buffer.from(recordBeforeExit.mock.calls[0]![1]).equals(published)).toBe(true)
   })
 
   it('writes a download in flight as its queued self, so queue steps add no catalog versions', async () => {
