@@ -70,7 +70,15 @@ describe('Windows ffmpeg resolves to the immutable autobuild release', () => {
       url: 'https://example.test/checksums.sha256',
       assetName: 'ffmpeg-N-126889-gb139ba11d8-win64-gpl.zip',
     })
-    expect(resolved.version).toBe('Auto-Build 2026-09-26 13:03')
+    expect(resolved.version).toBe('autobuild-2026-09-26-13-03')
+  })
+
+  it('pins only a release whose tag is a full build timestamp', async () => {
+    fetchReleases.mockResolvedValue([
+      { ...NEWEST_AUTOBUILD_RELEASE, tag_name: 'autobuild-next' },
+      OLDER_AUTOBUILD_RELEASE,
+    ])
+    expect((await resolveFfmpegWindows()).version).toBe('autobuild-2026-09-25-15-37')
   })
 
   it('never matches the `-shared` variant published alongside the GPL build', async () => {

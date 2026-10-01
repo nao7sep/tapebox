@@ -7,7 +7,7 @@ import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
 import type { BinaryName } from '@shared/ipc-contract'
-import { binarySpecs, normalizeVersion } from './registry'
+import { binarySpecs } from './registry'
 
 /**
  * The installed version of a managed binary, read FROM THE ARTIFACT
@@ -25,7 +25,7 @@ import { binarySpecs, normalizeVersion } from './registry'
  * Two sources, declared per binary by the registry: PROBE the binary (yt-dlp, deno,
  * macOS ffmpeg all report themselves in a namespace comparable with their
  * upstream's "latest"), or read the SIDECAR written beside it at install (Windows
- * ffmpeg, whose rolling master build cannot be compared with the release name BtbN
+ * ffmpeg, whose rolling master build cannot be compared with the release tag BtbN
  * publishes).
  *
  * A probe is a subprocess spawn, so it is cached per process and must never sit on
@@ -105,7 +105,7 @@ export function readInstalledVersion(name: BinaryName): Promise<string | null> {
 
 async function resolveInstalledVersion(name: BinaryName): Promise<string | null> {
   const source = binarySpecs[name].installedVersion
-  return source.kind === 'probe' ? probe(name, source.args, source.parse) : readSidecar(name)
+  return source.kind === 'probe' ? probe(name, source.args, source.parse) : readSidecar(name, source.parse)
 }
 
 async function probe(
@@ -140,16 +140,18 @@ async function probe(
   }
 }
 
-async function readSidecar(name: BinaryName): Promise<string | null> {
+async function readSidecar(name: BinaryName, parse: (stored: string) => string | null): Promise<string | null> {
   const path = versionSidecarPath(name)
   try {
     const raw: unknown = JSON.parse(await readFile(path, 'utf8'))
-    const version = (raw as Partial<VersionSidecar> | null)?.version
-    if (typeof version !== 'string' || version.trim().length === 0) {
+    const stored = (raw as Partial<VersionSidecar> | null)?.version
+    if (typeof stored !== 'string' || stored.trim().length === 0) {
       log.warn('version sidecar holds no version', { name, path })
       return null
     }
-    return normalizeVersion(version)
+    const version = parse(stored)
+    if (version === null) log.warn('version sidecar holds an unrecognized version', { name, path, stored })
+    return version
   } catch (err) {
     // Absent (a binary placed by hand, or installed before this sidecar existed) or
     // unreadable — either way the version is unknown, never assumed current.

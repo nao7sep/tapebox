@@ -2,6 +2,7 @@ import { fetchLatestRelease, fetchReleases } from './github'
 import { fetchRedirectLocation } from '@main/io/fetch-json'
 import { assertHttpsUrl } from '@main/io/network'
 import type { BinaryName } from '@shared/ipc-contract'
+import { FFMPEG_BUILD_TAG } from '@shared/binary-status'
 import type { AssetIntegrity } from './integrity'
 
 /**
@@ -27,21 +28,22 @@ import type { AssetIntegrity } from './integrity'
  *            successful install. Used where the tool's self-reported version
  *            cannot be compared with what the source calls "latest": BtbN's
  *            Windows ffmpeg is a rolling master build reporting `N-119123-g…`,
- *            published under a release whose name is a build timestamp — two
+ *            published under a release tagged with its build time — two
  *            different namespaces, so probing it would report a phantom update
- *            forever.
+ *            forever. `parse` returns null for a stored value of any other
+ *            shape, which reads as version unreadable and offers Update.
  */
 export type InstalledVersionSource =
   | { kind: 'probe'; args: readonly string[]; parse: (stdout: string) => string | null }
-  | { kind: 'sidecar' }
+  | { kind: 'sidecar'; parse: (stored: string) => string | null }
 
 /**
  * Strip vendor noise so installed and latest are compared on the same form
  * (the convention's "normalize before comparing"): martin-riedl appends
  * `-https://www.martin-riedl.de` to ffmpeg's version, and GitHub tags carry a
  * leading `v` (deno ships `v2.9.5`, whose binary reports `2.9.1`). Applied to
- * BOTH sides — every resolved latest below, and every probe/sidecar read — since
- * the two now come from different sources and only agree once normalized.
+ * BOTH sides — every resolved latest below, and every probe read — since the
+ * two come from different sources and only agree once normalized.
  */
 export function normalizeVersion(raw: string): string {
   return raw
@@ -234,7 +236,7 @@ const FFMPEG_WIN64_GPL_ASSET = /^ffmpeg-N-\d+-g[0-9a-f]+-win64-gpl\.zip$/
  */
 export async function resolveFfmpegWindows(signal?: AbortSignal): Promise<ResolvedAsset> {
   const releases = await fetchReleases('BtbN', 'FFmpeg-Builds', signal)
-  const release = releases.find((r) => r.tag_name.startsWith('autobuild-'))
+  const release = releases.find((r) => FFMPEG_BUILD_TAG.test(r.tag_name))
   if (!release) throw new Error('no BtbN autobuild release found')
   const asset = release.assets.find((a) => FFMPEG_WIN64_GPL_ASSET.test(a.name))
   if (!asset) throw new Error(`ffmpeg Windows asset not found in ${release.tag_name}`)
@@ -242,13 +244,10 @@ export async function resolveFfmpegWindows(signal?: AbortSignal): Promise<Resolv
   // the same release; the GPL build's own line is verified at install.
   const sums = release.assets.find((a) => a.name === 'checksums.sha256')
   if (!sums) throw new Error(`ffmpeg Windows release ${release.tag_name} has no checksums.sha256`)
-  // The immutable release's TAG is the timestamp itself (`autobuild-2026-08-19-19-21`),
-  // so unlike the rolling `latest` release, comparing it directly would work — but its
-  // NAME ("Auto-Build 2026-08-19 19:21") is the friendlier display form of the same
-  // moment, so it is preferred, with the tag as a fallback for the API's permitted
-  // null name.
+  // The immutable release tag (`autobuild-2026-08-19-19-21`) is the build's
+  // identity: stored in the sidecar at install and compared as a string.
   return {
-    version: release.name?.trim() || release.tag_name,
+    version: release.tag_name,
     downloadUrl: asset.browser_download_url,
     archive: { kind: 'zip', innerName: 'ffmpeg.exe' },
     maxDownloadBytes: 1024 * 1024 * 1024,
@@ -257,17 +256,22 @@ export async function resolveFfmpegWindows(signal?: AbortSignal): Promise<Resolv
   }
 }
 
+/** A stored Windows ffmpeg identity is a BtbN build tag; anything else is unreadable. */
+export function parseFfmpegBuildTag(stored: string): string | null {
+  return FFMPEG_BUILD_TAG.test(stored) ? stored : null
+}
+
 const ffmpegSpec: BinarySpec = {
   name: 'ffmpeg',
-  // Windows records the resolved version in a sidecar: BtbN ships rolling master
-  // builds (`N-119123-g…`) under a release the API names by build time, so the
-  // binary's own banner and the source's "latest" never meet. Everywhere else the
+  // Windows records the build tag in a sidecar: BtbN ships rolling master builds
+  // (`N-119123-g…`) under a release tagged with its build time, so the binary's
+  // own banner and the source's "latest" never meet. Everywhere else the
   // binary is probed — martin-riedl's macOS build reports the same numbered
   // release its build id names, and a user-placed Linux ffmpeg (no managed
   // source there) at least reports what it is instead of reading unreadable.
   installedVersion:
     process.platform === 'win32'
-      ? { kind: 'sidecar' }
+      ? { kind: 'sidecar', parse: parseFfmpegBuildTag }
       : { kind: 'probe', args: ['-version'], parse: parseFfmpegVersion },
   resolveLatest: async (signal) => {
     if (process.platform === 'darwin') return resolveFfmpegMacOS(signal)

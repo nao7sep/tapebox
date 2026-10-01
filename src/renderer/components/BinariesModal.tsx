@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
-import type { DependencyState, DerivedStatus } from '@shared/binary-status'
+import { identityLabel, type DependencyState, type DerivedStatus } from '@shared/binary-status'
 import { ipcInvoke } from '@renderer/ipc/client'
 import {
   useBinariesStore,
@@ -209,7 +209,7 @@ function BinaryRow({
  *  says so — it is not absent, and it is not silently assumed current. */
 function installedText(status: BinaryStatus, d: DerivedStatus, t: UiTranslator): string {
   if (d.state === 'not-installed') return t.t('tools.notInstalled')
-  return displayArtifactIdentity(status.installedVersion) ?? t.t('tools.versionUnreadable')
+  return status.installedVersion === null ? t.t('tools.versionUnreadable') : identityLabel(status.installedVersion)
 }
 
 /** Colour the installed cell by role so a to-do reads as amber at a glance. */
@@ -223,11 +223,7 @@ function installedClass(d: DerivedStatus): string {
  *  landed but the installed version could not be read. */
 function latestText(status: BinaryStatus, checking: boolean, t: UiTranslator): string {
   if (checking) return t.t('tools.checking')
-  return displayArtifactIdentity(status.latestKnownVersion) ?? t.t('tools.notChecked')
-}
-
-function displayArtifactIdentity(identity: string | null): string | null {
-  return identity?.match(/^Latest Auto-Build \((.+)\)$/)?.[1] ?? identity
+  return status.latestKnownVersion === null ? t.t('tools.notChecked') : identityLabel(status.latestKnownVersion)
 }
 
 type Phase = 'download' | 'verify' | 'install'

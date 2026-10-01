@@ -72,7 +72,7 @@ vi.mock('@main/binaries/registry', async (importOriginal) => {
         resolveLatest: vi.fn(),
         installedVersion: { kind: 'probe', args: ['--version'], parse: actual.parseDenoVersion },
       },
-      ffmpeg: { name: 'ffmpeg', resolveLatest: vi.fn(), installedVersion: { kind: 'sidecar' } },
+      ffmpeg: { name: 'ffmpeg', resolveLatest: vi.fn(), installedVersion: { kind: 'sidecar', parse: actual.parseFfmpegBuildTag } },
     },
   }
 })
@@ -166,10 +166,18 @@ describe('a read that fails', () => {
 })
 
 describe('the sidecar, where a binary cannot report itself', () => {
-  it('round-trips the version recorded beside the binary, without spawning it', async () => {
-    await writeVersionSidecar('ffmpeg', 'Latest Auto-Build (2026-08-19 19:21)')
-    expect(await readInstalledVersion('ffmpeg')).toBe('Latest Auto-Build (2026-08-19 19:21)')
+  it('round-trips the build tag recorded beside the binary, without spawning it', async () => {
+    await writeVersionSidecar('ffmpeg', 'autobuild-2026-08-19-19-21')
+    expect(await readInstalledVersion('ffmpeg')).toBe('autobuild-2026-08-19-19-21')
     expect(capture.calls).toHaveLength(0)
+  })
+
+  it('reads anything but a build tag as unreadable, so the row offers Update', async () => {
+    for (const stored of ['Latest Auto-Build (2026-08-19 19:21)', 'Auto-Build 2026-08-19 19:21', 'N-119123-gabc']) {
+      forgetInstalledVersion('ffmpeg')
+      await writeVersionSidecar('ffmpeg', stored)
+      expect(await readInstalledVersion('ffmpeg'), stored).toBeNull()
+    }
   })
 
   it('is <stem>.json beside the binary, not a suffix on its full filename', () => {
