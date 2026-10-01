@@ -88,6 +88,7 @@ export const paths = {
   get library()       { return join(storageRoot(), 'library') },
   get logs()          { return join(storageRoot(), 'logs') },
   get temp()          { return join(storageRoot(), 'temp') },
+  get modelLists()    { return join(storageRoot(), 'model-lists.json') },
   get config()        { return join(storageRoot(), 'config.json') },
   get catalog()       { return join(storageRoot(), 'catalog.json') },
   get layout()        { return join(storageRoot(), 'layout.json') },

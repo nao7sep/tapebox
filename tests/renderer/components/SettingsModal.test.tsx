@@ -21,6 +21,7 @@ const onClose = vi.fn()
 function stubMain(updateReply: (patch: SettingsPatch) => unknown) {
   ipcInvoke.mockImplementation((channel: string, req?: unknown) => {
     if (channel === 'settings:get') return Promise.resolve(saved)
+    if (channel === 'settings:modelList') return Promise.resolve([])
     if (channel === 'settings:hasApiKey') return Promise.resolve(false)
     if (channel === 'settings:defaultLibraryDir') return Promise.resolve('/home/me/.tapebox/library')
     if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsPatch))
@@ -49,7 +50,7 @@ beforeEach(() => {
   ipcInvoke.mockReset()
   onClose.mockReset()
   useToastStore.setState({ toasts: [] })
-  saved = { ...defaultSettings(), ai: { ...defaultSettings().ai, model: 'retired-model' } }
+  saved = { ...defaultSettings(), 'openai.slug': 'retired-model' }
 })
 
 afterEach(() => {
@@ -80,8 +81,9 @@ describe('SettingsModal', () => {
     expect(update![1]).toEqual({ language: 'ja' })
   })
 
-  it('Reset model returns the model to the shipped default and saves it', async () => {
+  it('Reset model deletes only the model copy and preserves the endpoint', async () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    saved['openai.endpoint'] = 'https://proxy.example/v1'
     await render()
     await click('AI')
 
@@ -89,11 +91,45 @@ describe('SettingsModal', () => {
     expect(model.value).toBe('retired-model')
     await click('Reset model')
     expect(model.value).toBe(DEFAULT_AI_MODEL)
-    expect(button('Reset model').disabled).toBe(true)
+    expect(button('Reset model').disabled).toBe(false)
 
     await click('Save')
     const update = ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')
-    expect(update![1]).toEqual({ ai: { ...saved.ai, model: DEFAULT_AI_MODEL } })
+    expect(update![1]).toEqual({ 'openai.slug': null })
+    expect((document.querySelector('input[placeholder="https://api.openai.com/v1"]') as HTMLInputElement).value).toBe('https://proxy.example/v1')
+  })
+
+  it('shows grouped sources and the out-of-list selection without replacing it', async () => {
+    saved.extraModelIds = { openai: ['local-model'] }
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    ipcInvoke.mockImplementation((channel: string) => {
+      if (channel === 'settings:get') return Promise.resolve(saved)
+      if (channel === 'settings:modelList') return Promise.resolve(['gpt-fetched'])
+      return Promise.resolve(false)
+    })
+    await render()
+    await click('AI')
+    const picker = document.querySelector('select[aria-label="Model"]') as HTMLSelectElement
+    expect([...picker.querySelectorAll('optgroup')].map((group) => group.label)).toEqual(['App suggestions', 'Provider models', 'Your extra models'])
+    expect([...picker.options].map((option) => option.value)).toEqual(['retired-model', 'gpt-6-luna', 'gpt-fetched', 'local-model'])
+    expect(picker.value).toBe('retired-model')
+    await click('Refresh models')
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:modelList', { endpoint: saved['openai.endpoint'], force: true })
+  })
+
+  it('persists a typed unknown id as the selection and an extra without changing endpoint', async () => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    await click('AI')
+    const input = document.getElementById('settings-ai-model') as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'my-local-model')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click('Save')
+    expect(ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')![1]).toEqual({
+      'openai.slug': 'my-local-model', extraModelIds: { openai: ['my-local-model'] },
+    })
   })
 
   it('Reset slug prompt shows the built-in and deletes the whole prompts set on Save', async () => {

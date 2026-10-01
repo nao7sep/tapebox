@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import { describe, expect, it } from 'vitest'
-import { aiRequestFailure, completionText } from '@main/services/ai-client'
+import { aiRequestFailure, completionText, isRetryableAiError, aiRetryAfterMs } from '@main/services/ai-client'
 import { UserFacingError } from '@main/user-facing-error'
 
 describe('completionText', () => {
@@ -57,5 +57,33 @@ describe('aiRequestFailure', () => {
     const other = new TypeError('/private/tmp/HOSTILE-SENTINEL')
     expect(aiRequestFailure(other)).toBe(other)
     expect(aiRequestFailure(other)).not.toBeInstanceOf(UserFacingError)
+  })
+})
+
+
+describe('AI resend policy', () => {
+  it('retries only 408, 429, and 503 responses', () => {
+    for (const status of [400, 401, 404, 408, 429, 500, 502, 503, 504]) {
+      expect(isRetryableAiError(new OpenAI.APIError(status, undefined, undefined, new Headers())))
+        .toBe([408, 429, 503].includes(status))
+    }
+  })
+  it('distinguishes a refused or unresolved connection from a dropped request', () => {
+    for (const code of ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET', 'EPIPE']) {
+      const cause = Object.assign(new Error('network failure'), { code })
+      expect(isRetryableAiError(new OpenAI.APIConnectionError({ cause })))
+        .toBe(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN'].includes(code))
+    }
+    const cause = new TypeError('fetch failed', { cause: Object.assign(new Error('socket'), { code: 'ECONNREFUSED' }) })
+    expect(isRetryableAiError(new OpenAI.APIConnectionError({ cause }))).toBe(true)
+    expect(isRetryableAiError(new OpenAI.APIConnectionTimeoutError())).toBe(false)
+    expect(isRetryableAiError(new TypeError('internal'))).toBe(false)
+  })
+  it('honours Retry-After seconds or dates with a 30-second cap', () => {
+    const error = (value: string) => new OpenAI.APIError(429, undefined, undefined, new Headers({ 'retry-after': value }))
+    expect(aiRetryAfterMs(error('4'))).toBe(4000)
+    expect(aiRetryAfterMs(error('90'))).toBe(30_000)
+    expect(aiRetryAfterMs(error(new Date(Date.now() + 120_000).toUTCString()))).toBe(30_000)
+    expect(aiRetryAfterMs(error('invalid'))).toBeUndefined()
   })
 })

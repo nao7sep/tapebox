@@ -99,6 +99,7 @@ export function updateSettings(patch: SettingsPatch): Promise<Settings> {
     const sets = found !== null && 'sets' in found ? found.sets : {}
     const validated = SettingsPatchSchema.parse(patch)
     if (Object.keys(validated).length === 0) return cache
+    if (Object.entries(validated).every(([key, value]) => value === undefined || (value === null && !Object.hasOwn(sets, key)))) return cache
     for (const [key, value] of Object.entries(validated)) {
       if (value === undefined) continue
       if (value === null) delete sets[key as keyof Settings]

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AI_ROLES, defaultModelFor } from './ai-models'
 import { stripUrlCredentials } from './url'
 import { LANGUAGE_PREFERENCES } from './i18n/languages'
 
@@ -7,10 +8,6 @@ import { LANGUAGE_PREFERENCES } from './i18n/languages'
 // dependencies.json / Dependencies type (see shared/dependencies.ts), per
 // persisted-store-separation-conventions. They used to hang off Settings.binaries.
 
-/**
- * Single OpenAI-compatible provider configuration. The API key is stored
- * separately in lightly obfuscated local JSON under a fixed slot.
- */
 /**
  * The AI base URL must use https, so the API key is never sent in plaintext —
  * except to a loopback endpoint (a local OpenAI-compatible server like Ollama or
@@ -31,13 +28,9 @@ function isLoopbackOrHttps(raw: string): boolean {
   return false
 }
 
-export const AiSettingsSchema = z.object({
-  baseUrl: z.string().url().refine(isLoopbackOrHttps, {
-    message: 'AI base URL must use https (http is allowed only for a localhost endpoint).',
-  }),
-  model: z.string().min(1),
+export const EndpointSchema = z.string().url().refine(isLoopbackOrHttps, {
+  message: 'AI endpoint must use https (http is allowed only for a localhost endpoint).',
 })
-export type AiSettings = z.infer<typeof AiSettingsSchema>
 
 /**
  * Configurable AI prompts. An absent prompts set uses DEFAULT_SLUG_PROMPT;
@@ -47,17 +40,8 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>
  * {description}. A token the user omits is simply not sent; a token left in
  * substitutes to empty when that field is unavailable.
  */
-/**
- * The built-in AI endpoint and model. Named (not inline in
- * defaultSettings) so the Settings placeholders show the real default instead of a
- * copy that silently goes stale — the same reason DEFAULT_SLUG_PROMPT is named.
- *
- * The model is free text: TapeBox targets any OpenAI-compatible endpoint, so there
- * is no list to pick from and a wrong name is the provider's error at call time,
- * not something this app pre-checks (ai-model-routing-conventions, open branch).
- */
 export const DEFAULT_AI_BASE_URL = 'https://api.openai.com/v1'
-export const DEFAULT_AI_MODEL = 'gpt-5.6-luna'
+export const DEFAULT_AI_MODEL = defaultModelFor('openai', AI_ROLES[0].kind)
 
 export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
 
@@ -141,7 +125,10 @@ const SettingsObjectSchema = z.object({
   // install and update is user-triggered in the tools modal.
   checkUpdatesAtLaunch: z.boolean(),
 
-  ai: AiSettingsSchema,
+  provider: z.literal('openai'),
+  'openai.endpoint': EndpointSchema,
+  'openai.slug': z.string().min(1),
+  extraModelIds: z.object({ openai: z.array(z.string().min(1)).optional() }),
 
   // Configurable AI prompts. See PromptsSettingsSchema.
   prompts: PromptsSettingsSchema,
@@ -202,9 +189,10 @@ export const SettingsSchema = SettingsObjectSchema.partial()
 export type SettingsSets = z.infer<typeof SettingsSchema>
 export type Settings = z.infer<typeof SettingsObjectSchema>
 
-// null is the explicit reset command for prompts, never a stored value.
+// null is an explicit reset command, never a stored value.
 export const SettingsPatchSchema = SettingsSchema.extend({
   prompts: PromptsSettingsSchema.nullable().optional(),
+  'openai.slug': z.string().min(1).nullable().optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 
@@ -233,6 +221,7 @@ export function settingsAfterPatch(current: Settings, patch: SettingsPatch): Set
     ...current,
     ...patch,
     ...(patch.prompts === null ? { prompts: defaultSettings().prompts } : {}),
+    ...(patch['openai.slug'] === null ? { 'openai.slug': defaultSettings()['openai.slug'] } : {}),
   })
 }
 
@@ -265,10 +254,10 @@ export function defaultSettings(): Settings {
     trashOnRemove: true,
     confirmRemove: true,
     checkUpdatesAtLaunch: true,
-    ai: {
-      baseUrl: DEFAULT_AI_BASE_URL,
-      model: DEFAULT_AI_MODEL,
-    },
+    provider: 'openai',
+    'openai.endpoint': DEFAULT_AI_BASE_URL,
+    'openai.slug': DEFAULT_AI_MODEL,
+    extraModelIds: {},
     prompts: {
       slug: DEFAULT_SLUG_PROMPT,
     },
@@ -318,8 +307,8 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
     checkUpdatesAtLaunch: s.checkUpdatesAtLaunch,
-    aiBaseUrl: stripUrlCredentials(s.ai.baseUrl),
-    aiModel: s.ai.model,
+    aiBaseUrl: stripUrlCredentials(s['openai.endpoint']),
+    aiModel: s['openai.slug'],
     externalPlayer: s.externalPlayer,
     defaultExportDir: s.defaultExportDir,
     deleteAfterExport: s.deleteAfterExport,

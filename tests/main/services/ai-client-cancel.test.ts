@@ -11,6 +11,8 @@ vi.mock('openai', () => {
   }
   class OpenAI {
     static APIError = APIError
+    static APIConnectionTimeoutError = class extends Error {}
+    static APIConnectionError = class extends Error {}
     chat = {
       completions: {
         create: (_body: unknown, options: { signal?: AbortSignal }) => {
@@ -24,7 +26,7 @@ vi.mock('openai', () => {
   return { default: OpenAI }
 })
 vi.mock('@main/store/config', () => ({
-  getSettings: () => ({ ai: { baseUrl: 'https://ai.example', model: 'm' }, prompts: { slug: '{title}' } }),
+  getSettings: () => ({ 'openai.endpoint': 'https://ai.example', 'openai.slug': 'm', prompts: { slug: '{title}' } }),
 }))
 vi.mock('@main/services/api-keys', () => ({ resolveApiKey: async () => 'test-key' }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))

@@ -20,6 +20,7 @@ export type RetryHooks = {
   signal?: AbortSignal
   /** Return false to treat an error as permanent (no further retries). */
   isRetryable?: (err: unknown) => boolean
+  retryAfterMs?: (err: unknown) => number | undefined
   onRetry?: (info: { attempt: number; delayMs: number; error: unknown }) => void
 }
 
@@ -37,7 +38,7 @@ export async function withRetry<T>(
       if (hooks.signal?.aborted) throw err
       const canRetry = i < policy.retries && (hooks.isRetryable?.(err) ?? true)
       if (!canRetry) throw err
-      const delayMs = intervalAt(policy.intervals, i)
+      const delayMs = hooks.retryAfterMs?.(err) ?? intervalAt(policy.intervals, i)
       hooks.onRetry?.({ attempt: i + 1, delayMs, error: err })
       await sleep(delayMs, hooks.signal)
     }

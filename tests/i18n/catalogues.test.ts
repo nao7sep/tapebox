@@ -21,15 +21,15 @@ const translations = LANGUAGES.filter((language) => language !== "en");
 
 // Keys whose text is the same word in that language as in English.
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
-  de: ["common.ok", "detail.name", "tools.columnTool", "settings.tabYtdlp", "settings.languageSystem", "settings.themeSystem", "settings.profileName", "shortcuts.player", "about.version"],
-  es: ["nativeMenu.zoom", "settings.tabGeneral", "settings.tabYtdlp"],
-  fr: ["common.ok", "nativeMenu.services", "refresh.description", "export.destination", "settings.tabYtdlp", "about.version"],
-  it: ["common.ok", "nativeMenu.file", "tools.phaseDownload", "settings.tabYtdlp"],
-  "pt-BR": ["common.ok", "nativeMenu.zoom", "tools.phaseDownload", "settings.tabYtdlp", "shortcuts.player"],
-  ru: ["settings.tabYtdlp"],
-  ja: ["common.ok", "settings.tabAi", "settings.tabYtdlp"],
-  ko: ["settings.tabAi", "settings.tabYtdlp"],
-  "zh-Hans": ["settings.tabAi", "settings.tabYtdlp"],
+  de: ["common.ok", "detail.name", "tools.columnTool", "settings.tabYtdlp", "settings.openai", "settings.languageSystem", "settings.themeSystem", "settings.profileName", "shortcuts.player", "about.version"],
+  es: ["nativeMenu.zoom", "settings.tabGeneral", "settings.tabYtdlp", "settings.openai"],
+  fr: ["common.ok", "nativeMenu.services", "refresh.description", "export.destination", "settings.tabYtdlp", "settings.openai", "about.version"],
+  it: ["common.ok", "nativeMenu.file", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai"],
+  "pt-BR": ["common.ok", "nativeMenu.zoom", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai", "shortcuts.player"],
+  ru: ["settings.tabYtdlp", "settings.openai"],
+  ja: ["common.ok", "settings.tabAi", "settings.tabYtdlp", "settings.openai"],
+  ko: ["settings.tabAi", "settings.tabYtdlp", "settings.openai"],
+  "zh-Hans": ["settings.tabAi", "settings.tabYtdlp", "settings.openai"],
 };
 
 // The hidden-character-conventions set, plus the no-break spaces, figure space,

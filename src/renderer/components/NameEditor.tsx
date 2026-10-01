@@ -165,7 +165,7 @@ export function NameEditor({
                 onClick={() => void suggest()}
                 disabled={busy || !canSuggest}
               >
-                {t.t('nameEditor.suggest')}
+                {t.t(error ? 'common.tryAgain' : 'nameEditor.suggest')}
               </Button>
             )}
           </div>

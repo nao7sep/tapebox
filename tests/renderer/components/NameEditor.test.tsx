@@ -63,6 +63,17 @@ describe('NameEditor suggestion', () => {
     expect(onGeneratingChange).toHaveBeenLastCalledWith(false)
   })
 
+  it('offers a visible retry after a provider failure', async () => {
+    ipcInvoke.mockImplementation((channel: string) => {
+      if (channel === 'ai:generateSlug') return Promise.reject(new Error('provider failure'))
+      return Promise.resolve({})
+    })
+    await act(async () => button('Suggest')!.click())
+    expect(button('Try again')?.disabled).toBe(false)
+    await act(async () => button('Try again')!.click())
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'ai:generateSlug')).toHaveLength(2)
+  })
+
   it('cancels a running suggestion when the dialog closes', async () => {
     await act(async () => button('Suggest')!.click())
     const requestId = requestIdOf('ai:generateSlug')

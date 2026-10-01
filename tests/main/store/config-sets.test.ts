@@ -35,10 +35,10 @@ describe('settings by set', () => {
 
   it('writes exactly the changed whole set', async () => {
     await loadSettings()
-    const ai = { baseUrl: 'https://example.com/v1', model: 'new-model' }
-    await updateSettings({ ai })
-    expect(await savedSets()).toEqual({ ai })
-    expect(getSettings()).toEqual({ ...defaultSettings(), ai })
+    const selection = { 'openai.slug': 'new-model' }
+    await updateSettings(selection)
+    expect(await savedSets()).toEqual(selection)
+    expect(getSettings()).toEqual({ ...defaultSettings(), ...selection })
   })
 
   it('reads absent sets from built-ins without writing them', async () => {
@@ -64,7 +64,7 @@ describe('settings by set', () => {
   })
 
   it('uses built-ins for malformed sets without quarantining or merging nested members', async () => {
-    const raw = { ai: { model: 'missing-url' }, prompts: {}, language: 'unsupported', playSound: false }
+    const raw = { 'openai.endpoint': 'http://remote.example', prompts: {}, language: 'unsupported', playSound: false }
     await writeFile(paths.config, JSON.stringify(raw))
     await loadSettings()
     await readSettingsFile(paths.config)
@@ -72,7 +72,7 @@ describe('settings by set', () => {
     expect(await savedSets()).toEqual(raw)
     expect(await readdir(dir)).toEqual(['config.json'])
     expect(log.warn.mock.calls.map(([, fields]) => fields)).toEqual([
-      { key: 'ai' }, { key: 'prompts' }, { key: 'language' },
+      { key: 'openai.endpoint' }, { key: 'prompts' }, { key: 'language' },
     ])
   })
 
@@ -82,6 +82,21 @@ describe('settings by set', () => {
     await updateSettings({ prompts: null })
     expect(await savedSets()).toEqual({ autoplay: false })
     expect(getSettings().prompts).toEqual(defaultSettings().prompts)
+  })
+
+  it('resetting an absent model copy leaves a fresh config absent', async () => {
+    await loadSettings()
+    await updateSettings({ 'openai.slug': null })
+    expect(await readdir(dir)).toEqual([])
+  })
+
+  it('drops the old AI set and resets only the selected model', async () => {
+    await writeFile(paths.config, JSON.stringify({ ai: { baseUrl: 'https://old.example', model: 'old' }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
+    await loadSettings()
+    expect(getSettings()['openai.endpoint']).toBe('https://proxy.example/v1')
+    await updateSettings({ 'openai.slug': null })
+    expect(await savedSets()).toEqual({ 'openai.endpoint': 'https://proxy.example/v1' })
+    expect(getSettings()['openai.slug']).toBe(defaultSettings()['openai.slug'])
   })
 
   it('quarantines corrupt bytes without reseeding a config', async () => {

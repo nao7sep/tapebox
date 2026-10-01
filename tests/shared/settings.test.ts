@@ -12,9 +12,9 @@ import {
 // placeholder promises, the two have drifted and one of them is lying to the user.
 describe('the AI defaults have a single source', () => {
   it('uses built-in values from the named constants', () => {
-    const { ai } = defaultSettings()
-    expect(ai.baseUrl).toBe(DEFAULT_AI_BASE_URL)
-    expect(ai.model).toBe(DEFAULT_AI_MODEL)
+    const s = defaultSettings()
+    expect(s['openai.endpoint']).toBe(DEFAULT_AI_BASE_URL)
+    expect(s['openai.slug']).toBe(DEFAULT_AI_MODEL)
   })
 
   it('provides values the schema accepts', () => {
@@ -96,7 +96,8 @@ describe('summarizeSettings', () => {
   it('summarizes bounded, non-secret config verbatim', () => {
     const s = defaultSettings()
     s.libraryDir = '/lib'
-    s.ai = { baseUrl: 'https://api.example.com/v1', model: 'gpt-x' }
+    s['openai.endpoint'] = 'https://api.example.com/v1'
+    s['openai.slug'] = 'gpt-x'
     s.maxConcurrentDownloads = 4
     s.autoplay = false
     s.uiFontFamily = 'Iosevka, monospace'
@@ -132,7 +133,8 @@ describe('summarizeSettings', () => {
 
   it('strips credentials from the AI baseUrl before logging it', () => {
     const s = defaultSettings()
-    s.ai = { baseUrl: 'https://admin:sk-BASEURL-SECRET@gateway.example/v1', model: 'm' }
+    s['openai.endpoint'] = 'https://admin:sk-BASEURL-SECRET@gateway.example/v1'
+    s['openai.slug'] = 'm'
 
     const summary = summarizeSettings(s)
     expect(summary.aiBaseUrl).toBe('https://gateway.example/v1')

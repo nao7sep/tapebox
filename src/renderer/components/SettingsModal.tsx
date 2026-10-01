@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
-import type { AiSettings, Settings, SettingsPatch, SiteProfile, ThemePreference } from '@shared/settings'
+import type { Settings, SettingsPatch, SiteProfile, ThemePreference } from '@shared/settings'
 import { changedSettings, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
+import { AI_ROLES, modelsFor, SUPPORTED_MODELS } from '@shared/ai-models'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -56,6 +57,12 @@ export function SettingsModal({ onClose }: Props) {
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
+  const [resetModel, setResetModel] = useState(false)
+  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [refreshingModels, setRefreshingModels] = useState(false)
+  const listBusy = useRef(false)
+  const listVersion = useRef(0)
+  const mounted = useRef(true)
   const [resetPrompts, setResetPrompts] = useState(false)
   const [error, setError] = useState<Message | null>(null)
   const [busy, setBusy] = useState(false)
@@ -75,11 +82,14 @@ export function SettingsModal({ onClose }: Props) {
       ipcInvoke('settings:hasApiKey'),
       ipcInvoke('settings:defaultLibraryDir'),
     ]).then(([s, has, defaultLibDir]) => {
+      if (!mounted.current) return
       setOriginal(s)
       setDraft(s)
       setHadApiKey(has)
       setDefaultLibraryDir(defaultLibDir)
+      if (mounted.current) void refreshModels(s, false)
     }, (error) => {
+      if (!mounted.current) return
       setLoadError(presentFailure(
         error,
         message('settings.loadFailed'),
@@ -89,7 +99,13 @@ export function SettingsModal({ onClose }: Props) {
   }
 
   useEffect(() => {
+    mounted.current = true
     load()
+    return () => {
+      mounted.current = false
+      listVersion.current++
+      void ipcInvoke('settings:cancelModelList').catch(() => {})
+    }
   }, [])
 
   useEffect(() => ipcOn('settings:libraryMoveProgress', setMoveProgress), [])
@@ -105,9 +121,29 @@ export function SettingsModal({ onClose }: Props) {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
   }
 
-  function patchAi(patch: Partial<AiSettings>) {
-    if (!draft) return
-    patchDraft({ ai: { ...draft.ai, ...patch } })
+  function invalidateModelList() {
+    listVersion.current++
+    setFetchedModels([])
+    void ipcInvoke('settings:cancelModelList').catch(() => {})
+  }
+
+  async function refreshModels(settings: Settings, force: boolean) {
+    if (listBusy.current) return
+    listBusy.current = true
+    const version = ++listVersion.current
+    setRefreshingModels(true)
+    try {
+      const ids = await ipcInvoke('settings:modelList', {
+        endpoint: settings['openai.endpoint'], force,
+        ...(apiKeyDraft ? { apiKey: apiKeyDraft } : {}),
+      })
+      if (version === listVersion.current) setFetchedModels(ids)
+    } catch (error) {
+      if (version === listVersion.current) log.warn('model list unavailable', { error: describeError(error) })
+    } finally {
+      listBusy.current = false
+      if (mounted.current) setRefreshingModels(false)
+    }
   }
 
   function patchPrompts(patch: Partial<Settings['prompts']>) {
@@ -119,7 +155,7 @@ export function SettingsModal({ onClose }: Props) {
   const settingsDirty =
     !!original && !!draft && JSON.stringify(pickEditable(original)) !== JSON.stringify(pickEditable(draft))
   const apiKeyDirty = apiKeyDraft.length > 0 || wantsClearKey
-  const dirty = settingsDirty || resetPrompts || apiKeyDirty
+  const dirty = settingsDirty || resetPrompts || resetModel || apiKeyDirty
 
   // How many existing tapes have files on disk that a library move would relocate.
   // Used only to decide whether to prompt before Save and to phrase the prompt;
@@ -162,12 +198,19 @@ export function SettingsModal({ onClose }: Props) {
     try {
       const patch: SettingsPatch = changedSettings(pickEditable(original), pickEditable(draft))
       if (resetPrompts) patch.prompts = null
+      if (resetModel) patch['openai.slug'] = null
+      const model = draft['openai.slug']
+      const known = [...modelsFor('openai', AI_ROLES[0].kind).map((row) => row.id), ...fetchedModels, ...(draft.extraModelIds.openai ?? [])]
+      if (patch['openai.slug'] && !known.includes(model)) {
+        patch.extraModelIds = { ...draft.extraModelIds, openai: [...(draft.extraModelIds.openai ?? []), model] }
+      }
       if (Object.keys(patch).length > 0) {
         const { settings: updated, warning } = await ipcInvoke('settings:update', patch)
         useSettingsStore.getState().setHydratedSettings(updated)
         setOriginal(updated)
         setDraft(updated)
         setResetPrompts(false)
+        setResetModel(false)
         // A committed save's cleanup warning remains after the dialog closes.
         if (warning) useToastStore.getState().notify(warning, 'error')
       }
@@ -258,7 +301,15 @@ export function SettingsModal({ onClose }: Props) {
             )}
             {tab === 'ai' && (
               <AiTab
-                ai={draft.ai}
+                endpoint={draft['openai.endpoint']}
+                model={draft['openai.slug']}
+                extraIds={draft.extraModelIds.openai ?? []}
+                fetchedIds={fetchedModels}
+                refreshing={refreshingModels}
+                onRefresh={() => void refreshModels(draft, true)}
+                onEndpointChange={(value) => { invalidateModelList(); patchDraft({ 'openai.endpoint': value }) }}
+                onModelChange={(value) => { setResetModel(false); patchDraft({ 'openai.slug': value }) }}
+                onResetModel={() => { setResetModel(true); patchDraft({ 'openai.slug': DEFAULT_AI_MODEL }) }}
                 prompts={draft.prompts}
                 onPromptsPatch={patchPrompts}
                 onResetPrompts={() => {
@@ -269,12 +320,13 @@ export function SettingsModal({ onClose }: Props) {
                 hadKey={hadApiKey}
                 apiKeyDraft={apiKeyDraft}
                 wantsClearKey={wantsClearKey}
-                onAiPatch={patchAi}
                 onApiKeyChange={(v) => {
+                  invalidateModelList()
                   setApiKeyDraft(v)
                   if (v.length > 0) setWantsClearKey(false)
                 }}
                 onClearKey={() => {
+                  invalidateModelList()
                   setApiKeyDraft('')
                   setWantsClearKey(true)
                 }}
@@ -344,7 +396,10 @@ function pickEditable(s: Settings) {
     uiFontFamily: s.uiFontFamily,
     theme: s.theme,
     language: s.language,
-    ai: s.ai,
+    provider: s.provider,
+    'openai.endpoint': s['openai.endpoint'],
+    'openai.slug': s['openai.slug'],
+    extraModelIds: s.extraModelIds,
     prompts: s.prompts,
     ytdlpArgs: s.ytdlpArgs,
     siteProfiles: s.siteProfiles,
@@ -631,7 +686,7 @@ function GeneralTab({
 // ── AI tab ──────────────────────────────────────────────────────────────────
 
 function AiTab({
-  ai,
+  endpoint, model, extraIds, fetchedIds, refreshing, onRefresh, onEndpointChange, onModelChange, onResetModel,
   prompts,
   onPromptsPatch,
   onResetPrompts,
@@ -639,11 +694,18 @@ function AiTab({
   hadKey,
   apiKeyDraft,
   wantsClearKey,
-  onAiPatch,
   onApiKeyChange,
   onClearKey,
 }: {
-  ai: AiSettings
+  endpoint: string
+  model: string
+  extraIds: string[]
+  fetchedIds: string[]
+  refreshing: boolean
+  onRefresh: () => void
+  onEndpointChange: (value: string) => void
+  onModelChange: (value: string) => void
+  onResetModel: () => void
   prompts: Settings['prompts']
   onPromptsPatch: (p: Partial<Settings['prompts']>) => void
   onResetPrompts: () => void
@@ -651,7 +713,6 @@ function AiTab({
   hadKey: boolean
   apiKeyDraft: string
   wantsClearKey: boolean
-  onAiPatch: (p: Partial<AiSettings>) => void
   onApiKeyChange: (v: string) => void
   onClearKey: () => void
 }) {
@@ -659,22 +720,31 @@ function AiTab({
   const willClear = wantsClearKey && apiKeyDraft.length === 0
   const t = useI18n()
 
-  function resetModelToDefault() {
-    onAiPatch({ model: DEFAULT_AI_MODEL })
-  }
+  const groups = [
+    { label: 'settings.bundledModels' as const, ids: modelsFor('openai', AI_ROLES[0].kind).map((row) => row.id) },
+    { label: 'settings.providerModels' as const, ids: fetchedIds },
+    { label: 'settings.extraModels' as const, ids: extraIds },
+  ]
+  const outOfList = !groups.some((group) => group.ids.includes(model))
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-fg">
         {t.t('settings.aiIntro')}
       </p>
+      <Field label={t.t('settings.provider')}>
+        <select value="openai" disabled={busy} className={INPUT_LINE_CLASS} onChange={() => {}}>
+          <option value="openai">{t.t('settings.openai')}</option>
+        </select>
+      </Field>
+      <h3 className="text-sm font-medium text-fg">{t.t('settings.openai')}</h3>
 
       <TextField
         label={t.t('settings.baseUrl')}
-        value={ai.baseUrl}
+        value={endpoint}
         placeholder={DEFAULT_AI_BASE_URL}
         disabled={busy}
-        onChange={(v) => onAiPatch({ baseUrl: v })}
+        onChange={onEndpointChange}
       />
 
       <div>
@@ -702,25 +772,40 @@ function AiTab({
       </div>
 
       <div>
-        <label htmlFor="settings-ai-model" className="text-xs font-medium text-fg">{t.t('settings.model')}</label>
+        <label htmlFor="settings-ai-model" className="text-xs font-medium text-fg">{t.t('settings.slugModel')}</label>
         <div className="mt-1 flex items-center gap-2">
           <input
             id="settings-ai-model"
             type="text"
-            value={ai.model}
+            value={model}
             placeholder={DEFAULT_AI_MODEL}
             spellCheck={false}
             disabled={busy}
-            onChange={(e) => onAiPatch({ model: e.target.value })}
+            onChange={(e) => onModelChange(e.target.value)}
             className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
+          <select
+            aria-label={t.t('settings.model')}
+            value={model}
+            disabled={busy}
+            className={`min-w-0 flex-1 ${INPUT_LINE_CLASS}`}
+            onChange={(e) => onModelChange(e.target.value)}
+          >
+            {outOfList && <option value={model}>{t.t('settings.outOfList', { id: model })}</option>}
+            {groups.map((group) => <optgroup key={group.label} label={t.t(group.label)}>
+              {group.ids.map((id) => <option key={id} value={id}>{SUPPORTED_MODELS.find((row) => row.id === id)?.kinds.includes('text-frontier') ? t.t('settings.frontierModel', { id }) : id}</option>)}
+            </optgroup>)}
+          </select>
+          <Button variant="secondary" size="sm" disabled={busy || refreshing || willClear} onClick={onRefresh}>
+            {t.t('settings.refreshModels')}
+          </Button>
           {/* A model name goes stale as providers retire models; this returns it
               to the one the current version ships (config-sets-conventions). */}
           <Button
             variant="secondary"
             size="sm"
-            disabled={busy || ai.model === DEFAULT_AI_MODEL}
-            onClick={resetModelToDefault}
+            disabled={busy}
+            onClick={onResetModel}
           >
             {t.t('settings.resetModel')}
           </Button>

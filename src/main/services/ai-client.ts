@@ -2,13 +2,14 @@ import OpenAI from 'openai'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { withRetry } from '@main/io/retry'
-import { AI_REQUEST_TIMEOUT_MS, HTTP_RETRY } from '@main/io/network'
+import { AI_REQUEST_TIMEOUT_MS } from '@main/io/network'
 import { UserFacingError } from '@main/user-facing-error'
 import { resolveApiKey } from './api-keys'
+import { buildSlugRequest } from '@shared/model-routing'
 import { message } from '@shared/i18n/translate'
 
 /**
- * Slug generation against the single OpenAI-compatible endpoint configured in
+ * Slug generation against the OpenAI endpoint configured in
  * Settings. The client is constructed per-call so config edits take effect
  * without restart. withRetry owns the retry schedule (SDK retries disabled to
  * avoid compounding).
@@ -21,13 +22,15 @@ export async function generateSlug(
   },
   signal: AbortSignal,
 ): Promise<string> {
-  const { ai, prompts } = getSettings()
+  const settings = getSettings()
+  const { prompts } = settings
+  const model = settings['openai.slug']
   const apiKey = await resolveApiKey('openai')
   if (!apiKey) throw new UserFacingError('refused', message('errors.aiNoKey'))
 
   const client = new OpenAI({
     apiKey,
-    baseURL: ai.baseUrl,
+    baseURL: settings['openai.endpoint'],
     maxRetries: 0,
     timeout: AI_REQUEST_TIMEOUT_MS,
   })
@@ -42,27 +45,17 @@ export async function generateSlug(
     .replace(/\{uploader\}/g, opts.uploader ?? '')
     .replace(/\{description\}/g, opts.description ?? '')
 
-  log.info('ai: generateSlug request', { model: ai.model })
-  // Keep the request structurally minimal — just the model and a single user
-  // message — so it works across the whole spread of OpenAI-compatible providers
-  // and model families. Tuning parameters are the usual portability landmines:
-  // newer OpenAI models reject `max_tokens` (demanding `max_completion_tokens`)
-  // and some reject a non-default `temperature` outright. Every instruction
-  // (length cap, format, what to ignore) already lives in the prompt, so none of
-  // those knobs is needed; slugifyAscii + sanitizeFilename bound the result anyway.
+  log.info('ai: generateSlug request', { model })
   let res: Awaited<ReturnType<typeof client.chat.completions.create>>
   try {
     res = await withRetry(
-      HTTP_RETRY,
+      { retries: 2, intervals: [2_000, 5_000] },
       () =>
         client.chat.completions.create(
-          {
-            model: ai.model,
-            messages: [{ role: 'user', content: userPrompt }],
-          },
+          buildSlugRequest(model, userPrompt),
           { signal },
         ),
-      { signal, isRetryable: isRetryableAiError },
+      { signal, isRetryable: isRetryableAiError, retryAfterMs: aiRetryAfterMs },
     )
   } catch (err) {
     // A Stop is the user's own choice; it stays a plain abort.
@@ -71,7 +64,7 @@ export async function generateSlug(
   }
   // Result line for the external boundary (the request was logged above): the
   // finish_reason distinguishes a normal stop from a length/content-filter cutoff.
-  log.info('ai: generateSlug response', { model: ai.model, finishReason: res.choices[0]?.finish_reason })
+  log.info('ai: generateSlug response', { model, finishReason: res.choices[0]?.finish_reason })
   return completionText(res.choices[0])
 }
 
@@ -135,17 +128,23 @@ export function aiRequestFailure(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err))
 }
 
-/**
- * Retry transient AI failures only: rate limits (429) and server errors (5xx).
- * A 4xx like 400/401/403 is a config/auth problem that won't fix itself. The
- * SDK's connection, timeout and user-abort errors are APIErrors without a
- * status, so they are not retried: a request that already waited out its
- * deadline is reported rather than repeated.
- */
-function isRetryableAiError(err: unknown): boolean {
-  if (err instanceof OpenAI.APIError) {
-    const status = err.status
-    return status === 429 || (typeof status === 'number' && status >= 500)
+/** A waiting user resends only known transient refusals, never unknown outcomes. */
+export function isRetryableAiError(err: unknown): boolean {
+  if (err instanceof OpenAI.APIConnectionTimeoutError) return false
+  if (err instanceof OpenAI.APIConnectionError) {
+    // Node fetch wraps socket errors in a TypeError; the SDK preserves that cause.
+    const cause = err.cause as (NodeJS.ErrnoException & { cause?: NodeJS.ErrnoException }) | undefined
+    const code = cause?.code ?? cause?.cause?.code
+    return code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'EAI_AGAIN'
   }
-  return true
+  return err instanceof OpenAI.APIError && [408, 429, 503].includes(err.status ?? 0)
+}
+
+export function aiRetryAfterMs(err: unknown): number | undefined {
+  if (!(err instanceof OpenAI.APIError)) return undefined
+  const value = err.headers?.get('retry-after')
+  if (!value) return undefined
+  const seconds = Number(value)
+  const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - Date.now()
+  return Number.isFinite(ms) ? Math.max(0, Math.min(30_000, ms)) : undefined
 }
