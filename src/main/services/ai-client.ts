@@ -22,7 +22,7 @@ export async function generateSlug(
   signal: AbortSignal,
 ): Promise<string> {
   const { ai, prompts } = getSettings()
-  const apiKey = await resolveApiKey(['openai'])
+  const apiKey = await resolveApiKey('openai')
   if (!apiKey) throw new UserFacingError('refused', message('errors.aiNoKey'))
 
   const client = new OpenAI({

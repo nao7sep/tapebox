@@ -171,12 +171,12 @@ export function registerSettingsHandlers(): void {
     cancelWork(LIBRARY_MOVE_KEY)
   })
   handle('settings:setApiKey', async ({ apiKey }) => {
-    await apiKeys.writeApiKey(['openai'], apiKey)
+    await apiKeys.writeApiKey('openai', apiKey)
   })
   handle('settings:clearApiKey', async () => {
-    await apiKeys.clearApiKey(['openai'])
+    await apiKeys.clearApiKey('openai')
   })
-  handle('settings:hasApiKey', async () => apiKeys.hasApiKey(['openai']))
+  handle('settings:hasApiKey', async () => apiKeys.hasApiKey('openai'))
 }
 
 type SettingsUpdateResult = IpcCalls['settings:update']['res']

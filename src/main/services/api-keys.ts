@@ -9,19 +9,19 @@ import { log } from '@main/io/logger'
  * separate from settings. This is the fleet api-key-storage-conventions realized
  * for tapebox.
  *
- * tapebox uses a single key today (`['openai']` → OPENAI_API_KEY, the
- * OpenAI-compatible endpoint), but the module is the generic, segment-addressed
+ * tapebox uses a single key today (`'openai'` → OPENAI_API_KEY, the
+ * OpenAI-compatible endpoint), but the module is the generic, id-addressed
  * form so its contract matches every other app in the fleet.
  *
  * Contract (api-key-storage-conventions):
- *   - A key id is its segments joined by '.', lowercase; its environment variable
- *     is the segments uppercased, joined by '_', suffixed '_API_KEY'. Stored ids
- *     are matched case-insensitively; non-conforming ids are ignored.
- *   - Resolution is source-first: every environment candidate (most→least
- *     specific) then every stored candidate. Environment wins; the more specific
- *     key wins within each source. `fallback: false` consults only the exact key.
- *     Every value is trimmed; blank counts as absent; an environment value is
- *     never written back.
+ *   - A key id is one flat string of lowercase letters, digits, and dots
+ *     (`openai`, `openai.image`); its environment variable is the id uppercased,
+ *     dots to underscores, suffixed '_API_KEY'. Stored ids are matched
+ *     case-insensitively; non-conforming ids are ignored.
+ *   - Resolution consults exactly two places for the EXACT id: the environment
+ *     variable, then the stored value. There is no fallback from a longer id
+ *     (`openai.image`) to a shorter one (`openai`). Every value is trimmed; blank
+ *     counts as absent; an environment value is never written back.
  *   - The stored value is `obf:` + base64 of the reversed UTF-8 bytes; an untagged
  *     value is treated as plaintext. This is NOT encryption — the 0600 mode is the
  *     real protection. A marked value is validated as canonical base64 before
@@ -36,37 +36,21 @@ const MARKER = 'obf:'
 const SECRETS_FILE_MODE = 0o600
 const ENFORCE_FILE_MODE = process.platform !== 'win32'
 
-const SEGMENT_RE = /^[a-z0-9]+$/
 const KEY_ID_RE = /^[a-z0-9]+(\.[a-z0-9]+)*$/
 
 const SCHEMA = z.object({ keys: z.record(z.string(), z.string()) })
 type ApiKeysFile = z.infer<typeof SCHEMA>
 
-interface ResolveOptions {
-  fallback?: boolean
-}
-
 // --- key id / env var derivation ---------------------------------------------
 
-function assertSegments(segments: string[]): void {
-  if (segments.length === 0 || !segments.every((s) => SEGMENT_RE.test(s))) {
-    throw new Error(`Invalid api-key segments [${segments.join(', ')}]: each must match [a-z0-9]+`)
+function assertKeyId(id: string): void {
+  if (!KEY_ID_RE.test(id)) {
+    throw new Error(`Invalid api-key id '${id}': must match ${KEY_ID_RE}`)
   }
 }
 
-// The prefixes of a segment list, most specific first: [a,b,c] → [[a,b,c],[a,b],[a]].
-function prefixes(segments: string[]): string[][] {
-  const out: string[][] = []
-  for (let n = segments.length; n >= 1; n--) out.push(segments.slice(0, n))
-  return out
-}
-
-function keyId(segments: string[]): string {
-  return segments.join('.')
-}
-
-export function apiKeyEnvVar(segments: string[]): string {
-  return `${segments.map((s) => s.toUpperCase()).join('_')}_API_KEY`
+export function apiKeyEnvVar(id: string): string {
+  return `${id.toUpperCase().replaceAll('.', '_')}_API_KEY`
 }
 
 // --- obfuscation (NOT encryption) --------------------------------------------
@@ -163,61 +147,56 @@ async function writeAll(data: ApiKeysFile): Promise<void> {
   await writeJsonAtomic(paths.apiKeys, data, SCHEMA, ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined)
 }
 
-function envValue(segments: string[]): string | null {
-  const value = process.env[apiKeyEnvVar(segments)]?.trim()
+function envValue(id: string): string | null {
+  const value = process.env[apiKeyEnvVar(id)]?.trim()
   return value ? value : null
 }
 
 // --- public API --------------------------------------------------------------
 
 /**
- * Resolve a key's plaintext value, source-first (environment then stored,
- * most→least specific), or null. `fallback: false` consults only the exact key.
+ * Resolve a key's plaintext value for the exact id — the environment variable,
+ * then the stored value — or null. There is no fallback to any other id.
  */
-export async function resolveApiKey(segments: string[], options: ResolveOptions = {}): Promise<string | null> {
-  assertSegments(segments)
-  const levels = options.fallback === false ? [segments] : prefixes(segments)
+export async function resolveApiKey(id: string): Promise<string | null> {
+  assertKeyId(id)
 
-  for (const level of levels) {
-    const fromEnv = envValue(level)
-    if (fromEnv) return fromEnv
-  }
+  const fromEnv = envValue(id)
+  if (fromEnv) return fromEnv
+
   const all = await readAll()
-  for (const level of levels) {
-    const id = keyId(level)
-    const stored = all.keys[id]
-    if (typeof stored === 'string') {
-      const key = decodeApiKey(stored, id)?.trim()
-      if (key) return key
-    }
+  const stored = all.keys[id]
+  if (typeof stored === 'string') {
+    const key = decodeApiKey(stored, id)?.trim()
+    if (key) return key
   }
   return null
 }
 
 /** Whether a key resolves from either the environment or the stored file. */
-export async function hasApiKey(segments: string[], options: ResolveOptions = {}): Promise<boolean> {
-  return (await resolveApiKey(segments, options)) !== null
+export async function hasApiKey(id: string): Promise<boolean> {
+  return (await resolveApiKey(id)) !== null
 }
 
 /** Persist a key (trimmed, obfuscated). A blank key clears it instead. */
-export async function writeApiKey(segments: string[], apiKey: string): Promise<void> {
-  assertSegments(segments)
+export async function writeApiKey(id: string, apiKey: string): Promise<void> {
+  assertKeyId(id)
   const trimmed = apiKey.trim()
   const all = await readAll()
   if (trimmed.length === 0) {
-    delete all.keys[keyId(segments)]
+    delete all.keys[id]
   } else {
-    all.keys[keyId(segments)] = encodeApiKey(trimmed)
+    all.keys[id] = encodeApiKey(trimmed)
   }
   await writeAll(all)
 }
 
 /** Remove the stored key. Any environment value is unaffected. */
-export async function clearApiKey(segments: string[]): Promise<void> {
-  assertSegments(segments)
+export async function clearApiKey(id: string): Promise<void> {
+  assertKeyId(id)
   const all = await readAll()
-  if (keyId(segments) in all.keys) {
-    delete all.keys[keyId(segments)]
+  if (id in all.keys) {
+    delete all.keys[id]
     await writeAll(all)
   }
 }
