@@ -20,7 +20,7 @@ import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
-import { settingsAfterPatch, type Settings, type SettingsPatch } from '@shared/settings'
+import { settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
 import { UserFacingError } from '@main/user-facing-error'
 import { withLibraryMove } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
@@ -99,13 +99,13 @@ type CompletedRelocation = { fromDir: string; files: RelocatedFile[] }
 const LIBRARY_MOVE_KEY = 'library-move'
 
 /** True when applying `patch` would change the effective library folder. */
-function movesLibrary(patch: SettingsPatch): boolean {
+function movesLibrary(patch: SettingsSets): boolean {
   if (patch.libraryDir === undefined) return false
   return resolve(config.getLibraryDir()) !== resolve(effectiveLibraryDir(patch.libraryDir))
 }
 
 async function relocateIfLibraryDirChanged(
-  patch: SettingsPatch,
+  patch: SettingsSets,
   signal: AbortSignal,
 ): Promise<CompletedRelocation | null> {
   if (!movesLibrary(patch)) return null
@@ -141,7 +141,7 @@ export function registerSettingsHandlers(): void {
     // Normalize user-typed folder fields at the boundary: blank stays default, ~
     // expands, and a relative value is rejected here so it can never reach a path
     // join and resolve against the working directory (storage-path-conventions).
-    const normalized: SettingsPatch = { ...patch }
+    const normalized: SettingsSets = { ...patch }
     if (patch.libraryDir !== undefined) {
       normalized.libraryDir = normalizeUserDir('errors.libraryFolderNotAbsolute', patch.libraryDir)
     }
@@ -189,7 +189,7 @@ type SettingsUpdateResult = IpcCalls['settings:update']['res']
 const OBSOLETE_SOURCES_WARNING = message('errors.libraryOldCopiesKept')
 
 async function applySettingsPatch(
-  normalized: SettingsPatch,
+  normalized: SettingsSets,
   wasAutostart: boolean,
   signal: AbortSignal,
 ): Promise<SettingsUpdateResult> {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_OPENAI_ENDPOINT,
   DEFAULT_AI_MODEL,
+  cleanSettingsSets,
   defaultSettings,
   SettingsSchema,
   summarizeSettings,
@@ -19,6 +20,10 @@ describe('the AI defaults have a single source', () => {
 
   it('provides values the schema accepts', () => {
     expect(() => SettingsSchema.parse(defaultSettings())).not.toThrow()
+  })
+
+  it('keeps every built-in text in its cleaned form', () => {
+    expect(cleanSettingsSets(defaultSettings())).toEqual(defaultSettings())
   })
 })
 

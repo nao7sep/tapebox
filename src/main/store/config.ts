@@ -4,15 +4,15 @@ import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import {
-  SettingsSchema, SettingsPatchSchema, defaultSettings, effectiveSettings, readSettingsSets,
-  summarizeSettings, type Settings, type SettingsPatch, type SettingsSets,
+  SettingsSchema, cleanSettingsSets, defaultSettings, effectiveSettings, readSettingsSets, storedSets,
+  summarizeSettings, type Settings, type SettingsSets,
 } from '@shared/settings'
 
 /**
- * Effective settings cache and atomic persistence. Only user-written sets live
- * on disk; missing files and quarantined files use the built-ins without seeding.
- * Writes reread the current map inside the serialized owner and replace only the
- * requested sets, so untouched settings never become stored defaults.
+ * Effective settings cache and atomic persistence. Only sets that differ from
+ * their built-ins live on disk; missing files and quarantined files use the
+ * built-ins without seeding. Writes reread the current map inside the
+ * serialized owner, which alone decides what is stored.
  */
 
 let cache: Settings | null = null
@@ -89,29 +89,26 @@ export function getLibraryDir(): string {
   return getSettings().libraryDir.trim() || paths.library
 }
 
-// One serialized owner rereads the on-disk map before every set write.
+// One serialized owner rereads the on-disk map before every set write. The
+// patched sets are cleaned, every set equal to its built-in is removed, stored
+// copies outside the patch included, and the rest is written whole. A result
+// equal to the file writes nothing.
 let writeChain: Promise<unknown> = Promise.resolve()
 
-export function updateSettings(patch: SettingsPatch): Promise<Settings> {
+export function updateSettings(patch: SettingsSets): Promise<Settings> {
   const run = writeChain.then(async () => {
     if (!cache) throw new Error('config.ts: loadSettings() must be awaited first')
     const found = await readSettingsStore(paths.config)
-    const sets = found !== null && 'sets' in found ? found.sets : {}
-    const validated = SettingsPatchSchema.parse(patch)
-    if (Object.keys(validated).length === 0) return cache
-    if (Object.entries(validated).every(([key, value]) => value === undefined || (value === null && !Object.hasOwn(sets, key)))) return cache
-    for (const [key, value] of Object.entries(validated)) {
-      if (value === undefined) continue
-      if (value === null) delete sets[key as keyof Settings]
-      else Object.assign(sets, { [key]: value })
+    const current = found !== null && 'sets' in found ? found.sets : {}
+    const next = storedSets({ ...current, ...SettingsSchema.parse(cleanSettingsSets(patch)) })
+    if (JSON.stringify(next) !== JSON.stringify(current)) {
+      await writeManagedJson(paths.config, next, SettingsSchema)
+      log.info('settings updated', { keys: Object.keys(patch) })
     }
-    await writeManagedJson(paths.config, sets, SettingsSchema)
-    const merged = effectiveSettings(sets)
     // The in-memory view is authoritative only after the durable commit. A failed
     // save leaves every consumer on the last settings file that actually exists.
-    cache = merged
-    log.info('settings updated', { keys: Object.keys(patch) })
-    return merged
+    cache = effectiveSettings(next)
+    return cache
   })
   // Keep the chain alive even if one update rejects, so a failed write can't wedge
   // every subsequent one.

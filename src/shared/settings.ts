@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { AI_ROLES, defaultModelFor } from './ai-models'
 import { stripUrlCredentials } from './url'
+import { multiline, singleLine } from './text-cleanup'
 import { LANGUAGE_PREFERENCES } from './i18n/languages'
 
 // The per-binary managed-dependency facts (installed/latest versions, last-check
@@ -34,7 +35,9 @@ export const EndpointSchema = z.string().url().refine(isLoopbackOrHttps, {
 
 /**
  * Configurable AI prompts. An absent prompts set uses DEFAULT_SLUG_PROMPT;
- * "Reset slug prompt" deletes the user's copy. A stored set must be complete.
+ * "Reset slug prompt" puts it back in the draft, and Save then removes the
+ * stored copy. A stored set must be complete. The built-in texts are kept in
+ * their cleaned form (cleanSettingsSets), so an untouched set equals them.
  *
  * Template tokens are substituted before the call: {title}, {uploader},
  * {description}. A token the user omits is simply not sent; a token left in
@@ -189,12 +192,6 @@ export const SettingsSchema = SettingsObjectSchema.partial()
 export type SettingsSets = z.infer<typeof SettingsSchema>
 export type Settings = z.infer<typeof SettingsObjectSchema>
 
-// null is an explicit reset command, never a stored value.
-export const SettingsPatchSchema = SettingsSchema.extend({
-  prompts: PromptsSettingsSchema.nullable().optional(),
-  'openai.slug': z.string().min(1).nullable().optional(),
-})
-export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 
 /** Decode each set independently, reporting malformed copies without merging members. */
 export function readSettingsSets(
@@ -215,14 +212,53 @@ export function effectiveSettings(sets: SettingsSets): Settings {
   return { ...defaultSettings(), ...sets }
 }
 
-/** Validate a patch before any library relocation, including the prompt reset. */
-export function settingsAfterPatch(current: Settings, patch: SettingsPatch): Settings {
-  return SettingsObjectSchema.parse({
-    ...current,
-    ...patch,
-    ...(patch.prompts === null ? { prompts: defaultSettings().prompts } : {}),
-    ...(patch['openai.slug'] === null ? { 'openai.slug': defaultSettings()['openai.slug'] } : {}),
-  })
+/** Validate a patch, in the form it will be stored, before any library relocation. */
+export function settingsAfterPatch(current: Settings, patch: SettingsSets): Settings {
+  return SettingsObjectSchema.parse({ ...current, ...cleanSettingsSets(patch) })
+}
+
+/**
+ * The text-cleanup form a set is compared and stored in: multiline for the
+ * bodies written in a text area (the prompt, yt-dlp arguments, a site profile's
+ * arguments and comment), single-line for other text. Paths and a site
+ * profile's URL pattern are kept exactly as given.
+ */
+export function cleanSettingsSets(sets: SettingsSets): SettingsSets {
+  const cleaned = { ...sets }
+  if (sets['openai.endpoint'] !== undefined) cleaned['openai.endpoint'] = singleLine(sets['openai.endpoint'])
+  if (sets['openai.slug'] !== undefined) cleaned['openai.slug'] = singleLine(sets['openai.slug'])
+  if (sets.uiFontFamily !== undefined) cleaned.uiFontFamily = singleLine(sets.uiFontFamily)
+  if (sets.ytdlpArgs !== undefined) cleaned.ytdlpArgs = multiline(sets.ytdlpArgs)
+  if (sets.prompts !== undefined) cleaned.prompts = { slug: multiline(sets.prompts.slug) }
+  if (sets.siteProfiles !== undefined) {
+    cleaned.siteProfiles = sets.siteProfiles.map((profile) => ({
+      ...profile,
+      name: singleLine(profile.name),
+      args: multiline(profile.args),
+      comment: multiline(profile.comment),
+    }))
+  }
+  return cleaned
+}
+
+const MODEL_SET_KEYS: ReadonlySet<keyof Settings> = new Set(AI_ROLES.map((role) => `openai.${role.id}` as const))
+
+/**
+ * The sets a file stores: every known set that differs from its built-in. A
+ * model id is compared trimmed and case-insensitive; every other set as a whole.
+ */
+export function storedSets(sets: SettingsSets): SettingsSets {
+  const builtIn = defaultSettings()
+  const stored: SettingsSets = {}
+  for (const key of SETTINGS_KEYS) {
+    if (!Object.hasOwn(sets, key)) continue
+    const value = sets[key]
+    const equal = MODEL_SET_KEYS.has(key)
+      ? String(value).trim().toLowerCase() === String(builtIn[key]).toLowerCase()
+      : JSON.stringify(value) === JSON.stringify(builtIn[key])
+    if (!equal) Object.assign(stored, { [key]: value })
+  }
+  return stored
 }
 
 /** The dialog writes only sets whose effective draft values changed. */

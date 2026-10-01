@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { IpcCalls } from '@shared/ipc-contract'
-import { EndpointSchema, SettingsPatchSchema } from '@shared/settings'
+import { EndpointSchema, SettingsSchema } from '@shared/settings'
 import { LayoutSchema } from '@shared/layout'
 
 /**
@@ -86,7 +86,7 @@ export const ipcRequestSchemas = {
   'settings:cancelModelList': z.undefined(),
   'settings:get':          z.undefined(),
   'settings:defaultLibraryDir': z.undefined(),
-  'settings:update':       SettingsPatchSchema,
+  'settings:update':       SettingsSchema,
   'settings:cancelLibraryMove': z.undefined(),
   'settings:setApiKey':    z.object({ apiKey: z.string() }),
   'settings:clearApiKey':  z.undefined(),

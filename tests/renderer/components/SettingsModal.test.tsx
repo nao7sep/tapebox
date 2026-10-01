@@ -2,7 +2,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT, defaultSettings, settingsAfterPatch, type Settings, type SettingsPatch } from '@shared/settings'
+import { DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT, defaultSettings, settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
 
 const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
@@ -18,13 +18,13 @@ let host: HTMLDivElement
 let saved: Settings
 const onClose = vi.fn()
 
-function stubMain(updateReply: (patch: SettingsPatch) => unknown) {
+function stubMain(updateReply: (patch: SettingsSets) => unknown) {
   ipcInvoke.mockImplementation((channel: string, req?: unknown) => {
     if (channel === 'settings:get') return Promise.resolve(saved)
     if (channel === 'settings:modelList') return Promise.resolve([])
     if (channel === 'settings:hasApiKey') return Promise.resolve(false)
     if (channel === 'settings:defaultLibraryDir') return Promise.resolve('/home/me/.tapebox/library')
-    if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsPatch))
+    if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsSets))
     return Promise.resolve()
   })
 }
@@ -81,7 +81,7 @@ describe('SettingsModal', () => {
     expect(update![1]).toEqual({ language: 'ja' })
   })
 
-  it('Reset model deletes only the model copy and preserves the endpoint', async () => {
+  it('Reset model fills the draft with the built-in model and keeps the endpoint', async () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     saved['openai.endpoint'] = 'https://proxy.example/v1'
     await render()
@@ -95,7 +95,7 @@ describe('SettingsModal', () => {
 
     await click('Save')
     const update = ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')
-    expect(update![1]).toEqual({ 'openai.slug': null })
+    expect(update![1]).toEqual({ 'openai.slug': DEFAULT_AI_MODEL })
     expect((document.querySelector('input[placeholder="https://api.openai.com/v1"]') as HTMLInputElement).value).toBe('https://proxy.example/v1')
   })
 
@@ -132,7 +132,7 @@ describe('SettingsModal', () => {
     })
   })
 
-  it('Reset slug prompt shows the built-in and deletes the whole prompts set on Save', async () => {
+  it('Reset slug prompt fills the draft with the built-in and saves it as the whole set', async () => {
     saved.prompts = { slug: 'my custom prompt' }
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
@@ -140,7 +140,7 @@ describe('SettingsModal', () => {
     await click('Reset slug prompt')
     expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toBe(DEFAULT_SLUG_PROMPT)
     await click('Save')
-    expect(ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')![1]).toEqual({ prompts: null })
+    expect(ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')![1]).toEqual({ prompts: { slug: DEFAULT_SLUG_PROMPT } })
   })
 
   it('saving only an API key does not write any settings sets', async () => {

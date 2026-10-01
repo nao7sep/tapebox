@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,7 +12,7 @@ vi.mock('@main/io/logger', () => ({ log }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 
 import { getSettings, loadSettings, readSettingsFile, updateSettings } from '@main/store/config'
-import { defaultSettings } from '@shared/settings'
+import { DEFAULT_SLUG_PROMPT, defaultSettings } from '@shared/settings'
 
 let dir: string
 beforeEach(async () => {
@@ -76,25 +76,67 @@ describe('settings by set', () => {
     ])
   })
 
-  it('deletes the prompts copy while preserving every other stored set', async () => {
+  it('removes a set saved back to its built-in while preserving every other stored set', async () => {
     await writeFile(paths.config, JSON.stringify({ prompts: { slug: 'custom' }, autoplay: false }))
     await loadSettings()
-    await updateSettings({ prompts: null })
+    await updateSettings({ prompts: { slug: DEFAULT_SLUG_PROMPT } })
     expect(await savedSets()).toEqual({ autoplay: false })
     expect(getSettings().prompts).toEqual(defaultSettings().prompts)
   })
 
-  it('resetting an absent model copy leaves a fresh config absent', async () => {
+  it('removes every stored copy equal to its built-in, untouched ones included', async () => {
+    await writeFile(paths.config, JSON.stringify({ playSound: true, theme: 'system', autoplay: false }))
     await loadSettings()
-    await updateSettings({ 'openai.slug': null })
+    await updateSettings({ autoplay: true })
+    expect(await savedSets()).toEqual({})
+  })
+
+  it('saving the built-in into a fresh config writes nothing', async () => {
+    await loadSettings()
+    await updateSettings({ 'openai.slug': defaultSettings()['openai.slug'], prompts: defaultSettings().prompts })
     expect(await readdir(dir)).toEqual([])
   })
 
-  it('drops the old AI set and resets only the selected model', async () => {
+  it('writes nothing when the result equals the file', async () => {
+    await writeFile(paths.config, JSON.stringify({ autoplay: false }))
+    const before = await stat(paths.config)
+    await loadSettings()
+    await updateSettings({ autoplay: false, playSound: true })
+    expect((await stat(paths.config)).mtimeMs).toBe(before.mtimeMs)
+    expect(await readFile(paths.config, 'utf8')).toBe(JSON.stringify({ autoplay: false }))
+  })
+
+  it('compares text after cleanup and a model id trimmed and case-insensitive', async () => {
+    await writeFile(paths.config, JSON.stringify({ 'openai.slug': 'custom-model', prompts: { slug: 'custom' } }))
+    await loadSettings()
+    await updateSettings({
+      'openai.slug': ` ${defaultSettings()['openai.slug'].toUpperCase()} `,
+      prompts: { slug: `\n${DEFAULT_SLUG_PROMPT.replaceAll('\n', '  \r\n')}\n\n` },
+    })
+    expect(await savedSets()).toEqual({})
+  })
+
+  it('stores text in its cleaned form and paths exactly as given', async () => {
+    await loadSettings()
+    await updateSettings({
+      'openai.endpoint': ' https://proxy.example/v1\n',
+      prompts: { slug: '\n  Name {title}  \r\n\n' },
+      externalPlayer: ' /Applications/My Player.app ',
+      defaultExportDir: '/exports/ ',
+    })
+    expect(await savedSets()).toEqual({
+      'openai.endpoint': 'https://proxy.example/v1',
+      prompts: { slug: '  Name {title}' },
+      externalPlayer: ' /Applications/My Player.app ',
+      defaultExportDir: '/exports/ ',
+    })
+  })
+
+  it('drops the old AI set and removes only the model saved back to its built-in', async () => {
     await writeFile(paths.config, JSON.stringify({ ai: { baseUrl: 'https://old.example', model: 'old' }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
     await loadSettings()
     expect(getSettings()['openai.endpoint']).toBe('https://proxy.example/v1')
-    await updateSettings({ 'openai.slug': null })
+    await updateSettings({ 'openai.slug': defaultSettings()['openai.slug'] })
     expect(await savedSets()).toEqual({ 'openai.endpoint': 'https://proxy.example/v1' })
     expect(getSettings()['openai.slug']).toBe(defaultSettings()['openai.slug'])
   })

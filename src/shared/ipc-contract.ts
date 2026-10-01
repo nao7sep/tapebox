@@ -1,5 +1,5 @@
 import type { Box, Tape, TapeFailureCode } from './domain'
-import type { Settings, SettingsPatch } from './settings'
+import type { Settings, SettingsSets } from './settings'
 import type { Layout } from './layout'
 import type { Message } from './i18n/translate'
 
@@ -94,7 +94,7 @@ export type IpcCalls = {
   'settings:get':          { req: undefined;                         res: Settings }
   // `warning` is main-authored copy (a message descriptor) for a save that committed with a leftover
   // problem (old library copies not removed); null on a clean save.
-  'settings:update':       { req: SettingsPatch;                 res: { settings: Settings; warning: Message | null } }
+  'settings:update':       { req: SettingsSets;                 res: { settings: Settings; warning: Message | null } }
   // Stop a library move started by settings:update; its copies are rolled back and
   // the update rejects with the library still in the old folder.
   'settings:cancelLibraryMove': { req: undefined;                    res: void }

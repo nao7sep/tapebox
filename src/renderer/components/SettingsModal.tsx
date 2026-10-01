@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
-import type { Settings, SettingsPatch, SiteProfile, ThemePreference } from '@shared/settings'
+import type { Settings, SettingsSets, SiteProfile, ThemePreference } from '@shared/settings'
 import { changedSettings, DEFAULT_OPENAI_ENDPOINT, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { AI_ROLES, modelsFor, SUPPORTED_MODELS } from '@shared/ai-models'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
@@ -57,13 +57,11 @@ export function SettingsModal({ onClose }: Props) {
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
-  const [resetModel, setResetModel] = useState(false)
   const [fetchedModels, setFetchedModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const listBusy = useRef(false)
   const listVersion = useRef(0)
   const mounted = useRef(true)
-  const [resetPrompts, setResetPrompts] = useState(false)
   const [error, setError] = useState<Message | null>(null)
   const [busy, setBusy] = useState(false)
   const t = useI18n()
@@ -148,14 +146,13 @@ export function SettingsModal({ onClose }: Props) {
 
   function patchPrompts(patch: Partial<Settings['prompts']>) {
     if (!draft) return
-    setResetPrompts(false)
     patchDraft({ prompts: { ...draft.prompts, ...patch } })
   }
 
   const settingsDirty =
     !!original && !!draft && JSON.stringify(pickEditable(original)) !== JSON.stringify(pickEditable(draft))
   const apiKeyDirty = apiKeyDraft.length > 0 || wantsClearKey
-  const dirty = settingsDirty || resetPrompts || resetModel || apiKeyDirty
+  const dirty = settingsDirty || apiKeyDirty
 
   // How many existing tapes have files on disk that a library move would relocate.
   // Used only to decide whether to prompt before Save and to phrase the prompt;
@@ -196,9 +193,7 @@ export function SettingsModal({ onClose }: Props) {
     stopRequested.current = false
     let settingsSaved = false
     try {
-      const patch: SettingsPatch = changedSettings(pickEditable(original), pickEditable(draft))
-      if (resetPrompts) patch.prompts = null
-      if (resetModel) patch['openai.slug'] = null
+      const patch: SettingsSets = changedSettings(pickEditable(original), pickEditable(draft))
       const model = draft['openai.slug']
       const known = [...modelsFor('openai', AI_ROLES[0].kind).map((row) => row.id), ...fetchedModels, ...(draft.extraModelIds.openai ?? [])]
       if (patch['openai.slug'] && !known.includes(model)) {
@@ -209,8 +204,6 @@ export function SettingsModal({ onClose }: Props) {
         useSettingsStore.getState().setHydratedSettings(updated)
         setOriginal(updated)
         setDraft(updated)
-        setResetPrompts(false)
-        setResetModel(false)
         // A committed save's cleanup warning remains after the dialog closes.
         if (warning) useToastStore.getState().notify(warning, 'error')
       }
@@ -308,14 +301,11 @@ export function SettingsModal({ onClose }: Props) {
                 refreshing={refreshingModels}
                 onRefresh={() => void refreshModels(draft, true)}
                 onEndpointChange={(value) => { invalidateModelList(); patchDraft({ 'openai.endpoint': value }) }}
-                onModelChange={(value) => { setResetModel(false); patchDraft({ 'openai.slug': value }) }}
-                onResetModel={() => { setResetModel(true); patchDraft({ 'openai.slug': DEFAULT_AI_MODEL }) }}
+                onModelChange={(value) => patchDraft({ 'openai.slug': value })}
+                onResetModel={() => patchDraft({ 'openai.slug': DEFAULT_AI_MODEL })}
                 prompts={draft.prompts}
                 onPromptsPatch={patchPrompts}
-                onResetPrompts={() => {
-                  setResetPrompts(true)
-                  patchDraft({ prompts: { slug: DEFAULT_SLUG_PROMPT } })
-                }}
+                onResetPrompts={() => patchDraft({ prompts: { slug: DEFAULT_SLUG_PROMPT } })}
                 busy={busy}
                 hadKey={hadApiKey}
                 apiKeyDraft={apiKeyDraft}
