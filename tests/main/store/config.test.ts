@@ -30,7 +30,7 @@ import { writeManagedJson } from '@main/io/atomic-json'
 import { getLibraryDir, getSettings, loadSettings, updateSettings } from '@main/store/config'
 
 beforeEach(async () => {
-  // No config.json on disk → loadSettings seeds the cache with defaults (blank
+  // No config.json on disk → loadSettings uses built-ins in memory (blank
   // libraryDir). readFile is left real; the mocked config path doesn't exist, so
   // the read fails ENOENT and the defaults path is taken.
   await loadSettings()

@@ -35,8 +35,7 @@ describe('a corrupt config on disk', () => {
   })
 
   it('leaves a sound config in place and reports nothing', async () => {
-    // A COMPLETE settings object: a partial one is shape-invalid by design, which
-    // is itself the corrupt branch (storage-path conventions).
+    // A saved settings object remains untouched on read.
     const path = join(dir, 'config.json')
     writeFileSync(path, JSON.stringify(defaultSettings()))
     const result = await readSettingsFile(path)

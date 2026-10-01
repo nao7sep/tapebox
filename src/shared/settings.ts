@@ -40,17 +40,15 @@ export const AiSettingsSchema = z.object({
 export type AiSettings = z.infer<typeof AiSettingsSchema>
 
 /**
- * Configurable AI prompts. The in-code DEFAULT_SLUG_PROMPT seeds a fresh config
- * (see defaultSettings) and backs the Settings → AI "Reset slug prompt"
- * button, which rewrites a field back to it. The schema is authoritative — `slug`
- * is required, not defaulted; the config writer always emits it.
+ * Configurable AI prompts. An absent prompts set uses DEFAULT_SLUG_PROMPT;
+ * "Reset slug prompt" deletes the user's copy. A stored set must be complete.
  *
  * Template tokens are substituted before the call: {title}, {uploader},
  * {description}. A token the user omits is simply not sent; a token left in
  * substitutes to empty when that field is unavailable.
  */
 /**
- * The AI endpoint and model a fresh config starts on. Named (not inline in
+ * The built-in AI endpoint and model. Named (not inline in
  * defaultSettings) so the Settings placeholders show the real default instead of a
  * copy that silently goes stale — the same reason DEFAULT_SLUG_PROMPT is named.
  *
@@ -152,7 +150,16 @@ const SettingsObjectSchema = z.object({
   // scan); a matching siteProfile's args are appended on top. The app's own
   // flags win on conflict (they're placed last).
   ytdlpArgs: z.string(),
-  siteProfiles: z.array(SiteProfileSchema),
+  siteProfiles: z.array(SiteProfileSchema).superRefine((profiles, ctx) => {
+    const ids = new Set<string>()
+    for (let i = 0; i < profiles.length; i++) {
+      const id = profiles[i]!.id
+      if (ids.has(id)) {
+        ctx.addIssue({ code: 'custom', path: [i, 'id'], message: `duplicate site profile id: ${id}` })
+      }
+      ids.add(id)
+    }
+  }),
 
   // External player for "Open in player": empty = OS default; otherwise an app
   // name or path (macOS opens it via `open -a`).
@@ -180,28 +187,65 @@ const SettingsObjectSchema = z.object({
   // nativeTheme.themeSource. A missing or unrecognized value resolves to System
   // instead of failing the whole file, so a config from before this setting (or
   // from a newer build) loads untouched.
-  theme: z.enum(THEME_PREFERENCES).catch('system'),
+  theme: z.enum(THEME_PREFERENCES),
 
   // The interface language (localization-conventions): System follows the
   // computer's language on every launch; otherwise one of the shipped languages'
   // tags. Applied on Save with the rest of Settings. A missing, retired or
   // hand-edited value follows the computer instead of failing the whole file.
-  language: z.enum(LANGUAGE_PREFERENCES).catch('system'),
+  language: z.enum(LANGUAGE_PREFERENCES),
 })
 
-export const SettingsPatchSchema = SettingsObjectSchema.partial()
+// Every top-level key is one set; nested sets are validated and written whole.
+export const SETTINGS_KEYS = Object.keys(SettingsObjectSchema.shape) as (keyof Settings)[]
+export const SettingsSchema = SettingsObjectSchema.partial()
+export type SettingsSets = z.infer<typeof SettingsSchema>
+export type Settings = z.infer<typeof SettingsObjectSchema>
 
-export const SettingsSchema = SettingsObjectSchema.superRefine((settings, ctx) => {
-  const ids = new Set<string>()
-  for (let i = 0; i < settings.siteProfiles.length; i++) {
-    const id = settings.siteProfiles[i]!.id
-    if (ids.has(id)) {
-      ctx.addIssue({ code: 'custom', path: ['siteProfiles', i, 'id'], message: `duplicate site profile id: ${id}` })
-    }
-    ids.add(id)
+// null is the explicit reset command for prompts, never a stored value.
+export const SettingsPatchSchema = SettingsSchema.extend({
+  prompts: PromptsSettingsSchema.nullable().optional(),
+})
+export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
+
+/** Decode each set independently, reporting malformed copies without merging members. */
+export function readSettingsSets(
+  raw: Record<string, unknown>,
+  invalid: (key: keyof Settings) => void,
+): SettingsSets {
+  const sets: SettingsSets = {}
+  for (const key of SETTINGS_KEYS) {
+    if (!Object.hasOwn(raw, key)) continue
+    const parsed = SettingsObjectSchema.shape[key].safeParse(raw[key])
+    if (parsed.success) Object.assign(sets, { [key]: parsed.data })
+    else invalid(key)
   }
-})
-export type Settings = z.infer<typeof SettingsSchema>
+  return sets
+}
+
+export function effectiveSettings(sets: SettingsSets): Settings {
+  return { ...defaultSettings(), ...sets }
+}
+
+/** Validate a patch before any library relocation, including the prompt reset. */
+export function settingsAfterPatch(current: Settings, patch: SettingsPatch): Settings {
+  return SettingsObjectSchema.parse({
+    ...current,
+    ...patch,
+    ...(patch.prompts === null ? { prompts: defaultSettings().prompts } : {}),
+  })
+}
+
+/** The dialog writes only sets whose effective draft values changed. */
+export function changedSettings(original: Partial<Settings>, draft: Partial<Settings>): Partial<Settings> {
+  const patch: Partial<Settings> = {}
+  for (const key of SETTINGS_KEYS) {
+    if (Object.hasOwn(draft, key) && JSON.stringify(original[key]) !== JSON.stringify(draft[key])) {
+      Object.assign(patch, { [key]: draft[key] })
+    }
+  }
+  return patch
+}
 
 /**
  * Default settings used when config.json is missing on first launch.

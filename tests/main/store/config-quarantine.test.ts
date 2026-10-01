@@ -47,9 +47,9 @@ describe('readSettingsFile', () => {
     expect(files).not.toContain('config.json')
   })
 
-  it('quarantines a schema-invalid config rather than wiping it', async () => {
+  it('quarantines a non-object config rather than wiping it', async () => {
     const path = join(dir, 'config.json')
-    await writeFile(path, JSON.stringify({ libraryDir: 42 }))
+    await writeFile(path, JSON.stringify(['not a settings map']))
 
     expect(await readSettingsFile(path)).toMatchObject({ quarantinePath: expect.stringContaining('.invalid') })
 

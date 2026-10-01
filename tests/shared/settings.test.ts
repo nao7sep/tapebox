@@ -11,13 +11,13 @@ import {
 // the strings. This pins the seam: if a fresh config ever stops matching what the
 // placeholder promises, the two have drifted and one of them is lying to the user.
 describe('the AI defaults have a single source', () => {
-  it('seeds a fresh config from the named constants', () => {
+  it('uses built-in values from the named constants', () => {
     const { ai } = defaultSettings()
     expect(ai.baseUrl).toBe(DEFAULT_AI_BASE_URL)
     expect(ai.model).toBe(DEFAULT_AI_MODEL)
   })
 
-  it('seeds values the schema accepts', () => {
+  it('provides values the schema accepts', () => {
     expect(() => SettingsSchema.parse(defaultSettings())).not.toThrow()
   })
 })
@@ -56,15 +56,9 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.parse(raw).autoplay).toBe(false)
   })
 
-  // The schema carries NO field defaults: a config missing a field is rejected
-  // (config.ts then self-heals the disposable prefs file to defaults) rather than
-  // half-loaded with a guessed value. Guards against silently re-introducing a
-  // back-compat default.
-  it('is authoritative — rejects a config missing a field rather than defaulting it', () => {
-    const raw: Record<string, unknown> = { ...defaultSettings() }
-    delete raw['keepAwakeWhilePlaying']
-
-    expect(SettingsSchema.safeParse(raw).success).toBe(false)
+  it('accepts absent sets without materializing their built-ins', () => {
+    expect(SettingsSchema.parse({})).toEqual({})
+    expect(SettingsSchema.parse({ autoplay: false })).toEqual({ autoplay: false })
   })
 
   // Volume moved to the layout (state) store — see tests/shared/layout.test.ts.
@@ -169,11 +163,10 @@ describe('the theme setting', () => {
     }
   })
 
-  it('resolves a missing or unrecognized value to System without failing the file', () => {
-    const { theme: _theme, ...withoutTheme } = defaultSettings()
-    expect(SettingsSchema.parse(withoutTheme).theme).toBe('system')
-    expect(SettingsSchema.parse({ ...defaultSettings(), theme: 'sepia' }).theme).toBe('system')
-    expect(SettingsSchema.parse({ ...defaultSettings(), theme: 42 }).theme).toBe('system')
+  it('leaves a missing theme absent and rejects malformed copies', () => {
+    expect(SettingsSchema.parse({})).not.toHaveProperty('theme')
+    expect(SettingsSchema.safeParse({ theme: 'sepia' }).success).toBe(false)
+    expect(SettingsSchema.safeParse({ theme: 42 }).success).toBe(false)
   })
 
   it('appears in the startup settings summary', () => {

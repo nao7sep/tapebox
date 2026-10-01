@@ -279,13 +279,14 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
 })
 
 describe('write-through: a real managed save records the exact bytes after the rename', () => {
-  it('a first-run loadSettings records config.json\'s exact on-disk bytes into the store', async () => {
+  it('the first changed set records config.json\'s exact on-disk bytes into the store', async () => {
     const { readFileSync } = await import('node:fs')
-    const { loadSettings } = await import('@main/store/config')
+    const { loadSettings, updateSettings } = await import('@main/store/config')
 
-    // No config.json on the throwaway root -> loadSettings seeds defaults and writes them through the
-    // managed-text choke point, which records after the rename.
+    // First run does not write. The first user change goes through the managed-text
+    // choke point, which records after the rename.
     await loadSettings()
+    await updateSettings({ playSound: false })
     const { flushBackupStore } = await import('@main/store/backupStore')
     await flushBackupStore()
 
@@ -305,7 +306,8 @@ describe('write-through: a real managed save records the exact bytes after the r
   it('a changed save records a second row; an identical re-save is deduped', async () => {
     const { loadSettings, updateSettings } = await import('@main/store/config')
 
-    await loadSettings() // row 1: defaults
+    await loadSettings()
+    await updateSettings({ maxConcurrentDownloads: 3 }) // row 1: first user copy
     await updateSettings({ maxConcurrentDownloads: 5 }) // row 2: changed
     await updateSettings({ maxConcurrentDownloads: 5 }) // identical serialized bytes -> deduped, no row
     const { flushBackupStore } = await import('@main/store/backupStore')

@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
-import type { AiSettings, Settings, SiteProfile, ThemePreference } from '@shared/settings'
-import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
+import type { AiSettings, Settings, SettingsPatch, SiteProfile, ThemePreference } from '@shared/settings'
+import { changedSettings, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -56,6 +56,7 @@ export function SettingsModal({ onClose }: Props) {
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
+  const [resetPrompts, setResetPrompts] = useState(false)
   const [error, setError] = useState<Message | null>(null)
   const [busy, setBusy] = useState(false)
   const t = useI18n()
@@ -111,13 +112,14 @@ export function SettingsModal({ onClose }: Props) {
 
   function patchPrompts(patch: Partial<Settings['prompts']>) {
     if (!draft) return
+    setResetPrompts(false)
     patchDraft({ prompts: { ...draft.prompts, ...patch } })
   }
 
   const settingsDirty =
     !!original && !!draft && JSON.stringify(pickEditable(original)) !== JSON.stringify(pickEditable(draft))
   const apiKeyDirty = apiKeyDraft.length > 0 || wantsClearKey
-  const dirty = settingsDirty || apiKeyDirty
+  const dirty = settingsDirty || resetPrompts || apiKeyDirty
 
   // How many existing tapes have files on disk that a library move would relocate.
   // Used only to decide whether to prompt before Save and to phrase the prompt;
@@ -149,7 +151,7 @@ export function SettingsModal({ onClose }: Props) {
   }
 
   async function save() {
-    if (!draft) return
+    if (!draft || !original) return
     setConfirmMove(null)
     setBusy(true)
     setError(null)
@@ -158,12 +160,18 @@ export function SettingsModal({ onClose }: Props) {
     stopRequested.current = false
     let settingsSaved = false
     try {
-      const { settings: updated, warning } = await ipcInvoke('settings:update', pickEditable(draft))
-      useSettingsStore.getState().setHydratedSettings(updated)
+      const patch: SettingsPatch = changedSettings(pickEditable(original), pickEditable(draft))
+      if (resetPrompts) patch.prompts = null
+      if (Object.keys(patch).length > 0) {
+        const { settings: updated, warning } = await ipcInvoke('settings:update', patch)
+        useSettingsStore.getState().setHydratedSettings(updated)
+        setOriginal(updated)
+        setDraft(updated)
+        setResetPrompts(false)
+        // A committed save's cleanup warning remains after the dialog closes.
+        if (warning) useToastStore.getState().notify(warning, 'error')
+      }
       settingsSaved = true
-      // The save committed; a leftover problem main reports stays on screen after
-      // the dialog closes, since an error toast persists until dismissed.
-      if (warning) useToastStore.getState().notify(warning, 'error')
       if (apiKeyDraft.length > 0) {
         await ipcInvoke('settings:setApiKey', { apiKey: apiKeyDraft })
       } else if (wantsClearKey) {
@@ -253,6 +261,10 @@ export function SettingsModal({ onClose }: Props) {
                 ai={draft.ai}
                 prompts={draft.prompts}
                 onPromptsPatch={patchPrompts}
+                onResetPrompts={() => {
+                  setResetPrompts(true)
+                  patchDraft({ prompts: { slug: DEFAULT_SLUG_PROMPT } })
+                }}
                 busy={busy}
                 hadKey={hadApiKey}
                 apiKeyDraft={apiKeyDraft}
@@ -622,6 +634,7 @@ function AiTab({
   ai,
   prompts,
   onPromptsPatch,
+  onResetPrompts,
   busy,
   hadKey,
   apiKeyDraft,
@@ -633,6 +646,7 @@ function AiTab({
   ai: AiSettings
   prompts: Settings['prompts']
   onPromptsPatch: (p: Partial<Settings['prompts']>) => void
+  onResetPrompts: () => void
   busy: boolean
   hadKey: boolean
   apiKeyDraft: string
@@ -701,7 +715,7 @@ function AiTab({
             className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
           {/* A model name goes stale as providers retire models; this returns it
-              to the one the current version ships (config-seeding-conventions). */}
+              to the one the current version ships (config-sets-conventions). */}
           <Button
             variant="secondary"
             size="sm"
@@ -735,7 +749,7 @@ function AiTab({
               variant="secondary"
               size="sm"
               disabled={busy || prompts.slug === DEFAULT_SLUG_PROMPT}
-              onClick={() => onPromptsPatch({ slug: DEFAULT_SLUG_PROMPT })}
+              onClick={onResetPrompts}
             >
               {t.t('settings.resetSlugPrompt')}
             </Button>

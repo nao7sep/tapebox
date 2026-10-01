@@ -19,7 +19,7 @@ import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
-import { SettingsSchema, type Settings } from '@shared/settings'
+import { settingsAfterPatch, type Settings, type SettingsPatch } from '@shared/settings'
 import { UserFacingError } from '@main/user-facing-error'
 import { withLibraryMove } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
@@ -98,13 +98,13 @@ type CompletedRelocation = { fromDir: string; files: RelocatedFile[] }
 const LIBRARY_MOVE_KEY = 'library-move'
 
 /** True when applying `patch` would change the effective library folder. */
-function movesLibrary(patch: Partial<Settings>): boolean {
+function movesLibrary(patch: SettingsPatch): boolean {
   if (patch.libraryDir === undefined) return false
   return resolve(config.getLibraryDir()) !== resolve(effectiveLibraryDir(patch.libraryDir))
 }
 
 async function relocateIfLibraryDirChanged(
-  patch: Partial<Settings>,
+  patch: SettingsPatch,
   signal: AbortSignal,
 ): Promise<CompletedRelocation | null> {
   if (!movesLibrary(patch)) return null
@@ -137,7 +137,7 @@ export function registerSettingsHandlers(): void {
     // Normalize user-typed folder fields at the boundary: blank stays default, ~
     // expands, and a relative value is rejected here so it can never reach a path
     // join and resolve against the working directory (storage-path-conventions).
-    const normalized: Partial<Settings> = { ...patch }
+    const normalized: SettingsPatch = { ...patch }
     if (patch.libraryDir !== undefined) {
       normalized.libraryDir = normalizeUserDir('errors.libraryFolderNotAbsolute', patch.libraryDir)
     }
@@ -148,7 +148,7 @@ export function registerSettingsHandlers(): void {
     // sibling field in the same patch can't leave the library moved but the setting
     // unsaved. updateSettings re-validates too (this doesn't replace it); doing it
     // here just guarantees the move only runs for a patch that will persist.
-    SettingsSchema.parse({ ...config.getSettings(), ...normalized })
+    settingsAfterPatch(config.getSettings(), normalized)
     // Move the library first; if it throws (collision, library writes in flight,
     // a failed-and-rolled-back move) the new libraryDir is never committed, so the
     // renderer surfaces the error and the catalog still points at the old folder.
@@ -185,7 +185,7 @@ type SettingsUpdateResult = IpcCalls['settings:update']['res']
 const OBSOLETE_SOURCES_WARNING = message('errors.libraryOldCopiesKept')
 
 async function applySettingsPatch(
-  normalized: Partial<Settings>,
+  normalized: SettingsPatch,
   wasAutostart: boolean,
   signal: AbortSignal,
 ): Promise<SettingsUpdateResult> {

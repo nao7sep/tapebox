@@ -2,7 +2,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_AI_MODEL, defaultSettings, type Settings } from '@shared/settings'
+import { DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT, defaultSettings, settingsAfterPatch, type Settings, type SettingsPatch } from '@shared/settings'
 
 const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
@@ -18,12 +18,12 @@ let host: HTMLDivElement
 let saved: Settings
 const onClose = vi.fn()
 
-function stubMain(updateReply: (patch: Partial<Settings>) => unknown) {
+function stubMain(updateReply: (patch: SettingsPatch) => unknown) {
   ipcInvoke.mockImplementation((channel: string, req?: unknown) => {
     if (channel === 'settings:get') return Promise.resolve(saved)
     if (channel === 'settings:hasApiKey') return Promise.resolve(false)
     if (channel === 'settings:defaultLibraryDir') return Promise.resolve('/home/me/.tapebox/library')
-    if (channel === 'settings:update') return Promise.resolve(updateReply(req as Partial<Settings>))
+    if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsPatch))
     return Promise.resolve()
   })
 }
@@ -60,7 +60,7 @@ afterEach(() => {
 
 describe('SettingsModal', () => {
   it('lists System first, then each language by its own name, and saves the choice', async () => {
-    stubMain((patch) => ({ settings: { ...saved, ...patch }, warning: null }))
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
 
     const select = document.querySelector('select') as HTMLSelectElement
@@ -77,11 +77,11 @@ describe('SettingsModal', () => {
     })
     await click('Save')
     const update = ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')
-    expect((update![1] as Partial<Settings>).language).toBe('ja')
+    expect(update![1]).toEqual({ language: 'ja' })
   })
 
   it('Reset model returns the model to the shipped default and saves it', async () => {
-    stubMain((patch) => ({ settings: { ...saved, ...patch }, warning: null }))
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
     await click('AI')
 
@@ -93,12 +93,37 @@ describe('SettingsModal', () => {
 
     await click('Save')
     const update = ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')
-    expect((update![1] as Partial<Settings>).ai?.model).toBe(DEFAULT_AI_MODEL)
+    expect(update![1]).toEqual({ ai: { ...saved.ai, model: DEFAULT_AI_MODEL } })
+  })
+
+  it('Reset slug prompt shows the built-in and deletes the whole prompts set on Save', async () => {
+    saved.prompts = { slug: 'my custom prompt' }
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    await click('AI')
+    await click('Reset slug prompt')
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toBe(DEFAULT_SLUG_PROMPT)
+    await click('Save')
+    expect(ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')![1]).toEqual({ prompts: null })
+  })
+
+  it('saving only an API key does not write any settings sets', async () => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    await click('AI')
+    const input = document.querySelector('input[type="password"]') as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'test-key')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click('Save')
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:setApiKey', { apiKey: 'test-key' })
+    expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'settings:update')).toBe(false)
   })
 
   it('treats a save main reports with a warning as saved, and keeps the warning on screen', async () => {
     const warning = 'Settings were saved and the library now uses the new folder, but some files could not be removed from the previous folder.'
-    stubMain((patch) => ({ settings: { ...saved, ...patch }, warning }))
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning }))
     await render()
     await click('AI')
     await click('Reset model')
