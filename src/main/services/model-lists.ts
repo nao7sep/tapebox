@@ -4,7 +4,7 @@ import { readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { ModelListsSchema, type ModelLists } from '@shared/model-lists'
-import { resolveModel } from '@shared/model-routing'
+import { SUPPORTED_MODELS } from '@shared/ai-models'
 import { nowUtcIso } from '@shared/utc'
 import { resolveApiKey } from './api-keys'
 
@@ -44,7 +44,7 @@ async function loadAndRefresh(
   try {
     const client = new OpenAI({ apiKey, baseURL: options.endpoint, maxRetries: 0, timeout: 30_000 })
     const response = await client.models.list({ signal })
-    const ids = [...new Set(response.data.map((row) => row.id).filter((id) => !resolveModel(id).generic))]
+    const ids = [...new Set(response.data.map((row) => row.id).filter((id) => SUPPORTED_MODELS.some((row) => row.id === id.trim().toLowerCase())))]
     signal.throwIfAborted()
     facts.openai = { fetchedAtUtc: nowUtcIso(), ids }
     // Re-derivable provider facts are not settings or backup history.

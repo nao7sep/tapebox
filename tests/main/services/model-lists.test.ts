@@ -24,16 +24,16 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'tapebox-model-list-'))
   vi.stubEnv('TAPEBOX_DATA_DIR', dir)
   key.mockResolvedValue('mock-key')
-  list.mockResolvedValue({ data: [{ id: 'gpt-future' }, { id: 'embedding-model' }, { id: 'gpt-image-2' }, { id: 'gpt-future' }] })
+  list.mockResolvedValue({ data: [{ id: 'gpt-6-luna' }, { id: 'embedding-model' }, { id: 'gpt-future' }, { id: 'gpt-6-luna' }] })
   ;({ modelList } = await import('@main/services/model-lists'))
 })
 afterEach(async () => { vi.unstubAllEnvs(); await rm(dir, { recursive: true, force: true }) })
 
 describe('settings model-list refresh', () => {
   it('filters, persists provider facts, and refreshes only daily or manually', async () => {
-    expect(await modelList(request, signal())).toEqual(['gpt-future'])
+    expect(await modelList(request, signal())).toEqual(['gpt-6-luna'])
     const saved = JSON.parse(await readFile(join(dir, 'model-lists.json'), 'utf8'))
-    expect(saved).toEqual({ openai: { fetchedAtUtc: expect.stringMatching(/\.\d{3}Z$/), ids: ['gpt-future'] } })
+    expect(saved).toEqual({ openai: { fetchedAtUtc: expect.stringMatching(/\.\d{3}Z$/), ids: ['gpt-6-luna'] } })
     expect(await readdir(dir)).toEqual(['model-lists.json'])
     await modelList(request, signal())
     expect(list).toHaveBeenCalledOnce()

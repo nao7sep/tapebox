@@ -28,11 +28,12 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('slug request routing', () => {
-  it('uses the model policy behind a proxy and minimal requests for local ids', async () => {
+  it('uses the model branch behind a proxy and the plain request for local ids', async () => {
     state.settings['openai.endpoint'] = 'https://proxy.example/v1'
     await expect(generateSlug({ title: 'Title' }, new AbortController().signal)).resolves.toBe('a-name')
     expect(constructors).toHaveBeenCalledWith(expect.objectContaining({ baseURL: 'https://proxy.example/v1', maxRetries: 0 }))
-    expect(create.mock.calls[0]![0]).toMatchObject({ model: 'gpt-6-luna', max_completion_tokens: 512, reasoning_effort: 'medium' })
+    expect(Object.keys(create.mock.calls[0]![0]).sort()).toEqual(['messages', 'model', 'reasoning_effort'])
+    expect(create.mock.calls[0]![0]).toMatchObject({ model: 'gpt-6-luna', reasoning_effort: 'medium' })
     state.settings['openai.slug'] = 'local-model'
     await generateSlug({ title: 'Title' }, new AbortController().signal)
     expect(Object.keys(create.mock.calls[1]![0]).sort()).toEqual(['messages', 'model'])

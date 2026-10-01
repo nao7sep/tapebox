@@ -1,30 +1,22 @@
-type ChatPolicy = { max_completion_tokens?: number; reasoning_effort?: 'medium' }
-type Family = { id: string; adapter: 'openai.chat'; generic: boolean; policy: ChatPolicy }
-
-export const MODEL_FAMILIES: Record<string, Family> = {
-  'openai.chat': {
-    id: 'openai.chat', adapter: 'openai.chat', generic: false,
-    policy: { max_completion_tokens: 512, reasoning_effort: 'medium' },
-  },
-  'openai.generic': { id: 'openai.generic', adapter: 'openai.chat', generic: true, policy: {} },
-}
-
-// Image ids require an images adapter, which TapeBox does not offer.
-export const MODEL_RULES = [
-  { pattern: /^gpt-image-/, family: 'openai.generic' },
-  { pattern: /^(gpt-|o[0-9])/, family: 'openai.chat' },
-] as const
-export const MODEL_EXCEPTIONS: Readonly<Record<string, Partial<ChatPolicy>>> = {}
-
-export function resolveModel(id: string): Family {
-  const family = MODEL_FAMILIES[MODEL_RULES.find((rule) => rule.pattern.test(id))?.family ?? 'openai.generic']!
-  return { ...family, policy: { ...family.policy, ...MODEL_EXCEPTIONS[id] } }
-}
-
+// One branch per OpenAI row of SUPPORTED_MODELS, matched on the trimmed,
+// lower-cased id; the request sends the id as stored. An id with no branch gets
+// the plain request, the model and the message, and the provider judges it.
 export function buildSlugRequest(model: string, content: string) {
-  return {
-    model,
-    messages: [{ role: 'user' as const, content }],
-    ...resolveModel(model).policy,
+  const request = { model, messages: [{ role: 'user' as const, content }] }
+  switch (model.trim().toLowerCase()) {
+    // Medium reasoning effort, stated because the provider documents no default.
+    case 'gpt-6-astra':
+      return { ...request, reasoning_effort: 'medium' as const }
+    // Medium reasoning effort, stated rather than left to the provider's default.
+    case 'gpt-6.1-sol':
+      return { ...request, reasoning_effort: 'medium' as const }
+    // Medium reasoning effort, stated rather than left to the provider's default.
+    case 'gpt-5.6-terra':
+      return { ...request, reasoning_effort: 'medium' as const }
+    // Medium reasoning effort, stated rather than left to the provider's default.
+    case 'gpt-6-luna':
+      return { ...request, reasoning_effort: 'medium' as const }
+    default:
+      return request
   }
 }
