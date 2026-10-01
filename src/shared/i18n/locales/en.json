@@ -532,6 +532,8 @@
   "settings.resetModel": "Reset model",
   "settings.slugModelHint": "Suggests a file slug from each tape’s title.",
   "settings.unsupportedModel": "Not a supported model. It may not work as expected.",
+  "settings.thinking": "Thinking",
+  "settings.thinkingHint": "How much the model reasons before it answers, in the provider's own terms.",
   "settings.slugPrompt": "Slug prompt",
   "settings.slugTokens": "Tokens: {tokens}.",
   "settings.resetSlugPrompt": "Reset slug prompt",

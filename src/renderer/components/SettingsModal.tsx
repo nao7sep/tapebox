@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { Settings, SettingsSets, SiteProfile, ThemePreference } from '@shared/settings'
 import { changedSettings, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
-import { SUPPORTED_MODELS } from '@shared/ai-models'
+import { AI_ROLES, defaultThinkingFor, rowFor, thinkingFor } from '@shared/ai-models'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -103,6 +103,16 @@ export function SettingsModal({ onClose }: Props) {
 
   function patchDraft(patch: Partial<Settings>) {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
+  }
+
+  // A model change resets the role's thinking to the new model's default, since
+  // models accept different values; a model with no row keeps no thinking choice.
+  function changeSlugModel(model: string) {
+    const row = rowFor('openai', model)
+    patchDraft({
+      'openai.slug': model,
+      ...(row ? { 'openai.thinking.slug': defaultThinkingFor(row, AI_ROLES[0].kind) } : {}),
+    })
   }
 
   function patchPrompts(patch: Partial<Settings['prompts']>) {
@@ -252,9 +262,11 @@ export function SettingsModal({ onClose }: Props) {
               <AiTab
                 endpoint={draft['openai.endpoint']}
                 model={draft['openai.slug']}
+                thinking={draft['openai.thinking.slug']}
                 onEndpointChange={(value) => patchDraft({ 'openai.endpoint': value })}
-                onModelChange={(value) => patchDraft({ 'openai.slug': value })}
-                onResetModel={() => patchDraft({ 'openai.slug': DEFAULT_AI_MODEL })}
+                onModelChange={changeSlugModel}
+                onThinkingChange={(value) => patchDraft({ 'openai.thinking.slug': value })}
+                onResetModel={() => changeSlugModel(DEFAULT_AI_MODEL)}
                 prompts={draft.prompts}
                 onPromptsPatch={patchPrompts}
                 onResetPrompts={() => patchDraft({ prompts: { slug: DEFAULT_SLUG_PROMPT } })}
@@ -338,6 +350,7 @@ function pickEditable(s: Settings) {
     language: s.language,
     'openai.endpoint': s['openai.endpoint'],
     'openai.slug': s['openai.slug'],
+    'openai.thinking.slug': s['openai.thinking.slug'],
     prompts: s.prompts,
     ytdlpArgs: s.ytdlpArgs,
     siteProfiles: s.siteProfiles,
@@ -624,7 +637,7 @@ function GeneralTab({
 // ── AI tab ──────────────────────────────────────────────────────────────────
 
 function AiTab({
-  endpoint, model, onEndpointChange, onModelChange, onResetModel,
+  endpoint, model, thinking, onEndpointChange, onModelChange, onThinkingChange, onResetModel,
   prompts,
   onPromptsPatch,
   onResetPrompts,
@@ -637,8 +650,10 @@ function AiTab({
 }: {
   endpoint: string
   model: string
+  thinking: string
   onEndpointChange: (value: string) => void
   onModelChange: (value: string) => void
+  onThinkingChange: (value: string) => void
   onResetModel: () => void
   prompts: Settings['prompts']
   onPromptsPatch: (p: Partial<Settings['prompts']>) => void
@@ -654,7 +669,7 @@ function AiTab({
   const willClear = wantsClearKey && apiKeyDraft.length === 0
   const t = useI18n()
 
-  const supported = SUPPORTED_MODELS.some((row) => row.id === model.trim().toLowerCase())
+  const row = rowFor('openai', model)
 
   return (
     <div className="space-y-4">
@@ -720,10 +735,30 @@ function AiTab({
           </Button>
         </div>
         <p className="mt-1 text-xs text-fg-muted">{t.t('settings.slugModelHint')}</p>
-        {!supported && (
+        {!row && (
           <p className="mt-1 text-xs text-warning-fg">{t.t('settings.unsupportedModel')}</p>
         )}
       </div>
+
+      {/* A row with one value offers no choice and an id with no row sends none,
+          so neither shows the field. */}
+      {row && row.thinking.length > 1 && (
+        <div>
+          <label className="block">
+            <span className="text-xs font-medium text-fg">{t.t('settings.thinking')}</span>
+            <select
+              id="settings-openai-thinking-slug"
+              value={thinkingFor(row, AI_ROLES[0].kind, thinking)}
+              disabled={busy}
+              onChange={(e) => onThinkingChange(e.target.value)}
+              className={`mt-1 block w-full ${INPUT_LINE_CLASS}`}
+            >
+              {row.thinking.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <p className="mt-1 text-xs text-fg-muted">{t.t('settings.thinkingHint')}</p>
+        </div>
+      )}
 
       <div className="border-t border-line pt-4">
         <Field label={t.t('settings.slugPrompt')}>

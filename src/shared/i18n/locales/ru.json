@@ -588,6 +588,8 @@
   "settings.resetModel": "Сбросить модель",
   "settings.slugModelHint": "Предлагает слаг файла по названию каждой кассеты.",
   "settings.unsupportedModel": "Эта модель не поддерживается. Она может работать не так, как ожидается.",
+  "settings.thinking": "Рассуждение",
+  "settings.thinkingHint": "Сколько модель рассуждает перед ответом, в терминах провайдера.",
   "settings.slugPrompt": "Промпт для слага",
   "settings.slugTokens": "Подстановки: {tokens}.",
   "settings.resetSlugPrompt": "Сбросить промпт для слага",

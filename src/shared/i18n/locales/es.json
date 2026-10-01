@@ -560,6 +560,8 @@
   "settings.resetModel": "Restablecer modelo",
   "settings.slugModelHint": "Sugiere un slug de archivo a partir del título de cada cinta.",
   "settings.unsupportedModel": "No es un modelo compatible. Puede que no funcione como se espera.",
+  "settings.thinking": "Razonamiento",
+  "settings.thinkingHint": "Cuánto razona el modelo antes de responder, en los términos del proveedor.",
   "settings.slugPrompt": "Prompt del slug",
   "settings.slugTokens": "Marcadores: {tokens}.",
   "settings.resetSlugPrompt": "Restablecer prompt del slug",

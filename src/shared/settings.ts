@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AI_ROLES, defaultModelFor } from './ai-models'
+import { AI_ROLES, defaultModelFor, defaultThinkingFor, rowFor, thinkingFor } from './ai-models'
 import { stripUrlCredentials } from './url'
 import { multiline, singleLine } from './text-cleanup'
 import { LANGUAGE_PREFERENCES } from './i18n/languages'
@@ -45,6 +45,7 @@ const EndpointSchema = z.string().url().refine(isLoopbackOrHttps, {
  */
 export const DEFAULT_OPENAI_ENDPOINT = 'https://api.openai.com/v1'
 export const DEFAULT_AI_MODEL = defaultModelFor('openai', AI_ROLES[0].kind)
+export const DEFAULT_SLUG_THINKING = defaultThinkingFor(rowFor('openai', DEFAULT_AI_MODEL)!, AI_ROLES[0].kind)
 
 export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
 
@@ -130,6 +131,10 @@ const SettingsObjectSchema = z.object({
 
   'openai.endpoint': EndpointSchema,
   'openai.slug': z.string().min(1),
+  // How much the slug model thinks, in the provider's words. Stored only while it
+  // differs from the default for the selected model; at call time a value the
+  // model does not list is replaced by that default.
+  'openai.thinking.slug': z.string(),
 
   // Configurable AI prompts. See PromptsSettingsSchema.
   prompts: PromptsSettingsSchema,
@@ -240,10 +245,15 @@ export function cleanSettingsSets(sets: SettingsSets): SettingsSets {
 }
 
 const MODEL_SET_KEYS: ReadonlySet<keyof Settings> = new Set(AI_ROLES.map((role) => `openai.${role.id}` as const))
+const THINKING_SET_ROLES = new Map<keyof Settings, (typeof AI_ROLES)[number]>(
+  AI_ROLES.map((role) => [`openai.thinking.${role.id}` as const, role]))
 
 /**
  * The sets a file stores: every known set that differs from its built-in. A
- * model id is compared trimmed and case-insensitive; every other set as a whole.
+ * model id is compared trimmed and case-insensitive. A role's thinking is stored
+ * only while the value it sends differs from the default for the model the role
+ * selects, and never for a model with no row. Every other set is compared as a
+ * whole.
  */
 export function storedSets(sets: SettingsSets): SettingsSets {
   const builtIn = defaultSettings()
@@ -251,9 +261,16 @@ export function storedSets(sets: SettingsSets): SettingsSets {
   for (const key of SETTINGS_KEYS) {
     if (!Object.hasOwn(sets, key)) continue
     const value = sets[key]
-    const equal = MODEL_SET_KEYS.has(key)
-      ? String(value).trim().toLowerCase() === String(builtIn[key]).toLowerCase()
-      : JSON.stringify(value) === JSON.stringify(builtIn[key])
+    const role = THINKING_SET_ROLES.get(key)
+    let equal: boolean
+    if (role) {
+      const row = rowFor('openai', sets[`openai.${role.id}`] ?? builtIn[`openai.${role.id}`])
+      equal = !row || thinkingFor(row, role.kind, String(value)) === defaultThinkingFor(row, role.kind)
+    } else if (MODEL_SET_KEYS.has(key)) {
+      equal = String(value).trim().toLowerCase() === String(builtIn[key]).toLowerCase()
+    } else {
+      equal = JSON.stringify(value) === JSON.stringify(builtIn[key])
+    }
     if (!equal) Object.assign(stored, { [key]: value })
   }
   return stored
@@ -290,6 +307,7 @@ export function defaultSettings(): Settings {
     checkUpdatesAtLaunch: true,
     'openai.endpoint': DEFAULT_OPENAI_ENDPOINT,
     'openai.slug': DEFAULT_AI_MODEL,
+    'openai.thinking.slug': DEFAULT_SLUG_THINKING,
     prompts: {
       slug: DEFAULT_SLUG_PROMPT,
     },
@@ -341,6 +359,7 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     checkUpdatesAtLaunch: s.checkUpdatesAtLaunch,
     aiEndpoint: stripUrlCredentials(s['openai.endpoint']),
     aiModel: s['openai.slug'],
+    aiThinking: s['openai.thinking.slug'],
     externalPlayer: s.externalPlayer,
     defaultExportDir: s.defaultExportDir,
     deleteAfterExport: s.deleteAfterExport,

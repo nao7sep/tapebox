@@ -560,6 +560,8 @@
   "settings.resetModel": "Réinitialiser le modèle",
   "settings.slugModelHint": "Propose un slug de fichier à partir du titre de chaque cassette.",
   "settings.unsupportedModel": "Ce modèle n’est pas pris en charge. Il risque de ne pas fonctionner comme prévu.",
+  "settings.thinking": "Réflexion",
+  "settings.thinkingHint": "Combien le modèle réfléchit avant de répondre, dans les termes du fournisseur.",
   "settings.slugPrompt": "Prompt du slug",
   "settings.slugTokens": "Jetons\u00a0: {tokens}.",
   "settings.resetSlugPrompt": "Réinitialiser le prompt du slug",

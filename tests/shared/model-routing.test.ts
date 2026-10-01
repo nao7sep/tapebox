@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AI_ROLES, SUPPORTED_MODELS, defaultModelFor, modelsFor } from '@shared/ai-models'
+import { AI_ROLES, SUPPORTED_MODELS, defaultModelFor, defaultThinkingFor, modelsFor, rowFor, thinkingFor } from '@shared/ai-models'
 import { buildSlugRequest } from '@shared/model-routing'
 import { defaultSettings } from '@shared/settings'
 
@@ -26,19 +26,42 @@ describe('model routing and role guards', () => {
     }
   })
 
-  it('gives every row its own branch and sends no output ceiling', () => {
+  it('pins every row\'s thinking values from the research', () => {
+    expect(Object.fromEntries(SUPPORTED_MODELS.map((row) => [row.id, row.thinking]))).toEqual({
+      'gpt-6-astra': ['low', 'medium', 'high', 'xhigh', 'max'],
+      'gpt-6.1-sol': ['low', 'medium', 'high', 'xhigh', 'max'],
+      'gpt-5.6-terra': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+      'gpt-6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+  })
+
+  it('gives every row its own branch, translating every thinking value it lists, with no output ceiling', () => {
     for (const row of SUPPORTED_MODELS) {
-      expect(buildSlugRequest(row.id, 'title'), row.id).toEqual({ model: row.id, messages, reasoning_effort: 'medium' })
+      for (const value of row.thinking) {
+        expect(buildSlugRequest(row.id, value, 'title'), `${row.id} ${value}`).toEqual({ model: row.id, messages, reasoning_effort: value })
+      }
     }
   })
 
   it('matches a row on the trimmed, lower-cased id and sends the id as stored', () => {
-    expect(buildSlugRequest(' GPT-6-Luna ', 'title')).toEqual({ model: ' GPT-6-Luna ', messages, reasoning_effort: 'medium' })
+    expect(buildSlugRequest(' GPT-6-Luna ', 'low', 'title')).toEqual({ model: ' GPT-6-Luna ', messages, reasoning_effort: 'low' })
+    expect(rowFor('openai', ' GPT-6-Luna ')?.id).toBe('gpt-6-luna')
   })
 
-  it('sends an id with no row the plain request', () => {
+  it('sends an id with no row the plain request and no thinking parameter', () => {
     for (const id of ['gpt-future', 'o3-future', 'local-model']) {
-      expect(buildSlugRequest(id, 'title')).toEqual({ model: id, messages })
+      expect(buildSlugRequest(id, 'high', 'title')).toEqual({ model: id, messages })
+      expect(rowFor('openai', id)).toBeUndefined()
     }
+  })
+
+  it('defaults thinking by the role\'s tier and replaces an unlisted choice with the default', () => {
+    const row = (id: string) => rowFor('openai', id)!
+    expect(defaultThinkingFor(row('gpt-6-luna'), 'text-fast')).toBe('none')
+    expect(defaultThinkingFor(row('gpt-6.1-sol'), 'text-fast')).toBe('low')
+    expect(defaultThinkingFor(row('gpt-5.6-terra'), 'text-balanced')).toBe('medium')
+    expect(defaultThinkingFor(row('gpt-6-astra'), 'text-smart')).toBe('medium')
+    expect(thinkingFor(row('gpt-6.1-sol'), 'text-fast', 'none')).toBe('low')
+    expect(thinkingFor(row('gpt-6.1-sol'), 'text-fast', 'max')).toBe('max')
   })
 })

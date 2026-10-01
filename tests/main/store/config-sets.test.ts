@@ -132,6 +132,20 @@ describe('settings by set', () => {
     })
   })
 
+  it('stores a role\'s thinking only while it differs from the default for the selected model', async () => {
+    await loadSettings()
+    await updateSettings({ 'openai.slug': 'gpt-6.1-sol', 'openai.thinking.slug': 'low' })
+    expect(await savedSets()).toEqual({ 'openai.slug': 'gpt-6.1-sol' })
+    await updateSettings({ 'openai.thinking.slug': 'none' })
+    expect(await savedSets()).toEqual({ 'openai.slug': 'gpt-6.1-sol' })
+    await updateSettings({ 'openai.thinking.slug': 'high' })
+    expect(await savedSets()).toEqual({ 'openai.slug': 'gpt-6.1-sol', 'openai.thinking.slug': 'high' })
+    await updateSettings({ 'openai.slug': 'gpt-6-luna', 'openai.thinking.slug': 'none' })
+    expect(await savedSets()).toEqual({})
+    await updateSettings({ 'openai.slug': 'local-model', 'openai.thinking.slug': 'high' })
+    expect(await savedSets()).toEqual({ 'openai.slug': 'local-model' })
+  })
+
   it('rejects an empty endpoint or model id and keeps the file as it is', async () => {
     await writeFile(paths.config, JSON.stringify({ autoplay: false }))
     await loadSettings()

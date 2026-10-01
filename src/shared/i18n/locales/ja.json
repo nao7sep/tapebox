@@ -504,6 +504,8 @@
   "settings.resetModel": "モデルをリセット",
   "settings.slugModelHint": "各テープのタイトルからファイル用のスラッグを提案します。",
   "settings.unsupportedModel": "対応していないモデルです。期待どおりに動作しない可能性があります。",
+  "settings.thinking": "思考",
+  "settings.thinkingHint": "回答する前にモデルがどれだけ考えるかを、プロバイダの用語で指定します。",
   "settings.slugPrompt": "スラッグのプロンプト",
   "settings.slugTokens": "トークン: {tokens}",
   "settings.resetSlugPrompt": "スラッグのプロンプトをリセット",

@@ -6,6 +6,7 @@ import { AI_REQUEST_TIMEOUT_MS, AI_RETRY } from '@main/io/network'
 import { UserFacingError } from '@main/user-facing-error'
 import { resolveApiKey } from './api-keys'
 import { buildSlugRequest } from '@shared/model-routing'
+import { AI_ROLES, rowFor, thinkingFor } from '@shared/ai-models'
 import { message } from '@shared/i18n/translate'
 
 /**
@@ -25,6 +26,10 @@ export async function generateSlug(
   const settings = getSettings()
   const { prompts } = settings
   const model = settings['openai.slug']
+  // A model with no row gets no thinking parameter; a listed model gets the
+  // role's chosen value, or its default when the model does not list it.
+  const row = rowFor('openai', model)
+  const thinking = row ? thinkingFor(row, AI_ROLES[0].kind, settings['openai.thinking.slug']) : undefined
   const apiKey = await resolveApiKey('openai')
   if (!apiKey) throw new UserFacingError('refused', message('errors.aiNoKey'))
 
@@ -45,14 +50,14 @@ export async function generateSlug(
     .replace(/\{uploader\}/g, opts.uploader ?? '')
     .replace(/\{description\}/g, opts.description ?? '')
 
-  log.info('ai: generateSlug request', { model })
+  log.info('ai: generateSlug request', { model, thinking })
   let res: Awaited<ReturnType<typeof client.chat.completions.create>>
   try {
     res = await withRetry(
       AI_RETRY,
       () =>
         client.chat.completions.create(
-          buildSlugRequest(model, userPrompt),
+          buildSlugRequest(model, thinking, userPrompt),
           { signal },
         ),
       { signal, isRetryable: isRetryableAiError, retryAfterMs: aiRetryAfterMs },

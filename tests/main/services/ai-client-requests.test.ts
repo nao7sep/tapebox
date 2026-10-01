@@ -33,10 +33,20 @@ describe('slug request routing', () => {
     await expect(generateSlug({ title: 'Title' }, new AbortController().signal)).resolves.toBe('a-name')
     expect(constructors).toHaveBeenCalledWith(expect.objectContaining({ baseURL: 'https://proxy.example/v1', maxRetries: 0 }))
     expect(Object.keys(create.mock.calls[0]![0]).sort()).toEqual(['messages', 'model', 'reasoning_effort'])
-    expect(create.mock.calls[0]![0]).toMatchObject({ model: 'gpt-6-luna', reasoning_effort: 'medium' })
+    expect(create.mock.calls[0]![0]).toMatchObject({ model: 'gpt-6-luna', reasoning_effort: 'none' })
     state.settings['openai.slug'] = 'local-model'
     await generateSlug({ title: 'Title' }, new AbortController().signal)
     expect(Object.keys(create.mock.calls[1]![0]).sort()).toEqual(['messages', 'model'])
+  })
+
+  it('sends the role\'s thinking, or the model\'s default when the model does not list it', async () => {
+    state.settings['openai.thinking.slug'] = 'high'
+    await generateSlug({ title: 'Title' }, new AbortController().signal)
+    expect(create.mock.calls[0]![0]).toMatchObject({ model: 'gpt-6-luna', reasoning_effort: 'high' })
+    state.settings['openai.slug'] = 'gpt-6.1-sol'
+    state.settings['openai.thinking.slug'] = 'none'
+    await generateSlug({ title: 'Title' }, new AbortController().signal)
+    expect(create.mock.calls[1]![0]).toMatchObject({ model: 'gpt-6.1-sol', reasoning_effort: 'low' })
   })
 
   it('honours the capped Retry-After and stops after three attempts', async () => {

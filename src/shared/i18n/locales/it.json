@@ -560,6 +560,8 @@
   "settings.resetModel": "Ripristina modello",
   "settings.slugModelHint": "Suggerisce uno slug per il file a partire dal titolo di ogni cassetta.",
   "settings.unsupportedModel": "Modello non supportato. Potrebbe non funzionare come previsto.",
+  "settings.thinking": "Ragionamento",
+  "settings.thinkingHint": "Quanto ragiona il modello prima di rispondere, nei termini del fornitore.",
   "settings.slugPrompt": "Prompt dello slug",
   "settings.slugTokens": "Segnaposto: {tokens}.",
   "settings.resetSlugPrompt": "Ripristina prompt dello slug",

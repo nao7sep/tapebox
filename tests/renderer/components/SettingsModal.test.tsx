@@ -127,6 +127,30 @@ describe('SettingsModal', () => {
     expect(document.body.textContent).not.toContain(warning)
   })
 
+  it('shows the Thinking field for a listed model, resets it on a model change, and saves the choice', async () => {
+    saved = defaultSettings()
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    await click('AI')
+    const thinking = () => document.getElementById('settings-openai-thinking-slug') as HTMLSelectElement | null
+    expect(thinking()!.value).toBe('none')
+    expect([...thinking()!.options].map((option) => option.value)).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max'])
+    const model = document.getElementById('settings-openai-slug') as HTMLInputElement
+    await type(model, 'my-local-model')
+    expect(thinking()).toBeNull()
+    await type(model, 'gpt-6.1-sol')
+    expect(thinking()!.value).toBe('low')
+    expect([...thinking()!.options].map((option) => option.value)).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    await act(async () => {
+      thinking()!.value = 'high'
+      thinking()!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Save')
+    expect(ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')![1]).toEqual({
+      'openai.slug': 'gpt-6.1-sol', 'openai.thinking.slug': 'high',
+    })
+  })
+
   it.each(AI_ROLES)('has a model field for the $id role that saves its own set as typed', async (role) => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()

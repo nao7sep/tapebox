@@ -504,6 +504,8 @@
   "settings.resetModel": "重置模型",
   "settings.slugModelHint": "根据每盘录像带的标题建议文件别名。",
   "settings.unsupportedModel": "不受支持的模型，可能无法按预期工作。",
+  "settings.thinking": "思考",
+  "settings.thinkingHint": "模型在回答前思考的程度，使用服务商自己的术语。",
   "settings.slugPrompt": "别名提示词",
   "settings.slugTokens": "占位符：{tokens}。",
   "settings.resetSlugPrompt": "重置别名提示词",
