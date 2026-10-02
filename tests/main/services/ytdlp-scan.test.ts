@@ -5,7 +5,7 @@ vi.mock('@main/paths', () => ({ binaryPath: () => '/bin/yt-dlp' }))
 
 const { scanOutcome } = await import('@main/services/ytdlp-scan')
 
-const ended = { aborted: false, failure: null, exitCode: 0, totalCount: 0, stderrTail: '' }
+const ended = { aborted: false, failure: null, exitCode: 0, totalCount: 0, stderr: '' }
 
 describe('scanOutcome', () => {
   it('reports a clean exit as done, even with nothing listed', () => {
@@ -24,7 +24,7 @@ describe('scanOutcome', () => {
   })
 
   it('reports a failed exit with nothing listed as a failure carrying yt-dlp reason', () => {
-    const outcome = scanOutcome({ ...ended, exitCode: 1, stderrTail: 'ERROR: Unsupported URL' })
+    const outcome = scanOutcome({ ...ended, exitCode: 1, stderr: 'ERROR: Unsupported URL' })
     expect(outcome.kind).toBe('failed')
     expect((outcome as { error: Error }).error.message).toContain('Unsupported URL')
 

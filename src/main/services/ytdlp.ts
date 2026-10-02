@@ -4,6 +4,9 @@ import { binaryPath, paths } from '@main/paths'
 import { resolveYtdlpArgs } from './ytdlp-args'
 import { watchForStall } from './download-stall'
 import { YTDLP_PROBE_IDLE_TIMEOUT_MS } from '@main/io/network'
+import { toJson } from '@main/io/log-format'
+import { writeRecord } from '@main/io/records'
+import { nowUtcIso } from '@shared/utc'
 import {
   execCapture,
   makeLineBuffer,
@@ -11,6 +14,7 @@ import {
   SubprocessError,
   waitForExit,
 } from '@main/io/spawn'
+import type { Readable } from 'node:stream'
 
 /**
  * yt-dlp subprocess service.
@@ -25,6 +29,54 @@ export function ytdlpEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
     PATH: `${paths.bin}${sep}${process.env['PATH'] ?? ''}`,
+  }
+}
+
+export type YtdlpRun = {
+  kind: 'download' | 'scan'
+  tapeId: string | null
+  scanId: string | null
+  url: string
+  args: readonly string[]
+}
+
+/**
+ * Collect everything a download or scan writes, both streams whole, and record
+ * it as a `ytdlp_runs` row once the run has ended (data-lifecycle conventions).
+ * Attach it right after the spawn, before any output can arrive.
+ */
+export function collectRun(
+  child: { stdout: Readable; stderr: Readable; once(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown },
+  run: YtdlpRun,
+): { stderr: () => string; record: () => void } {
+  const startedAtUtc = nowUtcIso()
+  const stdout: Buffer[] = []
+  const stderr: Buffer[] = []
+  let exit: { code: number | null; signal: NodeJS.Signals | null } = { code: null, signal: null }
+  child.stdout.on('data', (chunk: Buffer | string) => stdout.push(Buffer.from(chunk)))
+  child.stderr.on('data', (chunk: Buffer | string) => stderr.push(Buffer.from(chunk)))
+  child.once('close', (code, signal) => {
+    exit = { code, signal }
+  })
+  const text = (chunks: Buffer[]) => Buffer.concat(chunks).toString('utf8')
+  return {
+    stderr: () => text(stderr),
+    record: () => {
+      const row = {
+        tape_id: run.tapeId,
+        scan_id: run.scanId,
+        kind: run.kind,
+        url: run.url,
+        args: toJson(run.args),
+        started_at_utc: startedAtUtc,
+        ended_at_utc: nowUtcIso(),
+        exit_code: exit.code,
+        signal: exit.signal,
+        stdout: text(stdout),
+        stderr: text(stderr),
+      }
+      writeRecord('ytdlp_runs', row, () => toJson({ record: 'yt-dlp run', ...row }))
+    },
   }
 }
 
@@ -96,6 +148,7 @@ export type DownloadProgress = {
 }
 
 export type DownloadOptions = {
+  tapeId: string
   url: string
   libraryDir: string
   outputId: string
@@ -121,9 +174,6 @@ const FINAL_PATH_MARKER = 'tapebox-final-filepath:'
  * fragmented HLS/DASH where byte totals are unknown).
  */
 const PROGRESS_MARKER = 'tapebox-progress:'
-
-/** How many recent yt-dlp output lines to keep so a failure can show what it said. */
-const MAX_LOG_LINES = 60
 
 /** Parse a --progress-template number; its 'NA' placeholder becomes undefined. */
 function finiteOrUndefined(raw: string | undefined): number | undefined {
@@ -159,39 +209,36 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
   const captured: { finalPath: string | null } = { finalPath: null }
   let lastPct = -1
 
+  const args = [
+    ...resolveYtdlpArgs(opts.url),
+    '--paths', `home:${opts.libraryDir}`,
+    '--write-info-json',
+    // Write the source thumbnail beside the media as {outputId}.{ext}. We do NOT
+    // ask yt-dlp to convert it — every image goes through our own gate
+    // (ffmpeg.saveThumbnailJpeg) so the format and quality are ours to guarantee,
+    // not yt-dlp's to vary. A missing thumbnail is non-fatal (yt-dlp warns).
+    '--write-thumbnail',
+    '--output', `${opts.outputId}.%(ext)s`,
+    '--no-playlist',
+    '--no-warnings',
+    '--newline',
+    '--progress-template',
+    `download:${PROGRESS_MARKER}%(progress._percent_str)s|%(progress.speed)s|%(progress.eta)s`,
+    // --print implies --quiet, and --quiet suppresses the progress template
+    // above — so without --no-quiet the download runs silently and the bar
+    // never moves. --no-quiet keeps progress flowing while still printing the
+    // after_move final path. (Verified: dropping it yields zero progress lines.)
+    '--no-quiet',
+    '--print', `after_move:${FINAL_PATH_MARKER}%(filepath)s`,
+    opts.url,
+  ]
   // not recorded: yt-dlp writes media, a raw thumbnail, and info JSON into the
   // binary-bearing library directory (including a user-selected external library).
   // The bundle is source-regenerable; its durable catalog row records separately.
-  const child = spawnStreaming(
-    binaryPath('yt-dlp'),
-    [
-      ...resolveYtdlpArgs(opts.url),
-      '--paths', `home:${opts.libraryDir}`,
-      '--write-info-json',
-      // Write the source thumbnail beside the media as {outputId}.{ext}. We do NOT
-      // ask yt-dlp to convert it — every image goes through our own gate
-      // (ffmpeg.saveThumbnailJpeg) so the format and quality are ours to guarantee,
-      // not yt-dlp's to vary. A missing thumbnail is non-fatal (yt-dlp warns).
-      '--write-thumbnail',
-      '--output', `${opts.outputId}.%(ext)s`,
-      '--no-playlist',
-      '--no-warnings',
-      '--newline',
-      '--progress-template',
-      `download:${PROGRESS_MARKER}%(progress._percent_str)s|%(progress.speed)s|%(progress.eta)s`,
-      // --print implies --quiet, and --quiet suppresses the progress template
-      // above — so without --no-quiet the download runs silently and the bar
-      // never moves. --no-quiet keeps progress flowing while still printing the
-      // after_move final path. (Verified: dropping it yields zero progress lines.)
-      '--no-quiet',
-      '--print', `after_move:${FINAL_PATH_MARKER}%(filepath)s`,
-      opts.url,
-    ],
-    { env: ytdlpEnv(), signal: opts.signal, idleTimeoutMs },
-  )
+  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(), signal: opts.signal, idleTimeoutMs })
+  const run = collectRun(child, { kind: 'download', tapeId: opts.tapeId, scanId: null, url: opts.url, args })
 
   const stall = watchForStall((stalled) => opts.onStall?.(stalled))
-  const recentLines: string[] = []
   const lineBuffer = makeLineBuffer((line) => {
     if (!line) return
     stall.line(line)
@@ -201,7 +248,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     }
     if (line.startsWith(PROGRESS_MARKER)) {
       // Our progress-template line: percent|speed(B/s)|eta(s). Drives the bar and
-      // is left out of the kept tail (noise). Speed/eta are 'NA' until estimable.
+      // is left out of the live log (noise). Speed/eta are 'NA' until estimable.
       const [pctRaw, speedRaw, etaRaw] = line.slice(PROGRESS_MARKER.length).split('|')
       const percent = parseFloat(pctRaw)
       if (Number.isFinite(percent) && percent !== lastPct) {
@@ -214,10 +261,8 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
       }
       return
     }
-    recentLines.push(line)
-    if (recentLines.length > MAX_LOG_LINES) recentLines.shift()
-    // Same lines the failure tail keeps, but streamed live so the UI can show
-    // progress as it happens. Markers and progress lines already returned above.
+    // Streamed live so the UI can show what yt-dlp says as it happens. Markers and
+    // progress lines already returned above.
     opts.onLog?.(line)
   })
 
@@ -227,21 +272,17 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
   try {
     await waitForExit(child, { command: 'yt-dlp download' })
   } catch (err) {
-    lineBuffer.flush()
-    // No auto-retry: a stall or a clean failure both terminate here. yt-dlp's
-    // own recent output (recentLines) is the real error text — waitForExit's
-    // SubprocessError carries an empty stderr since the stream was parsed live.
-    // Re-throw it as a SubprocessError carrying that output, so the failure
-    // stays structured (command/exitCode/stderr) for the queue and the log
-    // rather than collapsing into one opaque string.
-    const detail = recentLines.join('\n').trim()
+    // No auto-retry: a stall or a clean failure both terminate here. waitForExit's
+    // SubprocessError carries an empty stderr since the stream was parsed live, so
+    // it is re-thrown carrying yt-dlp's own stderr, the real error text.
     if (err instanceof SubprocessError) {
-      throw new SubprocessError(err.command, err.exitCode, detail || err.stderr)
+      throw new SubprocessError(err.command, err.exitCode, run.stderr())
     }
     throw err
   } finally {
     lineBuffer.flush()
     stall.stop()
+    run.record()
   }
 
   const finalPath = captured.finalPath

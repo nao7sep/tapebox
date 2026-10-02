@@ -12,8 +12,8 @@ import { toJson } from './log-format'
  * logging and data-lifecycle conventions. The main process is its one owner: the
  * renderer forwards its log entries over IPC (ipc/log.ts).
  *
- * Every row carries its session, this launch's start time, and the tape it
- * concerns when there is one. Neither table is transient, so nothing here
+ * Every row carries its session, this launch's start time, and the tape or
+ * scan it concerns when there is one. No table is transient, so nothing here
  * deletes a row.
  *
  * Writes are synchronous, each one its own committed statement under
@@ -47,9 +47,26 @@ CREATE TABLE IF NOT EXISTS ai_calls (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_calls_session ON ai_calls (session);
 CREATE INDEX IF NOT EXISTS idx_ai_calls_tape_id ON ai_calls (tape_id);
+CREATE TABLE IF NOT EXISTS ytdlp_runs (
+  id             INTEGER PRIMARY KEY,
+  session        TEXT NOT NULL,
+  tape_id        TEXT,
+  scan_id        TEXT,
+  kind           TEXT NOT NULL,
+  url            TEXT NOT NULL,
+  args           TEXT NOT NULL,
+  started_at_utc TEXT NOT NULL,
+  ended_at_utc   TEXT NOT NULL,
+  exit_code      INTEGER,
+  signal         TEXT,
+  stdout         TEXT NOT NULL,
+  stderr         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_session ON ytdlp_runs (session);
+CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_tape_id ON ytdlp_runs (tape_id);
 `
 
-export type RecordTable = 'logs' | 'ai_calls'
+export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs'
 export type RecordRow = Record<string, SQLInputValue>
 
 let session: string | null = null

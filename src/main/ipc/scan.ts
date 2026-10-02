@@ -39,7 +39,7 @@ export function registerScanHandlers(): void {
     // including ones still queued unprobed (added with autostart off).
     const known = librarySourceIndex(session.getTapes())
 
-    const handle_ = scanService.startScan(url, (raw) => {
+    const handle_ = scanService.startScan(url, sessionId, (raw) => {
       const entry: ScanResult = {
         sourceId: raw.id,
         sourceUrl: raw.url,

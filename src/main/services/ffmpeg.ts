@@ -25,8 +25,7 @@ const THUMBNAIL_JPEG_QSCALE = 3      // ffmpeg mjpeg -q:v: 2 (best) … 31 (wors
 const THUMBNAIL_MAX_EDGE_PX = 1280   // cap the longer side; never upscales smaller art
 const THUMBNAIL_IDLE_TIMEOUT_MS = 30_000
 
-// How many recent ffmpeg output lines to keep so a failure can show what it said
-// (mirrors yt-dlp's MAX_LOG_LINES; ffmpeg is terser, so a smaller tail suffices).
+// How many recent ffmpeg output lines to keep so a failure can show what it said.
 const MAX_LOG_LINES = 40
 
 /**

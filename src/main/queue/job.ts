@@ -204,6 +204,7 @@ export class Job {
     const stem = cur.id
 
     const result = await this.d.ytdlp.download({
+      tapeId: this.tapeId,
       url: cur.sourceUrl,
       libraryDir,
       outputId: stem,

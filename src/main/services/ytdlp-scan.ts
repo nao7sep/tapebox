@@ -8,7 +8,7 @@ import {
   waitForExit,
 } from '@main/io/spawn'
 import { errorMessage } from '@shared/error'
-import { ytdlpEnv } from './ytdlp'
+import { collectRun, ytdlpEnv } from './ytdlp'
 import { resolveYtdlpArgs } from './ytdlp-args'
 
 /**
@@ -53,28 +53,29 @@ export function scanOutcome(ended: {
   failure: unknown
   exitCode: number | null
   totalCount: number
-  stderrTail: string
+  stderr: string
 }): ScanOutcome {
   const { aborted, failure, exitCode, totalCount } = ended
   if (aborted) return { kind: 'stopped', totalCount }
   if ((failure === null && exitCode === 0) || totalCount > 0) return { kind: 'done', totalCount }
-  return { kind: 'failed', error: failure ?? new SubprocessError(SCAN_COMMAND, exitCode, ended.stderrTail) }
+  return { kind: 'failed', error: failure ?? new SubprocessError(SCAN_COMMAND, exitCode, ended.stderr) }
 }
 
 const SCAN_COMMAND = 'yt-dlp enum'
-/** How much of yt-dlp's stderr a failed scan keeps for the log. */
-const STDERR_TAIL_CHARS = 4000
 
 export function startScan(
   url: string,
+  scanId: string,
   onEntry: (entry: ScannedEntry) => void,
 ): ScanHandle {
   const ctl = new AbortController()
+  const args = [...resolveYtdlpArgs(url), '--flat-playlist', '-j', '--no-warnings', url]
   const child = spawnStreaming(
     binaryPath('yt-dlp'),
-    [...resolveYtdlpArgs(url), '--flat-playlist', '-j', '--no-warnings', url],
+    args,
     { env: ytdlpEnv(), signal: ctl.signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS },
   )
+  const run = collectRun(child, { kind: 'scan', tapeId: null, scanId, url, args })
 
   let total = 0
 
@@ -97,11 +98,6 @@ export function startScan(
   })
 
   child.stdout.on('data', lineBuffer.feed)
-  // yt-dlp states why it failed on stderr; the tail is kept for the log.
-  let stderrTail = ''
-  child.stderr.on('data', (chunk: Buffer | string) => {
-    stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_CHARS)
-  })
 
   const complete = (async (): Promise<ScanOutcome> => {
     let exitCode: number | null = null
@@ -112,8 +108,10 @@ export function startScan(
       failure = err
     } finally {
       lineBuffer.flush()
+      run.record()
     }
-    return scanOutcome({ aborted: ctl.signal.aborted, failure, exitCode, totalCount: total, stderrTail })
+    // yt-dlp states why it failed on stderr.
+    return scanOutcome({ aborted: ctl.signal.aborted, failure, exitCode, totalCount: total, stderr: run.stderr() })
   })()
 
   return {
