@@ -1,11 +1,11 @@
 import { shell } from 'electron'
 import { handle } from './handle'
-import { getCurrentLogPath } from '@main/io/logger'
+import { recordsLocation } from '@main/io/records'
 import { setVideoPlaying } from '@main/power-blocker'
 import { isImportableUrl } from '@shared/url'
 
 /**
- * Read-only facts about the current process, revealing this launch's log, and the
+ * Read-only facts about the current process, revealing where the log is, and the
  * renderer's playback heartbeat that drives the keep-awake wake lock.
  */
 export function registerAppHandlers(): void {
@@ -16,7 +16,7 @@ export function registerAppHandlers(): void {
   }))
 
   handle('app:revealLog', async () => {
-    const path = getCurrentLogPath()
+    const path = recordsLocation()
     if (path) shell.showItemInFolder(path)
   })
 

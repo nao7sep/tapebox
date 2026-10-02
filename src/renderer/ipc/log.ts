@@ -2,8 +2,8 @@ import type { LogFields, LogLevel } from '@shared/log'
 import type { TapeBoxApi } from '@shared/bridge'
 
 /**
- * Renderer-side logger. The renderer is sandboxed and never opens the session
- * file; it forwards each structured log object to the main process (preload's
+ * Renderer-side logger. The renderer is sandboxed and never opens the records
+ * database; it forwards each structured log object to the main process (preload's
  * one-way `log` bridge), which writes it. Mirrors main's `log` surface so call
  * sites read the same on both sides.
  *

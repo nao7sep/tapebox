@@ -100,6 +100,8 @@ export const paths = {
   // SQLite FILE directly under the root, resolved through the same TAPEBOX_DATA_DIR-
   // aware resolver as everything else. Its `-wal`/`-shm` sidecars sit beside it.
   get backupsDb()     { return join(storageRoot(), 'backups.sqlite3') },
+  // Log lines and AI calls (data-lifecycle conventions); see io/records.ts.
+  get records()       { return join(storageRoot(), 'records.sqlite3') },
 }
 
 export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
@@ -125,9 +127,8 @@ export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
 // permission model and is unaffected. mkdir's own `mode` is masked by umask
 // and never changes an *existing* directory's mode, so this always re-checks
 // after creation rather than relying on the mkdir call alone. A failure to
-// tighten is logged to the console — the structured logger opens later, once
-// paths.logs exists, which this call itself is establishing — and never stops
-// the app.
+// tighten is logged to the console — the records database opens later, under
+// the root this call itself is establishing — and never stops the app.
 async function secureRoot(rootDir: string): Promise<void> {
   if (process.platform === 'win32') return
   try {
@@ -144,7 +145,7 @@ export async function ensureDirs(): Promise<void> {
   await mkdir(paths.root, { recursive: true, mode: 0o700 })
   await secureRoot(paths.root)
 
-  const otherDirs: readonly string[] = [paths.bin, paths.library, paths.logs, paths.temp]
+  const otherDirs: readonly string[] = [paths.bin, paths.library, paths.temp]
   for (const dir of otherDirs) {
     await mkdir(dir, { recursive: true })
   }

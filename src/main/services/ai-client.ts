@@ -1,13 +1,17 @@
 import OpenAI from 'openai'
 import { getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
+import { toJson } from '@main/io/log-format'
+import { writeRecord } from '@main/io/records'
 import { withRetry } from '@main/io/retry'
 import { AI_REQUEST_TIMEOUT_MS, AI_RETRY } from '@main/io/network'
 import { UserFacingError } from '@main/user-facing-error'
 import { resolveApiKey } from './api-keys'
 import { buildSlugRequest } from '@shared/model-routing'
+import { describeError } from '@shared/error'
 import { AI_ROLES, rowFor, thinkingFor } from '@shared/ai-models'
 import { message } from '@shared/i18n/translate'
+import { nowUtcIso } from '@shared/utc'
 
 /**
  * Slug generation against the OpenAI endpoint configured in
@@ -17,6 +21,7 @@ import { message } from '@shared/i18n/translate'
  */
 export async function generateSlug(
   opts: {
+    tapeId: string
     title: string | null
     uploader?: string | null
     description?: string | null
@@ -50,16 +55,14 @@ export async function generateSlug(
     .replace(/\{uploader\}/g, opts.uploader ?? '')
     .replace(/\{description\}/g, opts.description ?? '')
 
-  log.info('ai: generateSlug request', { model, thinking })
+  const request = buildSlugRequest(model, thinking, userPrompt)
+  const call = { tapeId: opts.tapeId, endpoint: settings['openai.endpoint'], model, request }
+  log.info('ai: generateSlug request', { tapeId: opts.tapeId, model, thinking })
   let res: Awaited<ReturnType<typeof client.chat.completions.create>>
   try {
     res = await withRetry(
       AI_RETRY,
-      () =>
-        client.chat.completions.create(
-          buildSlugRequest(model, thinking, userPrompt),
-          { signal },
-        ),
+      () => recordedAttempt(call, () => client.chat.completions.create(request, { signal })),
       { signal, isRetryable: isRetryableAiError, retryAfterMs: aiRetryAfterMs },
     )
   } catch (err) {
@@ -69,8 +72,49 @@ export async function generateSlug(
   }
   // Result line for the external boundary (the request was logged above): the
   // finish_reason distinguishes a normal stop from a length/content-filter cutoff.
-  log.info('ai: generateSlug response', { model, finishReason: res.choices[0]?.finish_reason })
+  log.info('ai: generateSlug response', { tapeId: opts.tapeId, model, finishReason: res.choices[0]?.finish_reason })
   return completionText(res.choices[0])
+}
+
+type AiCall = { tapeId: string; endpoint: string; model: string; request: object }
+
+/**
+ * Send one attempt and record it whole, request and response, as an `ai_calls`
+ * row (data-lifecycle conventions). A provider that answered with an error has
+ * its status and body recorded as the response.
+ */
+async function recordedAttempt<T extends object>(call: AiCall, send: () => Promise<T>): Promise<T> {
+  const startedAtUtc = nowUtcIso()
+  try {
+    const response = await send()
+    recordAiCall(call, startedAtUtc, null, response, null)
+    return response
+  } catch (err) {
+    const answered = err instanceof OpenAI.APIError ? err : null
+    recordAiCall(call, startedAtUtc, answered?.status ?? null, answered?.error ?? null, err)
+    throw err
+  }
+}
+
+function recordAiCall(
+  call: AiCall,
+  startedAtUtc: string,
+  status: number | null,
+  response: object | null,
+  error: unknown,
+): void {
+  const row = {
+    tape_id: call.tapeId,
+    started_at_utc: startedAtUtc,
+    ended_at_utc: nowUtcIso(),
+    endpoint: call.endpoint,
+    model: call.model,
+    request: toJson(call.request),
+    status,
+    response: response === null ? null : toJson(response),
+    error: error === null ? null : toJson(describeError(error)),
+  }
+  writeRecord('ai_calls', row, () => toJson({ record: 'ai call', ...row }))
 }
 
 type CompletionChoice = {

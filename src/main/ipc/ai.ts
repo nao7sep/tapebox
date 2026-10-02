@@ -17,6 +17,7 @@ export function registerAiHandlers(): void {
     // Only the fields the user chose are sent; the description (the only one not
     // already on the tape) is read from the sidecar solely when included.
     const raw = await runCancellable(async (signal) => ai.generateSlug({
+      tapeId,
       title: include.title ? tape.title : null,
       uploader: include.uploader ? tape.uploader : null,
       description: include.description ? await readDescription(tape) : null,

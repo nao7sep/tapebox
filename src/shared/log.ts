@@ -1,9 +1,9 @@
 /**
  * Shared logging types + the pure renderer→main message validator.
  *
- * The renderer is sandboxed and never opens the session file itself; it forwards
- * structured log objects to the main process over the one-way 'log:write'
- * channel, and main (which owns the file) writes them. Main's logger and the
+ * The renderer is sandboxed and never opens the records database itself; it
+ * forwards structured log objects to the main process over the one-way
+ * 'log:write' channel, and main (which owns the database) writes them. Main's logger and the
  * renderer's forwarder both speak these types.
  */
 

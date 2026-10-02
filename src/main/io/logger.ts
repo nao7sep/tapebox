@@ -1,38 +1,25 @@
-import { closeSync, fsyncSync, openSync, writeSync } from 'node:fs'
-import { join } from 'node:path'
-import { paths } from '@main/paths'
-import { describeError } from '@shared/error'
 import type { LogFields, LogLevel } from '@shared/log'
-import { nowUtcIso, utcTimestampForFilenameMs } from '@shared/utc'
-import { isDebugEnabled, serializeLogLine } from './log-format'
+import { nowUtcIso } from '@shared/utc'
+import { isDebugEnabled, serializeLogLine, toJson } from './log-format'
+import { toConsole, writeRecord } from './records'
 
 /**
- * Per-launch session log at ~/.tapebox/logs/{yyyymmdd-hhmmss-fff-utc}.log, one
- * JSON object per line (JSON Lines). A small, hand-rolled logger we fully control:
+ * The app's logger, per the logging conventions: each line is a row in the
+ * records database's `logs` table (io/records.ts), which also owns the fallback
+ * when a row cannot be written. A small, hand-rolled logger we fully control:
  *
  *   - Takes a structured object (a short stable `message` plus arbitrary
- *     `fields`), never a pre-rendered string. The logger builds the envelope and
- *     serializes.
- *   - Opens its session file exclusively ('wx': O_CREAT | O_EXCL) so a vanishing
- *     same-millisecond clash with another process's session fails the open rather
- *     than interleaving two sessions into one file (see initLogger); the failure
- *     degrades to the console like any other open failure. Writes synchronously
- *     so the lines before a crash actually reach the OS. `warn` / `error` /
- *     `debug` additionally fsync immediately, so the line you want while
- *     diagnosing is on disk now; `info` is left to the OS to flush for efficiency.
+ *     `fields`), never a pre-rendered string. A string `tapeId` field also fills
+ *     the row's `tape_id`, so one tape's lines are a query.
  *   - `debug` is developer-only (see isDebugEnabled): the firehose is free in
- *     development and silent in a release, so coverage can be verbose without
- *     ever flooding a user's disk.
- *   - Never throws and never crashes the app. If the file cannot be opened or
- *     written it degrades to the console and keeps running, surfacing the failure
- *     rather than swallowing it. The fallback adds no dependencies.
+ *     development and silent in a release, and development mirrors every line to
+ *     the console.
+ *   - Never throws and never crashes the app.
  *
- * The main process owns the file; the sandboxed renderer forwards objects over
- * IPC (see ipc/log.ts), which call straight into this logger.
+ * The sandboxed renderer forwards objects over IPC (see ipc/log.ts), which call
+ * straight into this logger.
  */
 
-let fd: number | null = null
-let currentLogPath: string | null = null
 let debugEnabled = false
 
 export type LoggerOptions = {
@@ -47,103 +34,28 @@ export function getDebugEnabled(): boolean {
   return debugEnabled
 }
 
-/** Open this launch's session file. Returns its intended absolute path. */
-export function initLogger(options: LoggerOptions): string {
+export function initLogger(options: LoggerOptions): void {
   debugEnabled = options.debug
-  const path = join(paths.logs, `${utcTimestampForFilenameMs()}.log`)
-  try {
-    // Exclusive create: the filename is millisecond-paced, so a same-millisecond
-    // clash between two processes is only vanishingly possible, not impossible.
-    // 'wx' (O_CREAT | O_EXCL) fails with EEXIST on that clash instead of letting
-    // the second process append into the first process's session file, which
-    // would interleave two sessions into one log. The failure flows into the
-    // same catch below as any other open failure, degrading to the console.
-    fd = openSync(path, 'wx')
-    currentLogPath = path
-  } catch (err) {
-    // No file — currentLogPath stays null so app:revealLog never points at a
-    // file that was never created. Fall back to the console, and never silently.
-    fd = null
-    currentLogPath = null
-    consoleFallback(
-      'error',
-      serializeLogLine(nowUtcIso(), 'error', 'log file open failed; using console', {
-        path,
-        error: describeError(err),
-      }),
-    )
-  }
-  return path
-}
-
-/**
- * Absolute path of this launch's log file, or null before initLogger ran OR when
- * the file could not be opened (in which case logging fell back to the console).
- */
-export function getCurrentLogPath(): string | null {
-  return currentLogPath
-}
-
-/**
- * Flush and close the session file. Idempotent and synchronous, so it is safe to
- * call from a process 'exit' handler where only synchronous work runs.
- */
-export function closeLogger(): void {
-  const f = fd
-  fd = null
-  if (f === null) return
-  try {
-    fsyncSync(f)
-  } catch {
-    // best-effort flush
-  }
-  try {
-    closeSync(f)
-  } catch {
-    // best-effort close
-  }
 }
 
 function write(level: LogLevel, message: string, fields?: LogFields): void {
   if (level === 'debug' && !debugEnabled) return
-
-  const line = serializeLogLine(nowUtcIso(), level, message, fields)
-  const flushNow = level !== 'info' // warn / error / debug are durable immediately
-
-  const f = fd
-  if (f !== null) {
-    try {
-      writeSync(f, line)
-      if (flushNow) fsyncSync(f)
-    } catch (err) {
-      // Disk full / fd lost mid-run: stop using the file and degrade to the
-      // console — for this line and every later one — without crashing.
-      fd = null
-      consoleFallback(
-        'error',
-        serializeLogLine(nowUtcIso(), 'error', 'log file write failed; using console', {
-          error: describeError(err),
-        }),
-      )
-      consoleFallback(level, line)
-      return
-    }
-  }
-
-  // Console: the mandated fallback when there is no file, and in development a
-  // mirror for visibility. A healthy file in a release keeps stdout clean.
-  if (f === null || debugEnabled) consoleFallback(level, line)
-}
-
-function consoleFallback(level: LogLevel, line: string): void {
-  const text = line.endsWith('\n') ? line.slice(0, -1) : line
-  try {
-    if (level === 'error') console.error(text)
-    else if (level === 'warn') console.warn(text)
-    else console.log(text)
-  } catch {
-    // If even the console is gone there is nothing left to try — never throw.
-  }
+  const time = nowUtcIso()
+  const tapeId = fields?.['tapeId']
+  const text = () => serializeLogLine(time, level, message, fields)
+  const printed = writeRecord(
+    'logs',
+    {
+      time,
+      level,
+      message,
+      tape_id: typeof tapeId === 'string' ? tapeId : null,
+      fields: toJson(fields ?? {}),
+    },
+    text,
+    level,
+  )
+  if (debugEnabled && !printed) toConsole(level, text())
 }
 
 export const log = {

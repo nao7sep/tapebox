@@ -30,13 +30,14 @@ vi.mock('@main/store/config', () => ({
 }))
 vi.mock('@main/services/api-keys', () => ({ resolveApiKey: async () => 'test-key' }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
+vi.mock('@main/io/records', () => ({ writeRecord: vi.fn() }))
 
 const { generateSlug } = await import('@main/services/ai-client')
 
 describe('generateSlug cancellation', () => {
   it('passes the caller signal to the request and stops retrying once it aborts', async () => {
     const controller = new AbortController()
-    const pending = generateSlug({ title: 'A Title' }, controller.signal)
+    const pending = generateSlug({ tapeId: 't1', title: 'A Title' }, controller.signal)
     await vi.waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0]!.signal).toBe(controller.signal)
 

@@ -3,7 +3,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs, sweepAbandonedStaging } from './paths.js'
 import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
-import { closeLogger, initLogger, isDebugEnabled, log } from './io/logger.js'
+import { initLogger, isDebugEnabled, log } from './io/logger.js'
+import { closeRecords, openRecords } from './io/records.js'
 import { describeError } from '@shared/error'
 import { getSettings, loadSettings } from './store/config.js'
 import { loadDependencies } from './store/dependencies.js'
@@ -114,10 +115,11 @@ function showOrCreateMainWindow(): void {
 
 async function startup(): Promise<void> {
   await ensureDirs()
-  const logPath = initLogger({ debug: isDebugEnabled(app.isPackaged, process.env) })
+  const session = openRecords()
+  initLogger({ debug: isDebugEnabled(app.isPackaged, process.env) })
   log.info('startup', {
     version: __APP_VERSION__,
-    logPath,
+    session,
     platform: process.platform,
     arch: process.arch,
   })
@@ -187,9 +189,9 @@ const WORK_STOP_BOUND_MS = 15_000
 /**
  * Idempotent teardown, run once on before-quit: stop downloads, scans and other
  * in-flight work (their child processes and library writes must not outlive the
- * app), flush session, stop the media server, close the logger. The media server
- * is in-process, so it dies with this process — there is no separate server to
- * leave stale.
+ * app), flush session, stop the media server, close the records database. The
+ * media server is in-process, so it dies with this process — there is no
+ * separate server to leave stale.
  */
 let shutdownPromise: Promise<void> | null = null
 function shutdown(reason: string): Promise<void> {
@@ -207,7 +209,7 @@ function shutdown(reason: string): Promise<void> {
     await layout.persistNow()
     await stopMediaServer()
     await closeBackupStore()
-    closeLogger()
+    closeRecords()
   })()
   return shutdownPromise
 }
@@ -227,14 +229,15 @@ async function stopInFlightWork(): Promise<void> {
 }
 
 // Global last-resort hooks. An uncaught exception is fatal: log it with full
-// fidelity, flush the file, then exit. An unhandled rejection is logged but not
-// fatal — a stray fire-and-forget should not take a desktop app down, and a
-// logged error at `error` level is a record, not a silent swallow. `exit` is a
-// final synchronous flush for any path that bypasses the clean shutdown.
+// fidelity, close the records database, then exit. An unhandled rejection is
+// logged but not fatal — a stray fire-and-forget should not take a desktop app
+// down, and a logged error at `error` level is a record, not a silent swallow.
+// `exit` is a final synchronous flush for any path that bypasses the clean
+// shutdown.
 process.on('uncaughtException', (err) => {
   log.error('uncaught exception', { error: describeError(err) })
   persistNowSync()
-  closeLogger()
+  closeRecords()
   process.exit(1)
 })
 process.on('unhandledRejection', (reason) => {
@@ -242,7 +245,7 @@ process.on('unhandledRejection', (reason) => {
 })
 process.on('exit', () => {
   persistNowSync()
-  closeLogger()
+  closeRecords()
 })
 
 void app.whenReady().then(() => {

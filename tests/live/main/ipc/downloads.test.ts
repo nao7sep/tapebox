@@ -58,7 +58,7 @@ async function startApp(home: string) {
   handlers.clear()
   const { ensureDirs, sweepAbandonedStaging } = await import('@main/paths')
   const { BINARY_ACQUIRE_TIMEOUT_MS } = await import('@main/io/network')
-  const { initLogger, closeLogger } = await import('@main/io/logger')
+  const { openRecords, closeRecords } = await import('@main/io/records')
   const { loadSettings } = await import('@main/store/config')
   const { loadDependencies } = await import('@main/store/dependencies')
   const session = await import('@main/store/session')
@@ -70,7 +70,7 @@ async function startApp(home: string) {
   const { closeBackupStore } = await import('@main/store/backupStore')
 
   await ensureDirs()
-  initLogger({ debug: false })
+  openRecords()
   await sweepAbandonedStaging(BINARY_ACQUIRE_TIMEOUT_MS)
   await loadSettings()
   await loadDependencies()
@@ -94,7 +94,7 @@ async function startApp(home: string) {
       await layout.persistNow()
       await stopMediaServer()
       await closeBackupStore()
-      closeLogger()
+      closeRecords()
     },
   }
 }

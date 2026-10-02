@@ -1,22 +1,19 @@
 import type { LogFields, LogLevel } from '@shared/log'
 
 /**
- * Pure formatting + gating for the logger. Kept free of Electron and filesystem
- * imports so it can be unit-tested directly; the stateful logger (logger.ts)
- * supplies the time and the file/console plumbing.
+ * Pure formatting + gating for the logger and the records. Kept free of Electron
+ * and filesystem imports so it can be unit-tested directly; the logger
+ * (logger.ts) supplies the time, and the records (records.ts) the storage.
  */
 
 /**
  * Build one JSON Lines record: the fixed envelope (time / level / message) plus
- * the event's additional fields, serialized, newline-terminated.
+ * the event's additional fields, serialized, newline-terminated. This is the
+ * line's text form, for the console and the records' text-file fallback.
  *
  * The caller's fields are spread FIRST so the reserved envelope keys always win —
  * a field accidentally (or maliciously, via a forwarded renderer object) named
  * `time` / `level` / `message` can never overwrite the line's own envelope.
- *
- * Total — it never throws. When a value JSON refuses (a cycle, a BigInt, a
- * throwing toJSON), it salvages every serializable field and marks just the
- * offending one, rather than dropping the whole diagnostic payload.
  */
 export function serializeLogLine(
   time: string,
@@ -24,38 +21,32 @@ export function serializeLogLine(
   message: string,
   fields: LogFields | undefined,
 ): string {
-  const record = { ...fields, time, level, message }
-  try {
-    return JSON.stringify(record) + '\n'
-  } catch {
-    return JSON.stringify(salvage(record, time, level, message)) + '\n'
-  }
+  return toJson({ ...fields, time, level, message }) + '\n'
 }
 
 const UNSERIALIZABLE = '[unserializable]'
 
 /**
- * Rebuild a record keeping every field that serializes on its own and replacing
- * only the ones that don't with a marker — so a single BigInt can't take the
- * rest of the line's diagnostics down with it.
+ * JSON text of an object. Total — it never throws: when a value JSON
+ * refuses (a cycle, a BigInt, a throwing toJSON), every field that serializes on
+ * its own is kept and only the offending one is marked, so a single BigInt can't
+ * take the rest of the diagnostics down with it.
  */
-function salvage(
-  record: Record<string, unknown>,
-  time: string,
-  level: LogLevel,
-  message: string,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { time, level, message }
-  for (const [key, value] of Object.entries(record)) {
-    if (key === 'time' || key === 'level' || key === 'message') continue
-    try {
-      JSON.stringify(value)
-      out[key] = value
-    } catch {
-      out[key] = UNSERIALIZABLE
+export function toJson(record: object): string {
+  try {
+    return JSON.stringify(record)
+  } catch {
+    const out: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(record)) {
+      try {
+        JSON.stringify(value)
+        out[key] = value
+      } catch {
+        out[key] = UNSERIALIZABLE
+      }
     }
+    return JSON.stringify(out)
   }
-  return out
 }
 
 /**

@@ -3,8 +3,8 @@ import { parseLogMessage } from '@shared/log'
 import { getDebugEnabled, log } from '@main/io/logger'
 
 /**
- * Thin IPC adapter for renderer logging — the renderer cannot open the session
- * file, so it forwards structured log objects to main, which writes them. The
+ * Thin IPC adapter for renderer logging — the renderer cannot open the records
+ * database, so it forwards structured log objects to main, which writes them. The
  * validation that keeps a misbehaving renderer from wedging logging lives in the
  * pure parseLogMessage (src/shared/log.ts); here we only bridge IPC to the
  * logger. Every renderer line is tagged source:"renderer" so a reader can tell

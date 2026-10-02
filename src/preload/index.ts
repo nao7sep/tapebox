@@ -13,7 +13,7 @@ import type { LanguageEnvironment } from '@shared/i18n/languages'
  * extract a real filesystem path from a dragged File object.
  *
  * log forwards a structured log object to the main process (which owns the
- * session file) one-way — the sandboxed renderer never opens the file itself.
+ * records database) one-way — the sandboxed renderer never opens it itself.
  *
  * isDebugEnabled is main's debug state, read once synchronously at preload time
  * (main registers its IPC handlers before the window loads), so the renderer can
