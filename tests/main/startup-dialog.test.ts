@@ -12,6 +12,9 @@ vi.mock('@main/i18n.js', async () => {
 })
 
 import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from '@main/startup-dialog'
+import { loadCatalogue } from '@shared/i18n/catalogues'
+
+await loadCatalogue('de')
 
 beforeEach(() => {
   showPlainMessageDialog.mockClear()

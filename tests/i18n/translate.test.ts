@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageKey } from '@shared/i18n/catalogues'
 import { createTranslator, joinMessages, message } from '@shared/i18n/translate'
+import { loadAllCatalogues } from '../helpers/i18n'
+
+await loadAllCatalogues()
 
 describe('createTranslator', () => {
   it('fills placeholders and formats numbers for the locale', () => {

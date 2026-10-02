@@ -4,9 +4,9 @@ import type { MenuItemConstructorOptions } from 'electron'
 vi.mock('electron', () => ({ Menu: {} }))
 
 import { applicationMenuTemplate } from '@main/menu'
-import { CATALOGUES } from '@shared/i18n/catalogues'
 import { LANGUAGES } from '@shared/i18n/languages'
 import { createTranslator } from '@shared/i18n/translate'
+import { loadAllCatalogues } from '../helpers/i18n'
 
 function labels(items: MenuItemConstructorOptions[]): string[] {
   return items.flatMap((item) => [
@@ -15,6 +15,7 @@ function labels(items: MenuItemConstructorOptions[]): string[] {
   ])
 }
 
+const CATALOGUES = await loadAllCatalogues()
 const KEYS = new Set(Object.keys(CATALOGUES.en))
 
 describe('application menu', () => {

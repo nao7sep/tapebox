@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect } from 'vitest'
-import { CATALOGUES } from '@shared/i18n/catalogues'
+import { loadedCatalogue } from '@shared/i18n/catalogues'
 
 /**
  * The rendered-key gate (localization-conventions): every test that mounts the
@@ -11,7 +11,7 @@ import { CATALOGUES } from '@shared/i18n/catalogues'
  * because each test file's own cleanup empties the body before this hook runs.
  */
 
-const KEYS = new Set(Object.keys(CATALOGUES.en))
+const KEYS = new Set(Object.keys(loadedCatalogue('en')))
 const READ_ATTRIBUTES = ['title', 'aria-label', 'aria-description', 'placeholder', 'alt', 'label']
 const KEY_LIKE = /[A-Za-z]\w*(?:\.\w+)+/g
 

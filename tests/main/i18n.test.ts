@@ -49,6 +49,7 @@ vi.mock('node:fs', () => ({
 vi.mock('@main/menu', () => ({ installApplicationMenu: (t: unknown) => electron.menus.push(t) }))
 vi.mock('@main/paths', () => ({ paths: { config: '/tmp/tapebox-test/config.json' } }))
 
+import { LANGUAGES } from '@shared/i18n/languages'
 import type { Translator } from '@shared/i18n/translate'
 
 async function load() {
@@ -76,7 +77,7 @@ describe('main-process interface language', () => {
   it('follows the computer for System, with nothing recorded for AppKit or Chromium', async () => {
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
-    i18n.settleLanguageWhenReady()
+    await i18n.settleLanguageWhenReady()
     expect(i18n.currentLanguage()).toBe('ja')
     expect(electron.switches).toEqual([])
     expect(electron.defaults.has('AppleLanguages')).toBe(false)
@@ -87,7 +88,7 @@ describe('main-process interface language', () => {
     electron.configText = JSON.stringify({ language: 'de' })
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
-    i18n.settleLanguageWhenReady()
+    await i18n.settleLanguageWhenReady()
     expect(i18n.currentLanguage()).toBe('de')
     expect(electron.switches).toEqual([['lang', 'de']])
     expect(electron.defaults.get('AppleLanguages')).toEqual(['de'])
@@ -98,7 +99,7 @@ describe('main-process interface language', () => {
     electron.defaults.set('AppleLanguages', ['fr'])
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
-    i18n.settleLanguageWhenReady()
+    await i18n.settleLanguageWhenReady()
     expect(electron.calls.indexOf('remove')).toBeLessThan(electron.calls.indexOf('read'))
     expect(i18n.languageEnvironment().systemLanguage).toBe('ja')
   })
@@ -106,14 +107,24 @@ describe('main-process interface language', () => {
   it('follows a choice saved in Settings, and clears the record when System is chosen again', async () => {
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
-    i18n.settleLanguageWhenReady()
-    i18n.applyLanguagePreference('ko')
+    await i18n.settleLanguageWhenReady()
+    await i18n.applyLanguagePreference('ko')
     expect(i18n.currentLanguage()).toBe('ko')
     expect(electron.defaults.get('AppleLanguages')).toEqual(['ko'])
     expect((electron.menus.at(-1) as Translator).language).toBe('ko')
-    i18n.applyLanguagePreference('system')
+    await i18n.applyLanguagePreference('system')
     expect(i18n.currentLanguage()).toBe('ja')
     expect(electron.defaults.has('AppleLanguages')).toBe(false)
+  })
+
+  it('loads only the interface language and English, and a newly chosen one when it is saved', async () => {
+    const i18n = await load()
+    const { isCatalogueLoaded } = await import('@shared/i18n/catalogues')
+    i18n.settleLanguageBeforeReady()
+    await i18n.settleLanguageWhenReady()
+    expect(LANGUAGES.filter(isCatalogueLoaded)).toEqual(['en', 'ja'])
+    await i18n.applyLanguagePreference('ko')
+    expect(LANGUAGES.filter(isCatalogueLoaded)).toEqual(['en', 'ja', 'ko'])
   })
 
   it('leaves the defaults alone off macOS', async () => {
@@ -121,7 +132,7 @@ describe('main-process interface language', () => {
     electron.configText = JSON.stringify({ language: 'it' })
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
-    i18n.settleLanguageWhenReady()
+    await i18n.settleLanguageWhenReady()
     expect(i18n.currentLanguage()).toBe('it')
     expect(electron.calls.filter((call) => call !== 'read')).toEqual([])
   })
@@ -131,7 +142,7 @@ describe('main-process interface language', () => {
     electron.configText = JSON.stringify({ language: 'it' })
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
-    i18n.settleLanguageWhenReady()
+    await i18n.settleLanguageWhenReady()
     expect(i18n.currentLanguage()).toBe('it')
     expect(electron.calls.filter((call) => call !== 'read')).toEqual([])
   })

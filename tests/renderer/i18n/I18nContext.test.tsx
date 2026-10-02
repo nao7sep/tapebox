@@ -3,8 +3,10 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { I18nProvider, documentTranslator, useI18n } from '@renderer/i18n/I18nContext'
-import { CATALOGUES } from '@shared/i18n/catalogues'
 import type { Language } from '@shared/i18n/languages'
+import { loadAllCatalogues } from '../../helpers/i18n'
+
+const CATALOGUES = await loadAllCatalogues()
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

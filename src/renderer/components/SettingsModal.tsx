@@ -27,8 +27,8 @@ import {
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
-import { CATALOGUES, type MessageKey } from '@shared/i18n/catalogues'
-import { LANGUAGES, normalizeLanguagePreference } from '@shared/i18n/languages'
+import type { MessageKey } from '@shared/i18n/catalogues'
+import { LANGUAGE_NAMES, LANGUAGES, normalizeLanguagePreference } from '@shared/i18n/languages'
 
 type Props = { onClose: () => void }
 type Tab = 'general' | 'ai' | 'ytdlp'
@@ -489,7 +489,7 @@ function GeneralTab({
           <option value="system">{t.t('settings.languageSystem')}</option>
           {LANGUAGES.map((language) => (
             <option key={language} value={language} lang={language}>
-              {CATALOGUES[language]['language.name'] as string}
+              {LANGUAGE_NAMES[language]}
             </option>
           ))}
         </select>

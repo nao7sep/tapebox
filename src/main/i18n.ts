@@ -9,6 +9,7 @@ import {
   type LanguageEnvironment,
   type LanguagePreference,
 } from '@shared/i18n/languages'
+import { loadCatalogue } from '@shared/i18n/catalogues'
 import { createTranslator, type Translator } from '@shared/i18n/translate'
 import { LANGUAGE_ENVIRONMENT_CHANNEL } from '@shared/i18n/environment'
 import { describeError } from '@shared/error'
@@ -29,6 +30,8 @@ import { paths } from './paths'
 let systemLanguage: Language = 'en'
 let systemLocale: string | null = null
 let preference: LanguagePreference = 'system'
+// The language main speaks: the effective one once its catalogue has loaded.
+let spoken: Language = 'en'
 
 function readConfigText(): string | null {
   try {
@@ -85,14 +88,15 @@ export function settleLanguageBeforeReady(): void {
 
 /**
  * Once ready, before any window or menu exists: read the computer's languages
- * and regional format, record the choice for AppKit's next launch, and install
- * the menu, so even a failure to load settings shows it in the saved language.
+ * and regional format, record the choice for AppKit's next launch, load the
+ * language's catalogue and install the menu, so even a failure to load settings
+ * shows it in the saved language.
  */
-export function settleLanguageWhenReady(): void {
+export async function settleLanguageWhenReady(): Promise<void> {
   systemLanguage = resolveComputerLanguage(computerLanguages())
   systemLocale = app.getSystemLocale() || null
   alignAppKit(preference)
-  installApplicationMenu(mainTranslator())
+  await speakCurrentLanguage()
 }
 
 export function currentLanguage(): Language {
@@ -101,15 +105,26 @@ export function currentLanguage(): Language {
 
 /** Text main draws itself: the menu, the recovery dialogs. */
 export function mainTranslator(): Translator {
-  const language = currentLanguage()
-  return createTranslator(language, formattingLocale(language, systemLocale))
+  return createTranslator(spoken, formattingLocale(spoken, systemLocale))
 }
 
 /** Follow the saved choice: at launch once settings load, and on every Save. */
-export function applyLanguagePreference(next: LanguagePreference): void {
+export async function applyLanguagePreference(next: LanguagePreference): Promise<void> {
   if (next !== preference) {
     preference = next
     alignAppKit(next)
+  }
+  await speakCurrentLanguage()
+}
+
+// A catalogue that cannot load leaves main in the language it already speaks.
+async function speakCurrentLanguage(): Promise<void> {
+  const language = currentLanguage()
+  try {
+    await loadCatalogue(language)
+    spoken = language
+  } catch (error) {
+    log.warn('language catalogue could not be loaded', { language, error: describeError(error) })
   }
   installApplicationMenu(mainTranslator())
 }

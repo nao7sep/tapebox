@@ -30,10 +30,6 @@ export default defineConfig({
       },
     },
     build: {
-      // Loaded from disk, not over a network: the default 500 kB warning measures
-      // transfer cost. 2000 keeps a runaway bundle loud without flagging the
-      // ten-language catalogues on every build.
-      chunkSizeWarningLimit: 2000,
       rollupOptions: {
         output: { format: 'es' },
       },
@@ -68,7 +64,9 @@ export default defineConfig({
     root: 'src/renderer',
     build: {
       minify: true,
-      chunkSizeWarningLimit: 2000, // see the main build block
+      // Loaded from disk, not over a network: the default 500 kB warning measures
+      // transfer cost. 2000 keeps a runaway bundle loud.
+      chunkSizeWarningLimit: 2000,
       rollupOptions: {
         input: resolve('src/renderer/index.html'),
       },

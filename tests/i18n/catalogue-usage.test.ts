@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CATALOGUES } from '@shared/i18n/catalogues'
+import { loadedCatalogue } from '@shared/i18n/catalogues'
 
 // Every catalogue key is named somewhere in the shipped source, so a surface
 // that stops using one leaves no stale entry for nine translators to maintain.
@@ -24,7 +24,7 @@ describe('catalogue keys', () => {
   it('are each named in the source', () => {
     const text = sourceFiles(SOURCE).map((file) => readFileSync(file, 'utf8')).join('\n')
     const named = new Set([...text.matchAll(/['"`]([A-Za-z]\w*(?:\.\w+)+)['"`]/g)].map((match) => match[1]))
-    const unused = Object.keys(CATALOGUES.en).filter(
+    const unused = Object.keys(loadedCatalogue('en')).filter(
       (key) => !named.has(key) && !BUILT_FAMILIES.some((family) => family.test(key)),
     )
     expect(unused).toEqual([])

@@ -15,9 +15,12 @@ const bridge = (window as unknown as { tapebox: TapeBoxApi }).tapebox
 installWindowActivityState(bridge.onWindowActivityChanged, document.documentElement)
 
 // The interface language is known before the first render (main hands it to
-// preload synchronously), so the first words on screen are already in it.
+// preload synchronously), and nothing renders until its catalogue has loaded, so
+// the first words on screen are already in it.
 function LocalizedApp() {
-  const { language, locale } = useInterfaceLanguage()
+  const interfaceLanguage = useInterfaceLanguage()
+  if (!interfaceLanguage) return null
+  const { language, locale } = interfaceLanguage
   return <I18nProvider language={language} locale={locale}><App /></I18nProvider>
 }
 

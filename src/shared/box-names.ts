@@ -5,17 +5,30 @@
  * A box name must be non-empty, not a reserved word, and unique among the other
  * boxes — all compared case-insensitively after NFC normalization and trimming.
  */
-import { CATALOGUES } from './i18n/catalogues'
-import { LANGUAGES } from './i18n/languages'
+import type { Language } from './i18n/languages'
 import { message, type Message } from './i18n/translate'
 
 /**
- * The implicit "no box" bucket's label, in every interface language. Not a real
- * box, so each spelling is reserved: a user-created box must not shadow it in any
- * language the list may be shown in. Read from the catalogues, so the reserved
- * words and the label rendered in the UI can never drift apart.
+ * The implicit "no box" bucket's label (`boxes.unboxed`), in every interface
+ * language. Not a real box, so each spelling is reserved: a user-created box must
+ * not shadow it in any language the list may be shown in. Written out here
+ * because only the interface language's catalogue is loaded; a test holds each
+ * one equal to its catalogue's entry.
  */
-const RESERVED_BOX_NAMES = LANGUAGES.map((language) => CATALOGUES[language]['boxes.unboxed'] as string)
+export const UNBOXED_LABELS: Readonly<Record<Language, string>> = {
+  en: 'Unboxed',
+  de: 'Ohne Box',
+  es: 'Sin caja',
+  fr: 'Sans boîte',
+  it: 'Senza scatola',
+  'pt-BR': 'Sem caixa',
+  ru: 'Без коробки',
+  ja: 'ボックスなし',
+  ko: '상자 없음',
+  'zh-Hans': '未装盒',
+}
+
+const RESERVED_BOX_NAMES = Object.values(UNBOXED_LABELS)
 
 export const normalizeBoxName = (name: string): string => name.normalize('NFC').trim()
 

@@ -137,7 +137,7 @@ async function startup(): Promise<void> {
   }
 
   const configResult = await loadSettings()
-  applyLanguagePreference(getSettings().language)
+  await applyLanguagePreference(getSettings().language)
   registerLanguageHandlers()
   // The saved theme reaches the title bar, the renderer's prefers-color-scheme,
   // and the recovery dialogs before any window exists, so launch never shows the
@@ -249,15 +249,13 @@ process.on('exit', () => {
 })
 
 void app.whenReady().then(() => {
-  // The computer's languages, the menu and AppKit's record of the choice, before
-  // any window exists.
-  settleLanguageWhenReady()
   // Register before starting asynchronous initialization: macOS can deliver an
   // activation while stores/server/IPC are still loading. The handler defers;
   // startup creates the one owner window as soon as readiness is established.
   app.on('activate', showOrCreateMainWindow)
-  void startup().catch(handleTerminalStartupFailure)
-
+  // The computer's languages, the menu and AppKit's record of the choice, before
+  // any window exists.
+  void settleLanguageWhenReady().then(startup).catch(handleTerminalStartupFailure)
 })
 
 app.on('window-all-closed', () => {

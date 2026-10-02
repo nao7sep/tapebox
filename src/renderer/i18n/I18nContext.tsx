@@ -1,5 +1,5 @@
 import { createContext, createElement, Fragment, useContext, useEffect, useMemo, type ReactNode } from 'react'
-import type { MessageKey } from '@shared/i18n/catalogues'
+import { isCatalogueLoaded, type MessageKey } from '@shared/i18n/catalogues'
 import { isLanguage, type Language } from '@shared/i18n/languages'
 import { createTranslator, type Translator } from '@shared/i18n/translate'
 
@@ -57,5 +57,5 @@ export function useI18n(): UiTranslator {
 // For surfaces outside the provider: the language the document last declared.
 export function documentTranslator(): UiTranslator {
   const declared = document.documentElement.lang
-  return createUiTranslator(isLanguage(declared) ? declared : 'en')
+  return createUiTranslator(isLanguage(declared) && isCatalogueLoaded(declared) ? declared : 'en')
 }

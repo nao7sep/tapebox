@@ -207,7 +207,7 @@ async function applySettingsPatch(
   // Settings apply on Save, the theme (app-chrome conventions, Theme) and the
   // language (localization-conventions) included.
   applyThemePreference(next.theme)
-  applyLanguagePreference(next.language)
+  await applyLanguagePreference(next.language)
   // Flipping autostart on should start anything already waiting.
   if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
   // Toggling keep-awake off mid-playback must release the held wake lock now
