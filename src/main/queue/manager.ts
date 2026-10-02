@@ -2,7 +2,6 @@ import * as session from '@main/store/session'
 import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
-import { stripUrlCredentials } from '@shared/url'
 import { isLibraryMoving, tryClaimLibraryWrite } from '@main/library-writes'
 import { Job } from './job'
 import { selectTapesToStart } from './schedule'
@@ -43,7 +42,7 @@ export function tick(): void {
     if (!release) return
     const job = new Job(tape)
     active.set(tape.id, job)
-    log.info('job start', { tapeId: tape.id, url: stripUrlCredentials(tape.sourceUrl) })
+    log.info('job start', { tapeId: tape.id, url: tape.sourceUrl })
     void job
       .run()
       .finally(() => {

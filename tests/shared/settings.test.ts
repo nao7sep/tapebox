@@ -97,7 +97,7 @@ describe('SettingsSchema', () => {
 })
 
 describe('summarizeSettings', () => {
-  it('summarizes bounded, non-secret config verbatim', () => {
+  it('logs each setting as it is', () => {
     const s = defaultSettings()
     s.libraryDir = '/lib'
     s['openai.endpoint'] = 'https://api.example.com/v1'
@@ -116,47 +116,21 @@ describe('summarizeSettings', () => {
     })
   })
 
-  it('reduces secret-bearing free-text to presence/count, never its value', () => {
+  it('logs free text, profiles and a credential-bearing endpoint as they are', () => {
     const s = defaultSettings()
-    s.ytdlpArgs = '--add-header "Authorization: Bearer YTDLP_SECRET"'
+    s['openai.endpoint'] = 'https://admin:sk-ENDPOINT@gateway.example/v1'
+    s.ytdlpArgs = '--add-header "Authorization: Bearer YTDLP_TOKEN"'
     s.siteProfiles = [
-      { id: '1', name: 'a', urlPattern: 'x', isRegex: false, args: '--cookies PROFILE_SECRET', comment: '' },
-      { id: '2', name: 'b', urlPattern: 'y', isRegex: false, args: '', comment: '' },
+      { id: '1', name: 'a', urlPattern: 'x', isRegex: false, args: '--cookies PROFILE_COOKIES', comment: '' },
     ]
+    s.prompts = { slug: 'custom prompt' }
 
-    const summary = summarizeSettings(s)
-    expect(summary).toMatchObject({ ytdlpArgsSet: true, siteProfileCount: 2 })
-
-    // The raw args are never emitted — assert neither secret survives anywhere in
-    // the serialized summary.
-    const serialized = JSON.stringify(summary)
-    expect(serialized).not.toContain('YTDLP_SECRET')
-    expect(serialized).not.toContain('PROFILE_SECRET')
-  })
-
-  it('strips credentials from the AI endpoint before logging it', () => {
-    const s = defaultSettings()
-    s['openai.endpoint'] = 'https://admin:sk-ENDPOINT-SECRET@gateway.example/v1'
-    s['openai.slug'] = 'm'
-
-    const summary = summarizeSettings(s)
-    expect(summary.aiEndpoint).toBe('https://gateway.example/v1')
-    expect(JSON.stringify(summary)).not.toContain('sk-ENDPOINT-SECRET')
-  })
-
-  it('treats blank or whitespace-only ytdlpArgs as unset', () => {
-    const s = defaultSettings()
-    s.ytdlpArgs = '   '
-
-    expect(summarizeSettings(s).ytdlpArgsSet).toBe(false)
-  })
-
-  it('flags whether the slug prompt still equals the in-code default', () => {
-    expect(summarizeSettings(defaultSettings()).promptsCustomized).toBe(false)
-
-    const customized = defaultSettings()
-    customized.prompts = { slug: 'totally custom prompt' }
-    expect(summarizeSettings(customized).promptsCustomized).toBe(true)
+    expect(summarizeSettings(s)).toMatchObject({
+      aiEndpoint: 'https://admin:sk-ENDPOINT@gateway.example/v1',
+      ytdlpArgs: '--add-header "Authorization: Bearer YTDLP_TOKEN"',
+      siteProfiles: s.siteProfiles,
+      slugPrompt: 'custom prompt',
+    })
   })
 })
 

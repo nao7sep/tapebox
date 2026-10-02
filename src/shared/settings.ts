@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { AI_ROLES, defaultModelFor, defaultThinkingFor, rowFor, thinkingFor } from './ai-models'
-import { stripUrlCredentials } from './url'
 import { multiline, singleLine } from './text-cleanup'
 import { LANGUAGE_PREFERENCES } from './i18n/languages'
 
@@ -307,22 +306,9 @@ export function defaultSettings(): Settings {
 }
 
 /**
- * A summary of the effective settings for the startup record the logging
- * conventions mandate ("the key effective configuration"). Three kinds of
- * field are summarized rather than logged as given:
- *
- *   - The AI endpoint is logged with URL userinfo stripped (stripUrlCredentials),
- *     because a credential can ride in the `user:password@` of an otherwise
- *     reasonable endpoint (an auth proxy / gateway), separate from the API key
- *     held in its own file.
- *   - Free-text whose body could carry a credential — `ytdlpArgs` and a site
- *     profile's `args`, where a token can ride inside a header, cookie, or URL —
- *     is reduced to presence/count and never emitted as its value.
- *   - `prompts.slug` is unbounded user text, so it collapses to whether it still
- *     equals the in-code default.
- *
- * Everything else is bounded, non-secret config (paths, the model, the toggles)
- * logged verbatim because it is exactly what a later debugging session needs.
+ * The effective settings for the startup record the logging conventions mandate
+ * ("the key effective configuration"), every value as it is, per the
+ * data-lifecycle conventions' *Nothing is cut*.
  *
  * Returns a plain object (no logging-layer import) so the domain stays unaware of
  * who consumes it; the caller hands it to the logger as a field.
@@ -338,15 +324,15 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
     checkUpdatesAtLaunch: s.checkUpdatesAtLaunch,
-    aiEndpoint: stripUrlCredentials(s['openai.endpoint']),
+    aiEndpoint: s['openai.endpoint'],
     aiModel: s['openai.slug'],
     aiThinking: s['openai.thinking.slug'],
     externalPlayer: s.externalPlayer,
     defaultExportDir: s.defaultExportDir,
     deleteAfterExport: s.deleteAfterExport,
-    promptsCustomized: s.prompts.slug !== DEFAULT_SLUG_PROMPT,
-    ytdlpArgsSet: s.ytdlpArgs.trim().length > 0,
-    siteProfileCount: s.siteProfiles.length,
+    slugPrompt: s.prompts.slug,
+    ytdlpArgs: s.ytdlpArgs,
+    siteProfiles: s.siteProfiles,
     uiFontFamily: s.uiFontFamily,
     theme: s.theme,
     language: s.language,
