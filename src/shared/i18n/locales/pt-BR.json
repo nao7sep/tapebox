@@ -548,7 +548,7 @@
   "settings.trashOnRemoveHint": "As fitas removidas vão para a Lixeira do sistema (recuperáveis). Desativado = apagadas permanentemente.",
   "settings.openai": "OpenAI",
   "settings.onlyProvider": "A OpenAI é o único provedor compatível.",
-  "settings.endpoint": "Ponto de acesso",
+  "settings.endpoint": "Ponto de extremidade",
   "settings.endpointHint": "O endereço para o qual o TapeBox envia as solicitações à OpenAI.",
   "settings.apiKey": "Chave de API",
   "settings.apiKeySet": "A chave está definida",

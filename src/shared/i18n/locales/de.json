@@ -532,7 +532,7 @@
   "settings.slugModelHint": "Schlägt einen Datei-Slug aus dem Titel jedes Bands vor.",
   "settings.unsupportedModel": "Kein unterstütztes Modell. Es funktioniert möglicherweise nicht wie erwartet.",
   "settings.thinking": "Denken",
-  "settings.thinkingHint": "Wie viel das Modell vor der Antwort nachdenkt, in den Begriffen des Anbieters.",
+  "settings.thinkingHint": "Wie viel das Modell vor der Antwort nachdenkt, in der Terminologie des Anbieters.",
   "settings.slugPrompt": "Slug-Prompt",
   "settings.slugTokens": "Platzhalter: {tokens}.",
   "settings.resetSlugPrompt": "Slug-Prompt zurücksetzen",

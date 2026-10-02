@@ -499,7 +499,7 @@
   "settings.clearKey": "清除",
   "settings.apiKeyHint": "密钥保存在单独的受保护文件中，而不是设置中。如果设置了 {variable} 环境变量，它将优先于已保存的密钥。",
   "settings.apiKeyWillClear": "保存时将清除密钥。",
-  "settings.slugModel": "文件别名模型",
+  "settings.slugModel": "别名模型",
   "settings.resetModel": "重置模型",
   "settings.slugModelHint": "根据每盘录像带的标题建议文件别名。",
   "settings.unsupportedModel": "不受支持的模型，可能无法按预期工作。",
