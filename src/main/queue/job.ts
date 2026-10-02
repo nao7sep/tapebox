@@ -149,7 +149,7 @@ export class Job {
   /** Returns true if a downloadable video; false if the URL is a page of videos. */
   private async probe(): Promise<boolean> {
     this.update({ state: 'probing' })
-    const result = await this.d.ytdlp.probe(this.current()!.sourceUrl, this.controller.signal)
+    const result = await this.d.ytdlp.probe(this.tapeId, this.current()!.sourceUrl, this.controller.signal)
     if (result.kind === 'page') {
       this.update({ state: 'listing', failureCode: null, lastError: null, probedAtUtc: this.d.now() })
       return false

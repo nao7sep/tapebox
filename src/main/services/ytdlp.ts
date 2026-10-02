@@ -9,7 +9,6 @@ import { writeRecord } from '@main/io/records'
 import { nowUtcIso } from '@shared/utc'
 import {
   collectOutput,
-  execCapture,
   makeLineBuffer,
   spawnStreaming,
   SubprocessError,
@@ -33,7 +32,7 @@ export function ytdlpEnv(): NodeJS.ProcessEnv {
 }
 
 export type YtdlpRun = {
-  kind: 'download' | 'scan'
+  kind: 'download' | 'scan' | 'probe' | 'thumbnail'
   tapeId: string | null
   scanId: string | null
   url: string
@@ -48,9 +47,10 @@ export type YtdlpRun = {
 export function collectRun(
   child: Parameters<typeof collectOutput>[0],
   run: YtdlpRun,
-): { stderr: () => string; record: () => void } {
+): { stdout: () => string; stderr: () => string; record: () => void } {
   const output = collectOutput(child)
   return {
+    stdout: output.stdout,
     stderr: output.stderr,
     record: () => {
       const exit = output.exit()
@@ -106,12 +106,16 @@ export type ProbeResult = ProbeVideo | { kind: 'page' }
  * failure is the user's call (read the log, retry manually). The idle watchdog
  * still kills a silent stall so the queue never hangs.
  */
-export async function probe(url: string, signal: AbortSignal): Promise<ProbeResult> {
-  const { stdout } = await execCapture(
-    binaryPath('yt-dlp'),
-    [...resolveYtdlpArgs(url), '--dump-single-json', '--flat-playlist', '--no-playlist', '--playlist-items', '1', '--no-warnings', url],
-    { env: ytdlpEnv(), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS },
-  )
+export async function probe(tapeId: string, url: string, signal: AbortSignal): Promise<ProbeResult> {
+  const stdout = await runToEnd('probe', tapeId, url, [
+    ...resolveYtdlpArgs(url),
+    '--dump-single-json',
+    '--flat-playlist',
+    '--no-playlist',
+    '--playlist-items', '1',
+    '--no-warnings',
+    url,
+  ], signal)
   const info = JSON.parse(stdout) as Record<string, unknown>
   if (info['_type'] === 'playlist') return { kind: 'page' }
 
@@ -131,6 +135,33 @@ export async function probe(url: string, signal: AbortSignal): Promise<ProbeResu
 
 function stringOrNull(v: unknown): string | null {
   return typeof v === 'string' ? v : null
+}
+
+/**
+ * Run one short yt-dlp call to its end under the probe idle watchdog, record it,
+ * and return its stdout. A failed exit throws a SubprocessError carrying
+ * yt-dlp's own stderr.
+ */
+async function runToEnd(
+  kind: 'probe' | 'thumbnail',
+  tapeId: string,
+  url: string,
+  args: readonly string[],
+  signal: AbortSignal,
+): Promise<string> {
+  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS })
+  const run = collectRun(child, { kind, tapeId, scanId: null, url, args })
+  try {
+    await waitForExit(child, { command: `yt-dlp ${kind}` })
+  } catch (err) {
+    if (err instanceof SubprocessError) {
+      throw new SubprocessError(err.command, err.exitCode, run.stderr())
+    }
+    throw err
+  } finally {
+    run.record()
+  }
+  return run.stdout()
 }
 
 export type DownloadProgress = {
@@ -363,6 +394,7 @@ export async function findThumbnail(libraryDir: string, stem: string): Promise<s
  * were saved; the caller passes the result through the image gate.
  */
 export async function downloadThumbnail(
+  tapeId: string,
   url: string,
   libraryDir: string,
   stem: string,
@@ -371,19 +403,15 @@ export async function downloadThumbnail(
   // not recorded: this yt-dlp subprocess writes a source-regenerable binary image
   // into the binary-bearing library directory; saveThumbnailJpeg replaces it with
   // the canonical JPEG through the same deliberate binary exclusion.
-  await execCapture(
-    binaryPath('yt-dlp'),
-    [
-      ...resolveYtdlpArgs(url),
-      '--skip-download',
-      '--write-thumbnail',
-      '--no-playlist',
-      '--no-warnings',
-      '--paths', `home:${libraryDir}`,
-      '--output', `${stem}.%(ext)s`,
-      url,
-    ],
-    { env: ytdlpEnv(), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS },
-  )
+  await runToEnd('thumbnail', tapeId, url, [
+    ...resolveYtdlpArgs(url),
+    '--skip-download',
+    '--write-thumbnail',
+    '--no-playlist',
+    '--no-warnings',
+    '--paths', `home:${libraryDir}`,
+    '--output', `${stem}.%(ext)s`,
+    url,
+  ], signal)
   return findThumbnail(libraryDir, stem)
 }

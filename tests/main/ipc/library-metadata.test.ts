@@ -93,7 +93,7 @@ describe('re-probing a tape', () => {
       uploader: 'Channel',
       description: 'Fresh notes',
     })
-    expect(probe).toHaveBeenCalledExactlyOnceWith(tape.sourceUrl, expect.anything())
+    expect(probe).toHaveBeenCalledExactlyOnceWith('Reprobethi', tape.sourceUrl, expect.anything())
     expect(state.tapes[0], 'the tape is untouched until the user accepts').toBe(tape)
     expect(emit).not.toHaveBeenCalled()
   })
@@ -156,6 +156,7 @@ describe('accepting refreshed metadata', () => {
     const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Noposteryt', metadata: ACCEPTED })
 
     expect(downloadThumbnail).toHaveBeenCalledExactlyOnceWith(
+      'Noposteryt',
       'https://example.test/watch',
       state.libraryDir,
       'Holiday',

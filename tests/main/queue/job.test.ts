@@ -160,7 +160,7 @@ describe('Job lifecycle (driven with fakes)', () => {
     const t = tape({ id: 't1' })
     const { deps, tapes } = makeDeps({
       initial: [t],
-      probe: async (_url, signal) => {
+      probe: async (_tapeId, _url, signal) => {
         if (signal.aborted) throw new Error('aborted')
         return { kind: 'page' }
       },

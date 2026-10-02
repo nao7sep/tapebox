@@ -146,7 +146,7 @@ export function registerLibraryHandlers(): void {
     // One deliberate re-probe, read-only. The probe's own idle watchdog guards a
     // stall, and it is never auto-retried — re-hammering the source is the user's
     // call. Nothing is written here: the caller reviews this and decides.
-    const result = await runCancellable((signal) => probe(tape.sourceUrl, signal))
+    const result = await runCancellable((signal) => probe(tape.id, tape.sourceUrl, signal))
     if (result.kind === 'page') {
       throw new UserFacingError('refused', message('errors.linkNowList'))
     }
@@ -188,7 +188,7 @@ export function registerLibraryHandlers(): void {
       const stem = tape.filename.slice(0, -extname(tape.filename).length)
       try {
         thumbnailFilename = await runCancellable(async (signal) => {
-          const raw = await downloadThumbnail(tape.sourceUrl, dir, stem, signal)
+          const raw = await downloadThumbnail(tape.id, tape.sourceUrl, dir, stem, signal)
           return raw ? saveThumbnailJpeg(tape.id, raw, dir, stem, signal) : null
         })
       } catch (err) {
