@@ -8,7 +8,7 @@ import { getDebugEnabled, log } from '@main/io/logger'
  * validation that keeps a misbehaving renderer from wedging logging lives in the
  * pure parseLogMessage (src/shared/log.ts); here we only bridge IPC to the
  * logger. Every renderer line is tagged source:"renderer" so a reader can tell
- * vantage points apart; debug gating and redaction still happen in the logger.
+ * vantage points apart; debug gating still happens in the logger.
  *
  * The 'log:debug-enabled' synchronous reply lets the preload learn main's debug
  * state once at startup, so the renderer can skip forwarding debug lines that a

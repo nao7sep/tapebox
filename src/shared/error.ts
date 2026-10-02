@@ -8,7 +8,7 @@
  * describeError flattens any thrown value into a structured, log-ready object
  * with full fidelity — type, message, stack, and the wrapped `cause` chain — so a
  * log reader can reconstruct what failed. It is total: a circular cause chain is
- * capped with a marker rather than overflowing the stack (mirroring redact()).
+ * capped with a marker rather than overflowing the stack.
  *
  * An error class surfaces extra structured fields by implementing LoggableError;
  * describeError merges them in. This is how subprocess errors expose their

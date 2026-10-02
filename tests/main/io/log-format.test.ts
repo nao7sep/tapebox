@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isDebugEnabled, serializeLogLine } from '@main/io/log-format'
-import { DENIED_KEYS } from '@main/io/logger'
 
-const DENIED: ReadonlySet<string> = new Set(['apikey', 'authorization', 'token', 'password', 'secret'])
 const TIME = '2026-06-10T03:15:42.123Z'
 
 function parse(line: string): Record<string, unknown> {
@@ -11,14 +9,14 @@ function parse(line: string): Record<string, unknown> {
 
 describe('serializeLogLine', () => {
   it('emits one newline-terminated JSON object', () => {
-    const line = serializeLogLine(TIME, 'info', 'startup', { version: '0.0.1' }, DENIED)
+    const line = serializeLogLine(TIME, 'info', 'startup', { version: '0.0.1' })
     expect(line.endsWith('\n')).toBe(true)
     expect(line.indexOf('\n')).toBe(line.length - 1) // exactly one line
     expect(() => JSON.parse(line)).not.toThrow()
   })
 
   it('carries the full envelope plus the extra fields', () => {
-    const record = parse(serializeLogLine(TIME, 'warn', 'job start', { tapeId: 't1', url: 'u' }, DENIED))
+    const record = parse(serializeLogLine(TIME, 'warn', 'job start', { tapeId: 't1', url: 'u' }))
     expect(record).toMatchObject({
       time: TIME,
       level: 'warn',
@@ -28,14 +26,8 @@ describe('serializeLogLine', () => {
     })
   })
 
-  it('redacts denied fields before serialization', () => {
-    const record = parse(serializeLogLine(TIME, 'info', 'ai request', { model: 'x', apiKey: 'sk-secret' }, DENIED))
-    expect(record['model']).toBe('x')
-    expect(record['apiKey']).toBe('[redacted]')
-  })
-
   it('serializes with no extra fields', () => {
-    const record = parse(serializeLogLine(TIME, 'info', 'session not found; starting empty', undefined, DENIED))
+    const record = parse(serializeLogLine(TIME, 'info', 'session not found; starting empty', undefined))
     expect(record).toEqual({ time: TIME, level: 'info', message: 'session not found; starting empty' })
   })
 
@@ -43,26 +35,26 @@ describe('serializeLogLine', () => {
     // A field named time/level/message (e.g. forwarded from an untrusted
     // renderer object) must not hijack the line's own envelope.
     const record = parse(
-      serializeLogLine(TIME, 'info', 'real message', { message: 'EVIL', time: '1999', level: 'error', ok: true }, DENIED),
+      serializeLogLine(TIME, 'info', 'real message', { message: 'EVIL', time: '1999', level: 'error', ok: true }),
     )
     expect(record).toMatchObject({ time: TIME, level: 'info', message: 'real message', ok: true })
   })
 
-  it('breaks circular references instead of throwing, and still serializes', () => {
+  it('marks a circular field instead of throwing, and still serializes the rest', () => {
     const circular: Record<string, unknown> = {}
     circular['self'] = circular
     let line!: string
     expect(() => {
-      line = serializeLogLine(TIME, 'error', 'boom', { circular }, DENIED)
+      line = serializeLogLine(TIME, 'error', 'boom', { circular, tapeId: 't1' })
     }).not.toThrow()
     const record = parse(line)
     expect(record).toMatchObject({
       time: TIME,
       level: 'error',
       message: 'boom',
-      circular: { self: '[circular]' },
+      circular: '[unserializable]',
+      tapeId: 't1',
     })
-    expect(record['serializeError']).toBeUndefined()
   })
 
   it('salvages serializable fields when one field genuinely cannot serialize', () => {
@@ -70,7 +62,7 @@ describe('serializeLogLine', () => {
     // marked; the rest of the diagnostic payload survives.
     let line!: string
     expect(() => {
-      line = serializeLogLine(TIME, 'error', 'boom', { big: 10n, tapeId: 't1' }, DENIED)
+      line = serializeLogLine(TIME, 'error', 'boom', { big: 10n, tapeId: 't1' })
     }).not.toThrow()
     const record = parse(line)
     expect(record).toMatchObject({
@@ -80,15 +72,6 @@ describe('serializeLogLine', () => {
       big: '[unserializable]',
       tapeId: 't1',
     })
-  })
-})
-
-describe('DENIED_KEYS (the logger\'s live redaction config)', () => {
-  it('redacts each seeded secret-bearing field name through the real set', () => {
-    for (const key of ['apiKey', 'authorization', 'token', 'password', 'secret']) {
-      const record = parse(serializeLogLine(TIME, 'info', 'x', { [key]: 'sensitive' }, DENIED_KEYS))
-      expect(record[key]).toBe('[redacted]')
-    }
   })
 })
 

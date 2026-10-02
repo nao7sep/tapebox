@@ -308,11 +308,8 @@ export function defaultSettings(): Settings {
 
 /**
  * A summary of the effective settings for the startup record the logging
- * conventions mandate ("the key effective configuration, secrets redacted").
- *
- * The hazard guarded against is a secret living inside a string *value*, which
- * the name-based log redactor cannot catch (it matches denied field names, never
- * string contents). Three kinds of field are therefore handled with care:
+ * conventions mandate ("the key effective configuration"). Three kinds of
+ * field are summarized rather than logged as given:
  *
  *   - The AI endpoint is logged with URL userinfo stripped (stripUrlCredentials),
  *     because a credential can ride in the `user:password@` of an otherwise

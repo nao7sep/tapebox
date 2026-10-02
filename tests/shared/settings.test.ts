@@ -127,9 +127,8 @@ describe('summarizeSettings', () => {
     const summary = summarizeSettings(s)
     expect(summary).toMatchObject({ ytdlpArgsSet: true, siteProfileCount: 2 })
 
-    // Name-based redaction cannot catch a secret living inside a CLI string, so
-    // the raw args must never be emitted — assert neither secret survives anywhere
-    // in the serialized summary.
+    // The raw args are never emitted — assert neither secret survives anywhere in
+    // the serialized summary.
     const serialized = JSON.stringify(summary)
     expect(serialized).not.toContain('YTDLP_SECRET')
     expect(serialized).not.toContain('PROFILE_SECRET')

@@ -31,18 +31,6 @@ import { isDebugEnabled, serializeLogLine } from './log-format'
  * IPC (see ipc/log.ts), which call straight into this logger.
  */
 
-// Field names whose values are replaced with "[redacted]" before serialization —
-// exact, case-insensitive, lowercased here. Seeded with the obvious secrets and
-// extended as new secret-bearing fields appear. This is a narrow backstop; the
-// primary defense against logging secrets is summarizing rather than dumping.
-export const DENIED_KEYS: ReadonlySet<string> = new Set([
-  'apikey',
-  'authorization',
-  'token',
-  'password',
-  'secret',
-])
-
 let fd: number | null = null
 let currentLogPath: string | null = null
 let debugEnabled = false
@@ -82,7 +70,7 @@ export function initLogger(options: LoggerOptions): string {
       serializeLogLine(nowUtcIso(), 'error', 'log file open failed; using console', {
         path,
         error: describeError(err),
-      }, DENIED_KEYS),
+      }),
     )
   }
   return path
@@ -119,7 +107,7 @@ export function closeLogger(): void {
 function write(level: LogLevel, message: string, fields?: LogFields): void {
   if (level === 'debug' && !debugEnabled) return
 
-  const line = serializeLogLine(nowUtcIso(), level, message, fields, DENIED_KEYS)
+  const line = serializeLogLine(nowUtcIso(), level, message, fields)
   const flushNow = level !== 'info' // warn / error / debug are durable immediately
 
   const f = fd
@@ -135,7 +123,7 @@ function write(level: LogLevel, message: string, fields?: LogFields): void {
         'error',
         serializeLogLine(nowUtcIso(), 'error', 'log file write failed; using console', {
           error: describeError(err),
-        }, DENIED_KEYS),
+        }),
       )
       consoleFallback(level, line)
       return
