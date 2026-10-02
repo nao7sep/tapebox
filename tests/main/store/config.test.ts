@@ -45,8 +45,8 @@ describe('getLibraryDir', () => {
     expect(getLibraryDir()).toBe(DEFAULT_LIBRARY)
   })
 
-  it('resolves a whitespace-only libraryDir to the default library folder', async () => {
-    await updateSettings({ libraryDir: '   ' })
+  it('refuses a whitespace-only libraryDir and keeps the default library folder', async () => {
+    await expect(updateSettings({ libraryDir: '   ' })).rejects.toThrow()
     expect(getLibraryDir()).toBe(DEFAULT_LIBRARY)
   })
 

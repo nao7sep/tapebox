@@ -4,15 +4,16 @@ import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import {
-  SettingsSchema, cleanSettingsSets, defaultSettings, effectiveSettings, readSettingsSets, storedSets,
-  summarizeSettings, type Settings, type SettingsSets,
+  cleanSettingsSets, defaultSettings, effectiveSettings, storedSets, summarizeSettings, type Settings,
+  type SettingsSets,
 } from '@shared/settings'
+import { StoredSettingsSchema, readSettingsSets } from './settings-sets'
 
 /**
- * Effective settings cache and atomic persistence. Only sets that differ from
- * their built-ins live on disk; missing files and quarantined files use the
- * built-ins without seeding. Writes reread the current map inside the
- * serialized owner, which alone decides what is stored.
+ * Effective settings cache and atomic persistence (config-sets-conventions).
+ * The file is read once, at load; missing files and quarantined files use the
+ * built-ins without seeding. Writes compute the stored sets from the cache
+ * inside one serialized owner.
  */
 
 let cache: Settings | null = null
@@ -49,8 +50,6 @@ export async function readSettingsFile(
   return found !== null && 'sets' in found ? { settings: effectiveSettings(found.sets) } : found
 }
 
-const warnedInvalidKeys = new Set<keyof Settings>()
-
 async function readSettingsStore(
   configPath: string,
 ): Promise<{ sets: SettingsSets } | { quarantinePath: string } | null> {
@@ -67,8 +66,6 @@ async function readSettingsStore(
     return { quarantinePath: await quarantineFile(configPath) }
   }
   return { sets: readSettingsSets(raw as Record<string, unknown>, (key) => {
-    if (warnedInvalidKeys.has(key)) return
-    warnedInvalidKeys.add(key)
     log.warn('settings set invalid; using built-in', { key })
   }) }
 }
@@ -89,20 +86,17 @@ export function getLibraryDir(): string {
   return getSettings().libraryDir.trim() || paths.library
 }
 
-// One serialized owner rereads the on-disk map before every set write. The
-// patched sets are cleaned, every set equal to its built-in is removed, stored
-// copies outside the patch included, and the rest is written whole. A result
-// equal to the file writes nothing.
+// One serialized owner applies the cleaned patch to the cached settings and
+// writes every set that differs from its built-in. A result equal to what the
+// cache already stores writes nothing.
 let writeChain: Promise<unknown> = Promise.resolve()
 
 export function updateSettings(patch: SettingsSets): Promise<Settings> {
   const run = writeChain.then(async () => {
-    if (!cache) throw new Error('config.ts: loadSettings() must be awaited first')
-    const found = await readSettingsStore(paths.config)
-    const current = found !== null && 'sets' in found ? found.sets : {}
-    const next = storedSets({ ...current, ...SettingsSchema.parse(cleanSettingsSets(patch)) })
-    if (JSON.stringify(next) !== JSON.stringify(current)) {
-      await writeManagedJson(paths.config, next, SettingsSchema)
+    const current = getSettings()
+    const next = storedSets({ ...current, ...StoredSettingsSchema.parse(cleanSettingsSets(patch)) })
+    if (JSON.stringify(next) !== JSON.stringify(storedSets(current))) {
+      await writeManagedJson(paths.config, next, StoredSettingsSchema)
       log.info('settings updated', { keys: Object.keys(patch) })
     }
     // The in-memory view is authoritative only after the durable commit. A failed

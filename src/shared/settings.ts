@@ -90,7 +90,7 @@ export type SiteProfile = z.infer<typeof SiteProfileSchema>
 export const THEME_PREFERENCES = ['system', 'light', 'dark'] as const
 export type ThemePreference = (typeof THEME_PREFERENCES)[number]
 
-const SettingsObjectSchema = z.object({
+export const SettingsObjectSchema = z.object({
   // Folder where the library lives — where tapes are saved and read from. Empty =
   // use the default library folder (~/.tapebox/library); main resolves it via
   // getLibraryDir(). A set value is a custom folder used as-is. Never read this as a
@@ -194,22 +194,6 @@ export const SETTINGS_KEYS = Object.keys(SettingsObjectSchema.shape) as (keyof S
 export const SettingsSchema = SettingsObjectSchema.partial()
 export type SettingsSets = z.infer<typeof SettingsSchema>
 export type Settings = z.infer<typeof SettingsObjectSchema>
-
-
-/** Decode each set independently, reporting malformed copies without merging members. */
-export function readSettingsSets(
-  raw: Record<string, unknown>,
-  invalid: (key: keyof Settings) => void,
-): SettingsSets {
-  const sets: SettingsSets = {}
-  for (const key of SETTINGS_KEYS) {
-    if (!Object.hasOwn(raw, key)) continue
-    const parsed = SettingsObjectSchema.shape[key].safeParse(raw[key])
-    if (parsed.success) Object.assign(sets, { [key]: parsed.data })
-    else invalid(key)
-  }
-  return sets
-}
 
 export function effectiveSettings(sets: SettingsSets): Settings {
   return { ...defaultSettings(), ...sets }

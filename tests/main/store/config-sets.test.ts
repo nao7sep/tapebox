@@ -11,7 +11,7 @@ vi.mock('@main/paths', () => ({ paths }))
 vi.mock('@main/io/logger', () => ({ log }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 
-import { getSettings, loadSettings, readSettingsFile, updateSettings } from '@main/store/config'
+import { getSettings, loadSettings, updateSettings } from '@main/store/config'
 import { DEFAULT_SLUG_PROMPT, defaultSettings } from '@shared/settings'
 
 let dir: string
@@ -55,19 +55,35 @@ describe('settings by set', () => {
     expect(await savedSets()).toEqual({ playSound: false, autoplay: false })
   })
 
-  it('rereads the file so a write retains a set changed outside the cache', async () => {
+  it('writes from the loaded settings, not from the file as it is now', async () => {
     await loadSettings()
     await writeFile(paths.config, JSON.stringify({ playSound: false }))
     await updateSettings({ autoplay: false })
-    expect(await savedSets()).toEqual({ playSound: false, autoplay: false })
-    expect(getSettings().playSound).toBe(false)
+    expect(await savedSets()).toEqual({ autoplay: false })
+    expect(getSettings().playSound).toBe(true)
+  })
+
+  it('reads a relative folder as its built-in and drops it at the next save', async () => {
+    await writeFile(paths.config, JSON.stringify({ libraryDir: 'relative/library', defaultExportDir: 'exports', autoplay: false }))
+    await loadSettings()
+    expect(getSettings()).toEqual({ ...defaultSettings(), autoplay: false })
+    expect(log.warn.mock.calls.map(([, fields]) => fields)).toEqual([{ key: 'libraryDir' }, { key: 'defaultExportDir' }])
+    await updateSettings({ playSound: false })
+    expect(await savedSets()).toEqual({ autoplay: false, playSound: false })
+  })
+
+  it('refuses a relative folder on save and keeps the file as it is', async () => {
+    await writeFile(paths.config, JSON.stringify({ autoplay: false }))
+    await loadSettings()
+    await expect(updateSettings({ libraryDir: 'relative/library' })).rejects.toThrow()
+    await expect(updateSettings({ defaultExportDir: 'exports' })).rejects.toThrow()
+    expect(await savedSets()).toEqual({ autoplay: false })
   })
 
   it('uses built-ins for malformed sets without quarantining or merging nested members', async () => {
     const raw = { 'openai.endpoint': 'http://remote.example', prompts: {}, language: 'unsupported', playSound: false }
     await writeFile(paths.config, JSON.stringify(raw))
     await loadSettings()
-    await readSettingsFile(paths.config)
     expect(getSettings()).toEqual({ ...defaultSettings(), playSound: false })
     expect(await savedSets()).toEqual(raw)
     expect(await readdir(dir)).toEqual(['config.json'])

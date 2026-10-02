@@ -1,7 +1,8 @@
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { handle } from './handle'
 import * as config from '@main/store/config'
+import { FolderSetSchema } from '@main/store/settings-sets'
 import * as apiKeys from '@main/services/api-keys'
 import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
@@ -55,25 +56,20 @@ function effectiveLibraryDir(libraryDir: string): string {
 
 /**
  * Normalize a user-typed folder setting (libraryDir, defaultExportDir) at the
- * boundary, before it is stored or used. Blank stays blank (= the app default);
- * a leading ~ / ~/ / ~\ expands to the home directory. The result must be
- * absolute — a relative path typed into the field is rejected here, so it can
- * never reach a path join and resolve against the working directory, which on a
- * double-clicked build is `/` (storage-path-conventions). The Choose… picker
- * always yields an absolute path, so this only ever rejects a hand-typed value.
+ * boundary, before it is stored or used: trimmed, and a leading ~ / ~/ / ~\
+ * expanded to the home directory. A value its set schema refuses is reported
+ * with the folder's own message.
  */
 function normalizeUserDir(
   notAbsolute: 'errors.libraryFolderNotAbsolute' | 'errors.exportFolderNotAbsolute',
   value: string,
 ): string {
-  const trimmed = value.trim()
-  if (trimmed === '') return ''
-  let expanded = trimmed
+  let expanded = value.trim()
   if (expanded === '~') expanded = homedir()
   else if (expanded.startsWith('~/') || expanded.startsWith('~\\')) {
     expanded = join(homedir(), expanded.slice(2))
   }
-  if (!isAbsolute(expanded)) {
+  if (!FolderSetSchema.safeParse(expanded).success) {
     throw new UserFacingError('invalid', message(notAbsolute))
   }
   return expanded
@@ -134,9 +130,7 @@ export function registerSettingsHandlers(): void {
   handle('settings:defaultLibraryDir', async () => paths.library)
   handle('settings:update', async (patch) => {
     const wasAutostart = config.getSettings().autoStartDownloads
-    // Normalize user-typed folder fields at the boundary: blank stays default, ~
-    // expands, and a relative value is rejected here so it can never reach a path
-    // join and resolve against the working directory (storage-path-conventions).
+    // Normalize user-typed folder fields at the boundary.
     const normalized: SettingsSets = { ...patch }
     if (patch.libraryDir !== undefined) {
       normalized.libraryDir = normalizeUserDir('errors.libraryFolderNotAbsolute', patch.libraryDir)
