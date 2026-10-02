@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { MessageKey } from '@shared/i18n/catalogues'
+import { loadedCatalogue, type MessageKey } from '@shared/i18n/catalogues'
 import { createTranslator, joinMessages, message } from '@shared/i18n/translate'
 import { loadAllCatalogues } from '../helpers/i18n'
 
@@ -40,7 +40,27 @@ describe('createTranslator', () => {
     expect(en.relativeTime(0, 'second')).toBe('now')
   })
 
-  it('shows a key the catalogue lacks instead of failing the render', () => {
+  it('falls back to English, with English plural rules, for a key the catalogue lacks', () => {
+    const without = (language: 'ja' | 'ru', key: MessageKey, check: () => void) => {
+      const catalogue = loadedCatalogue(language) as Record<string, unknown>
+      const saved = catalogue[key]
+      delete catalogue[key]
+      try {
+        check()
+      } finally {
+        catalogue[key] = saved
+      }
+    }
+    without('ja', 'about.version', () => {
+      expect(createTranslator('ja').t('about.version', { version: '1.2.0' })).toBe('Version 1.2.0')
+    })
+    without('ru', 'status.tapes', () => {
+      const ru = createTranslator('ru', 'en')
+      expect([1, 3, 5].map((count) => ru.t('status.tapes', { count }))).toEqual(['1 tape', '3 tapes', '5 tapes'])
+    })
+  })
+
+  it('shows a key no catalogue carries instead of failing the render', () => {
     // Types keep this out of the app; a stale build or a half-merged catalogue
     // could still reach it, and a window must not go down over one string.
     const missing = 'gone.missing' as unknown as MessageKey

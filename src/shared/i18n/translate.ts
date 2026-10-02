@@ -59,27 +59,31 @@ const BYTE_UNITS = ['kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const
 // The language's catalogue must already be loaded (loadCatalogue).
 export function createTranslator(language: Language, locale: string = language): Translator {
   const catalogue: Catalogue = loadedCatalogue(language)
+  const english: Catalogue = loadedCatalogue('en')
   const numberFormat = new Intl.NumberFormat(locale)
   const percentFormat = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 })
   const listFormat = new Intl.ListFormat(locale, { style: 'narrow', type: 'conjunction' })
   const relativeFormat = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
   const pluralRules = new Intl.PluralRules(language)
+  const englishPluralRules = new Intl.PluralRules('en')
 
   function template(key: MessageKey, count = 0): string {
-    const entry = catalogue[key]
+    // A key the catalogue does not carry falls back to English, and one English
+    // lacks too shows as itself rather than taking the window down; the
+    // catalogue gate fails on either, and the on-screen-key check on the second.
+    const own = catalogue[key]
+    const inOwn = own !== undefined && own !== null
+    const entry = inOwn ? own : english[key]
     if (typeof entry === 'string') {
       return entry
     }
-    // A key the catalogue does not carry shows as itself rather than taking the
-    // window down; the catalogue gate and the on-screen-key check both fail on
-    // it, so it cannot reach a release unnoticed.
     if (entry === undefined || entry === null) {
       return key
     }
-    // A plural entry holds one form per CLDR category the language uses; the
+    // A plural entry holds one form per CLDR category its language uses; the
     // catalogue gate guarantees the category the rules select is present.
     const forms = entry as Record<string, string>
-    return forms[pluralRules.select(count)] ?? forms.other ?? key
+    return forms[(inOwn ? pluralRules : englishPluralRules).select(count)] ?? forms.other ?? key
   }
 
   function format(value: MessageValue): string {
