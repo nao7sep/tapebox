@@ -4,8 +4,11 @@ import { nanoid } from 'nanoid'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
-import { execCapture, makeLineBuffer, spawnStreaming, SubprocessError, waitForExit } from '@main/io/spawn'
+import { toJson } from '@main/io/log-format'
+import { writeRecord } from '@main/io/records'
+import { collectOutput, execCapture, spawnStreaming, SubprocessError, waitForExit } from '@main/io/spawn'
 import type { SidecarMedia } from '@shared/domain'
+import { nowUtcIso } from '@shared/utc'
 
 /**
  * ffmpeg subprocess service. Two jobs only: probe a downloaded file for technical
@@ -25,8 +28,41 @@ const THUMBNAIL_JPEG_QSCALE = 3      // ffmpeg mjpeg -q:v: 2 (best) … 31 (wors
 const THUMBNAIL_MAX_EDGE_PX = 1280   // cap the longer side; never upscales smaller art
 const THUMBNAIL_IDLE_TIMEOUT_MS = 30_000
 
-// How many recent ffmpeg output lines to keep so a failure can show what it said.
-const MAX_LOG_LINES = 40
+export type FfmpegRun = {
+  kind: 'thumbnail'
+  tapeId: string
+  args: readonly string[]
+}
+
+/**
+ * Collect everything an ffmpeg run writes, both streams whole, and record it as
+ * an `ffmpeg_runs` row once the run has ended (data-lifecycle conventions).
+ * Attach it right after the spawn, before any output can arrive.
+ */
+export function collectRun(
+  child: Parameters<typeof collectOutput>[0],
+  run: FfmpegRun,
+): { stderr: () => string; record: () => void } {
+  const output = collectOutput(child)
+  return {
+    stderr: output.stderr,
+    record: () => {
+      const exit = output.exit()
+      const row = {
+        tape_id: run.tapeId,
+        kind: run.kind,
+        args: toJson(run.args),
+        started_at_utc: output.startedAtUtc,
+        ended_at_utc: nowUtcIso(),
+        exit_code: exit.code,
+        signal: exit.signal,
+        stdout: output.stdout(),
+        stderr: output.stderr(),
+      }
+      writeRecord('ffmpeg_runs', row, () => toJson({ record: 'ffmpeg run', ...row }))
+    },
+  }
+}
 
 /**
  * The single gate through which every thumbnail is persisted. Transcodes a raw
@@ -42,6 +78,7 @@ const MAX_LOG_LINES = 40
  * worth surfacing.
  */
 export async function saveThumbnailJpeg(
+  tapeId: string,
   sourceImagePath: string,
   destDir: string,
   stem: string,
@@ -81,25 +118,19 @@ export async function saveThumbnailJpeg(
       ]
 
       const child = spawnStreaming(binaryPath('ffmpeg'), args, { signal, idleTimeoutMs: THUMBNAIL_IDLE_TIMEOUT_MS })
-      const recentLines: string[] = []
-      const lineBuffer = makeLineBuffer((line) => {
-        if (!line.trim()) return
-        recentLines.push(line)
-        if (recentLines.length > MAX_LOG_LINES) recentLines.shift()
-      }, { splitOnCR: true })
-      child.stdout.on('data', lineBuffer.feed)
-      child.stderr.on('data', lineBuffer.feed)
+      const run = collectRun(child, { kind: 'thumbnail', tapeId, args })
 
       try {
         await waitForExit(child, { command: 'ffmpeg thumbnail' })
       } catch (err) {
-        lineBuffer.flush() // drain the tail so the error carries ffmpeg's last words
+        // waitForExit's SubprocessError carries an empty stderr, so it is re-thrown
+        // carrying ffmpeg's own stderr, where it says why it failed.
         if (err instanceof SubprocessError) {
-          throw new SubprocessError(err.command, err.exitCode, recentLines.join('\n').trim() || err.stderr)
+          throw new SubprocessError(err.command, err.exitCode, run.stderr())
         }
         throw err
       } finally {
-        lineBuffer.flush()
+        run.record()
       }
     },
     stagePath,

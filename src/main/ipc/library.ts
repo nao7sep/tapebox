@@ -189,7 +189,7 @@ export function registerLibraryHandlers(): void {
       try {
         thumbnailFilename = await runCancellable(async (signal) => {
           const raw = await downloadThumbnail(tape.sourceUrl, dir, stem, signal)
-          return raw ? saveThumbnailJpeg(raw, dir, stem, signal) : null
+          return raw ? saveThumbnailJpeg(tape.id, raw, dir, stem, signal) : null
         })
       } catch (err) {
         log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })

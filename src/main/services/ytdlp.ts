@@ -8,13 +8,13 @@ import { toJson } from '@main/io/log-format'
 import { writeRecord } from '@main/io/records'
 import { nowUtcIso } from '@shared/utc'
 import {
+  collectOutput,
   execCapture,
   makeLineBuffer,
   spawnStreaming,
   SubprocessError,
   waitForExit,
 } from '@main/io/spawn'
-import type { Readable } from 'node:stream'
 
 /**
  * yt-dlp subprocess service.
@@ -41,39 +41,31 @@ export type YtdlpRun = {
 }
 
 /**
- * Collect everything a download or scan writes, both streams whole, and record
- * it as a `ytdlp_runs` row once the run has ended (data-lifecycle conventions).
+ * Collect everything a yt-dlp run writes, both streams whole, and record it as a
+ * `ytdlp_runs` row once the run has ended (data-lifecycle conventions).
  * Attach it right after the spawn, before any output can arrive.
  */
 export function collectRun(
-  child: { stdout: Readable; stderr: Readable; once(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown },
+  child: Parameters<typeof collectOutput>[0],
   run: YtdlpRun,
 ): { stderr: () => string; record: () => void } {
-  const startedAtUtc = nowUtcIso()
-  const stdout: Buffer[] = []
-  const stderr: Buffer[] = []
-  let exit: { code: number | null; signal: NodeJS.Signals | null } = { code: null, signal: null }
-  child.stdout.on('data', (chunk: Buffer | string) => stdout.push(Buffer.from(chunk)))
-  child.stderr.on('data', (chunk: Buffer | string) => stderr.push(Buffer.from(chunk)))
-  child.once('close', (code, signal) => {
-    exit = { code, signal }
-  })
-  const text = (chunks: Buffer[]) => Buffer.concat(chunks).toString('utf8')
+  const output = collectOutput(child)
   return {
-    stderr: () => text(stderr),
+    stderr: output.stderr,
     record: () => {
+      const exit = output.exit()
       const row = {
         tape_id: run.tapeId,
         scan_id: run.scanId,
         kind: run.kind,
         url: run.url,
         args: toJson(run.args),
-        started_at_utc: startedAtUtc,
+        started_at_utc: output.startedAtUtc,
         ended_at_utc: nowUtcIso(),
         exit_code: exit.code,
         signal: exit.signal,
-        stdout: text(stdout),
-        stderr: text(stderr),
+        stdout: output.stdout(),
+        stderr: output.stderr(),
       }
       writeRecord('ytdlp_runs', row, () => toJson({ record: 'yt-dlp run', ...row }))
     },

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import type { LoggableError } from '@shared/error'
+import { nowUtcIso } from '@shared/utc'
 
 /**
  * Thin wrappers around node:child_process.spawn.
@@ -353,25 +354,16 @@ export function waitForExit(
  *   child.stderr.on('data', lb.feed)
  *   await waitForExit(child)
  *   lb.flush()  // emit any trailing line without a newline
- *
- * `splitOnCR` also breaks on carriage returns, so a tool that redraws a status
- * line in place (ffmpeg's `frame=… time=… speed=…`) surfaces each redraw as its
- * own line instead of one ever-growing buffer. Off by default — yt-dlp's
- * `--newline` output is plain `\n`.
  */
-export function makeLineBuffer(
-  onLine: (line: string) => void,
-  opts: { splitOnCR?: boolean } = {},
-): {
+export function makeLineBuffer(onLine: (line: string) => void): {
   feed: (chunk: Buffer | string) => void
   flush: () => void
 } {
-  const breaks = opts.splitOnCR ? /\r\n|\r|\n/ : /\n/
   let buf = ''
   return {
     feed(chunk) {
       buf += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-      const parts = buf.split(breaks)
+      const parts = buf.split('\n')
       // The last part is the (possibly partial) remainder — keep it buffered.
       buf = parts.pop() ?? ''
       for (const p of parts) onLine(p.replace(/\r$/, ''))
@@ -382,5 +374,41 @@ export function makeLineBuffer(
         buf = ''
       }
     },
+  }
+}
+
+export type CollectedOutput = {
+  startedAtUtc: string
+  stdout: () => string
+  stderr: () => string
+  /** The exit code and signal once the child has closed; both null before. */
+  exit: () => { code: number | null; signal: NodeJS.Signals | null }
+}
+
+/**
+ * Collect everything a child writes, both streams whole, with its start time
+ * and its exit, for a run record (data-lifecycle conventions). Attach it right
+ * after the spawn, before any output can arrive.
+ */
+export function collectOutput(child: {
+  stdout: Readable
+  stderr: Readable
+  once(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown
+}): CollectedOutput {
+  const startedAtUtc = nowUtcIso()
+  const stdout: Buffer[] = []
+  const stderr: Buffer[] = []
+  let exit: { code: number | null; signal: NodeJS.Signals | null } = { code: null, signal: null }
+  child.stdout.on('data', (chunk: Buffer | string) => stdout.push(Buffer.from(chunk)))
+  child.stderr.on('data', (chunk: Buffer | string) => stderr.push(Buffer.from(chunk)))
+  child.once('close', (code, signal) => {
+    exit = { code, signal }
+  })
+  const text = (chunks: Buffer[]) => Buffer.concat(chunks).toString('utf8')
+  return {
+    startedAtUtc,
+    stdout: () => text(stdout),
+    stderr: () => text(stderr),
+    exit: () => exit,
   }
 }

@@ -249,7 +249,7 @@ export class Job {
     try {
       const rawThumb = await this.d.ytdlp.findThumbnail(libraryDir, stem)
       if (rawThumb) {
-        thumbnailFilename = await this.d.ffmpeg.saveThumbnailJpeg(rawThumb, libraryDir, stem, this.controller.signal)
+        thumbnailFilename = await this.d.ffmpeg.saveThumbnailJpeg(this.tapeId, rawThumb, libraryDir, stem, this.controller.signal)
       }
     } catch (err) {
       this.d.log.warn('thumbnail skipped', { tapeId: this.tapeId, error: describeError(err) })

@@ -64,9 +64,24 @@ CREATE TABLE IF NOT EXISTS ytdlp_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_session ON ytdlp_runs (session);
 CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_tape_id ON ytdlp_runs (tape_id);
+CREATE TABLE IF NOT EXISTS ffmpeg_runs (
+  id             INTEGER PRIMARY KEY,
+  session        TEXT NOT NULL,
+  tape_id        TEXT,
+  kind           TEXT NOT NULL,
+  args           TEXT NOT NULL,
+  started_at_utc TEXT NOT NULL,
+  ended_at_utc   TEXT NOT NULL,
+  exit_code      INTEGER,
+  signal         TEXT,
+  stdout         TEXT NOT NULL,
+  stderr         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_session ON ffmpeg_runs (session);
+CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_tape_id ON ffmpeg_runs (tape_id);
 `
 
-export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs'
+export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
 export type RecordRow = Record<string, SQLInputValue>
 
 let session: string | null = null

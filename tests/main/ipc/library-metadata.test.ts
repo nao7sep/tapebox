@@ -162,6 +162,7 @@ describe('accepting refreshed metadata', () => {
       expect.anything(),
     )
     expect(saveThumbnailJpeg).toHaveBeenCalledExactlyOnceWith(
+      'Noposteryt',
       join(state.libraryDir, 'Holiday.webp'),
       state.libraryDir,
       'Holiday',
