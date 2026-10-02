@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS ai_calls (
   ended_at_utc   TEXT NOT NULL,
   endpoint       TEXT NOT NULL,
   model          TEXT NOT NULL,
-  request        TEXT NOT NULL,
+  request        TEXT,
   status         INTEGER,
   response       TEXT,
   error          TEXT

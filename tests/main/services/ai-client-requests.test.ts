@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/settings'
 
 const { create, constructors, writeRecord, state } = vi.hoisted(() => ({
-  create: vi.fn(), constructors: vi.fn(), writeRecord: vi.fn(), state: { settings: {} as ReturnType<typeof defaultSettings> },
+  create: vi.fn(), constructors: vi.fn(), writeRecord: vi.fn(),
+  state: { settings: {} as ReturnType<typeof defaultSettings>, overHttp: false },
 }))
 vi.mock('openai', async (original) => {
   const module = await original<typeof import('openai')>()
@@ -11,7 +12,7 @@ vi.mock('openai', async (original) => {
     constructor(options: ConstructorParameters<typeof module.default>[0]) {
       super(options)
       constructors(options)
-      this.chat.completions.create = create
+      if (!state.overHttp) this.chat.completions.create = create
     }
   } }
 })
@@ -24,9 +25,13 @@ import { generateSlug } from '@main/services/ai-client'
 beforeEach(() => {
   vi.clearAllMocks()
   state.settings = defaultSettings()
+  state.overHttp = false
   create.mockResolvedValue({ choices: [{ finish_reason: 'stop', message: { content: 'a-name' } }] })
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe('slug request routing', () => {
   it('uses the model branch behind a proxy and the plain request for local ids', async () => {
@@ -66,11 +71,15 @@ describe('slug request routing', () => {
     expect((await outcome).message).toContain('busy')
   })
 
-  it('records each attempt whole, the provider\'s error body included', async () => {
+  it('records each attempt whole, the request as sent with its headers and the provider\'s error body', async () => {
+    state.overHttp = true
     const answer = { choices: [{ finish_reason: 'stop', message: { content: 'a-name' } }], usage: { total_tokens: 9 } }
-    create.mockRejectedValueOnce(new OpenAI.APIError(500, { message: 'provider reason' }, undefined, new Headers()))
+    const json = (body: object, status: number) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json({ error: { message: 'provider reason' } }, 500))
+      .mockResolvedValueOnce(json(answer, 200))
+    vi.stubGlobal('fetch', fetch)
     await expect(generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)).rejects.toThrow()
-    create.mockResolvedValueOnce(answer)
     await generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)
 
     const rows = writeRecord.mock.calls.map(([table, row]) => ({ table, row }))
@@ -81,7 +90,12 @@ describe('slug request routing', () => {
     })
     expect(JSON.parse(rows[0]!.row.response)).toEqual({ message: 'provider reason' })
     expect(JSON.parse(rows[0]!.row.error)).toMatchObject({ message: expect.stringContaining('provider reason') })
-    expect(JSON.parse(rows[1]!.row.request)).toEqual(create.mock.calls[1]![0])
+    const [url, init] = fetch.mock.calls[1]!
+    const sent = JSON.parse(rows[1]!.row.request)
+    expect(sent).toMatchObject({ method: 'POST', url: String(url), body: JSON.parse(init.body) })
+    expect(sent.headers).toEqual(Object.fromEntries(new Headers(init.headers)))
+    expect(sent.headers.authorization).toBe('Bearer mock-key')
+    expect(sent.body).toMatchObject({ model: 'gpt-6-luna', messages: [expect.objectContaining({ role: 'user' })] })
     expect(JSON.parse(rows[1]!.row.response)).toEqual(answer)
     expect(rows[1]!.row).toMatchObject({ status: null, error: null })
   })
