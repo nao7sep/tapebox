@@ -239,7 +239,7 @@ export class Job {
     // Parse the actual file for reliable technical metadata — yt-dlp's info.json
     // is sparse for generic/direct downloads (sites without a dedicated
     // extractor). Best-effort: a probe failure just leaves it null.
-    const media = await this.d.ffmpeg.probeMedia(expectedMediaPath, this.controller.signal).catch(() => null)
+    const media = await this.d.ffmpeg.probeMedia(this.tapeId, expectedMediaPath, this.controller.signal).catch(() => null)
 
     // Normalize the source thumbnail (whatever format yt-dlp fetched) to our
     // canonical {stem}.jpg through the one image gate. The poster is a nice-to-have:

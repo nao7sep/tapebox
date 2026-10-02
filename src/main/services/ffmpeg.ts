@@ -6,7 +6,7 @@ import { log } from '@main/io/logger'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
 import { toJson } from '@main/io/log-format'
 import { writeRecord } from '@main/io/records'
-import { collectOutput, execCapture, spawnStreaming, SubprocessError, waitForExit } from '@main/io/spawn'
+import { collectOutput, spawnStreaming, SubprocessError, waitForExit } from '@main/io/spawn'
 import type { SidecarMedia } from '@shared/domain'
 import { nowUtcIso } from '@shared/utc'
 
@@ -29,7 +29,7 @@ const THUMBNAIL_MAX_EDGE_PX = 1280   // cap the longer side; never upscales smal
 const THUMBNAIL_IDLE_TIMEOUT_MS = 30_000
 
 export type FfmpegRun = {
-  kind: 'thumbnail'
+  kind: 'probe' | 'thumbnail'
   tapeId: string
   args: readonly string[]
 }
@@ -149,13 +149,16 @@ export async function saveThumbnailJpeg(
  * is given — reject:false lets us read it). Reuses the bundled ffmpeg, so no
  * separate ffprobe binary is needed. Missing fields come back null.
  */
-export async function probeMedia(mediaPath: string, signal?: AbortSignal): Promise<SidecarMedia> {
-  const { stderr } = await execCapture(binaryPath('ffmpeg'), ['-hide_banner', '-i', mediaPath], {
-    reject: false,
-    signal,
-    idleTimeoutMs: PROBE_IDLE_TIMEOUT_MS,
-  })
-  return parseFfmpegInfo(stderr)
+export async function probeMedia(tapeId: string, mediaPath: string, signal?: AbortSignal): Promise<SidecarMedia> {
+  const args = ['-hide_banner', '-i', mediaPath]
+  const child = spawnStreaming(binaryPath('ffmpeg'), args, { signal, idleTimeoutMs: PROBE_IDLE_TIMEOUT_MS })
+  const run = collectRun(child, { kind: 'probe', tapeId, args })
+  try {
+    await waitForExit(child, { reject: false })
+  } finally {
+    run.record()
+  }
+  return parseFfmpegInfo(run.stderr())
 }
 
 function parseFfmpegInfo(text: string): SidecarMedia {
