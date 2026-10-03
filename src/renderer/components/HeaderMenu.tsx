@@ -9,7 +9,7 @@ type Props = {
   onTools: () => void
   onShortcuts: () => void
   onAbout: () => void
-  onRevealLog: () => void
+  onRecords: () => void
 }
 
 /**
@@ -17,7 +17,7 @@ type Props = {
  * Menu owns the open/close, keyboard, and focus behavior (arrows, type-ahead, Esc,
  * outside click, focus return to the trigger).
  */
-export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortcuts, onAbout, onRevealLog }: Props) {
+export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortcuts, onAbout, onRecords }: Props) {
   const t = useI18n()
   const entries: { label: MessageKey; action: () => void }[] = [
     { label: 'menu.scanPage', action: onScanPage },
@@ -25,7 +25,7 @@ export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortc
     { label: 'menu.settings', action: onSettings },
     { label: 'menu.tools', action: onTools },
     { label: 'menu.shortcuts', action: onShortcuts },
-    { label: 'menu.revealLog', action: onRevealLog },
+    { label: 'menu.records', action: onRecords },
     { label: 'menu.about', action: onAbout },
   ]
 

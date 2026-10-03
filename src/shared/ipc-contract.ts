@@ -2,6 +2,8 @@ import type { Box, Tape, TapeFailureCode } from './domain'
 import type { Settings, SettingsSets } from './settings'
 import type { Layout } from './layout'
 import type { Message } from './i18n/translate'
+import type { LanguagePreference } from './i18n/languages'
+import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from './records'
 
 /**
  * Request/response contract for ipcMain.handle / ipcRenderer.invoke channels.
@@ -135,13 +137,18 @@ export type IpcCalls = {
   // ── Runtime info ─────────────────────────────────────────────────────────
   // Read-only facts about the current process.
   'app:runtimeInfo':       { req: undefined;                         res: RuntimeInfo }
-  // Reveal where the log is (the records database) in the OS file manager.
-  'app:revealLog':         { req: undefined;                         res: void }
   'app:openExternal':      { req: { url: string };                   res: void }
   // Report whether a tape is currently playing, so main can hold or release an OS
   // wake lock that keeps the machine (and display) awake during playback. Gated
   // by the keepAwakeWhilePlaying setting.
   'app:setVideoPlaying':   { req: { playing: boolean };              res: void }
+
+  // ── Records (the Records window over records.sqlite3) ────────────────────
+  // Open the Records window, or bring it forward when it is already open.
+  'records:open':          { req: undefined;                         res: void }
+  'records:page':          { req: RecordsQuery;                      res: RecordsPage }
+  'records:detail':        { req: { kind: RecordKind; id: number };  res: RecordDetail | null }
+  'records:sources':       { req: undefined;                         res: RecordSources }
 }
 
 export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
@@ -291,4 +298,11 @@ export type IpcEvents = {
   'scan:error':        { sessionId: string; code: 'scan-failed' }
 
   'binaries:progress':        { name: BinaryName; operationId: string; percent: number; phase: 'download' | 'verify' | 'install' }
+
+  // Settings saved a language choice; a window that keeps no settings of its own
+  // (the Records window) follows it.
+  'settings:languageChanged': LanguagePreference
+
+  // The records database stored a record; the Records window reads the newest page.
+  'records:changed':          null
 }

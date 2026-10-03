@@ -8,8 +8,12 @@ import { message, type Message } from '@shared/i18n/translate'
  * Renderer-side mirror of persisted view state. It stays null until the required
  * app hydration commits, so a load rejection cannot turn defaults into an
  * apparently authoritative saved layout.
+ *
+ * The main window patches only its own fields; the Records window saves its list
+ * width itself (records/RecordsWindow.tsx), and main merges each patch into the
+ * stored layout, so neither window overwrites the other's.
  */
-export type LayoutField = keyof Layout
+export type LayoutField = Exclude<keyof Layout, 'recordsListWidth'>
 
 type LayoutState = {
   layout: Layout | null
@@ -46,7 +50,7 @@ const FAILURE_COPY: Record<LayoutField, Message> = {
  * smooth drag. persist=true settles that field against main; current failures
  * roll back to the last confirmed value and remain visible at the field owner.
  */
-export async function patchLayout(patch: Partial<Layout>, persist: boolean): Promise<void> {
+export async function patchLayout(patch: Partial<Pick<Layout, LayoutField>>, persist: boolean): Promise<void> {
   const state = useLayoutStore.getState()
   if (!state.layout || !state.persistedLayout) return
   const fields = Object.keys(patch) as LayoutField[]
@@ -64,7 +68,7 @@ export async function patchLayout(patch: Partial<Layout>, persist: boolean): Pro
     const confirmed = await ipcInvoke('layout:update', patch)
     const current = useLayoutStore.getState()
     if (!current.layout || !current.persistedLayout) return
-    const confirmedPatch: Partial<Layout> = {}
+    const confirmedPatch: Partial<Pick<Layout, LayoutField>> = {}
     for (const field of fields) {
       if (revisions[field] === versions.get(field)) {
         Object.assign(confirmedPatch, { [field]: confirmed[field] })
@@ -79,7 +83,7 @@ export async function patchLayout(patch: Partial<Layout>, persist: boolean): Pro
   } catch (error) {
     const current = useLayoutStore.getState()
     if (!current.layout || !current.persistedLayout) return
-    const rollback: Partial<Layout> = {}
+    const rollback: Partial<Pick<Layout, LayoutField>> = {}
     for (const field of fields) {
       if (revisions[field] !== versions.get(field)) continue
       Object.assign(rollback, { [field]: current.persistedLayout[field] })

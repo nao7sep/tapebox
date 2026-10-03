@@ -208,6 +208,7 @@ async function applySettingsPatch(
   // language (localization-conventions) included.
   applyThemePreference(next.theme)
   await applyLanguagePreference(next.language)
+  emit('settings:languageChanged', next.language)
   // Flipping autostart on should start anything already waiting.
   if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
   // Toggling keep-awake off mid-playback must release the held wake lock now

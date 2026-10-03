@@ -22,15 +22,15 @@ const translations = LANGUAGES.filter((language) => language !== "en");
 
 // Keys whose text is the same word in that language as in English.
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
-  de: ["common.ok", "detail.name", "tools.columnTool", "settings.tabYtdlp", "settings.openai", "settings.languageSystem", "settings.themeSystem", "settings.profileName", "shortcuts.player", "about.version"],
-  es: ["nativeMenu.zoom", "settings.tabGeneral", "settings.tabYtdlp", "settings.openai"],
-  fr: ["common.ok", "nativeMenu.services", "refresh.description", "export.destination", "settings.tabYtdlp", "settings.openai", "about.version"],
-  it: ["common.ok", "nativeMenu.file", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai"],
-  "pt-BR": ["common.ok", "nativeMenu.zoom", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai", "shortcuts.player"],
-  ru: ["settings.tabYtdlp", "settings.openai"],
-  ja: ["common.ok", "settings.tabAi", "settings.tabYtdlp", "settings.openai"],
-  ko: ["settings.tabAi", "settings.tabYtdlp", "settings.openai"],
-  "zh-Hans": ["settings.tabAi", "settings.tabYtdlp", "settings.openai"],
+  de: ["common.ok", "detail.name", "tools.columnTool", "settings.tabYtdlp", "settings.openai", "settings.languageSystem", "settings.themeSystem", "settings.profileName", "shortcuts.player", "about.version", "records.levelInfo", "records.levelDebug", "records.details", "records.url", "records.signal", "records.scan"],
+  es: ["nativeMenu.zoom", "settings.tabGeneral", "settings.tabYtdlp", "settings.openai", "records.levelError", "records.error", "records.url"],
+  fr: ["common.ok", "nativeMenu.services", "refresh.description", "export.destination", "settings.tabYtdlp", "settings.openai", "about.version", "records.url", "records.signal", "records.arguments"],
+  it: ["common.ok", "nativeMenu.file", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai", "records.levelInfo", "records.levelDebug", "records.url", "records.output"],
+  "pt-BR": ["common.ok", "nativeMenu.zoom", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai", "shortcuts.player", "records.url"],
+  ru: ["settings.tabYtdlp", "settings.openai", "records.url"],
+  ja: ["common.ok", "settings.tabAi", "settings.tabYtdlp", "settings.openai", "records.url"],
+  ko: ["settings.tabAi", "settings.tabYtdlp", "settings.openai", "records.url"],
+  "zh-Hans": ["settings.tabAi", "settings.tabYtdlp", "settings.openai", "records.url"],
 };
 
 // The hidden-character-conventions set, plus the no-break spaces, figure space,

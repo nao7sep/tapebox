@@ -31,7 +31,13 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        output: { format: 'es' },
+        // The records reader runs on its own thread (io/records-read.ts), from
+        // its own entry beside index.js.
+        input: {
+          index: resolve('src/main/index.ts'),
+          'records-worker': resolve('src/main/io/records-worker.ts'),
+        },
+        output: { format: 'es', entryFileNames: '[name].js' },
       },
     },
   },
@@ -68,7 +74,10 @@ export default defineConfig({
       // transfer cost. 2000 keeps a runaway bundle loud.
       chunkSizeWarningLimit: 2000,
       rollupOptions: {
-        input: resolve('src/renderer/index.html'),
+        input: {
+          index: resolve('src/renderer/index.html'),
+          records: resolve('src/renderer/records.html'),
+        },
       },
     },
   },

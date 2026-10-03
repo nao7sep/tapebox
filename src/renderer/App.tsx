@@ -120,7 +120,7 @@ function HydratedApp() {
   const [showAbout, setShowAbout] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showScanPage, setShowScanPage] = useState(false)
-  const [revealLogError, setRevealLogError] = useState<Message | null>(null)
+  const [openRecordsError, setOpenRecordsError] = useState<Message | null>(null)
   const [pageInitialUrl, setPageInitialUrl] = useState('')
   const decidedFirstRun = useRef(false)
   const startedAutoCheck = useRef(false)
@@ -173,15 +173,15 @@ function HydratedApp() {
     }
   }
 
-  async function revealLog() {
-    setRevealLogError(null)
+  async function openRecords() {
+    setOpenRecordsError(null)
     try {
-      await ipcInvoke('app:revealLog')
+      await ipcInvoke('records:open')
     } catch (error) {
-      setRevealLogError(presentFailure(
+      setOpenRecordsError(presentFailure(
         error,
-        message('app.revealLogFailed'),
-        'session log reveal failed',
+        message('app.openRecordsFailed'),
+        'records window open failed',
       ))
     }
   }
@@ -239,17 +239,17 @@ function HydratedApp() {
             onTools={() => openBinariesModal()}
             onShortcuts={() => setShowShortcuts(true)}
             onAbout={() => setShowAbout(true)}
-            onRevealLog={() => void revealLog()}
+            onRecords={() => void openRecords()}
           />
         </header>
 
-        {revealLogError && (
+        {openRecordsError && (
           <InlineError
             className="mx-4 my-2 shrink-0"
-            onDismiss={() => setRevealLogError(null)}
-            closeLabel={t.t('app.closeRevealLogResult')}
+            onDismiss={() => setOpenRecordsError(null)}
+            closeLabel={t.t('app.closeOpenRecordsResult')}
           >
-            {t.text(revealLogError)}
+            {t.text(openRecordsError)}
           </InlineError>
         )}
 

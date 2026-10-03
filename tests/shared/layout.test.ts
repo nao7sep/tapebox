@@ -5,6 +5,11 @@ import {
   LAYOUT_BOUNDS,
   LayoutSchema,
   PANE_BORDERS,
+  RECORDS_DETAIL_MIN_WIDTH,
+  RECORDS_FILTERS_HEIGHT,
+  RECORDS_LIST_MIN_HEIGHT,
+  RECORDS_WINDOW_MIN_HEIGHT,
+  RECORDS_WINDOW_MIN_WIDTH,
   STATUS_BAR_HEIGHT,
   VOLUME_DEFAULT,
   WINDOW_MIN_HEIGHT,
@@ -140,5 +145,28 @@ describe('clampSplitter', () => {
   // than an impossible smaller value.
   it('falls back to the pane min when room is below it', () => {
     expect(clampSplitter(600, { available: 250, siblingMin: 200, min: 200, max: 720 })).toBe(200)
+  })
+})
+
+// The Records window's list pane: its width is the dragged intent, kept in
+// layout.json beside the main window's panes, and the window minimum falls out of
+// its pane minimums (window-conventions).
+describe('Records window layout', () => {
+  it('derives the window minimum from the list and detail pane minimums', () => {
+    expect(RECORDS_WINDOW_MIN_WIDTH).toBe(LAYOUT_BOUNDS.recordsListWidth.min + 1 + RECORDS_DETAIL_MIN_WIDTH)
+    expect(RECORDS_WINDOW_MIN_HEIGHT).toBe(RECORDS_FILTERS_HEIGHT + RECORDS_LIST_MIN_HEIGHT)
+  })
+
+  it('bounds the list width at 320 to 640, opening at 380', () => {
+    expect(LAYOUT_BOUNDS.recordsListWidth).toEqual({ min: 320, max: 640, default: 380 })
+    expect(defaultLayout.recordsListWidth).toBe(380)
+  })
+
+  it('keeps an in-range width and self-heals a missing or out-of-range one to the default', () => {
+    expect(LayoutSchema.parse({ ...defaultLayout, recordsListWidth: 512 }).recordsListWidth).toBe(512)
+    expect(LayoutSchema.parse({ ...defaultLayout, recordsListWidth: 9999 }).recordsListWidth).toBe(380)
+    const { recordsListWidth, ...without } = defaultLayout
+    void recordsListWidth
+    expect(LayoutSchema.parse(without).recordsListWidth).toBe(380)
   })
 })

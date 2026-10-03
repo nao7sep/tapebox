@@ -83,7 +83,6 @@ describe('log records', () => {
 
     const [file] = readdirSync(paths.logs)
     expect(file).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/)
-    expect(records.recordsLocation()).toBe(join(paths.logs, file!))
     const lines = readFileSync(join(paths.logs, file!), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
     expect(lines).toMatchObject([
       { level: 'error', message: 'records database could not be opened; writing to a text file' },
@@ -91,10 +90,42 @@ describe('log records', () => {
     ])
   })
 
-  it('reveals the database while it is open', async () => {
-    const { records, paths } = await freshApp()
+  it('signals each row the database stored, so the Records window can show it', async () => {
+    const { records, initLogger, log } = await freshApp()
+    const stored = vi.fn()
+    records.onRecordStored(stored)
     records.openRecords()
-    expect(records.recordsLocation()).toBe(paths.records)
+    initLogger({ debug: false })
+
+    log.info('first')
+    log.warn('second')
+    expect(stored).toHaveBeenCalledTimes(2)
     records.closeRecords()
+  })
+
+  it('signals nothing for a row that went to the text file instead', async () => {
+    const { records, log, paths } = await freshApp()
+    mkdirSync(paths.records)
+    const stored = vi.fn()
+    records.onRecordStored(stored)
+    records.openRecords()
+
+    log.error('only in the text file')
+    records.closeRecords()
+    expect(stored).not.toHaveBeenCalled()
+  })
+
+  it('keeps recording when the stored listener throws', async () => {
+    const { records, log, paths } = await freshApp()
+    const errorLine = vi.spyOn(console, 'error').mockImplementation(() => {})
+    records.onRecordStored(() => {
+      throw new Error('window gone')
+    })
+    records.openRecords()
+
+    log.info('still stored')
+    records.closeRecords()
+    expect(rows(paths.records, 'SELECT message FROM logs')).toEqual([{ message: 'still stored' }])
+    expect(errorLine).toHaveBeenCalled()
   })
 })

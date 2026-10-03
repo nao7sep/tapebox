@@ -18,6 +18,9 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "isolatedModules": true,
+    // The records worker imports its sibling by its .ts name, so Node can run
+    // the source as it is under the tests (src/main/io/records-worker.ts).
+    "allowImportingTsExtensions": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client"],
     "paths": {

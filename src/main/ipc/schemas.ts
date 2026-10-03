@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { SettingsSchema } from '@shared/settings'
 import { LayoutSchema } from '@shared/layout'
+import { RECORD_KINDS, RECORD_LEVEL_FILTERS } from '@shared/records'
 
 /**
  * Runtime request schemas for every ipcMain.handle channel — the enforcement half
@@ -27,6 +28,17 @@ import { LayoutSchema } from '@shared/layout'
 // IpcCalls['binaries:update'] req type, so a change to BinaryName not reflected here
 // fails to compile.
 const BinaryNameSchema = z.enum(['yt-dlp', 'ffmpeg', 'deno'])
+
+const RecordKindSchema = z.enum(RECORD_KINDS)
+
+const RecordsQuerySchema = z.object({
+  session: z.string().nullable(),
+  kind: RecordKindSchema.nullable(),
+  level: z.enum(RECORD_LEVEL_FILTERS).nullable(),
+  tapeId: z.string().nullable(),
+  search: z.string(),
+  after: z.object({ time: z.string(), kind: RecordKindSchema, id: z.number().int() }).nullable(),
+})
 
 const RefreshedMetadataSchema = z.object({
   title: z.string().nullable(),
@@ -115,7 +127,12 @@ export const ipcRequestSchemas = {
 
   // ── Runtime info ──────────────────────────────────────────────────────────
   'app:runtimeInfo':       z.undefined(),
-  'app:revealLog':         z.undefined(),
   'app:openExternal':      z.object({ url: z.url() }),
   'app:setVideoPlaying':   z.object({ playing: z.boolean() }),
+
+  // ── Records ──────────────────────────────────────────────────────────────
+  'records:open':          z.undefined(),
+  'records:page':          RecordsQuerySchema,
+  'records:detail':        z.object({ kind: RecordKindSchema, id: z.number().int() }),
+  'records:sources':       z.undefined(),
 } satisfies { [K in keyof IpcCalls]: z.ZodType<IpcCalls[K]['req']> }

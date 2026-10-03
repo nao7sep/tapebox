@@ -10,7 +10,8 @@ import { toJson } from './log-format'
 /**
  * The records database, `records.sqlite3` under the storage root, per the
  * logging and data-lifecycle conventions. The main process is its one owner: the
- * renderer forwards its log entries over IPC (ipc/log.ts).
+ * renderer forwards its log entries over IPC (ipc/log.ts). The Records window
+ * reads it on another thread through io/records-read.ts.
  *
  * Every row carries its session, this launch's start time, and the tape or
  * scan it concerns when there is one. No table is transient, so nothing here
@@ -86,18 +87,17 @@ export type RecordRow = Record<string, SQLInputValue>
 
 let session: string | null = null
 let fallbackPath: string | null = null
-let fallbackWritten = false
 let db: DatabaseSync | null = null
 let closed = false
 let failing = false
 const statements = new Map<string, StatementSync>()
+let storedListener: (() => void) | null = null
 
 /** Start this launch's session and open the database. Returns the session. */
 export function openRecords(): string {
   const started = new Date()
   session = started.toISOString()
   fallbackPath = join(paths.logs, `${utcTimestampForFilenameMs(started)}.log`)
-  fallbackWritten = false
   closed = false
   failing = false
   statements.clear()
@@ -127,13 +127,12 @@ export function currentSession(): string | null {
 }
 
 /**
- * Where this session's records are: the database, or the text file when the
- * database could not be opened and the file was written. Null when there is
- * nothing on disk to show.
+ * Called after each row the database stored, so the Records window can show it;
+ * a row that went to the text file or the console is not in the database and
+ * calls nothing.
  */
-export function recordsLocation(): string | null {
-  if (db) return paths.records
-  return fallbackWritten ? fallbackPath : null
+export function onRecordStored(listener: (() => void) | null): void {
+  storedListener = listener
 }
 
 /** Close the database. Idempotent and synchronous, so an `exit` handler can call it. */
@@ -164,6 +163,7 @@ export function writeRecord(table: RecordTable, row: RecordRow, text: () => stri
     try {
       insert(db, table, row)
       failing = false
+      notifyStored()
       return false
     } catch (err) {
       if (!failing) writeFallback(failureNote('records write failed; writing to a text file', err))
@@ -184,6 +184,15 @@ function insert(d: DatabaseSync, table: RecordTable, row: RecordRow): void {
   statement.run(session, ...Object.values(row))
 }
 
+function notifyStored(): void {
+  try {
+    storedListener?.()
+  } catch (err) {
+    // Recording it would call the listener again, so the console is the record.
+    toConsole('error', failureNote('records stored listener failed', err))
+  }
+}
+
 function failureNote(message: string, err: unknown): string {
   return toJson({ time: new Date().toISOString(), level: 'error', message, error: describeError(err) })
 }
@@ -194,7 +203,6 @@ function writeFallback(line: string, level: LogLevel = 'error'): boolean {
     try {
       mkdirSync(paths.logs, { recursive: true })
       appendFileSync(path, line.endsWith('\n') ? line : `${line}\n`)
-      fallbackWritten = true
       return false
     } catch (err) {
       toConsole('error', failureNote('records text file could not be written; using the console', err))

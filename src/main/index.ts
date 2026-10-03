@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { ensureDirs, sweepAbandonedStaging } from './paths.js'
 import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
 import { initLogger, isDebugEnabled, log } from './io/logger.js'
-import { closeRecords, openRecords } from './io/records.js'
+import { closeRecords, onRecordStored, openRecords } from './io/records.js'
+import { closeRecordsReader } from './io/records-read.js'
+import { notifyRecordsChanged } from './records-window.js'
 import { describeError } from '@shared/error'
 import { getSettings, loadSettings } from './store/config.js'
 import { loadDependencies } from './store/dependencies.js'
@@ -68,6 +70,9 @@ async function createMainWindow(): Promise<BrowserWindow> {
     (error) => log.warn('window minimum could not be updated', { error: describeError(error) }))
   win.once('closed', () => {
     if (mainWindow === win) mainWindow = null
+    // The Records window beside it does not keep the app running: closing the
+    // main window quits on Windows and Linux, and on macOS the Dock reopens it.
+    if (process.platform !== 'darwin') app.quit()
   })
 
   // Open external links (About modal, etc.) in the OS browser, never a new
@@ -116,6 +121,7 @@ function showOrCreateMainWindow(): void {
 async function startup(): Promise<void> {
   await ensureDirs()
   const session = openRecords()
+  onRecordStored(notifyRecordsChanged)
   initLogger({ debug: isDebugEnabled(app.isPackaged, process.env) })
   log.info('startup', {
     version: __APP_VERSION__,
@@ -209,6 +215,7 @@ function shutdown(reason: string): Promise<void> {
     await layout.persistNow()
     await stopMediaServer()
     await closeBackupStore()
+    closeRecordsReader()
     closeRecords()
   })()
   return shutdownPromise

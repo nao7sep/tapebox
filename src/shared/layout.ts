@@ -24,6 +24,9 @@ export const LAYOUT_BOUNDS = {
   leftPaneWidth:      { min: 200, max: 720, default: 320 },
   chaptersPaneWidth:  { min: 200, max: 720, default: 288 },
   archiveBoxesHeight: { min: 120, max: 800, default: 240 },
+  // The Records window's list pane (records/RecordsWindow.tsx). `min` still fits
+  // two filter selects side by side in a row and feeds RECORDS_WINDOW_MIN_WIDTH.
+  recordsListWidth:   { min: 320, max: 640, default: 380 },
 } as const
 
 /**
@@ -118,6 +121,31 @@ export function clampSplitter(
   return Math.max(min, Math.min(ceiling, Math.round(desired)))
 }
 
+/**
+ * The Records window: the list pane (filters above the record list) with a
+ * border-r beside the detail pane, which takes the rest. Mirrors the classes in
+ * records/RecordsWindow.tsx.
+ *
+ *   RECORDS_DETAIL_MIN_WIDTH  the detail pane's field grid and JSON blocks still
+ *                             read at this width.
+ *   RECORDS_FILTERS_HEIGHT    the filter band: p-3 (12px above and below) around a
+ *                             search field and two rows of selects (three h-9
+ *                             36px controls, space-y-2 8px apart), and its 1px
+ *                             border-b.
+ *   RECORDS_LIST_MIN_HEIGHT   a few rows of the record list below the filters.
+ */
+export const RECORDS_DETAIL_MIN_WIDTH = 420
+export const RECORDS_FILTERS_HEIGHT = 12 * 2 + 36 * 3 + 8 * 2 + 1
+export const RECORDS_LIST_MIN_HEIGHT = 160
+
+/** The list pane's border-r, the one vertical divider in the Records window. */
+const RECORDS_PANE_BORDERS = 1
+
+// Derived — do not hand-edit (window-conventions, Content-based minimum size).
+export const RECORDS_WINDOW_MIN_WIDTH =
+  LAYOUT_BOUNDS.recordsListWidth.min + RECORDS_PANE_BORDERS + RECORDS_DETAIL_MIN_WIDTH
+export const RECORDS_WINDOW_MIN_HEIGHT = RECORDS_FILTERS_HEIGHT + RECORDS_LIST_MIN_HEIGHT
+
 /** A self-healing integer dimension bounded by, and defaulting to, the given range. */
 const dim = (b: { min: number; max: number; default: number }) =>
   z.number().int().min(b.min).max(b.max).default(b.default).catch(b.default)
@@ -134,6 +162,7 @@ export const LayoutSchema = z.object({
   leftPaneWidth: dim(LAYOUT_BOUNDS.leftPaneWidth),
   chaptersPaneWidth: dim(LAYOUT_BOUNDS.chaptersPaneWidth),
   archiveBoxesHeight: dim(LAYOUT_BOUNDS.archiveBoxesHeight),
+  recordsListWidth: dim(LAYOUT_BOUNDS.recordsListWidth),
   volume: z.number().min(0).max(1).default(VOLUME_DEFAULT).catch(VOLUME_DEFAULT),
 })
 export type Layout = z.infer<typeof LayoutSchema>
@@ -142,5 +171,6 @@ export const defaultLayout: Layout = {
   leftPaneWidth: LAYOUT_BOUNDS.leftPaneWidth.default,
   chaptersPaneWidth: LAYOUT_BOUNDS.chaptersPaneWidth.default,
   archiveBoxesHeight: LAYOUT_BOUNDS.archiveBoxesHeight.default,
+  recordsListWidth: LAYOUT_BOUNDS.recordsListWidth.default,
   volume: VOLUME_DEFAULT,
 }
