@@ -198,7 +198,7 @@ describe('RecordsWindow', () => {
     expect(logError).not.toHaveBeenCalled()
   })
 
-  it('shows everything a selected AI call holds', async () => {
+  it('shows everything a selected AI call holds, leaving out a response that is null', async () => {
     await mount()
     await act(async () => options()[0]!.click())
 
@@ -209,7 +209,6 @@ describe('RecordsWindow', () => {
     ])
     expect(blocks).toEqual([
       ['Request', JSON.stringify({ input: 'say hello', apiKey: 'sk-test' }, null, 2)],
-      ['Response', 'null'],
       ['Error', JSON.stringify({ name: 'RateLimitError', message: 'quota' }, null, 2)],
     ])
     const body = document.querySelector('[data-records-detail]')!.textContent!

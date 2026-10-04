@@ -39,7 +39,6 @@ import {
   jsonBlock,
   mergeNewestPage,
   nearEnd,
-  prettyJson,
   recordKey,
   textBlock,
 } from './record-format'
@@ -608,9 +607,9 @@ function RecordDetailView({
     // A string tapeId field is the row's own tape, shown above as the Tape field.
     addBlock(t.t('records.details'), jsonBlock(record.fields, record.tapeId === null ? {} : { tapeId: record.tapeId }))
   } else if (record.kind === 'ai-call') {
-    if (record.request !== null) blocks.push({ label: t.t('records.request'), text: prettyJson(record.request) })
-    if (record.response !== null) blocks.push({ label: t.t('records.response'), text: prettyJson(record.response) })
-    if (record.error !== null) blocks.push({ label: t.t('records.error'), text: prettyJson(record.error) })
+    if (record.request !== null) addBlock(t.t('records.request'), jsonBlock(record.request))
+    if (record.response !== null) addBlock(t.t('records.response'), jsonBlock(record.response))
+    if (record.error !== null) addBlock(t.t('records.error'), jsonBlock(record.error))
   } else {
     addBlock(t.t('records.arguments'), jsonBlock(record.args))
     addBlock(t.t('records.output'), textBlock(record.stdout))
