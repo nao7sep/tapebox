@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile)
 const testRoot = vi.hoisted(
   () => `${process.env.TEMP ?? process.env.TMPDIR ?? '/tmp'}/tapebox-manager-darwin-${process.pid}`,
 )
-const fixture = vi.hoisted(() => ({ bytes: Buffer.alloc(0) }))
+const fixture = vi.hoisted(() => ({ bytes: Buffer.alloc(0) as Buffer }))
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
 vi.mock('@main/paths', async () => {
