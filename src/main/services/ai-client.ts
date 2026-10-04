@@ -38,18 +38,6 @@ export async function generateSlug(
   const apiKey = await resolveApiKey('openai')
   if (!apiKey) throw new UserFacingError('refused', message('errors.aiNoKey'))
 
-  const call: AiCall = { tapeId: opts.tapeId, endpoint: settings['openai.endpoint'], model, sent: null }
-  const client = new OpenAI({
-    apiKey,
-    baseURL: settings['openai.endpoint'],
-    maxRetries: 0,
-    timeout: AI_REQUEST_TIMEOUT_MS,
-    fetch: (input, init) => {
-      call.sent = sentRequest(input, init)
-      return fetch(input, init)
-    },
-  })
-
   // The instruction text is user-configurable (Settings → AI); we only fill the
   // {title}/{uploader}/{description} tokens. A missing field substitutes to
   // empty — the surrounding tag stays, which the model handles fine. The whole
@@ -61,6 +49,18 @@ export async function generateSlug(
     .replace(/\{description\}/g, opts.description ?? '')
 
   const request = buildSlugRequest(model, thinking, userPrompt)
+  const call: AiCall = { tapeId: opts.tapeId, endpoint: settings['openai.endpoint'], model, built: request, sent: null }
+  const client = new OpenAI({
+    apiKey,
+    baseURL: settings['openai.endpoint'],
+    maxRetries: 0,
+    timeout: AI_REQUEST_TIMEOUT_MS,
+    fetch: (input, init) => {
+      call.sent = sentRequest(input, init)
+      return fetch(input, init)
+    },
+  })
+
   log.info('ai: generateSlug request', { tapeId: opts.tapeId, model, thinking })
   let res: Awaited<ReturnType<typeof client.chat.completions.create>>
   try {
@@ -81,7 +81,8 @@ export async function generateSlug(
 }
 
 type SentRequest = { method: string; url: string; headers: Record<string, string>; body: unknown }
-type AiCall = { tapeId: string; endpoint: string; model: string; sent: SentRequest | null }
+/** `built` is the parameters as the app built them, before the SDK adds headers. */
+type AiCall = { tapeId: string; endpoint: string; model: string; built: object; sent: SentRequest | null }
 
 /** The request as it goes to `fetch`: method, URL, every header and the body. */
 function sentRequest(input: string | URL | Request, init: RequestInit | undefined): SentRequest {
@@ -107,7 +108,7 @@ function parsedBody(text: string): unknown {
  * Send one attempt and record it whole, the request as sent and the response,
  * as an `ai_calls` row (data-lifecycle conventions). A provider that answered
  * with an error has its status and body recorded as the response; an attempt
- * that ended before anything was sent has no request.
+ * that ended before anything was sent records the parameters the app built.
  */
 async function recordedAttempt<T extends object>(call: AiCall, send: () => Promise<T>): Promise<T> {
   call.sent = null
@@ -136,7 +137,7 @@ function recordAiCall(
     ended_at_utc: nowUtcIso(),
     endpoint: call.endpoint,
     model: call.model,
-    request: call.sent === null ? null : toJson(call.sent),
+    request: toJson(call.sent ?? call.built),
     status,
     response: response === null ? null : toJson(response),
     error: error === null ? null : toJson(describeError(error)),

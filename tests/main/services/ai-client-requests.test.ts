@@ -100,6 +100,17 @@ describe('slug request routing', () => {
     expect(rows[1]!.row).toMatchObject({ status: null, error: null })
   })
 
+  it('records the parameters the app built, without headers or the key, for an attempt that never left', async () => {
+    create.mockRejectedValue(new OpenAI.APIConnectionError({ message: 'never sent' }))
+    await expect(generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)).rejects.toThrow()
+
+    expect(writeRecord).toHaveBeenCalledOnce()
+    const [table, row] = writeRecord.mock.calls[0]!
+    expect(table).toBe('ai_calls')
+    expect(JSON.parse(row.request)).toEqual(create.mock.calls[0]![0])
+    expect(row.request).not.toMatch(/headers|authorization|mock-key/i)
+  })
+
   it.each([500, 502, 504])('reports HTTP %s immediately for manual retry', async (status) => {
     create.mockRejectedValue(new OpenAI.APIError(status, { message: 'provider reason' }, undefined, new Headers()))
     await expect(generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)).rejects.toThrow('provider reason')
