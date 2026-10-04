@@ -20,6 +20,38 @@ export function prettyJson(text: string): string {
   }
 }
 
+function holdsNothing(value: unknown): boolean {
+  if (value === null) return true
+  if (typeof value === 'string') return value.trim() === ''
+  if (Array.isArray(value)) return value.length === 0
+  return typeof value === 'object' && Object.keys(value).length === 0
+}
+
+/**
+ * Stored JSON as a detail block's text, or null when it holds nothing to show
+ * (`{}`, `null`, `[]`, or a blank string), so the block is left out. An
+ * object's keys whose values equal what `shown` gives for them are left out
+ * first, since the detail pane already shows them. Text that is not JSON is
+ * kept as it is unless it is blank.
+ */
+export function jsonBlock(text: string, shown: Readonly<Record<string, unknown>> = {}): string | null {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return textBlock(text)
+  }
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    value = Object.fromEntries(Object.entries(value).filter(([key, field]) => !(key in shown && shown[key] === field)))
+  }
+  return holdsNothing(value) ? null : JSON.stringify(value, null, 2)
+}
+
+/** A tool's output as a detail block's text, or null when it is only whitespace. */
+export function textBlock(text: string): string | null {
+  return text.trim() === '' ? null : text
+}
+
 export function durationSeconds(startedAt: string, endedAt: string): number {
   return (Date.parse(endedAt) - Date.parse(startedAt)) / 1000
 }

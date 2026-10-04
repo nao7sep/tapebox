@@ -3,10 +3,12 @@ import {
   atTop,
   cursorAfter,
   durationSeconds,
+  jsonBlock,
   mergeNewestPage,
   nearEnd,
   prettyJson,
   recordKey,
+  textBlock,
 } from '@renderer/records/record-format'
 import type { RecordSummary } from '@shared/records'
 
@@ -59,6 +61,28 @@ describe('record format', () => {
   it('indents stored JSON and shows other text as it is', () => {
     expect(prettyJson('{"a":[1]}')).toBe('{\n  "a": [\n    1\n  ]\n}')
     expect(prettyJson('not json {')).toBe('not json {')
+  })
+
+  it('gives no block for stored JSON that holds nothing', () => {
+    for (const empty of ['{}', 'null', '[]', '""', '"  "', '', ' \n']) expect(jsonBlock(empty)).toBeNull()
+  })
+
+  it('indents a block of stored JSON with content, and keeps other text as it is', () => {
+    expect(jsonBlock('["-i","in.mp4"]')).toBe('[\n  "-i",\n  "in.mp4"\n]')
+    expect(jsonBlock('{"a":{}}')).toBe('{\n  "a": {}\n}')
+    expect(jsonBlock('not json {')).toBe('not json {')
+  })
+
+  it('leaves out of a block the fields the pane already shows, and gives none when nothing remains', () => {
+    expect(jsonBlock('{"tapeId":"t1","bytes":5}', { tapeId: 't1' })).toBe('{\n  "bytes": 5\n}')
+    expect(jsonBlock('{"tapeId":"t1"}', { tapeId: 't1' })).toBeNull()
+    expect(jsonBlock('{"tapeId":"t2"}', { tapeId: 't1' })).toBe('{\n  "tapeId": "t2"\n}')
+  })
+
+  it('gives no block for tool output that is only whitespace', () => {
+    expect(textBlock('')).toBeNull()
+    expect(textBlock(' \n\t')).toBeNull()
+    expect(textBlock('  done\n')).toBe('  done\n')
   })
 
   it('starts the next page after the last record shown', () => {

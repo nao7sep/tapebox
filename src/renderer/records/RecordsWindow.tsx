@@ -36,10 +36,12 @@ import {
   atTop,
   cursorAfter,
   durationSeconds,
+  jsonBlock,
   mergeNewestPage,
   nearEnd,
   prettyJson,
   recordKey,
+  textBlock,
 } from './record-format'
 
 const LIST_WIDTH = LAYOUT_BOUNDS.recordsListWidth
@@ -599,16 +601,20 @@ function RecordDetailView({
   add(t.t('records.launch'), launchLabel(record.session))
 
   const blocks: { label: string; text: string }[] = []
+  const addBlock = (label: string, text: string | null): void => {
+    if (text !== null) blocks.push({ label, text })
+  }
   if (record.kind === 'log') {
-    blocks.push({ label: t.t('records.details'), text: prettyJson(record.fields) })
+    // A string tapeId field is the row's own tape, shown above as the Tape field.
+    addBlock(t.t('records.details'), jsonBlock(record.fields, record.tapeId === null ? {} : { tapeId: record.tapeId }))
   } else if (record.kind === 'ai-call') {
     if (record.request !== null) blocks.push({ label: t.t('records.request'), text: prettyJson(record.request) })
     if (record.response !== null) blocks.push({ label: t.t('records.response'), text: prettyJson(record.response) })
     if (record.error !== null) blocks.push({ label: t.t('records.error'), text: prettyJson(record.error) })
   } else {
-    blocks.push({ label: t.t('records.arguments'), text: prettyJson(record.args) })
-    blocks.push({ label: t.t('records.output'), text: record.stdout })
-    blocks.push({ label: t.t('records.errorOutput'), text: record.stderr })
+    addBlock(t.t('records.arguments'), jsonBlock(record.args))
+    addBlock(t.t('records.output'), textBlock(record.stdout))
+    addBlock(t.t('records.errorOutput'), textBlock(record.stderr))
   }
 
   return (

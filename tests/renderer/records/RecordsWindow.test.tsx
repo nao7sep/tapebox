@@ -236,6 +236,42 @@ describe('RecordsWindow', () => {
     expect(document.querySelector('h2')!.textContent).toBe('yt-dlp scan')
   })
 
+  it('leaves out the blocks of a run that are empty', async () => {
+    answer('records:page', { records: [{ ...call, kind: 'ffmpeg-run', id: 3, title: 'ffmpeg probe', level: 'info' }], more: false })
+    answer('records:detail', {
+      kind: 'ffmpeg-run', id: 3, session: SESSION, tapeId: null, run: 'probe', args: '[]',
+      startedAt: runDetail.startedAt, endedAt: runDetail.endedAt, exitCode: 0, signal: null, stdout: '{"streams":[]}', stderr: ' \n',
+    } satisfies RecordDetail)
+    await mount()
+    await act(async () => options()[0]!.click())
+
+    const blocks = Array.from(document.querySelectorAll('[data-records-block]')).map((block) => block.querySelector('h3')?.textContent)
+    expect(blocks).toEqual(['Output'])
+  })
+
+  const logDetail = (fields: object): RecordDetail => ({
+    kind: 'log', id: 9, session: SESSION, time: line.time, level: 'warn', message: 'download stalled', tapeId: 't1',
+    fields: JSON.stringify(fields),
+  })
+  const logBlocks = async (fields: object) => {
+    answer('records:detail', logDetail(fields))
+    await mount()
+    await act(async () => options()[1]!.click())
+    return Array.from(document.querySelectorAll('[data-records-block]')).map((block) => [
+      block.querySelector('h3')?.textContent,
+      block.querySelector('pre')?.textContent,
+    ])
+  }
+
+  it("shows a log line's fields without the tape the pane already shows", async () => {
+    expect(await logBlocks({ tapeId: 't1', bytes: 5 })).toEqual([['Details', JSON.stringify({ bytes: 5 }, null, 2)]])
+    expect(document.querySelector('[data-records-detail]')!.textContent).toContain('t1')
+  })
+
+  it('leaves out the Details of a log line with nothing more to say', async () => {
+    expect(await logBlocks({ tapeId: 't1' })).toEqual([])
+  })
+
   it('moves the selection with the arrow keys, keeping focus on the list', async () => {
     await mount()
     await act(async () => listbox().focus())
