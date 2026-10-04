@@ -24,8 +24,8 @@ export function HeaderMenu({ onScanPage, onImport, onSettings, onTools, onShortc
     { label: 'menu.importFiles', action: onImport },
     { label: 'menu.settings', action: onSettings },
     { label: 'menu.tools', action: onTools },
-    { label: 'menu.shortcuts', action: onShortcuts },
     { label: 'menu.records', action: onRecords },
+    { label: 'menu.shortcuts', action: onShortcuts },
     { label: 'menu.about', action: onAbout },
   ]
 
