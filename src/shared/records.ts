@@ -16,12 +16,22 @@ export type RecordLevel = (typeof RECORD_LEVELS)[number]
 /**
  * What the level filter offers: a record's own level, or `attention`, every
  * record at `warn` or `error`. Only a log line has a level of its own; an AI call
- * reads as `error` when it failed, and a yt-dlp or ffmpeg run when it did not
- * exit 0; each reads as `info` otherwise.
+ * reads as `error` when it failed. A yt-dlp or ffmpeg run reads as `warn` when the
+ * user cancelled it or TapeBox quit during it, `info` when it exited 0, and
+ * `error` otherwise, including a run a signal ended for any other reason.
  */
 export const RECORD_LEVEL_FILTERS = ['attention', ...RECORD_LEVELS] as const
 
 export type RecordLevelFilter = (typeof RECORD_LEVEL_FILTERS)[number]
+
+/**
+ * Why TapeBox ended a yt-dlp or ffmpeg run early, as it knew when the run ended:
+ * the user cancelled it, TapeBox was quitting, or the run wrote nothing for longer
+ * than its idle bound. A run TapeBox did not end early stores none.
+ */
+export const RUN_STOPS = ['cancel', 'quit', 'idle'] as const
+
+export type RunStop = (typeof RUN_STOPS)[number]
 
 /** Where the next page starts: the last summary of the page before it. */
 export type RecordCursor = {
@@ -77,6 +87,7 @@ export type AiCallRecordDetail = {
   tapeId: string | null
   startedAt: string
   endedAt: string
+  level: RecordLevel
   endpoint: string
   model: string
   request: string | null
@@ -97,8 +108,10 @@ export type YtdlpRunRecordDetail = {
   args: string
   startedAt: string
   endedAt: string
+  level: RecordLevel
   exitCode: number | null
   signal: string | null
+  stopReason: RunStop | null
   stdout: string
   stderr: string
 }
@@ -113,8 +126,10 @@ export type FfmpegRunRecordDetail = {
   args: string
   startedAt: string
   endedAt: string
+  level: RecordLevel
   exitCode: number | null
   signal: string | null
+  stopReason: RunStop | null
   stdout: string
   stderr: string
 }

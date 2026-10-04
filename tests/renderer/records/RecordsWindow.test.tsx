@@ -43,14 +43,14 @@ const newer: RecordSummary = {
 }
 const callDetail: RecordDetail = {
   kind: 'ai-call', id: 4, session: SESSION, tapeId: 't1', startedAt: '2026-10-04T08:01:00.000Z',
-  endedAt: '2026-10-04T08:01:02.500Z', endpoint: 'https://api.openai.com/v1', model: 'gpt-x',
+  endedAt: '2026-10-04T08:01:02.500Z', level: 'error', endpoint: 'https://api.openai.com/v1', model: 'gpt-x',
   request: JSON.stringify({ input: 'say hello', apiKey: 'sk-test' }), status: 429, response: 'null',
   error: JSON.stringify({ name: 'RateLimitError', message: 'quota' }),
 }
 const runDetail: RecordDetail = {
   kind: 'ytdlp-run', id: 2, session: SESSION, tapeId: null, scanId: 's1', run: 'scan', url: 'https://example.com/list',
   args: JSON.stringify(['--flat-playlist']), startedAt: '2026-10-04T08:00:00.000Z', endedAt: '2026-10-04T08:00:01.000Z',
-  exitCode: 1, signal: null, stdout: 'partial', stderr: 'ERROR: boom',
+  level: 'error', exitCode: 1, signal: null, stopReason: null, stdout: 'partial', stderr: 'ERROR: boom',
 }
 
 type Handler = (req: unknown) => Promise<unknown>
@@ -235,11 +235,27 @@ describe('RecordsWindow', () => {
     expect(document.querySelector('h2')!.textContent).toBe('yt-dlp scan')
   })
 
+  it('shows a run the user cancelled as a warning, with why it ended early', async () => {
+    answer('records:page', { records: [{ ...call, kind: 'ytdlp-run', id: 2, title: 'yt-dlp scan', level: 'warn' }], more: false })
+    answer('records:detail', { ...runDetail, level: 'warn', exitCode: null, signal: 'SIGTERM', stopReason: 'cancel' })
+    await mount()
+    await act(async () => options()[0]!.click())
+
+    const header = document.querySelector('h2')!.parentElement!.textContent!
+    expect(header).toContain('Warning')
+    expect(header).not.toContain('Error')
+    const body = document.querySelector('[data-records-detail]')!.textContent!
+    expect(body).toContain('Ended early')
+    expect(body).toContain('Cancelled')
+    expect(body).toContain('SIGTERM')
+  })
+
   it('leaves out the blocks of a run that are empty', async () => {
     answer('records:page', { records: [{ ...call, kind: 'ffmpeg-run', id: 3, title: 'ffmpeg probe', level: 'info' }], more: false })
     answer('records:detail', {
       kind: 'ffmpeg-run', id: 3, session: SESSION, tapeId: null, run: 'probe', args: '[]',
-      startedAt: runDetail.startedAt, endedAt: runDetail.endedAt, exitCode: 0, signal: null, stdout: '{"streams":[]}', stderr: ' \n',
+      startedAt: runDetail.startedAt, endedAt: runDetail.endedAt, level: 'info', exitCode: 0, signal: null, stopReason: null,
+      stdout: '{"streams":[]}', stderr: ' \n',
     } satisfies RecordDetail)
     await mount()
     await act(async () => options()[0]!.click())

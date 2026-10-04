@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS ytdlp_runs (
   ended_at_utc   TEXT NOT NULL,
   exit_code      INTEGER,
   signal         TEXT,
+  stop_reason    TEXT,
   stdout         TEXT NOT NULL,
   stderr         TEXT NOT NULL
 );
@@ -75,12 +76,29 @@ CREATE TABLE IF NOT EXISTS ffmpeg_runs (
   ended_at_utc   TEXT NOT NULL,
   exit_code      INTEGER,
   signal         TEXT,
+  stop_reason    TEXT,
   stdout         TEXT NOT NULL,
   stderr         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_session ON ffmpeg_runs (session);
 CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_tape_id ON ffmpeg_runs (tape_id);
 `
+
+// Columns added after their table first shipped. A database made before gains
+// each one empty: what it would have held for the earlier rows is unknown.
+const ADDED_COLUMNS: readonly { table: RecordTable; column: string; type: string }[] = [
+  { table: 'ytdlp_runs', column: 'stop_reason', type: 'TEXT' },
+  { table: 'ffmpeg_runs', column: 'stop_reason', type: 'TEXT' },
+]
+
+function addMissingColumns(d: DatabaseSync): void {
+  for (const { table, column, type } of ADDED_COLUMNS) {
+    const columns = d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    if (!columns.some((existing) => existing.name === column)) {
+      d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
+    }
+  }
+}
 
 export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
 export type RecordRow = Record<string, SQLInputValue>
@@ -109,6 +127,7 @@ export function openRecords(): string {
       // A busy database costs one entry a text-file line, never a stalled main thread.
       opened.exec('PRAGMA busy_timeout = 100')
       opened.exec(SCHEMA)
+      addMissingColumns(opened)
     } catch (err) {
       opened.close()
       throw err

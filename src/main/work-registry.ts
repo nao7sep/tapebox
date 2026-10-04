@@ -7,6 +7,8 @@
  * file outlives the app.
  */
 
+import { StopRequest } from './stop-request'
+
 type Run = { controller: AbortController; settled: Promise<void> }
 
 const runs = new Set<Run>()
@@ -42,13 +44,13 @@ export function runCancellable<T>(work: (signal: AbortSignal) => Promise<T>, key
 
 /** Abort the run registered under `key`, if it is still in flight. */
 export function cancelWork(key: string): void {
-  byKey.get(key)?.controller.abort()
+  byKey.get(key)?.controller.abort(new StopRequest('cancel'))
 }
 
 /** Refuse new runs, abort every run in flight, and wait until each has settled. */
 export async function cancelAllWork(): Promise<void> {
   closed = true
   const pending = [...runs]
-  for (const run of pending) run.controller.abort()
+  for (const run of pending) run.controller.abort(new StopRequest('quit'))
   await Promise.all(pending.map((run) => run.settled))
 }

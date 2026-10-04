@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import type { LoggableError } from '@shared/error'
+import type { RunStop } from '@shared/records'
+import { StopRequest } from '@main/stop-request'
 import { nowUtcIso } from '@shared/utc'
 
 /**
@@ -383,17 +385,21 @@ export type CollectedOutput = {
   stderr: () => string
   /** The exit code and signal once the child has closed; both null before. */
   exit: () => { code: number | null; signal: NodeJS.Signals | null }
+  /** Why TapeBox ended the run early, or null when it did not. */
+  stop: () => RunStop | null
 }
 
 /**
- * Collect everything a child writes, both streams whole, with its start time
- * and its exit, for a run record (data-lifecycle conventions). Attach it right
- * after the spawn, before any output can arrive.
+ * Collect everything a child writes, both streams whole, with its start time,
+ * its exit and why TapeBox ended it early, for a run record (data-lifecycle
+ * conventions). Attach it right after the spawn, before any output can arrive.
  */
 export function collectOutput(child: {
   stdout: Readable
   stderr: Readable
   once(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown
+  idleError?: IdleTimeoutError | null
+  abortError?: Error | null
 }): CollectedOutput {
   const startedAtUtc = nowUtcIso()
   const stdout: Buffer[] = []
@@ -410,5 +416,10 @@ export function collectOutput(child: {
     stdout: () => text(stdout),
     stderr: () => text(stderr),
     exit: () => exit,
+    // The same precedence as waitForExit's: an idle kill is the cause it reports.
+    stop: () => {
+      if (child.idleError) return 'idle'
+      return child.abortError instanceof StopRequest ? child.abortError.by : null
+    },
   }
 }

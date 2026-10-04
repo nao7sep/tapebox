@@ -11,6 +11,7 @@ import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
 import { librarySourceIndex } from '@shared/source-identity'
+import { StopRequest, type StopCause } from '@main/stop-request'
 
 const DOWNLOAD_FAILURE_MESSAGE =
   'The download could not be completed. Check the source and your connection, then try again.'
@@ -89,9 +90,7 @@ export class Job {
    * before run() begins or after it finishes — both cases resolve immediately.
    */
   cancel(): Promise<void> {
-    this.cancelled = true
-    this.controller.abort()
-    return this.runPromise ?? Promise.resolve()
+    return this.abort('cancel')
   }
 
   /**
@@ -101,7 +100,13 @@ export class Job {
    */
   stop(): Promise<void> {
     this.stopping = true
-    return this.cancel()
+    return this.abort('quit')
+  }
+
+  private abort(by: StopCause): Promise<void> {
+    this.cancelled = true
+    this.controller.abort(new StopRequest(by))
+    return this.runPromise ?? Promise.resolve()
   }
 
   run(): Promise<void> {

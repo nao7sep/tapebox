@@ -56,6 +56,7 @@ export function collectRun(
         ended_at_utc: nowUtcIso(),
         exit_code: exit.code,
         signal: exit.signal,
+        stop_reason: output.stop(),
         stdout: output.stdout(),
         stderr: output.stderr(),
       }

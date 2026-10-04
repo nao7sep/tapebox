@@ -8,6 +8,7 @@ import {
   waitForExit,
 } from '@main/io/spawn'
 import { errorMessage } from '@shared/error'
+import { StopRequest, type StopCause } from '@main/stop-request'
 import { collectRun, ytdlpEnv } from './ytdlp'
 import { resolveYtdlpArgs } from './ytdlp-args'
 
@@ -42,7 +43,7 @@ export type ScanOutcome =
   | { kind: 'failed'; error: unknown }
 
 export type ScanHandle = {
-  cancel: () => void
+  cancel: (by: StopCause) => void
   /** Always resolves; a failure is an outcome, not a rejection. */
   complete: Promise<ScanOutcome>
 }
@@ -115,7 +116,7 @@ export function startScan(
   })()
 
   return {
-    cancel: () => ctl.abort(),
+    cancel: (by) => ctl.abort(new StopRequest(by)),
     complete,
   }
 }

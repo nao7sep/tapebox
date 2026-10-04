@@ -1,5 +1,13 @@
 import type { MessageKey } from '@shared/i18n/catalogues'
-import type { RecordCursor, RecordKind, RecordLevel, RecordLevelFilter, RecordsPage, RecordSummary } from '@shared/records'
+import type {
+  RecordCursor,
+  RecordKind,
+  RecordLevel,
+  RecordLevelFilter,
+  RecordsPage,
+  RecordSummary,
+  RunStop,
+} from '@shared/records'
 
 /**
  * The Records window's pure decisions: how a record is named and keyed, how its
@@ -73,6 +81,12 @@ export const LEVEL_LABELS: Readonly<Record<RecordLevel, MessageKey>> = {
 export const LEVEL_FILTER_LABELS: Readonly<Record<RecordLevelFilter, MessageKey>> = {
   attention: 'records.levelAttention',
   ...LEVEL_LABELS,
+}
+
+export const RUN_STOP_LABELS: Readonly<Record<RunStop, MessageKey>> = {
+  cancel: 'records.stopCancel',
+  quit: 'records.stopQuit',
+  idle: 'records.stopIdle',
 }
 
 /** A level's text colour: the status hues for what needs attention, quiet otherwise. */

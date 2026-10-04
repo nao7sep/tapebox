@@ -69,7 +69,7 @@ export function registerScanHandlers(): void {
   })
 
   handle('scan:cancel', async ({ sessionId }) => {
-    active.get(sessionId)?.cancel()
+    active.get(sessionId)?.cancel('cancel')
     active.delete(sessionId)
   })
 }
@@ -79,7 +79,7 @@ export async function cancelAllScans(): Promise<void> {
   closed = true
   const handles = [...active.values()]
   active.clear()
-  for (const scan of handles) scan.cancel()
+  for (const scan of handles) scan.cancel('quit')
   await Promise.allSettled(handles.map((scan) => scan.complete))
 }
 

@@ -22,7 +22,6 @@ import {
   RECORD_LEVEL_FILTERS,
   type RecordDetail,
   type RecordKind,
-  type RecordLevel,
   type RecordLevelFilter,
   type RecordSources,
   type RecordsQuery,
@@ -33,6 +32,7 @@ import {
   LEVEL_CLASSES,
   LEVEL_FILTER_LABELS,
   LEVEL_LABELS,
+  RUN_STOP_LABELS,
   atTop,
   cursorAfter,
   durationSeconds,
@@ -521,12 +521,6 @@ function FilterSelect({
   )
 }
 
-function recordLevel(record: RecordDetail): RecordLevel {
-  if (record.kind === 'log') return record.level
-  if (record.kind === 'ai-call') return record.error === null ? 'info' : 'error'
-  return record.exitCode === 0 ? 'info' : 'error'
-}
-
 function recordTitle(record: RecordDetail): string {
   if (record.kind === 'log') return record.message
   if (record.kind === 'ai-call') return record.model
@@ -562,7 +556,7 @@ function RecordDetailView({
   )
   const time = (value: string): string => timeFormat.format(new Date(value))
   const tapeName = record.tapeId === null ? null : (tapes.find((tape) => tape.tapeId === record.tapeId)?.name ?? null)
-  const level = recordLevel(record)
+  const level = record.level
 
   const fields: { label: string; value: ReactNode }[] = []
   const add = (label: string, value: ReactNode | null): void => {
@@ -586,6 +580,7 @@ function RecordDetailView({
     if (record.kind === 'ytdlp-run') add(t.t('records.url'), code(record.url))
     add(t.t('records.exitCode'), record.exitCode === null ? null : code(String(record.exitCode)))
     add(t.t('records.signal'), code(record.signal))
+    add(t.t('records.stopped'), record.stopReason === null ? null : t.t(RUN_STOP_LABELS[record.stopReason]))
   }
   add(
     t.t('records.tape'),

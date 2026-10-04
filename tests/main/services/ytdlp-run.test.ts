@@ -28,6 +28,7 @@ describe('collectRun', () => {
       url: 'https://example.com/p',
       exit_code: 3,
       signal: null,
+      stop_reason: null,
       stdout: stdoutText,
       stderr: 'ERROR: nope',
     })

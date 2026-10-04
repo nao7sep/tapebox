@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { Job, type JobDeps } from '@main/queue/job'
+import { StopRequest } from '@main/stop-request'
 import type { ProbeVideo } from '@main/services/ytdlp'
 import type { Tape } from '@shared/domain'
 
@@ -161,13 +162,17 @@ describe('Job lifecycle (driven with fakes)', () => {
     const { deps, tapes } = makeDeps({
       initial: [t],
       probe: async (_tapeId, _url, signal) => {
+        reasons.push(signal.reason)
         if (signal.aborted) throw new Error('aborted')
         return { kind: 'page' }
       },
     })
+    const reasons: unknown[] = []
     const job = new Job(t, deps)
     await job.cancel() // sets the cancel flag and aborts before run starts
     await job.run() // probe sees the aborted signal, throws; the catch maps it to paused
+    expect(reasons[0]).toBeInstanceOf(StopRequest)
+    expect((reasons[0] as StopRequest).by).toBe('cancel')
     expect(tapes.get('t1')!.state).toBe('paused')
     expect(tapes.get('t1')!.lastError).toBeNull()
   })
@@ -178,15 +183,20 @@ describe('Job lifecycle (driven with fakes)', () => {
       initial: [t],
       probe: async () => video,
       download: (opts) => new Promise((_resolve, reject) => {
-        opts.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        opts.signal.addEventListener('abort', () => {
+          stoppedBy = (opts.signal.reason as StopRequest).by
+          reject(new Error('aborted'))
+        }, { once: true })
       }),
     })
+    let stoppedBy: string | null = null
     const job = new Job(t, deps)
     const run = job.run()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(tapes.get('t1')!.state).toBe('downloading')
     await job.stop()
     await run
+    expect(stoppedBy).toBe('quit')
     expect(tapes.get('t1')!.state).toBe('downloading')
     expect(tapes.get('t1')!.pausedAtUtc).toBeNull()
     expect(emits).not.toContain('tapes:failed')

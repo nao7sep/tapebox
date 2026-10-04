@@ -38,6 +38,7 @@ describe('collectRun', () => {
       kind: 'thumbnail',
       exit_code: 1,
       signal: null,
+      stop_reason: null,
       stdout: 'out',
       stderr: stderrText,
     })

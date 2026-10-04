@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
-vi.mock('@main/paths', () => ({ binaryPath: () => '/bin/yt-dlp' }))
+const { writeRecord } = vi.hoisted(() => ({ writeRecord: vi.fn() }))
+vi.mock('@main/io/records', () => ({ writeRecord }))
+// The scan's "yt-dlp" is Node waiting until it is stopped; its own flags follow `--`.
+vi.mock('@main/paths', () => ({ binaryPath: () => process.execPath, paths: { bin: '/bin' } }))
+vi.mock('@main/services/ytdlp-args', () => ({ resolveYtdlpArgs: () => ['-e', 'setInterval(() => {}, 1000)', '--'] }))
 
-const { scanOutcome } = await import('@main/services/ytdlp-scan')
+const { scanOutcome, startScan } = await import('@main/services/ytdlp-scan')
 
 const ended = { aborted: false, failure: null, exitCode: 0, totalCount: 0, stderr: '' }
 
@@ -30,5 +34,17 @@ describe('scanOutcome', () => {
 
     const idle = new Error('no output')
     expect(scanOutcome({ ...ended, failure: idle, exitCode: null })).toEqual({ kind: 'failed', error: idle })
+  })
+})
+
+describe('stopping a scan', () => {
+  it.each(['cancel', 'quit'] as const)('records a scan stopped for %s with that reason', async (by) => {
+    writeRecord.mockClear()
+    const scan = startScan('https://example.com/list', 's1', () => {})
+    scan.cancel(by)
+
+    await expect(scan.complete).resolves.toEqual({ kind: 'stopped', totalCount: 0 })
+    expect(writeRecord).toHaveBeenCalledOnce()
+    expect(writeRecord.mock.calls[0]![1]).toMatchObject({ kind: 'scan', scan_id: 's1', stop_reason: by })
   })
 })

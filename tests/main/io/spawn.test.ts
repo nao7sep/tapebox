@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { spawnStreaming, waitForExit } from '@main/io/spawn'
+import { collectOutput, spawnStreaming, waitForExit } from '@main/io/spawn'
+import { StopRequest } from '@main/stop-request'
 
 function readReadyPid(child: ReturnType<typeof spawnStreaming>): Promise<number> {
   return new Promise((resolve) => {
@@ -60,4 +61,34 @@ describe('owned subprocess cancellation', () => {
     },
     30_000,
   )
+})
+
+describe('why a collected run ended early', () => {
+  const waiting = ['-e', 'setInterval(() => {}, 1000)']
+
+  async function stopOf(args: string[], opts: Parameters<typeof spawnStreaming>[2], abort?: (child: ReturnType<typeof spawnStreaming>) => void) {
+    const child = spawnStreaming(process.execPath, args, opts)
+    const output = collectOutput(child)
+    abort?.(child)
+    await waitForExit(child, { reject: false }).catch(() => {})
+    return output.stop()
+  }
+
+  it('is none for a run that ended by itself', async () => {
+    expect(await stopOf(['-e', 'process.exit(3)'], {})).toBeNull()
+  })
+
+  it.each(['cancel', 'quit'] as const)('is %s when TapeBox stopped it for that reason', async (by) => {
+    const controller = new AbortController()
+    expect(await stopOf(waiting, { signal: controller.signal }, () => controller.abort(new StopRequest(by)))).toBe(by)
+  })
+
+  it('is none for an abort that gave no reason TapeBox knows', async () => {
+    const controller = new AbortController()
+    expect(await stopOf(waiting, { signal: controller.signal }, () => controller.abort())).toBeNull()
+  })
+
+  it('is idle when the idle watchdog ended it', async () => {
+    expect(await stopOf(waiting, { idleTimeoutMs: 50 })).toBe('idle')
+  })
 })

@@ -29,8 +29,8 @@ export type RecordsReadResult = RecordsReadResults[RecordsRead['op']]
 
 export const RECORDS_PAGE_SIZE = 100
 
-// How a summary reads from each table. Only a log line has a level of its own: a
-// failed AI call reads as an error, and so does a run that did not exit 0.
+// How a summary reads from each table. Only a log line has a level of its own;
+// the others are read from their facts, as RECORD_LEVEL_FILTERS describes.
 type Source = {
   kind: RecordKind
   table: string
@@ -41,7 +41,9 @@ type Source = {
   searched: string[]
 }
 
-const RUN_LEVEL = "CASE WHEN exit_code = 0 THEN 'info' ELSE 'error' END"
+const CALL_LEVEL = "CASE WHEN error IS NULL THEN 'info' ELSE 'error' END"
+const RUN_LEVEL =
+  "CASE WHEN stop_reason IN ('cancel', 'quit') THEN 'warn' WHEN exit_code = 0 THEN 'info' ELSE 'error' END"
 
 const SOURCES: readonly Source[] = [
   {
@@ -57,7 +59,7 @@ const SOURCES: readonly Source[] = [
     kind: 'ai-call',
     table: 'ai_calls',
     time: 'started_at_utc',
-    level: "CASE WHEN error IS NULL THEN 'info' ELSE 'error' END",
+    level: CALL_LEVEL,
     title: 'model',
     text: 'endpoint',
     searched: ['endpoint', 'model', 'tape_id', 'request', 'response', 'error'],
@@ -154,13 +156,14 @@ export function readSources(db: DatabaseSync): RecordsReadResults['sources'] {
 const DETAIL_SQL: Readonly<Record<RecordKind, string>> = {
   log: `SELECT 'log' AS kind, id, session, time, level, message, tape_id AS tapeId, fields FROM logs WHERE id = ?`,
   'ai-call': `SELECT 'ai-call' AS kind, id, session, tape_id AS tapeId, started_at_utc AS startedAt,
-    ended_at_utc AS endedAt, endpoint, model, request, status, response, error FROM ai_calls WHERE id = ?`,
+    ended_at_utc AS endedAt, ${CALL_LEVEL} AS level, endpoint, model, request, status, response, error
+    FROM ai_calls WHERE id = ?`,
   'ytdlp-run': `SELECT 'ytdlp-run' AS kind, id, session, tape_id AS tapeId, scan_id AS scanId, kind AS run, url, args,
-    started_at_utc AS startedAt, ended_at_utc AS endedAt, exit_code AS exitCode, signal, stdout, stderr
-    FROM ytdlp_runs WHERE id = ?`,
+    started_at_utc AS startedAt, ended_at_utc AS endedAt, ${RUN_LEVEL} AS level, exit_code AS exitCode, signal,
+    stop_reason AS stopReason, stdout, stderr FROM ytdlp_runs WHERE id = ?`,
   'ffmpeg-run': `SELECT 'ffmpeg-run' AS kind, id, session, tape_id AS tapeId, kind AS run, args,
-    started_at_utc AS startedAt, ended_at_utc AS endedAt, exit_code AS exitCode, signal, stdout, stderr
-    FROM ffmpeg_runs WHERE id = ?`,
+    started_at_utc AS startedAt, ended_at_utc AS endedAt, ${RUN_LEVEL} AS level, exit_code AS exitCode, signal,
+    stop_reason AS stopReason, stdout, stderr FROM ffmpeg_runs WHERE id = ?`,
 }
 
 export function readDetail(db: DatabaseSync, kind: RecordKind, id: number): RecordDetail | null {

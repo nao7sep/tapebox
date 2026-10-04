@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { StopRequest } from '@main/stop-request'
 
 type Registry = typeof import('@main/work-registry')
 let registry: Registry
 
+// Why each run was aborted, as its signal says.
+let reasons: string[]
+
 beforeEach(async () => {
+  reasons = []
   vi.resetModules()
   registry = await import('@main/work-registry')
 })
@@ -11,6 +16,7 @@ beforeEach(async () => {
 function abortable(signal: AbortSignal, onSettle: () => void): Promise<string> {
   return new Promise((_resolve, reject) => {
     signal.addEventListener('abort', () => {
+      reasons.push((signal.reason as StopRequest).by)
       setTimeout(() => {
         onSettle()
         reject(new Error('aborted'))
@@ -31,6 +37,7 @@ describe('work registry', () => {
     }, 'b')
     registry.cancelWork('a')
     await expect(a).rejects.toThrow('aborted')
+    expect(reasons).toEqual(['cancel'])
     await expect(b).resolves.toBe('b')
     expect(settled).toBe(1)
     expect(bAborted).toBe(false)
@@ -43,6 +50,7 @@ describe('work registry', () => {
     )
     await registry.cancelAllWork()
     expect(settled.sort()).toEqual(['x', 'y'])
+    expect(reasons).toEqual(['quit', 'quit'])
     await expect(Promise.all(runs)).resolves.toEqual(['stopped', 'stopped'])
     await expect(registry.runCancellable(async () => 'late')).rejects.toBeInstanceOf(registry.WorkClosedError)
   })

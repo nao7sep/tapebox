@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RecordsQuery } from '@shared/records'
 
@@ -99,6 +100,76 @@ describe('records reads', () => {
     expect(await titles({ search: '  ' })).toHaveLength(5)
   })
 
+  it('reads a run the user cancelled or TapeBox quit during as a warning, and any other early end as an error', async () => {
+    const { records, reader } = await freshApp()
+    records.openRecords()
+    const run = (second: number, kind: string, exitCode: number | null, signal: string | null, stopReason: string | null) =>
+      records.writeRecord('ytdlp_runs', {
+        tape_id: 't1', scan_id: null, kind, url: 'https://example.com/v', args: '[]',
+        started_at_utc: `2026-10-04T10:00:0${second}.000Z`, ended_at_utc: `2026-10-04T10:00:0${second}.500Z`,
+        exit_code: exitCode, signal, stop_reason: stopReason, stdout: '', stderr: '',
+      }, () => 'yt-dlp run')
+    run(1, 'download', null, 'SIGTERM', 'cancel')
+    run(2, 'probe', null, 'SIGTERM', 'quit')
+    run(3, 'probe', null, 'SIGTERM', 'idle')
+    run(4, 'download', null, 'SIGKILL', null)
+    run(5, 'download', 1, null, null)
+    run(6, 'download', 0, null, null)
+    records.writeRecord('ffmpeg_runs', {
+      tape_id: 't1', kind: 'thumbnail', args: '[]', started_at_utc: '2026-10-04T10:00:07.000Z',
+      ended_at_utc: '2026-10-04T10:00:07.500Z', exit_code: null, signal: 'SIGTERM', stop_reason: 'cancel', stdout: '', stderr: '',
+    }, () => 'ffmpeg run')
+
+    const page = await reader.readRecords({ op: 'page', query: query() })
+    expect(page.records.map((record) => [record.title, record.level])).toEqual([
+      ['ffmpeg thumbnail', 'warn'],
+      ['yt-dlp download', 'info'],
+      ['yt-dlp download', 'error'],
+      ['yt-dlp download', 'error'],
+      ['yt-dlp probe', 'error'],
+      ['yt-dlp probe', 'warn'],
+      ['yt-dlp download', 'warn'],
+    ])
+    const levels = async (level: RecordsQuery['level']) =>
+      (await reader.readRecords({ op: 'page', query: query({ level }) })).records.map((record) => record.time.slice(17, 19))
+    expect(await levels('warn')).toEqual(['07', '02', '01'])
+    expect(await levels('error')).toEqual(['05', '04', '03'])
+    expect(await levels('attention')).toEqual(['07', '05', '04', '03', '02', '01'])
+
+    const cancelled = page.records.at(-1)!
+    expect(await reader.readRecords({ op: 'detail', kind: 'ytdlp-run', id: cancelled.id })).toMatchObject({
+      level: 'warn', exitCode: null, signal: 'SIGTERM', stopReason: 'cancel',
+    })
+    expect(await reader.readRecords({ op: 'detail', kind: 'ffmpeg-run', id: page.records[0]!.id })).toMatchObject({
+      level: 'warn', stopReason: 'cancel',
+    })
+  })
+
+  it('gives a database made before runs recorded why they ended early the column, unknown for its earlier rows', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    mkdirSync(dirname(paths.records), { recursive: true })
+    const older = new DatabaseSync(paths.records)
+    older.exec(`CREATE TABLE ytdlp_runs (id INTEGER PRIMARY KEY, session TEXT NOT NULL, tape_id TEXT, scan_id TEXT,
+      kind TEXT NOT NULL, url TEXT NOT NULL, args TEXT NOT NULL, started_at_utc TEXT NOT NULL, ended_at_utc TEXT NOT NULL,
+      exit_code INTEGER, signal TEXT, stdout TEXT NOT NULL, stderr TEXT NOT NULL)`)
+    older.exec(`INSERT INTO ytdlp_runs (session, kind, url, args, started_at_utc, ended_at_utc, exit_code, signal, stdout, stderr)
+      VALUES ('earlier', 'download', 'https://example.com/v', '[]', '2026-10-03T10:00:00.000Z', '2026-10-03T10:00:01.000Z',
+      NULL, 'SIGTERM', '', '')`)
+    older.close()
+
+    records.openRecords()
+    expect(records.writeRecord('ytdlp_runs', {
+      tape_id: null, scan_id: null, kind: 'download', url: 'https://example.com/v', args: '[]',
+      started_at_utc: '2026-10-04T10:00:00.000Z', ended_at_utc: '2026-10-04T10:00:01.000Z',
+      exit_code: null, signal: 'SIGTERM', stop_reason: 'cancel', stdout: '', stderr: '',
+    }, () => 'yt-dlp run')).toBe(false)
+
+    const page = await reader.readRecords({ op: 'page', query: query() })
+    expect(page.records.map((record) => [record.session === 'earlier', record.level])).toEqual([[false, 'warn'], [true, 'error']])
+    expect(await reader.readRecords({ op: 'detail', kind: 'ytdlp-run', id: page.records[1]!.id })).toMatchObject({ stopReason: null })
+  })
+
   it('continues a long list from the last record of the page before', async () => {
     const { records, reader } = await freshApp()
     records.openRecords()
@@ -131,16 +202,18 @@ describe('records reads', () => {
 
     expect(await reader.readRecords({ op: 'detail', kind: 'ai-call', id: idOf('ai-call') })).toEqual({
       kind: 'ai-call', id: idOf('ai-call'), session, tapeId: 't1',
-      startedAt: '2026-10-04T10:00:03.000Z', endedAt: '2026-10-04T10:00:04.250Z',
+      startedAt: '2026-10-04T10:00:03.000Z', endedAt: '2026-10-04T10:00:04.250Z', level: 'error',
       endpoint: 'https://api.openai.com/v1', model: 'gpt-x', request: JSON.stringify({ input: 'slug 100%' }),
       status: 429, response: JSON.stringify({ message: 'quota' }), error: JSON.stringify({ name: 'RateLimitError' }),
     })
     expect(await reader.readRecords({ op: 'detail', kind: 'ytdlp-run', id: idOf('ytdlp-run') })).toMatchObject({
-      kind: 'ytdlp-run', run: 'scan', scanId: 's1', url: 'https://example.com/list', exitCode: 0, signal: null,
+      kind: 'ytdlp-run', run: 'scan', scanId: 's1', url: 'https://example.com/list', level: 'info', exitCode: 0, signal: null,
+      stopReason: null,
       args: JSON.stringify(['--flat-playlist']), stdout: 'found 3 entries', stderr: '',
     })
     expect(await reader.readRecords({ op: 'detail', kind: 'ffmpeg-run', id: idOf('ffmpeg-run') })).toMatchObject({
-      kind: 'ffmpeg-run', run: 'thumbnail', tapeId: 't2', exitCode: 1, stderr: 'Invalid data found',
+      kind: 'ffmpeg-run', run: 'thumbnail', tapeId: 't2', level: 'error', exitCode: 1, stopReason: null,
+      stderr: 'Invalid data found',
     })
     expect(await reader.readRecords({ op: 'detail', kind: 'log', id: idOf('log') })).toMatchObject({
       kind: 'log', level: 'warn', message: 'download stalled', tapeId: 't1', fields: '{}',
