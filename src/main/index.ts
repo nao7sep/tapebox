@@ -27,6 +27,7 @@ import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
+import { quitAfterShutdown } from './quit-after-shutdown.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 import { BINARY_ACQUIRE_TIMEOUT_MS } from './io/network.js'
 import {
@@ -193,32 +194,27 @@ async function handleTerminalStartupFailure(error: unknown): Promise<void> {
 const WORK_STOP_BOUND_MS = 15_000
 
 /**
- * Idempotent teardown, run once on before-quit: stop downloads, scans and other
- * in-flight work (their child processes and library writes must not outlive the
- * app), flush session, stop the media server, close the records database. The
- * media server is in-process, so it dies with this process — there is no
- * separate server to leave stale.
+ * Teardown, run once on before-quit (quit-after-shutdown.ts): stop downloads,
+ * scans and other in-flight work (their child processes and library writes must
+ * not outlive the app), flush session, stop the media server, close the records
+ * database. The media server is in-process, so it dies with this process — there
+ * is no separate server to leave stale.
  */
-let shutdownPromise: Promise<void> | null = null
-function shutdown(reason: string): Promise<void> {
-  if (shutdownPromise) return shutdownPromise
-  shutdownPromise = (async () => {
-    log.info('shutdown', { reason })
-    // The renderer can't report a final pause once we're tearing down, so drop any
-    // held playback wake lock up front.
-    releaseWakeLock()
-    await shutdownBinaryOperations()
-    await stopInFlightWork()
-    // A failed final save is logged by the session store; the process 'exit'
-    // handler's synchronous flush makes one last attempt.
-    await persistNow()
-    await layout.persistNow()
-    await stopMediaServer()
-    await closeBackupStore()
-    closeRecordsReader()
-    closeRecords()
-  })()
-  return shutdownPromise
+async function shutdown(reason: string): Promise<void> {
+  log.info('shutdown', { reason })
+  // The renderer can't report a final pause once we're tearing down, so drop any
+  // held playback wake lock up front.
+  releaseWakeLock()
+  await shutdownBinaryOperations()
+  await stopInFlightWork()
+  // A failed final save is logged by the session store; the process 'exit'
+  // handler's synchronous flush makes one last attempt.
+  await persistNow()
+  await layout.persistNow()
+  await stopMediaServer()
+  await closeBackupStore()
+  closeRecordsReader()
+  closeRecords()
 }
 
 async function stopInFlightWork(): Promise<void> {
@@ -274,9 +270,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', (event) => {
-  if (shutdownPromise) return
-  event.preventDefault()
-  // finally (not then) so a teardown error still exits — quit must never hang.
-  void shutdown('before-quit').finally(() => app.exit(0))
-})
+app.on('before-quit', quitAfterShutdown(() => shutdown('before-quit'), () => app.exit(0)))
