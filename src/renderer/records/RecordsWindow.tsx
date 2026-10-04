@@ -625,9 +625,9 @@ function RecordDetailView({
         className="relative min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
         data-records-detail
       >
-        <dl className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-x-4 gap-y-3">
+        <dl className="flex flex-wrap gap-x-4 gap-y-3">
           {fields.map((field) => (
-            <div key={field.label} className="min-w-0">
+            <div key={field.label} className="min-w-[180px] max-w-full flex-initial">
               <dt className="text-xs text-fg-subtle">{field.label}</dt>
               <dd className="mt-0.5 text-sm text-fg-strong wrap-anywhere">{field.value}</dd>
             </div>
