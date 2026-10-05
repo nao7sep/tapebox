@@ -19,17 +19,11 @@ import { z } from 'zod'
  *
  * No integrity flag, checksum, or check/fault error is kept either: a failed check
  * writes nothing, and a damaged file fails when used and is fixed by installing again.
- *
- * `.strip()` drops fields the schema no longer lists — the old `installedVersion`,
- * and the older integrity/checkError/faultError set — on the next write (the app is
- * pre-release; no migration code needed).
  */
-export const BinaryEntrySchema = z
-  .object({
-    latestKnownVersion: z.string().nullable(),
-    lastCheckedAtUtc: z.string().nullable(),
-  })
-  .strip()
+export const BinaryEntrySchema = z.object({
+  latestKnownVersion: z.string().nullable(),
+  lastCheckedAtUtc: z.string().nullable(),
+})
 export type BinaryEntry = z.infer<typeof BinaryEntrySchema>
 
 /** A never-checked binary entry — the fresh-install default. */
@@ -45,13 +39,13 @@ export function freshBinaryEntry(): BinaryEntry {
  * registry (yt-dlp/ffmpeg/deno); the store keeps every one present so a consumer
  * reads `dependencies[name]` without a null guard. Beside them sits the one
  * app-wide time of the last check attempt, automatic or manual, written
- * immediately before the check starts; a missing one reads as null.
+ * immediately before the check starts; null until the first attempt.
  */
 export const DependenciesSchema = z.object({
   'yt-dlp': BinaryEntrySchema,
   ffmpeg: BinaryEntrySchema,
   deno: BinaryEntrySchema,
-  lastCheckAttemptAtUtc: z.string().nullable().default(null),
+  lastCheckAttemptAtUtc: z.string().nullable(),
 })
 export type Dependencies = z.infer<typeof DependenciesSchema>
 

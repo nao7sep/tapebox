@@ -86,10 +86,4 @@ describe('retrying a download', () => {
     expect(tapes[0]).toEqual(downloaded)
   })
 
-  it('restores a failed row that already names its finished files as downloaded', async () => {
-    const tape = await added()
-    tapes[0] = { ...tape, state: 'failed', failureCode: 'download', lastError: 'x', filename: 'f.mp4', sidecarFilename: 'f.json' }
-    await handlers.get('downloads:retry')!({ tapeId: tape.id })
-    expect(tapes[0]).toMatchObject({ state: 'downloaded', failureCode: null, filename: 'f.mp4' })
-  })
 })

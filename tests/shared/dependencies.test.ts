@@ -87,8 +87,8 @@ describe('the launch check throttle', () => {
     expect(launchCheckDue(hoursAgo(23.99), now)).toBe(false)
   })
 
-  it('reads a file without the attempt time as never attempted', () => {
+  it('reads a file without the attempt time as unreadable', () => {
     const { lastCheckAttemptAtUtc: _, ...withoutAttempt } = defaultDependencies()
-    expect(DependenciesSchema.parse(withoutAttempt).lastCheckAttemptAtUtc).toBeNull()
+    expect(DependenciesSchema.safeParse(withoutAttempt).success).toBe(false)
   })
 })
