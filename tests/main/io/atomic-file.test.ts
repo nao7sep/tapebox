@@ -1,4 +1,6 @@
-import { access, chmod, link, lstat, mkdtemp, open, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { access, chmod, link, lstat, mkdtemp, open, readFile, readdir, rename, rm, stat, unlink, utimes, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,6 +17,7 @@ import {
   writeFileAtomicNoOverwriteVia,
   writeFileAtomicVia,
 } from '@main/io/atomic-file'
+import { copyExtendedAttributes, fileStampOf, type FileStamp } from '@main/io/file-metadata'
 
 // Real filesystem (a temp dir) so the temp → fsync → rename → cleanup is actually
 // exercised end to end; the producer is the seam every caller plugs into.
@@ -38,6 +41,10 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+const execFileAsync = promisify(execFile)
+const TAG_ATTRIBUTE = 'com.apple.metadata:_kMDItemUserTags'
+const STAMP: FileStamp = { mode: 0o644, atime: 1_600_000_000, mtime: 1_600_000_000, birthtime: 1_600_000_000 }
+
 function failure(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(code), { code })
 }
@@ -57,12 +64,15 @@ function memoryPublishOperations(
     }),
     close: vi.fn().mockResolvedValue(undefined),
     identity: vi.fn().mockResolvedValue('claim'),
+    stamp: vi.fn().mockResolvedValue(STAMP),
   }
   const destination: ExclusivePublishDestination = {
     write: vi.fn(async (buffer, offset, length) => {
       published.push(Buffer.from(buffer.subarray(offset, offset + length)))
       return { bytesWritten: length }
     }),
+    chmod: vi.fn().mockResolvedValue(undefined),
+    utimes: vi.fn().mockResolvedValue(undefined),
     sync: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
     identity: vi.fn().mockResolvedValue('claim'),
@@ -75,6 +85,7 @@ function memoryPublishOperations(
       rename: vi.fn().mockResolvedValue(undefined),
       openRead: vi.fn().mockResolvedValue(source),
       openExclusive: vi.fn().mockResolvedValue(destination),
+      copyExtendedAttributes: vi.fn().mockResolvedValue(undefined),
       pathIdentity: vi.fn().mockResolvedValue('claim'),
       unlink: vi.fn().mockResolvedValue(undefined),
       ...overrides,
@@ -97,12 +108,15 @@ function realOperations(
           const value = await handle.stat({ bigint: true })
           return `${value.dev}:${value.ino}`
         },
+        stamp: async () => fileStampOf(await handle.stat({ bigint: true })),
       }
     },
     openExclusive: async (path) => {
       const handle = await open(path, 'wx')
       return {
         write: (buffer, offset, length, position) => handle.write(buffer, offset, length, position),
+        chmod: (mode) => handle.chmod(mode),
+        utimes: (atime, mtime) => handle.utimes(atime, mtime),
         sync: () => handle.sync(),
         close: () => handle.close(),
         identity: async () => {
@@ -120,6 +134,7 @@ function realOperations(
         throw err
       }
     },
+    copyExtendedAttributes,
     unlink,
     ...overrides,
   }
@@ -480,6 +495,7 @@ describe('physical claim transitions', () => {
           },
           close: async () => {},
           identity: async () => claim.identity,
+          stamp: async () => STAMP,
         }
       },
     })
@@ -576,6 +592,55 @@ describe('single-pass no-overwrite copy', () => {
     expect(fixture.operations.openExclusive).toHaveBeenCalledWith(destination)
     expect(fixture.operations.link).not.toHaveBeenCalled()
   })
+
+  it('gives the claim its source\'s attributes, then its permissions and times', async () => {
+    const source = join(dir, 'source.bin')
+    const bytes = Buffer.from('bytes')
+    await writeFile(source, bytes)
+    const fixture = memoryPublishOperations(bytes)
+    const destination = join(dir, 'output.bin')
+
+    await copyFileNoOverwrite(source, destination, { hardLinks: false }, fixture.operations)
+
+    expect(fixture.operations.copyExtendedAttributes).toHaveBeenCalledWith(source, destination, undefined)
+    const opened = await vi.mocked(fixture.operations.openExclusive).mock.results[0]!.value as ExclusivePublishDestination
+    expect(opened.chmod).toHaveBeenCalledWith(STAMP.mode)
+    expect(opened.utimes).toHaveBeenLastCalledWith(STAMP.atime, STAMP.mtime)
+    expect(vi.mocked(opened.utimes).mock.invocationCallOrder.at(-1)!)
+      .toBeGreaterThan(vi.mocked(fixture.operations.copyExtendedAttributes).mock.invocationCallOrder[0]!)
+    expect(vi.mocked(opened.sync).mock.invocationCallOrder[0]!)
+      .toBeGreaterThan(vi.mocked(opened.utimes).mock.invocationCallOrder.at(-1)!)
+  })
+
+  for (const hardLinks of [true, false]) {
+    it(`keeps the source's times, permissions and extended attributes (hard links: ${hardLinks})`, async () => {
+      const source = join(dir, 'source.bin')
+      await writeFile(source, 'video bytes')
+      const born = new Date('2019-03-04T05:06:07.000Z')
+      const modified = new Date('2020-08-09T10:11:12.000Z')
+      // macOS lowers the birth time to an earlier modified time, so this sets both.
+      await utimes(source, born, born)
+      await utimes(source, modified, modified)
+      if (process.platform !== 'win32') await chmod(source, 0o640)
+      if (process.platform === 'darwin') {
+        await execFileAsync('/usr/bin/xattr', ['-w', TAG_ATTRIBUTE, 'Red', source])
+      }
+      const destination = join(dir, 'copy.bin')
+
+      await copyFileNoOverwrite(source, destination, { hardLinks })
+
+      const copied = await stat(destination)
+      expect(copied.mtimeMs).toBe(modified.getTime())
+      expect(await readFile(destination, 'utf8')).toBe('video bytes')
+      if (process.platform !== 'win32') expect(copied.mode & 0o777).toBe(0o640)
+      if (process.platform === 'darwin') {
+        expect(copied.birthtimeMs).toBe(born.getTime())
+        const { stdout } = await execFileAsync('/usr/bin/xattr', ['-p', TAG_ATTRIBUTE, destination])
+        expect(stdout.trim()).toBe('Red')
+      }
+      expect((await readdir(dir)).sort()).toEqual(['copy.bin', 'source.bin'])
+    })
+  }
 
   it('stages in a sibling temp and links it into place where hard links work', async () => {
     const source = join(dir, 'source.bin')

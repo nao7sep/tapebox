@@ -1,6 +1,7 @@
 import { link, lstat, open, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { nanoid } from 'nanoid'
+import { applyFileStamp, copyExtendedAttributes, fileStampOf, type FileStamp } from './file-metadata'
 
 /**
  * Atomically publish a file. Runs `produce(tempPath)` to write the complete,
@@ -59,10 +60,13 @@ export interface ExclusivePublishSource {
   read(buffer: Buffer, offset: number, length: number, position: number): Promise<{ bytesRead: number }>
   close(): Promise<void>
   identity(): Promise<string>
+  stamp(): Promise<FileStamp>
 }
 
 export interface ExclusivePublishDestination {
   write(buffer: Buffer, offset: number, length: number, position: null): Promise<{ bytesWritten: number }>
+  chmod(mode: number): Promise<void>
+  utimes(atime: number, mtime: number): Promise<void>
   sync(): Promise<void>
   close(): Promise<void>
   identity(): Promise<string>
@@ -73,6 +77,7 @@ export interface ExclusivePublishOperations {
   rename(fromPath: string, toPath: string): Promise<void>
   openRead(path: string): Promise<ExclusivePublishSource>
   openExclusive(path: string): Promise<ExclusivePublishDestination>
+  copyExtendedAttributes(sourcePath: string, destPath: string, signal?: AbortSignal): Promise<void>
   pathIdentity(path: string): Promise<string | null>
   unlink(path: string): Promise<void>
 }
@@ -92,12 +97,15 @@ const realPublishOperations: ExclusivePublishOperations = {
         const stat = await handle.stat({ bigint: true })
         return `${stat.dev}:${stat.ino}`
       },
+      stamp: async () => fileStampOf(await handle.stat({ bigint: true })),
     }
   },
   openExclusive: async (path) => {
     const handle = await open(path, 'wx')
     return {
       write: (buffer, offset, length, position) => handle.write(buffer, offset, length, position),
+      chmod: (mode) => handle.chmod(mode),
+      utimes: (atime, mtime) => handle.utimes(atime, mtime),
       sync: () => handle.sync(),
       close: () => handle.close(),
       identity: async () => {
@@ -106,6 +114,7 @@ const realPublishOperations: ExclusivePublishOperations = {
       },
     }
   },
+  copyExtendedAttributes,
   pathIdentity: async (path) => {
     try {
       const stat = await lstat(path, { bigint: true })
@@ -125,7 +134,10 @@ function destinationChanged(destPath: string): NodeJS.ErrnoException {
 }
 
 /** Stream `sourcePath` into an exclusive claim on `destPath`. The claim is the
- * final name, so any failure or abort (checked per chunk) removes it again. */
+ * final name, so any failure or abort (checked per chunk) removes it again. This
+ * is the one place a file's bytes are copied, so it is where the copy keeps the
+ * source's own metadata: its extended attributes, permissions and times
+ * (content-lifecycle conventions, Files). */
 async function copyExclusive(
   sourcePath: string,
   destPath: string,
@@ -140,6 +152,8 @@ async function copyExclusive(
   let committed = false
   try {
     if ((await source.identity()) !== expectedSourceIdentity) throw destinationChanged(sourcePath)
+    // Taken before reading, which can move the access time.
+    const stamp = await source.stamp()
     destination = await operations.openExclusive(destPath)
     claimIdentity = await destination.identity()
     const buffer = Buffer.allocUnsafe(COPY_CHUNK_BYTES)
@@ -157,6 +171,9 @@ async function copyExclusive(
         written += result.bytesWritten
       }
     }
+    // The times go last, after everything else that touches the file.
+    await operations.copyExtendedAttributes(sourcePath, destPath, signal)
+    await applyFileStamp(destination, stamp)
     await destination.sync()
     await destination.close()
     destination = null
