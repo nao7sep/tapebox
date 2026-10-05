@@ -164,14 +164,6 @@ export function registerLibraryHandlers(): void {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
 
-    // The sidecar is the bundle's own record: export carries it and import reads
-    // its title and uploader back. So it takes everything the user accepted, and
-    // it is written first, so a failed write applies nothing rather than leaving
-    // the catalog and the sidecar disagreeing.
-    if (tape.sidecarFilename) {
-      await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata)
-    }
-
     // Backfill a local poster for a downloaded tape that has none — e.g. one
     // downloaded before thumbnails were saved locally. Best-effort: the catalog
     // metadata the user reviewed must still apply even if the fetch fails. Routed
@@ -187,6 +179,15 @@ export function registerLibraryHandlers(): void {
       } catch (err) {
         log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })
       }
+    }
+
+    // The sidecar is the bundle's own record: export carries it and import reads
+    // its title, uploader and poster back. So it takes everything the catalog is
+    // about to hold, and it is written before the catalog, so a failed write leaves
+    // the catalog as it was rather than the two disagreeing. A poster fetched for
+    // it stays in the library under the tape's own stem, for the next Apply.
+    if (tape.sidecarFilename) {
+      await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename)
     }
 
     // Persist the accepted catalog fields. Duration and chapter count are NOT here:
@@ -213,15 +214,29 @@ export function registerLibraryHandlers(): void {
 }
 
 /**
- * Put accepted metadata into a tape's sidecar, in yt-dlp's own fields. A sidecar
- * that already holds every value is left as it is.
+ * Put accepted metadata into a tape's sidecar: the title, uploader and description
+ * in yt-dlp's own fields, and the poster in the tapebox section. A sidecar that
+ * already holds every value is left as it is.
  */
-async function writeRefreshedSidecar(path: string, metadata: RefreshedMetadata): Promise<void> {
+async function writeRefreshedSidecar(
+  path: string,
+  metadata: RefreshedMetadata,
+  thumbnailFilename: string | null,
+): Promise<void> {
   const sidecar = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+  let changed = false
   const fields = { title: metadata.title, uploader: metadata.uploader, description: metadata.description }
-  const entries = Object.entries(fields)
-  if (entries.every(([key, value]) => (sidecar[key] ?? null) === value)) return
-  for (const [key, value] of entries) sidecar[key] = value
+  for (const [key, value] of Object.entries(fields)) {
+    if ((sidecar[key] ?? null) === value) continue
+    sidecar[key] = value
+    changed = true
+  }
+  const tb = sidecar['tapebox']
+  if (tb && typeof tb === 'object' && (tb as Record<string, unknown>)['thumbnailFilename'] !== thumbnailFilename) {
+    sidecar['tapebox'] = SidecarTapeBoxSchema.parse({ ...tb, thumbnailFilename })
+    changed = true
+  }
+  if (!changed) return
   // not recorded: the sidecar is library-directory content, colocated with binary
   // media, so it is excluded (data-backup conventions) and takes the raw
   // writeJsonAtomic, not the choke point.

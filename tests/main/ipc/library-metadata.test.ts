@@ -187,6 +187,29 @@ describe('accepting refreshed metadata', () => {
     expect(updated.thumbnailFilename).toBe('Holiday.jpg')
   })
 
+  it('names a backfilled poster in the sidecar too, so sidecar and catalog agree', async () => {
+    const sidecar = join(state.libraryDir, 'Holiday.json')
+    await writeFile(sidecar, JSON.stringify({
+      id: 'source',
+      tapebox: {
+        sourceUrl: 'https://example.test/watch', name: 'Holiday', addedAtUtc: '2026-01-01T00:00:00.000Z',
+        downloadedAtUtc: '2026-01-01T00:00:00.000Z', renamedAtUtc: null, media: null,
+        mediaFilename: 'Holiday.mp4', thumbnailFilename: null,
+      },
+    }), 'utf8')
+    state.tapes = [makeTape({ id: 'Posterside', filename: 'Holiday.mp4', sidecarFilename: 'Holiday.json' })]
+    downloadThumbnail.mockResolvedValue(join(state.libraryDir, 'Holiday.webp'))
+    saveThumbnailJpeg.mockResolvedValue('Holiday.jpg')
+
+    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Posterside', metadata: ACCEPTED })
+
+    const written = JSON.parse(await readFile(sidecar, 'utf8')) as { title: string; tapebox: Record<string, unknown> }
+    expect(updated.thumbnailFilename).toBe('Holiday.jpg')
+    expect(written.tapebox['thumbnailFilename']).toBe('Holiday.jpg')
+    expect(written.tapebox['mediaFilename'], 'the rest of the tapebox section is kept').toBe('Holiday.mp4')
+    expect(written.title).toBe('New title')
+  })
+
   it('leaves the poster empty when the source has none to give', async () => {
     state.tapes = [makeTape({ id: 'Sourcehasn', filename: 'Holiday.mp4' })]
     downloadThumbnail.mockResolvedValue(null)
