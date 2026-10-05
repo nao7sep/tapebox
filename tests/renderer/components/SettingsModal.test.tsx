@@ -197,11 +197,25 @@ describe('SettingsModal', () => {
       expect(thinking()!.value).toBe(other.defaultThinking)
     })
 
-    it('resets after a change through an unlisted id', async () => {
+    it('keeps the chosen value, hidden, through an unlisted id back to the same row', async () => {
       await type(model(), 'my-local-model')
       expect(thinking()).toBeNull()
       await type(model(), DEFAULT_AI_MODEL)
-      expect(thinking()!.value).toBe(SUPPORTED_MODELS.find((row) => row.id === DEFAULT_AI_MODEL)!.defaultThinking)
+      expect(thinking()!.value).toBe('xhigh')
+    })
+
+    it('keeps the chosen value when one letter is deleted and retyped', async () => {
+      await type(model(), DEFAULT_AI_MODEL.slice(0, -1))
+      expect(thinking()).toBeNull()
+      await type(model(), DEFAULT_AI_MODEL)
+      expect(thinking()!.value).toBe('xhigh')
+    })
+
+    it('resets to the new model\'s default for a different supported id reached through an unlisted id', async () => {
+      const other = SUPPORTED_MODELS.find((row) => row.id !== DEFAULT_AI_MODEL && row.thinking.includes('xhigh') && row.defaultThinking !== 'xhigh')!
+      await type(model(), 'gpt-')
+      await type(model(), other.id)
+      expect(thinking()!.value).toBe(other.defaultThinking)
     })
   })
 

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { Settings, SettingsSets, SiteProfile, ThemePreference } from '@shared/settings'
 import { changedSettings, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
-import { rowFor, thinkingFor } from '@shared/ai-models'
+import { rowFor, thinkingFor, type SupportedModel } from '@shared/ai-models'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -66,6 +66,8 @@ export function SettingsModal({ onClose }: Props) {
   const [stoppingMove, setStoppingMove] = useState(false)
   // Read by save() after the rejected update, so a requested stop is not reported as a failure.
   const stopRequested = useRef(false)
+  // The last listed row the slug model field held, so passing through ids with no row keeps the thinking choice.
+  const lastSlugRow = useRef<SupportedModel | undefined>(undefined)
   const [loadError, setLoadError] = useState<Message | null>(null)
 
   function load() {
@@ -105,14 +107,16 @@ export function SettingsModal({ onClose }: Props) {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
   }
 
-  // An edit that selects a different row resets the role's thinking to the new
-  // model's default, since models accept different values; an edit that resolves
-  // to the same row keeps the choice, and a model with no row keeps no thinking choice.
+  // An edit that reaches a listed row other than the last listed row the field
+  // held resets the role's thinking to the new model's default, since models
+  // accept different values; returning to that row keeps the choice, and an id
+  // with no row keeps the stored value, hidden and not sent.
   function changeSlugModel(model: string) {
     setDraft((prev) => {
       if (!prev) return prev
+      lastSlugRow.current = rowFor('openai', prev['openai.slug']) ?? lastSlugRow.current
       const row = rowFor('openai', model)
-      const resets = row && row !== rowFor('openai', prev['openai.slug'])
+      const resets = row && row !== lastSlugRow.current
       return {
         ...prev,
         'openai.slug': model,
