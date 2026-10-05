@@ -236,12 +236,15 @@ export type RuntimeInfo = {
  * absent — they're fixed by the downloaded file and can't change unless it's
  * replaced. Identity fields (sourceId, filenames) are never touched either.
  * Returned by probeMetadata for review, then passed back to applyMetadata if the
- * user accepts it. Title/uploader update the tape; description updates the sidecar.
+ * user accepts it. Title and uploader update the tape and the sidecar; description
+ * updates the sidecar. `probedAtUtc` is when the source gave these values, which
+ * the tape keeps as its probe time.
  */
 export type RefreshedMetadata = {
   title: string | null
   uploader: string | null
   description: string | null
+  probedAtUtc: string
 }
 
 export type ScanResult = {

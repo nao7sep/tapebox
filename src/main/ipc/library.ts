@@ -33,7 +33,7 @@ import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
 import { SidecarTapeBoxSchema, trackedFilenameIdentities, type Tape } from '@shared/domain'
-import type { ImportIssue, ImportResult, SidecarRaw } from '@shared/ipc-contract'
+import type { ImportIssue, ImportResult, RefreshedMetadata, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
 import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
@@ -147,6 +147,7 @@ export function registerLibraryHandlers(): void {
     // stall, and it is never auto-retried — re-hammering the source is the user's
     // call. Nothing is written here: the caller reviews this and decides.
     const result = await runCancellable((signal) => probe(tape.id, tape.sourceUrl, signal))
+    const probedAtUtc = nowUtcIso()
     if (result.kind === 'page') {
       throw new UserFacingError('refused', message('errors.linkNowList'))
     }
@@ -154,6 +155,7 @@ export function registerLibraryHandlers(): void {
       title: result.title,
       uploader: result.uploader,
       description: result.description,
+      probedAtUtc,
     }
   })
 
@@ -162,21 +164,12 @@ export function registerLibraryHandlers(): void {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
 
-    // The description lives in the sidecar (yt-dlp's info.json field), not on the
-    // tape, so the accepted description is written there. Best-effort: a sidecar
-    // write hiccup must not block the title/uploader update the user also accepted.
+    // The sidecar is the bundle's own record: export carries it and import reads
+    // its title and uploader back. So it takes everything the user accepted, and
+    // it is written first, so a failed write applies nothing rather than leaving
+    // the catalog and the sidecar disagreeing.
     if (tape.sidecarFilename) {
-      const sidecarPath = join(dir, tape.sidecarFilename)
-      try {
-        const sidecar = JSON.parse(await readFile(sidecarPath, 'utf8')) as Record<string, unknown>
-        sidecar['description'] = metadata.description
-        // not recorded: same as the rename path — the sidecar is library-directory
-        // content, colocated with binary media, so it is excluded (data-backup
-        // conventions) and takes the raw writeJsonAtomic, not the choke point.
-        await writeJsonAtomic(sidecarPath, sidecar)
-      } catch (err) {
-        log.warn('applyMetadata: description write failed', { tapeId, error: describeError(err) })
-      }
+      await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata)
     }
 
     // Backfill a local poster for a downloaded tape that has none — e.g. one
@@ -204,7 +197,7 @@ export function registerLibraryHandlers(): void {
       title: metadata.title,
       uploader: metadata.uploader,
       thumbnailFilename,
-      probedAtUtc: nowUtcIso(),
+      probedAtUtc: metadata.probedAtUtc,
     }
     session.upsertTape(updated)
     emit('tapes:updated', updated)
@@ -217,6 +210,22 @@ export function registerLibraryHandlers(): void {
   // sidecar = one tape, so a duplicate is reported once, not once per selected file.
   handle('library:import', ({ paths }) => runCancellable((signal) =>
     withLibraryWrite((libraryDir) => importBundles(paths, libraryDir, signal))))
+}
+
+/**
+ * Put accepted metadata into a tape's sidecar, in yt-dlp's own fields. A sidecar
+ * that already holds every value is left as it is.
+ */
+async function writeRefreshedSidecar(path: string, metadata: RefreshedMetadata): Promise<void> {
+  const sidecar = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+  const fields = { title: metadata.title, uploader: metadata.uploader, description: metadata.description }
+  const entries = Object.entries(fields)
+  if (entries.every(([key, value]) => (sidecar[key] ?? null) === value)) return
+  for (const [key, value] of entries) sidecar[key] = value
+  // not recorded: the sidecar is library-directory content, colocated with binary
+  // media, so it is excluded (data-backup conventions) and takes the raw
+  // writeJsonAtomic, not the choke point.
+  await writeJsonAtomic(path, sidecar)
 }
 
 /**

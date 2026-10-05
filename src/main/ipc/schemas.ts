@@ -44,6 +44,7 @@ const RefreshedMetadataSchema = z.object({
   title: z.string().nullable(),
   uploader: z.string().nullable(),
   description: z.string().nullable(),
+  probedAtUtc: z.iso.datetime(),
 })
 
 export const ipcRequestSchemas = {

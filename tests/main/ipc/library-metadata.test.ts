@@ -1,5 +1,5 @@
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -68,7 +68,8 @@ function invoke<T>(channel: string, req?: unknown): Promise<T> {
   return Promise.resolve(handler(req) as T)
 }
 
-const ACCEPTED = { title: 'New title', uploader: 'New uploader', description: 'New description' }
+const PROBED_AT = '2026-02-03T04:05:06.789Z'
+const ACCEPTED = { title: 'New title', uploader: 'New uploader', description: 'New description', probedAtUtc: PROBED_AT }
 
 beforeEach(async () => {
   handlers.clear()
@@ -92,6 +93,7 @@ describe('re-probing a tape', () => {
       title: 'Fresh',
       uploader: 'Channel',
       description: 'Fresh notes',
+      probedAtUtc: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
     })
     expect(probe).toHaveBeenCalledExactlyOnceWith('Reprobethi', tape.sourceUrl, expect.anything())
     expect(state.tapes[0], 'the tape is untouched until the user accepts').toBe(tape)
@@ -116,7 +118,7 @@ describe('re-probing a tape', () => {
 })
 
 describe('accepting refreshed metadata', () => {
-  it('saves the catalog fields and puts the description in the sidecar', async () => {
+  it('saves the catalog fields and puts the same values in the sidecar', async () => {
     const sidecar = join(state.libraryDir, 'Take.json')
     await writeFile(sidecar, JSON.stringify({ id: 'source', description: 'Old description', extra: 'kept' }), 'utf8')
     state.tapes = [makeTape({ id: 'Acceptthis', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
@@ -124,10 +126,12 @@ describe('accepting refreshed metadata', () => {
     const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Acceptthis', metadata: ACCEPTED })
 
     expect(updated).toMatchObject({ title: 'New title', uploader: 'New uploader', thumbnailFilename: 'Take.jpg' })
-    expect(updated.probedAtUtc).not.toBe('2026-01-01T00:00:00.000Z')
+    expect(updated.probedAtUtc, 'the probe time is when the source answered, not the Apply click').toBe(PROBED_AT)
     expect(updated, 'facts fixed by the file are not re-stated').toMatchObject({ durationSeconds: 61, chapterCount: 3 })
     expect(JSON.parse(await readFile(sidecar, 'utf8'))).toEqual({
       id: 'source',
+      title: 'New title',
+      uploader: 'New uploader',
       description: 'New description',
       extra: 'kept',
     })
@@ -136,16 +140,27 @@ describe('accepting refreshed metadata', () => {
     expect(downloadThumbnail, 'a tape that already has a poster is left alone').not.toHaveBeenCalled()
   })
 
-  it('still applies what the user accepted when the sidecar cannot be written', async () => {
-    state.tapes = [makeTape({ id: 'Nosidecarf', sidecarFilename: 'gone.json', thumbnailFilename: 'Take.jpg' })]
+  it('leaves a sidecar that already holds the accepted values unwritten', async () => {
+    const sidecar = join(state.libraryDir, 'Take.json')
+    const text = JSON.stringify({ title: 'New title', uploader: 'New uploader', description: 'New description' })
+    await writeFile(sidecar, text, 'utf8')
+    const before = (await stat(sidecar)).mtimeMs
+    state.tapes = [makeTape({ id: 'Unchanged1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
 
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Nosidecarf', metadata: ACCEPTED })
+    await invoke<Tape>('library:applyMetadata', { tapeId: 'Unchanged1', metadata: ACCEPTED })
 
-    expect(updated.title).toBe('New title')
-    expect(log.warn).toHaveBeenCalledWith(
-      'applyMetadata: description write failed',
-      expect.objectContaining({ tapeId: 'Nosidecarf' }),
-    )
+    expect(await readFile(sidecar, 'utf8')).toBe(text)
+    expect((await stat(sidecar)).mtimeMs).toBe(before)
+  })
+
+  it('applies nothing when the sidecar cannot be written', async () => {
+    const tape = makeTape({ id: 'Nosidecarf', sidecarFilename: 'gone.json', thumbnailFilename: 'Take.jpg' })
+    state.tapes = [tape]
+
+    await expect(invoke<Tape>('library:applyMetadata', { tapeId: 'Nosidecarf', metadata: ACCEPTED })).rejects.toThrow()
+
+    expect(state.tapes[0], 'the catalog and the sidecar never disagree').toBe(tape)
+    expect(emit).not.toHaveBeenCalled()
   })
 
   it('backfills a poster for a downloaded tape that has none', async () => {
