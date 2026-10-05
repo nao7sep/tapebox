@@ -148,6 +148,22 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(emits).not.toContain('tapes:failed')
   })
 
+  it('keeps a finished download as downloaded when telling the window throws', async () => {
+    const t = tape({ id: 't1' })
+    const { deps, tapes, emits, errors } = makeDeps({ initial: [t], probe: async () => video })
+    const send = deps.emit
+    deps.emit = ((channel: string, payload: unknown) => {
+      if (channel === 'tapes:updated' && (payload as Tape).state === 'downloaded') throw new Error('window gone')
+      send(channel as never, payload as never)
+    }) as JobDeps['emit']
+    await new Job(t, deps).run()
+    const final = tapes.get('t1')!
+    expect(final).toMatchObject({ state: 'downloaded', failureCode: null, filename: 't1.mp4', sidecarFilename: 't1.json' })
+    expect(emits, 'the downloaded row was committed before the send').toContain('persist:downloaded')
+    expect(emits).not.toContain('tapes:failed')
+    expect(errors).toEqual([expect.objectContaining({ tapeId: 't1', error: expect.objectContaining({ message: 'window gone' }) })])
+  })
+
   it('rejects a probe whose (extractor, id) duplicates an existing tape', async () => {
     const t = tape({ id: 't1' })
     const existing = tape({ id: 't0', sourceId: 'vid1', extractor: 'youtube', state: 'downloaded' })

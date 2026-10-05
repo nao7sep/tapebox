@@ -145,11 +145,17 @@ export class Job {
 
   /** Move the tape to a new state at `at`, by default the moment of the move. */
   private update(move: TapeMove, at: string = this.d.now()): void {
+    const next = this.move(move, at)
+    if (next) this.d.emit('tapes:updated', next)
+  }
+
+  /** Apply a move to the session without telling the window. */
+  private move(move: TapeMove, at: string = this.d.now()): Tape | null {
     const cur = this.current()
-    if (!cur) return
+    if (!cur) return null
     const next = moveTape(cur, move, at)
     this.d.session.upsertTape(next)
-    this.d.emit('tapes:updated', next)
+    return next
   }
 
   /** Returns true if a downloadable video; false if the URL is a page of videos. */
@@ -282,7 +288,7 @@ export class Job {
       },
     })
 
-    this.update({
+    const finished = this.move({
       state: 'downloaded',
       failureCode: null,
       filename: mediaBasename,
@@ -300,6 +306,17 @@ export class Job {
     // logs failure, so without this the app's central operation — a finished
     // download — would be the one outcome absent from the session log.
     this.d.log.info('job done', { tapeId: this.tapeId, sourceId: cur.sourceId, filename: mediaBasename, committed })
-    this.d.emit('tapes:completed', { tapeId: this.tapeId })
+    // Telling the window comes last and cannot undo the download: a failed send
+    // is logged here, never caught as a download failure that would mark failed a
+    // tape that names its finished files.
+    try {
+      if (finished) this.d.emit('tapes:updated', finished)
+      this.d.emit('tapes:completed', { tapeId: this.tapeId })
+    } catch (err) {
+      this.d.log.error('download completion could not be sent to the window', {
+        tapeId: this.tapeId,
+        error: describeError(err),
+      })
+    }
   }
 }
