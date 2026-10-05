@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { Settings, SettingsSets, SiteProfile, ThemePreference } from '@shared/settings'
 import { changedSettings, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
-import { AI_ROLES, defaultThinkingFor, rowFor, thinkingFor } from '@shared/ai-models'
+import { rowFor, thinkingFor } from '@shared/ai-models'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -111,7 +111,7 @@ export function SettingsModal({ onClose }: Props) {
     const row = rowFor('openai', model)
     patchDraft({
       'openai.slug': model,
-      ...(row ? { 'openai.thinking.slug': defaultThinkingFor(row, AI_ROLES[0].kind) } : {}),
+      ...(row ? { 'openai.thinking.slug': row.defaultThinking } : {}),
     })
   }
 
@@ -748,7 +748,7 @@ function AiTab({
             <span className="text-xs font-medium text-fg">{t.t('settings.thinking')}</span>
             <select
               id="settings-openai-thinking-slug"
-              value={thinkingFor(row, AI_ROLES[0].kind, thinking)}
+              value={thinkingFor(row, thinking)}
               disabled={busy}
               onChange={(e) => onThinkingChange(e.target.value)}
               className={`mt-1 block w-full ${INPUT_LINE_CLASS}`}

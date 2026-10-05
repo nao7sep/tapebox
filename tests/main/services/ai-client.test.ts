@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import { describe, expect, it } from 'vitest'
-import { aiRequestFailure, completionText, isRetryableAiError, aiRetryAfterMs } from '@main/services/ai-client'
+import { aiRequestFailure, completionSlug, completionText, isRetryableAiError, aiRetryAfterMs } from '@main/services/ai-client'
 import { UserFacingError } from '@main/user-facing-error'
 
 describe('completionText', () => {
@@ -23,6 +23,22 @@ describe('completionText', () => {
       .toThrow('content filter')
     expect(() => completionText({ finish_reason: 'length', message: { content: 'partial-name' } }))
       .toThrow('cut off')
+  })
+})
+
+describe('completionSlug', () => {
+  it('returns the slug field of the strict schema', () => {
+    expect(completionSlug({ finish_reason: 'stop', message: { content: '{"slug":" morning-walk "}' } })).toBe('morning-walk')
+  })
+
+  it('reports any other shape as no usable text', () => {
+    for (const content of ['morning-walk', '{"name":"morning-walk"}', '{"slug":5}', '{"slug":"  "}', 'null', '"morning-walk"']) {
+      expect(() => completionSlug({ finish_reason: 'stop', message: { content } }), content).toThrow('no usable text')
+    }
+  })
+
+  it('checks refusal and truncation before reading the answer', () => {
+    expect(() => completionSlug({ finish_reason: 'length', message: { content: '{"slug":"partial' } })).toThrow('cut off')
   })
 })
 

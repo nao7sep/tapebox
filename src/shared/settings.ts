@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AI_ROLES, defaultModelFor, defaultThinkingFor, rowFor, thinkingFor } from './ai-models'
+import { AI_ROLES, defaultModelFor, rowFor, thinkingFor } from './ai-models'
 import { multiline, singleLine } from './text-cleanup'
 import { LANGUAGE_PREFERENCES } from './i18n/languages'
 
@@ -44,7 +44,7 @@ const EndpointSchema = z.string().url().refine(isLoopbackOrHttps, {
  */
 export const DEFAULT_OPENAI_ENDPOINT = 'https://api.openai.com/v1'
 export const DEFAULT_AI_MODEL = defaultModelFor('openai', AI_ROLES[0].kind)
-export const DEFAULT_SLUG_THINKING = defaultThinkingFor(rowFor('openai', DEFAULT_AI_MODEL)!, AI_ROLES[0].kind)
+export const DEFAULT_SLUG_THINKING = rowFor('openai', DEFAULT_AI_MODEL)!.defaultThinking
 
 export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for this media item.
 
@@ -248,7 +248,7 @@ export function storedSets(sets: SettingsSets): SettingsSets {
     let equal: boolean
     if (role) {
       const row = rowFor('openai', sets[`openai.${role.id}`] ?? builtIn[`openai.${role.id}`])
-      equal = !row || thinkingFor(row, role.kind, String(value)) === defaultThinkingFor(row, role.kind)
+      equal = !row || thinkingFor(row, String(value)) === row.defaultThinking
     } else if (MODEL_SET_KEYS.has(key)) {
       equal = String(value).trim().toLowerCase() === String(builtIn[key]).toLowerCase()
     } else {

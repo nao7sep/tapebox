@@ -1,3 +1,6 @@
+// The lineup research document the rows and defaults rest on.
+export const MODEL_LINEUP = 'ai-model-lineup-20261004'
+
 export type ModelKind = 'text-frontier' | 'text-smart' | 'text-balanced' | 'text-fast'
 export type Provider = 'openai'
 export type SupportedModel = {
@@ -5,15 +8,18 @@ export type SupportedModel = {
   id: string
   kinds: readonly ModelKind[]
   defaultFor: readonly ModelKind[]
-  // The thinking values the model accepts, in the provider's own words, ascending.
+  // The thinking values the model accepts, in the provider's own words: a
+  // no-thinking value first, then lowest to highest.
   thinking: readonly string[]
+  // The value a role takes for this model, set by the model's own tier.
+  defaultThinking: string
 }
 
 export const SUPPORTED_MODELS: readonly SupportedModel[] = [
-  { provider: 'openai', id: 'gpt-6-astra', kinds: ['text-frontier'], defaultFor: [], thinking: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { provider: 'openai', id: 'gpt-6.1-sol', kinds: ['text-smart'], defaultFor: ['text-smart'], thinking: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { provider: 'openai', id: 'gpt-5.6-terra', kinds: ['text-balanced'], defaultFor: ['text-balanced'], thinking: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
-  { provider: 'openai', id: 'gpt-6-luna', kinds: ['text-fast'], defaultFor: ['text-fast'], thinking: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
+  { provider: 'openai', id: 'gpt-6-astra', kinds: ['text-frontier'], defaultFor: [], thinking: ['low', 'medium', 'high', 'xhigh', 'max'], defaultThinking: 'medium' },
+  { provider: 'openai', id: 'gpt-6.1-sol', kinds: ['text-smart'], defaultFor: ['text-smart'], thinking: ['low', 'medium', 'high', 'xhigh', 'max'], defaultThinking: 'medium' },
+  { provider: 'openai', id: 'gpt-5.6-terra', kinds: ['text-balanced'], defaultFor: ['text-balanced'], thinking: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultThinking: 'medium' },
+  { provider: 'openai', id: 'gpt-6-luna', kinds: ['text-fast'], defaultFor: ['text-fast'], thinking: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultThinking: 'none' },
 ]
 
 export const AI_ROLES = [
@@ -38,16 +44,7 @@ export function rowFor(provider: Provider, id: string): SupportedModel | undefin
   return SUPPORTED_MODELS.find((row) => row.provider === provider && row.id === key)
 }
 
-/**
- * A fast role thinks as little as the row allows; every other role thinks
- * adaptively where the row offers it, else at medium, else at its first value.
- */
-export function defaultThinkingFor(row: SupportedModel, kind: ModelKind): string {
-  if (kind === 'text-fast') return row.thinking.find((value) => value === 'off' || value === 'none') ?? row.thinking[0]!
-  return ['adaptive', 'medium'].find((value) => row.thinking.includes(value)) ?? row.thinking[0]!
-}
-
-/** The value a role sends: its chosen value when the row lists it, else the role's default for the row. */
-export function thinkingFor(row: SupportedModel, kind: ModelKind, chosen: string): string {
-  return row.thinking.includes(chosen) ? chosen : defaultThinkingFor(row, kind)
+/** The value a role sends: its chosen value when the row lists it, else the row's default. */
+export function thinkingFor(row: SupportedModel, chosen: string): string {
+  return row.thinking.includes(chosen) ? chosen : row.defaultThinking
 }

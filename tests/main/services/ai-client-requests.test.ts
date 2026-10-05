@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/settings'
+import { SLUG_RESPONSE_FORMAT } from '@shared/model-routing'
 
 const { create, constructors, writeRecord, state } = vi.hoisted(() => ({
   create: vi.fn(), constructors: vi.fn(), writeRecord: vi.fn(),
@@ -26,7 +27,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.settings = defaultSettings()
   state.overHttp = false
-  create.mockResolvedValue({ choices: [{ finish_reason: 'stop', message: { content: 'a-name' } }] })
+  create.mockResolvedValue({ choices: [{ finish_reason: 'stop', message: { content: '{"slug":"a-name"}' } }] })
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -38,11 +39,12 @@ describe('slug request routing', () => {
     state.settings['openai.endpoint'] = 'https://proxy.example/v1'
     await expect(generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)).resolves.toBe('a-name')
     expect(constructors).toHaveBeenCalledWith(expect.objectContaining({ baseURL: 'https://proxy.example/v1', maxRetries: 0 }))
-    expect(Object.keys(create.mock.calls[0]![0]).sort()).toEqual(['messages', 'model', 'reasoning_effort'])
-    expect(create.mock.calls[0]![0]).toMatchObject({ model: 'gpt-6-luna', reasoning_effort: 'none' })
+    expect(Object.keys(create.mock.calls[0]![0]).sort()).toEqual(['messages', 'model', 'reasoning_effort', 'response_format'])
+    expect(create.mock.calls[0]![0]).toMatchObject({ model: 'gpt-6-luna', reasoning_effort: 'none', response_format: SLUG_RESPONSE_FORMAT })
     state.settings['openai.slug'] = 'local-model'
     await generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)
-    expect(Object.keys(create.mock.calls[1]![0]).sort()).toEqual(['messages', 'model'])
+    expect(Object.keys(create.mock.calls[1]![0]).sort()).toEqual(['messages', 'model', 'response_format'])
+    expect(create.mock.calls[1]![0]).toMatchObject({ response_format: SLUG_RESPONSE_FORMAT })
   })
 
   it('sends the role\'s thinking, or the model\'s default when the model does not list it', async () => {
@@ -52,7 +54,12 @@ describe('slug request routing', () => {
     state.settings['openai.slug'] = 'gpt-6.1-sol'
     state.settings['openai.thinking.slug'] = 'none'
     await generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)
-    expect(create.mock.calls[1]![0]).toMatchObject({ model: 'gpt-6.1-sol', reasoning_effort: 'low' })
+    expect(create.mock.calls[1]![0]).toMatchObject({ model: 'gpt-6.1-sol', reasoning_effort: 'medium' })
+  })
+
+  it('reads the slug out of the strict schema\'s answer', async () => {
+    create.mockResolvedValue({ choices: [{ finish_reason: 'stop', message: { content: '{"slug":"  morning-walk  "}' } }] })
+    await expect(generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)).resolves.toBe('morning-walk')
   })
 
   it('honours the capped Retry-After and stops after three attempts', async () => {
@@ -73,7 +80,7 @@ describe('slug request routing', () => {
 
   it('records each attempt whole, the request as sent with its headers and the provider\'s error body', async () => {
     state.overHttp = true
-    const answer = { choices: [{ finish_reason: 'stop', message: { content: 'a-name' } }], usage: { total_tokens: 9 } }
+    const answer = { choices: [{ finish_reason: 'stop', message: { content: '{"slug":"a-name"}' } }], usage: { total_tokens: 9 } }
     const json = (body: object, status: number) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     const fetch = vi.fn()
       .mockResolvedValueOnce(json({ error: { message: 'provider reason' } }, 500))

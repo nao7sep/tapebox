@@ -9,7 +9,7 @@ vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
 
 import { SettingsModal } from '@renderer/components/SettingsModal'
-import { AI_ROLES } from '@shared/ai-models'
+import { AI_ROLES, SUPPORTED_MODELS } from '@shared/ai-models'
 import { useToastStore } from '@renderer/store/toast'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -138,8 +138,19 @@ describe('SettingsModal', () => {
     const model = document.getElementById('settings-openai-slug') as HTMLInputElement
     await type(model, 'my-local-model')
     expect(thinking()).toBeNull()
+    // Each row shows its own values in its order and takes its own tier's
+    // default, whatever the role's kind.
+    for (const row of SUPPORTED_MODELS) {
+      await type(model, row.id)
+      expect(thinking()!.value, row.id).toBe(row.defaultThinking)
+      expect([...thinking()!.options].map((option) => option.value), row.id).toEqual(row.thinking)
+    }
+    await act(async () => {
+      thinking()!.value = 'xhigh'
+      thinking()!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
     await type(model, 'gpt-6.1-sol')
-    expect(thinking()!.value).toBe('low')
+    expect(thinking()!.value).toBe('medium')
     expect([...thinking()!.options].map((option) => option.value)).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
     await act(async () => {
       thinking()!.value = 'high'

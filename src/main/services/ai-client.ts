@@ -9,7 +9,7 @@ import { UserFacingError } from '@main/user-facing-error'
 import { resolveApiKey } from './api-keys'
 import { buildSlugRequest } from '@shared/model-routing'
 import { describeError } from '@shared/error'
-import { AI_ROLES, rowFor, thinkingFor } from '@shared/ai-models'
+import { rowFor, thinkingFor } from '@shared/ai-models'
 import { message } from '@shared/i18n/translate'
 import { nowUtcIso } from '@shared/utc'
 
@@ -34,7 +34,7 @@ export async function generateSlug(
   // A model with no row gets no thinking parameter; a listed model gets the
   // role's chosen value, or its default when the model does not list it.
   const row = rowFor('openai', model)
-  const thinking = row ? thinkingFor(row, AI_ROLES[0].kind, settings['openai.thinking.slug']) : undefined
+  const thinking = row ? thinkingFor(row, settings['openai.thinking.slug']) : undefined
   const apiKey = await resolveApiKey('openai')
   if (!apiKey) throw new UserFacingError('refused', message('errors.aiNoKey'))
 
@@ -77,7 +77,7 @@ export async function generateSlug(
   // Result line for the external boundary (the request was logged above): the
   // finish_reason distinguishes a normal stop from a length/content-filter cutoff.
   log.info('ai: generateSlug response', { tapeId: opts.tapeId, model, finishReason: res.choices[0]?.finish_reason })
-  return completionText(res.choices[0])
+  return completionSlug(res.choices[0])
 }
 
 type SentRequest = { method: string; url: string; headers: Record<string, string>; body: unknown }
@@ -171,6 +171,22 @@ export function completionText(choice: CompletionChoice): string {
     throw new UserFacingError('provider', message('errors.aiNoText'))
   }
   return content.trim()
+}
+
+/** The slug from a complete answer in the strict slug schema; any other shape is no usable text. */
+export function completionSlug(choice: CompletionChoice): string {
+  const text = completionText(choice)
+  let answer: unknown
+  try {
+    answer = JSON.parse(text)
+  } catch {
+    answer = null
+  }
+  const slug = (answer as { slug?: unknown } | null)?.slug
+  if (typeof slug !== 'string' || slug.trim() === '') {
+    throw new UserFacingError('provider', message('errors.aiNoText'))
+  }
+  return slug.trim()
 }
 
 /**
