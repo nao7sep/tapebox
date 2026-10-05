@@ -50,7 +50,7 @@ describe('tapeFromSidecar', () => {
     nowUtc: '2026-01-01T00:00:00.000Z',
   }
 
-  it('coerces typed fields and defaults clock-derived fields to nowUtc', () => {
+  it('coerces typed fields and leaves the times the sidecar does not record empty', () => {
     const tape = tapeFromSidecar(
       { id: 'src', extractor: 'youtube', title: 'T', uploader: 'U', duration: 12.5, chapters: [{}, {}], tapebox: {} },
       params,
@@ -69,10 +69,17 @@ describe('tapeFromSidecar', () => {
       sidecarFilename: 'v.json',
       thumbnailFilename: 'v.webp',
       order: 5,
-      probedAtUtc: params.nowUtc,
+      probedAtUtc: null,
       addedAtUtc: params.nowUtc,
-      downloadedAtUtc: params.nowUtc,
+      downloadedAtUtc: null,
     })
+  })
+
+  it('takes a missing added time from the recorded download time before the import time', () => {
+    const tape = tapeFromSidecar({ tapebox: { downloadedAtUtc: '2025-06-01T00:00:00.000Z' } }, params)
+    expect(tape.addedAtUtc).toBe('2025-06-01T00:00:00.000Z')
+    expect(tape.downloadedAtUtc).toBe('2025-06-01T00:00:00.000Z')
+    expect(tape.probedAtUtc, 'an import never probes').toBeNull()
   })
 
   it('nulls mistyped fields and prefers the tapebox timestamps when present', () => {

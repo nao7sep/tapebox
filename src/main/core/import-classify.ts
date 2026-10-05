@@ -62,8 +62,10 @@ export function classifyImport(sidecar: unknown): ImportClassification {
  * Build the library Tape from an imported sidecar, coercing every field with the
  * same type guards the live import uses. Identity, naming, ordering, and the
  * resolved thumbnail are passed in (they depend on nanoid / the order window /
- * filesystem); `nowUtc` is the single timestamp used for every clock-derived
- * default, so all of them agree.
+ * filesystem). A time the sidecar does not record stays empty; the import does not
+ * probe or download, so it has no such time of its own. The one required time,
+ * when the tape was added, falls back to when it was downloaded and only then to
+ * `nowUtc`, the import itself (content-lifecycle conventions).
  */
 export function tapeFromSidecar(
   sidecar: Record<string, unknown>,
@@ -78,23 +80,24 @@ export function tapeFromSidecar(
   },
 ): Tape {
   const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+  const downloadedAtUtc = typeof tb['downloadedAtUtc'] === 'string' ? tb['downloadedAtUtc'] : null
   return {
     id: params.id,
     sourceUrl: params.sourceUrl,
     state: 'downloaded',
-    addedAtUtc: (typeof tb['addedAtUtc'] === 'string' ? tb['addedAtUtc'] : null) ?? params.nowUtc,
+    addedAtUtc: (typeof tb['addedAtUtc'] === 'string' ? tb['addedAtUtc'] : null) ?? downloadedAtUtc ?? params.nowUtc,
     sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
     extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
     title: typeof sidecar['title'] === 'string' ? sidecar['title'] : null,
     uploader: typeof sidecar['uploader'] === 'string' ? sidecar['uploader'] : null,
     durationSeconds: typeof sidecar['duration'] === 'number' ? sidecar['duration'] : null,
     chapterCount: Array.isArray(sidecar['chapters']) ? (sidecar['chapters'] as unknown[]).length : 0,
-    probedAtUtc: params.nowUtc,
+    probedAtUtc: null,
     filename: params.mediaFilename,
     sidecarFilename: params.sidecarFilename,
     thumbnailFilename: params.thumbnailFilename,
     downloadStartedAtUtc: null,
-    downloadedAtUtc: typeof tb['downloadedAtUtc'] === 'string' ? tb['downloadedAtUtc'] : params.nowUtc,
+    downloadedAtUtc,
     name: typeof tb['name'] === 'string' ? tb['name'] : null,
     renamedAtUtc: typeof tb['renamedAtUtc'] === 'string' ? tb['renamedAtUtc'] : null,
     archivedAtUtc: null,
