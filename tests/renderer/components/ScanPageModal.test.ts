@@ -149,8 +149,40 @@ describe('ScanPageModal bulk add', () => {
   })
 })
 
+/**
+ * Frames the test fires itself. A real frame is a timer, and a burst slow enough
+ * under load lets it fire before the test looks, so the frames a burst asks for
+ * are held until `run()`.
+ */
+function heldFrames(): { pending: () => number; run: () => Promise<void> } {
+  const queued = new Map<number, FrameRequestCallback>()
+  let nextId = 1
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    queued.set(nextId, callback)
+    return nextId++
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    queued.delete(id)
+  })
+  return {
+    pending: () => queued.size,
+    run: async () => {
+      await act(async () => {
+        const callbacks = [...queued.values()]
+        queued.clear()
+        for (const callback of callbacks) callback(performance.now())
+      })
+    },
+  }
+}
+
 describe('ScanPageModal streaming', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('batches a burst of entries into one commit, drops repeats, and renders only visible rows', async () => {
+    const frames = heldFrames()
     await mount(vi.fn())
     ipcInvoke.mockResolvedValueOnce({ sessionId: 'S1' }) // scan:start
     await act(async () => {
@@ -165,9 +197,10 @@ describe('ScanPageModal streaming', () => {
         emitEvent('scan:entry', { sessionId: 'S1', entry }) // listing pages repeat videos
       }
     })
-    // Nothing is committed until the frame fires.
+    // Nothing is committed until the frame fires, and the whole burst waits on one.
     expect(document.querySelectorAll('[role="dialog"] li')).toHaveLength(0)
-    await nextFrame()
+    expect(frames.pending()).toBe(1)
+    await frames.run()
 
     expect(document.body.textContent).toContain('3,000 found so far')
     expect(buttonByText('Add 3,000 tapes')).toBeTruthy()
