@@ -162,6 +162,49 @@ describe('SettingsModal', () => {
     })
   })
 
+  describe('Thinking on a model edit', () => {
+    const thinking = () => document.getElementById('settings-openai-thinking-slug') as HTMLSelectElement | null
+    const model = () => document.getElementById('settings-openai-slug') as HTMLInputElement
+
+    async function chooseThinking(value: string) {
+      await act(async () => {
+        thinking()!.value = value
+        thinking()!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    }
+
+    beforeEach(async () => {
+      saved = defaultSettings()
+      stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+      await render()
+      await click('AI')
+      await chooseThinking('xhigh')
+    })
+
+    it.each([
+      ['a trailing space', `${DEFAULT_AI_MODEL} `],
+      ['a leading space', ` ${DEFAULT_AI_MODEL}`],
+      ['a different case', DEFAULT_AI_MODEL.toUpperCase()],
+      ['the same id retyped', DEFAULT_AI_MODEL],
+    ])('keeps the chosen value for %s', async (_, id) => {
+      await type(model(), id)
+      expect(thinking()!.value).toBe('xhigh')
+    })
+
+    it('resets to the new model\'s default for a different supported id', async () => {
+      const other = SUPPORTED_MODELS.find((row) => row.id !== DEFAULT_AI_MODEL && row.thinking.includes('xhigh'))!
+      await type(model(), other.id)
+      expect(thinking()!.value).toBe(other.defaultThinking)
+    })
+
+    it('resets after a change through an unlisted id', async () => {
+      await type(model(), 'my-local-model')
+      expect(thinking()).toBeNull()
+      await type(model(), DEFAULT_AI_MODEL)
+      expect(thinking()!.value).toBe(SUPPORTED_MODELS.find((row) => row.id === DEFAULT_AI_MODEL)!.defaultThinking)
+    })
+  })
+
   it.each(AI_ROLES)('has a model field for the $id role that saves its own set as typed', async (role) => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()

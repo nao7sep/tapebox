@@ -105,13 +105,19 @@ export function SettingsModal({ onClose }: Props) {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
   }
 
-  // A model change resets the role's thinking to the new model's default, since
-  // models accept different values; a model with no row keeps no thinking choice.
+  // An edit that selects a different row resets the role's thinking to the new
+  // model's default, since models accept different values; an edit that resolves
+  // to the same row keeps the choice, and a model with no row keeps no thinking choice.
   function changeSlugModel(model: string) {
-    const row = rowFor('openai', model)
-    patchDraft({
-      'openai.slug': model,
-      ...(row ? { 'openai.thinking.slug': row.defaultThinking } : {}),
+    setDraft((prev) => {
+      if (!prev) return prev
+      const row = rowFor('openai', model)
+      const resets = row && row !== rowFor('openai', prev['openai.slug'])
+      return {
+        ...prev,
+        'openai.slug': model,
+        ...(resets ? { 'openai.thinking.slug': row.defaultThinking } : {}),
+      }
     })
   }
 
