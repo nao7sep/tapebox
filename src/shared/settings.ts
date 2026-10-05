@@ -50,7 +50,7 @@ export const DEFAULT_SLUG_PROMPT = `Suggest a short, descriptive file slug for t
 
 Write the slug in real English words. If the title is in another language, translate its MEANING into English — do not romanize or transliterate it. For example, a Japanese title becomes its English meaning (e.g. "morning-routine"), never its rōmaji (e.g. "asa-no-shuukan"). Proper names — people, places, brands, song or series titles — may stay as written when they have no common English form.
 
-Output ONLY the slug — lowercase ASCII letters, digits, and hyphens, with words separated by single hyphens. No quotes, no explanation, no trailing period. Aim for 3–6 words and under 60 characters.
+The slug uses only lowercase ASCII letters, digits, and hyphens, with words separated by single hyphens. Aim for 3–6 words and under 60 characters.
 
 Base the slug on the title. Use the uploader and description only as supporting context to clarify or disambiguate the subject. Descriptions often carry promotional text, links, hashtags, timestamps, and credits — ignore all of that, and never copy URLs, @handles, hashtags, or sponsor names into the slug.
 
