@@ -1,12 +1,16 @@
 import { readFile, unlink } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { writeJsonAtomic } from '@main/io/atomic-json'
+import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
+import { UserFacingError } from '@main/user-facing-error'
 import type { SidecarTapeBox } from '@shared/domain'
+import { message } from '@shared/i18n/translate'
 
 /**
  * Build the final sidecar JSON from yt-dlp's info.json output.
  *
  * Layout:
- *   { ...ytDlpInfoJson_with_paths_stripped, tapebox: SidecarTapeBox }
+ *   { formatVersion, ...ytDlpInfoJson_with_paths_stripped, tapebox: SidecarTapeBox }
  *
  * The yt-dlp portion is intentionally NOT zod-validated (large, evolving
  * surface); only the 'tapebox' namespace is validated by callers.
@@ -53,20 +57,44 @@ export async function finalize(opts: {
   // (data-backup conventions): the sidecar is meaningless without its media, and is
   // regenerable from the source. So it takes the raw writeJsonAtomic, not the choke
   // point. The tape's durable text (its catalog row) is what records, via catalog.json.
-  await writeJsonAtomic(opts.sidecarPath, data)
+  await writeSidecar(opts.sidecarPath, data)
   await unlink(opts.infoJsonPath).catch(() => {})
+}
+
+/** How every sidecar is serialized: the library's own and an export's copy. */
+export const SIDECAR_JSON = { formatVersion: FORMAT_VERSIONS.sidecar }
+
+/**
+ * Write a sidecar in the library, stamped with its format version. Not recorded:
+ * see {@link finalize}.
+ */
+export async function writeSidecar(path: string, sidecar: Record<string, unknown>): Promise<void> {
+  await writeJsonAtomic(path, sidecar, SIDECAR_JSON)
+}
+
+/**
+ * Read a sidecar as its raw object. One in a newer format is reported to the
+ * user by name and left as it is (store-recovery-conventions); a missing or
+ * unparseable file throws.
+ */
+export async function readSidecarFile(sidecarPath: string): Promise<Record<string, unknown>> {
+  const found = parseStoreJson(await readFile(sidecarPath, 'utf8'), FORMAT_VERSIONS.sidecar)
+  if (found.status === 'newer') {
+    throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(sidecarPath) }))
+  }
+  if (found.status === 'unreadable') throw found.error
+  return found.value
 }
 
 /**
  * Read a sidecar back as its raw object (the full yt-dlp info.json plus the
- * tapebox namespace). Best-effort: a missing or unparseable file returns null,
- * so callers that only want an optional field (e.g. description for slug
- * generation) can treat it as simply absent.
+ * tapebox namespace). Best-effort: a missing, unparseable or newer-format file
+ * returns null, so callers that only want an optional field (e.g. description
+ * for slug generation) can treat it as simply absent.
  */
 export async function readSidecar(sidecarPath: string): Promise<Record<string, unknown> | null> {
   try {
-    const text = await readFile(sidecarPath, 'utf8')
-    return JSON.parse(text) as Record<string, unknown>
+    return await readSidecarFile(sidecarPath)
   } catch {
     return null
   }

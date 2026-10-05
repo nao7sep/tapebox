@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
+import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { describeError } from '@shared/error'
 import { DependenciesSchema, defaultDependencies, type Dependencies } from '@shared/dependencies'
 
@@ -15,6 +16,8 @@ import { DependenciesSchema, defaultDependencies, type Dependencies } from '@sha
  *     fresh (all-null) entries, because every fact is re-derivable — a re-scan of
  *     disk plus one update check restores it. There is nothing to preserve, so no
  *     `.invalid` quarantine and no fail-loud (the opposite of the session store).
+ *     A file in a newer format is intact, so it is left as it is: fresh facts
+ *     serve the session and nothing is written.
  *   - Written lazily: defaults are NOT materialized on first run. The file appears
  *     the first time a check or install has an actual fact to record — the
  *     convention's "facts are written only after the app learns them."
@@ -27,26 +30,39 @@ import { DependenciesSchema, defaultDependencies, type Dependencies } from '@sha
  */
 
 let cache: Dependencies | null = null
+/** True when dependencies.json is in a newer format, which this build never writes. */
+let newerOnDisk = false
 
 export async function loadDependencies(): Promise<void> {
-  let raw: unknown
+  cache = defaultDependencies()
+  newerOnDisk = false
+  let text: string
   try {
-    raw = JSON.parse(await readFile(paths.dependencies, 'utf8'))
+    text = await readFile(paths.dependencies, 'utf8')
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      // Corrupt, not absent: the facts are re-derivable, so self-heal to defaults
-      // (a re-check refills them) rather than quarantine-and-preserve as config does.
       log.warn('dependencies unreadable; using fresh facts', { error: describeError(err) })
     }
-    cache = defaultDependencies()
     return
   }
-  const parsed = DependenciesSchema.safeParse(raw)
-  if (parsed.success) {
+  const found = parseStoreJson(text, FORMAT_VERSIONS.dependencies)
+  if (found.status === 'newer') {
+    // Intact, from a newer build: fresh facts serve this session, and it is never written.
+    newerOnDisk = true
+    log.warn('dependencies are from a newer TapeBox; using fresh facts and leaving the file as it is', {
+      path: paths.dependencies,
+      formatVersion: found.version,
+    })
+    return
+  }
+  const parsed = found.status === 'read' ? DependenciesSchema.safeParse(found.value) : null
+  if (parsed?.success) {
     cache = parsed.data
   } else {
-    log.warn('dependencies invalid; using fresh facts', { error: describeError(parsed.error) })
-    cache = defaultDependencies()
+    // Corrupt, not absent: the facts are re-derivable, so self-heal to defaults
+    // (a re-check refills them) rather than quarantine-and-preserve as config does.
+    const error = found.status === 'unreadable' ? found.error : parsed?.error
+    log.warn('dependencies invalid; using fresh facts', { error: describeError(error) })
   }
 }
 
@@ -76,7 +92,12 @@ export function mutateDependencies(
     // not recorded: dependencies.json contains only re-derivable dependency and
     // update facts (last-known upstream versions and successful-check times), not
     // user-authored text. A refresh reconstructs everything in this store.
-    await writeJsonAtomic(paths.dependencies, merged, DependenciesSchema)
+    if (!newerOnDisk) {
+      await writeJsonAtomic(paths.dependencies, merged, {
+        formatVersion: FORMAT_VERSIONS.dependencies,
+        schema: DependenciesSchema,
+      })
+    }
     log.info('dependencies updated', { keys: Object.keys(patch) })
     return merged
   })

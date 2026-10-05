@@ -13,6 +13,7 @@ vi.mock('@main/i18n.js', async () => {
 
 import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from '@main/startup-dialog'
 import { loadCatalogue } from '@shared/i18n/catalogues'
+import { NewerFormatError } from '@main/io/format-version'
 
 await loadCatalogue('de')
 
@@ -46,12 +47,22 @@ describe('startup recovery dialogs', () => {
 
   it('speaks the interface language, declaring it for the dialog page', async () => {
     language.current = 'de'
-    await notifyStartupFailure()
+    await notifyStartupFailure(new Error('boom'))
 
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
       language: 'de',
       title: 'TapeBox konnte nicht starten',
       closeLabel: 'OK',
+    }))
+  })
+
+  it('names a store in a newer format and says it was left as it is', async () => {
+    await notifyStartupFailure(new NewerFormatError('/data/catalog.json', 2, 1))
+
+    expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'File from a newer version of TapeBox',
+      message: expect.stringContaining('/data/catalog.json'),
+      detail: expect.stringContaining('left exactly as it is'),
     }))
   })
 })

@@ -30,6 +30,23 @@ describe('classifyImport', () => {
     })
   })
 
+  it('reads a sidecar with no format marker, or format 1, as this build\'s own', () => {
+    const tapebox = { sourceUrl: 'http://x', mediaFilename: 'v.mp4' }
+    expect(classifyImport({ tapebox }).status).toBe('accept')
+    expect(classifyImport({ formatVersion: 1, tapebox }).status).toBe('accept')
+  })
+
+  it('rejects a sidecar in a newer format, saying so, and one whose marker is not a version', () => {
+    const tapebox = { sourceUrl: 'http://x', mediaFilename: 'v.mp4' }
+    const newer = classifyImport({ formatVersion: 2, tapebox })
+    expect(newer).toMatchObject({ status: 'reject', reason: { key: 'import.sidecarNewer' } })
+    if (newer.status === 'reject') expect(inEnglish(newer.reason)).toMatch(/newer version of TapeBox/)
+    expect(classifyImport({ formatVersion: 'one', tapebox })).toMatchObject({
+      status: 'reject',
+      reason: { key: 'import.sidecarInvalidJson' },
+    })
+  })
+
   it('rejects path-bearing and colliding bundle filenames before filesystem use', () => {
     expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: '../../escape.mp4' } }).status).toBe('reject')
     expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: '../escape.jpg' } }).status).toBe('reject')

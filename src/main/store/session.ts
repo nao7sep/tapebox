@@ -3,7 +3,8 @@ import { renameSync, writeFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import { nanoid } from 'nanoid'
 import { paths } from '@main/paths'
-import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
+import { quarantineFile, serializeStoreJson, writeManagedJson } from '@main/io/atomic-json'
+import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { recordBeforeExit } from '@main/store/backupStore'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
@@ -34,6 +35,9 @@ let lastWritten: string | null = null
 let saveFailing = false
 let saveFailureListener: (() => void) | null = null
 
+/** How catalog.json is written, by the async save and the terminal one alike. */
+const CATALOG_JSON = { formatVersion: FORMAT_VERSIONS.catalog, schema: SessionSchema }
+
 const IN_FLIGHT_STATES: ReadonlySet<Tape['state']> = new Set(['probing', 'ready', 'downloading'])
 
 /**
@@ -55,7 +59,7 @@ async function writeCatalog(session: Session): Promise<void> {
   const durable = durableSession(session)
   const key = JSON.stringify(durable)
   if (key === lastWritten) return
-  await writeManagedJson(paths.catalog, durable, SessionSchema)
+  await writeManagedJson(paths.catalog, durable, CATALOG_JSON)
   lastWritten = key
   saveFailing = false
 }
@@ -90,7 +94,8 @@ export type SessionLoadResult =
  * timestamped `catalog-*.invalid` sibling so the user's library stays
  * recoverable, and an empty session is returned. If it cannot even be set aside,
  * this throws (leaving the file intact) rather than risk a later write overwriting
- * the only copy.
+ * the only copy. A file in a newer format throws {@link NewerFormatError} and is
+ * left exactly as it is.
  */
 export async function loadSessionFile(
   sessionPath: string,
@@ -107,22 +112,24 @@ export async function loadSessionFile(
     throw err
   }
 
-  try {
-    const session = SessionSchema.parse(JSON.parse(text))
-    return { result: { status: 'loaded', tapeCount: session.tapes.length }, session }
-  } catch (parseErr) {
-    let quarantinePath: string
-    try {
-      quarantinePath = await quarantineFile(sessionPath)
-    } catch (quarantineErr) {
-      const detail = (quarantineErr as Error)?.message ?? String(quarantineErr)
-      throw new Error(
-        `session file at ${sessionPath} is corrupt and could not be set aside: ${detail}`,
-        { cause: parseErr },
-      )
-    }
-    return { result: { status: 'recovered', quarantinePath }, session: emptySession() }
+  const found = parseStoreJson(text, FORMAT_VERSIONS.catalog)
+  if (found.status === 'newer') throw new NewerFormatError(sessionPath, found.version, FORMAT_VERSIONS.catalog)
+  const parsed = found.status === 'read' ? SessionSchema.safeParse(found.value) : null
+  if (parsed?.success) {
+    return { result: { status: 'loaded', tapeCount: parsed.data.tapes.length }, session: parsed.data }
   }
+  const parseErr = found.status === 'unreadable' ? found.error : parsed?.error
+  let quarantinePath: string
+  try {
+    quarantinePath = await quarantineFile(sessionPath)
+  } catch (quarantineErr) {
+    const detail = (quarantineErr as Error)?.message ?? String(quarantineErr)
+    throw new Error(
+      `session file at ${sessionPath} is corrupt and could not be set aside: ${detail}`,
+      { cause: parseErr },
+    )
+  }
+  return { result: { status: 'recovered', quarantinePath }, session: emptySession() }
 }
 
 /**
@@ -403,7 +410,7 @@ export function persistNowSync(): void {
     const durable = durableSession(cache)
     const key = JSON.stringify(durable)
     if (key === lastWritten) return
-    const text = JSON.stringify(SessionSchema.parse(durable), null, 2) + '\n'
+    const text = serializeStoreJson(durable, CATALOG_JSON)
     const bytes = Buffer.from(text, 'utf8')
     const stem = paths.catalog.slice(0, -extname(paths.catalog).length)
     const tmp = `${stem}-${nanoid(10)}.tmp`

@@ -6,6 +6,12 @@ import { describeError } from '@shared/error'
 import type { LogLevel } from '@shared/log'
 import { utcTimestampForFilenameMs } from '@shared/utc'
 import { toJson } from './log-format'
+import {
+  databaseFormatVersion,
+  FORMAT_VERSIONS,
+  NewerFormatError,
+  stampDatabaseFormatVersion,
+} from './format-version'
 
 /**
  * The records database, `records.sqlite3` under the storage root, per the
@@ -122,12 +128,19 @@ export function openRecords(): string {
   try {
     const opened = new DatabaseSync(paths.records)
     try {
+      // A database in a newer format is left exactly as it is (store-recovery-conventions):
+      // checked before anything below writes to it, and this launch writes the text file.
+      const version = databaseFormatVersion(opened)
+      if (version > FORMAT_VERSIONS.records) {
+        throw new NewerFormatError(paths.records, version, FORMAT_VERSIONS.records)
+      }
       opened.exec('PRAGMA journal_mode = WAL')
       opened.exec('PRAGMA synchronous = FULL')
       // A busy database costs one entry a text-file line, never a stalled main thread.
       opened.exec('PRAGMA busy_timeout = 100')
       opened.exec(SCHEMA)
       addMissingColumns(opened)
+      stampDatabaseFormatVersion(opened, FORMAT_VERSIONS.records)
     } catch (err) {
       opened.close()
       throw err

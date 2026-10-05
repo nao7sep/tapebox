@@ -1,9 +1,11 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { handle } from './handle'
 import { caseInsensitiveSiblingExists, removeTapes } from './library'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
+import { readSidecarFile, SIDECAR_JSON } from '@main/core/sidecar'
+import { serializeStoreJson } from '@main/io/atomic-json'
 import { SidecarTapeBoxSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
 import {
@@ -80,7 +82,7 @@ async function exportTape(
   // file is copied out — so a corrupt source sidecar (or a rewrite that would
   // downgrade it below what import accepts) fails the export before it leaves
   // partial files in the user's folder.
-  const sidecar = JSON.parse(await readFile(join(libDir, tape.sidecarFilename), 'utf8')) as Record<string, unknown>
+  const sidecar = await readSidecarFile(join(libDir, tape.sidecarFilename))
   const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
   // Exporting under another name renames the bundle, so the sidecar records when.
   if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
@@ -100,7 +102,7 @@ async function exportTape(
       committed.push(await copyFileNoOverwrite(join(libDir, tape.thumbnailFilename), thumbDst, { hardLinks, signal }))
     }
     signal.throwIfAborted()
-    const sidecarBytes = Buffer.from(JSON.stringify(sidecar, null, 2) + '\n', 'utf8')
+    const sidecarBytes = Buffer.from(serializeStoreJson(sidecar, SIDECAR_JSON), 'utf8')
     committed.push(await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes)))
   } catch (err) {
     try {

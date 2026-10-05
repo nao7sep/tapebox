@@ -1,6 +1,7 @@
 import { FlatFilenameSchema, ImportableUrlSchema, type Tape } from '@shared/domain'
 import { extname } from 'node:path'
 import { portableFilenameIdentity } from '@main/core/filename'
+import { checkFormatVersion, FORMAT_VERSIONS } from '@main/io/format-version'
 import { message, type Message } from '@shared/i18n/translate'
 
 // The pure decisions behind `library:import`, lifted out of the IPC handler: the
@@ -22,6 +23,10 @@ export function classifyImport(sidecar: unknown): ImportClassification {
   if (!sidecar || typeof sidecar !== 'object' || Array.isArray(sidecar)) {
     return { status: 'reject', reason: message('import.notSidecarRoot') }
   }
+  // One in a newer format is reported and left as it is (store-recovery-conventions).
+  const version = checkFormatVersion(sidecar as Record<string, unknown>, FORMAT_VERSIONS.sidecar)
+  if (version.status === 'newer') return { status: 'reject', reason: message('import.sidecarNewer') }
+  if (version.status === 'unreadable') return { status: 'reject', reason: message('import.sidecarInvalidJson') }
   const tb = (sidecar as Record<string, unknown>)['tapebox']
   if (!tb || typeof tb !== 'object' || Array.isArray(tb)) {
     return { status: 'reject', reason: message('import.notSidecarNoSection') }

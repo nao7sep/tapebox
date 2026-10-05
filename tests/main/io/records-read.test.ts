@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -168,6 +168,47 @@ describe('records reads', () => {
     const page = await reader.readRecords({ op: 'page', query: query() })
     expect(page.records.map((record) => [record.session === 'earlier', record.level])).toEqual([[false, 'warn'], [true, 'error']])
     expect(await reader.readRecords({ op: 'detail', kind: 'ytdlp-run', id: page.records[1]!.id })).toMatchObject({ stopReason: null })
+  })
+
+  it('reads a database that never set PRAGMA user_version as format 1, and stamps 1 on the one it writes', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    mkdirSync(dirname(paths.records), { recursive: true })
+    new DatabaseSync(paths.records).close()
+
+    records.openRecords()
+    logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'kept')
+    records.closeRecords()
+    const check = new DatabaseSync(paths.records, { readOnly: true })
+    expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(1)
+    check.close()
+
+    records.openRecords()
+    const page = await reader.readRecords({ op: 'page', query: query() })
+    expect(page.records.map((record) => record.title)).toEqual(['kept'])
+  })
+
+  it('leaves a database in a newer format byte-identical: this launch writes its text file, and reads refuse it', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    mkdirSync(dirname(paths.records), { recursive: true })
+    const newer = new DatabaseSync(paths.records)
+    newer.exec('CREATE TABLE logs (id INTEGER PRIMARY KEY, future TEXT)')
+    newer.exec('PRAGMA user_version = 2')
+    newer.close()
+    const bytes = readFileSync(paths.records)
+
+    records.openRecords()
+    expect(records.writeRecord('logs', {
+      time: '2026-10-04T10:00:01.000Z', level: 'info', message: 'to the text file', tape_id: null, fields: '{}',
+    }, () => 'to the text file')).toBe(false)
+    await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow(/NewerFormatError/)
+    records.closeRecords()
+
+    expect(readFileSync(paths.records).equals(bytes)).toBe(true)
+    const [file] = readdirSync(paths.logs)
+    const lines = readFileSync(join(paths.logs, file!), 'utf8').trim().split('\n')
+    expect(lines.at(-1)).toBe('to the text file')
   })
 
   it('continues a long list from the last record of the page before', async () => {

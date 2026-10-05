@@ -128,7 +128,8 @@ describe('accepting refreshed metadata', () => {
     expect(updated).toMatchObject({ title: 'New title', uploader: 'New uploader', thumbnailFilename: 'Take.jpg' })
     expect(updated.probedAtUtc, 'the probe time is when the source answered, not the Apply click').toBe(PROBED_AT)
     expect(updated, 'facts fixed by the file are not re-stated').toMatchObject({ durationSeconds: 61, chapterCount: 3 })
-    expect(JSON.parse(await readFile(sidecar, 'utf8'))).toEqual({
+    expect(JSON.parse(await readFile(sidecar, 'utf8')), 'a sidecar with no marker reads as format 1').toEqual({
+      formatVersion: 1,
       id: 'source',
       title: 'New title',
       uploader: 'New uploader',
@@ -161,6 +162,23 @@ describe('accepting refreshed metadata', () => {
 
     expect(state.tapes[0], 'the catalog and the sidecar never disagree').toBe(tape)
     expect(emit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a sidecar in a newer format, naming it, and leaves it byte-identical', async () => {
+    const sidecar = join(state.libraryDir, 'Take.json')
+    const text = JSON.stringify({ formatVersion: 2, title: 'Future', extra: 'kept' })
+    await writeFile(sidecar, text, 'utf8')
+    const tape = makeTape({ id: 'Newersidec', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })
+    state.tapes = [tape]
+
+    const failure = await invoke<Tape>('library:applyMetadata', { tapeId: 'Newersidec', metadata: ACCEPTED })
+      .catch((error: unknown) => error)
+
+    expect(failure).toMatchObject({ userMessage: { key: 'errors.fileNewer', values: { name: 'Take.json' } } })
+    expect(await readFile(sidecar, 'utf8')).toBe(text)
+    expect(state.tapes[0], 'nothing is applied').toBe(tape)
+    await expect(invoke('library:getSidecar', { tapeId: 'Newersidec' }), 'nor shown as if read')
+      .rejects.toMatchObject({ userMessage: { key: 'errors.fileNewer' } })
   })
 
   it('backfills a poster for a downloaded tape that has none', async () => {

@@ -23,7 +23,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -320,5 +320,65 @@ describe('write-through: a real managed save records the exact bytes after the r
     expect(rows.every((r) => r.path === file)).toBe(true)
     expect(JSON.parse(Buffer.from(rows[1]!.content).toString('utf8')).maxConcurrentDownloads).toBe(5)
     expect(logCalls.warn).toHaveLength(0)
+  })
+})
+
+describe('format version (store-recovery-conventions)', () => {
+  function userVersion(): number {
+    const db = new DatabaseSync(path.join(root, 'backups.sqlite3'))
+    try {
+      return (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+    } finally {
+      db.close()
+    }
+  }
+
+  it('reads a store that never set PRAGMA user_version as format 1, keeps its rows, and stamps 1', async () => {
+    const older = new DatabaseSync(path.join(root, 'backups.sqlite3'))
+    older.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
+      content_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL, written_at_utc TEXT NOT NULL)`)
+    older.prepare('INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)')
+      .run('/earlier', Buffer.from('x'), 'h', 1, '2026-01-01T00:00:00.000Z')
+    older.close()
+    const { record, flushBackupStore } = await import('@main/store/backupStore')
+
+    record(path.join(root, 'config.json'), Buffer.from('{}'))
+    await flushBackupStore()
+
+    expect(readRows(root).map((row) => row.path)).toEqual(['/earlier', path.join(root, 'config.json')])
+    expect(userVersion()).toBe(1)
+  })
+
+  it('stamps format 1 on a store it creates, and records into it again after a relaunch', async () => {
+    const first = await import('@main/store/backupStore')
+    first.record(path.join(root, 'config.json'), Buffer.from('one'))
+    await first.flushBackupStore()
+    await first.closeBackupStore()
+    expect(userVersion()).toBe(1)
+
+    vi.resetModules()
+    const relaunched = await import('@main/store/backupStore')
+    relaunched.record(path.join(root, 'config.json'), Buffer.from('two'))
+    await relaunched.flushBackupStore()
+    expect(readRows(root)).toHaveLength(2)
+  })
+
+  it('leaves a store in a newer format byte-identical, warning once and recording nothing', async () => {
+    const file = path.join(root, 'backups.sqlite3')
+    const newer = new DatabaseSync(file)
+    newer.exec('CREATE TABLE future (id INTEGER PRIMARY KEY)')
+    newer.exec('PRAGMA user_version = 2')
+    newer.close()
+    const bytes = readFileSync(file)
+    const { record, flushBackupStore, closeBackupStore } = await import('@main/store/backupStore')
+
+    record(path.join(root, 'config.json'), Buffer.from('a'))
+    record(path.join(root, 'config.json'), Buffer.from('b'))
+    await flushBackupStore()
+    await closeBackupStore()
+
+    expect(readFileSync(file).equals(bytes)).toBe(true)
+    expect(logCalls.warn).toHaveLength(1)
+    expect(logCalls.warn[0]!.fields).toMatchObject({ error: expect.objectContaining({ name: 'NewerFormatError' }) })
   })
 })

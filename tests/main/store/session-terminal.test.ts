@@ -128,7 +128,7 @@ describe('terminal catalog persistence', () => {
       tapes: Tape[]
       boxes: typeof box[]
     }
-    expect(catalog).toEqual({ tapes: [original], boxes: [box] })
+    expect(catalog).toEqual({ formatVersion: 1, tapes: [original], boxes: [box] })
   })
 
   it('publishes a reorder only after the complete catalog order is durable', async () => {

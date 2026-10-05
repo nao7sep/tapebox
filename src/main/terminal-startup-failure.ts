@@ -9,13 +9,13 @@ export async function settleTerminalStartupFailure(
   error: unknown,
   dependencies: {
     log: StartupFailureLogger
-    notify: () => Promise<void>
+    notify: (error: unknown) => Promise<void>
     exit: (code: number) => void
   },
 ): Promise<void> {
   dependencies.log.error('startup failed', { error: describeError(error) })
   try {
-    await dependencies.notify()
+    await dependencies.notify(error)
   } catch (dialogError) {
     dependencies.log.error('startup failure dialog failed', { error: describeError(dialogError) })
   } finally {

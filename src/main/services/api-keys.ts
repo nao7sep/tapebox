@@ -1,8 +1,12 @@
-import { chmod, stat } from 'node:fs/promises'
+import { chmod, readFile, stat } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { z } from 'zod'
 import { paths } from '@main/paths'
-import { quarantineFile, readJsonOptional, writeJsonAtomic } from '@main/io/atomic-json'
+import { quarantineFile, writeJsonAtomic } from '@main/io/atomic-json'
+import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { log } from '@main/io/logger'
+import { UserFacingError } from '@main/user-facing-error'
+import { message } from '@shared/i18n/translate'
 
 /**
  * API key storage and resolution — the secret store at ~/.tapebox/api-keys.json,
@@ -29,7 +33,9 @@ import { log } from '@main/io/logger'
  *     resolves to absent (warned, naming the key id) rather than a garbage "key".
  *   - On read: a group/world-readable file is warned about once and tightened to
  *     0600 (POSIX only); a corrupt/unreadable file is moved aside to a timestamped
- *     neighbour, warned, and treated as empty rather than throwing.
+ *     neighbour, warned, and treated as empty rather than throwing. A file in a
+ *     newer format is left as it is and treated as empty, and a change to it is
+ *     refused (store-recovery-conventions).
  */
 
 const MARKER = 'obf:'
@@ -115,28 +121,53 @@ function normalize(raw: unknown): ApiKeysFile {
   return { keys }
 }
 
-async function readAll(): Promise<ApiKeysFile> {
+/** The stored keys, or `newer` when api-keys.json is in a newer format: intact,
+ *  so it is left exactly as it is and no key resolves from it. */
+async function readAll(): Promise<ApiKeysFile | 'newer'> {
   await warnIfInsecureMode()
-  let raw: unknown
+  let text: string
   try {
-    raw = await readJsonOptional(paths.apiKeys, z.unknown())
+    text = await readFile(paths.apiKeys, 'utf8')
   } catch (err) {
-    // Corrupt/unreadable: never fail key resolution over it. Move the bad file
-    // aside (timestamped) so its bytes are preserved and it is handled once,
-    // then degrade to "no key" — it is rebuilt on the next write.
-    try {
-      const quarantine = await quarantineFile(paths.apiKeys)
-      log.warn('api-keys.json was unreadable; set aside and treating as empty', { path: paths.apiKeys, quarantine })
-    } catch (asideErr) {
-      log.warn('api-keys.json was unreadable and could not be set aside; treating as empty', {
-        path: paths.apiKeys,
-        error: (asideErr as Error)?.message ?? String(asideErr),
-      })
-    }
-    return { keys: {} }
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { keys: {} }
+    return setAside()
   }
-  if (raw == null) return { keys: {} }
-  return normalize(raw)
+  const found = parseStoreJson(text, FORMAT_VERSIONS.apiKeys)
+  if (found.status === 'newer') {
+    log.warn('api-keys.json is from a newer TapeBox; treating it as empty and leaving it as it is', {
+      path: paths.apiKeys,
+      formatVersion: found.version,
+    })
+    return 'newer'
+  }
+  if (found.status === 'unreadable') return setAside()
+  return normalize(found.value)
+}
+
+// Corrupt/unreadable: never fail key resolution over it. Move the bad file aside
+// (timestamped) so its bytes are preserved and it is handled once, then degrade to
+// "no key" — it is rebuilt on the next write.
+async function setAside(): Promise<ApiKeysFile> {
+  try {
+    const quarantine = await quarantineFile(paths.apiKeys)
+    log.warn('api-keys.json was unreadable; set aside and treating as empty', { path: paths.apiKeys, quarantine })
+  } catch (asideErr) {
+    log.warn('api-keys.json was unreadable and could not be set aside; treating as empty', {
+      path: paths.apiKeys,
+      error: (asideErr as Error)?.message ?? String(asideErr),
+    })
+  }
+  return { keys: {} }
+}
+
+/** The stored keys for a change, refusing a file in a newer format, which this
+ *  build never writes. */
+async function readAllForWrite(): Promise<ApiKeysFile> {
+  const all = await readAll()
+  if (all === 'newer') {
+    throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(paths.apiKeys) }))
+  }
+  return all
 }
 
 async function writeAll(data: ApiKeysFile): Promise<void> {
@@ -144,7 +175,11 @@ async function writeAll(data: ApiKeysFile): Promise<void> {
   // managed-text choke point. A backup history that held a credential would become
   // sensitive-at-rest in its entirety (data-backup conventions: secrets are never
   // recorded); the live file keeps its own 0600 at-rest protection here instead.
-  await writeJsonAtomic(paths.apiKeys, data, SCHEMA, ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined)
+  await writeJsonAtomic(paths.apiKeys, data, {
+    formatVersion: FORMAT_VERSIONS.apiKeys,
+    schema: SCHEMA,
+    mode: ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined,
+  })
 }
 
 function envValue(id: string): string | null {
@@ -165,7 +200,7 @@ export async function resolveApiKey(id: string): Promise<string | null> {
   if (fromEnv) return fromEnv
 
   const all = await readAll()
-  const stored = all.keys[id]
+  const stored = all === 'newer' ? undefined : all.keys[id]
   if (typeof stored === 'string') {
     const key = decodeApiKey(stored, id)?.trim()
     if (key) return key
@@ -182,7 +217,7 @@ export async function hasApiKey(id: string): Promise<boolean> {
 export async function writeApiKey(id: string, apiKey: string): Promise<void> {
   assertKeyId(id)
   const trimmed = apiKey.trim()
-  const all = await readAll()
+  const all = await readAllForWrite()
   if (trimmed.length === 0) {
     delete all.keys[id]
   } else {
@@ -194,7 +229,7 @@ export async function writeApiKey(id: string, apiKey: string): Promise<void> {
 /** Remove the stored key. Any environment value is unaffected. */
 export async function clearApiKey(id: string): Promise<void> {
   assertKeyId(id)
-  const all = await readAll()
+  const all = await readAllForWrite()
   if (id in all.keys) {
     delete all.keys[id]
     await writeAll(all)

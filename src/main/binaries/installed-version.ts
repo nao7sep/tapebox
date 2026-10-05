@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { binaryPath, paths } from '@main/paths'
 import { execCapture } from '@main/io/spawn'
 import { writeJsonAtomic } from '@main/io/atomic-json'
+import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
@@ -72,7 +73,9 @@ export async function writeVersionSidecar(name: BinaryName, version: string): Pr
   // the re-fetchable binary it sits beside — meaningless without that binary (itself
   // excluded as a re-fetchable binary) and rewritten by the next install, so it rides
   // along into exclusion rather than being recorded orphaned (data-backup conventions).
-  await writeJsonAtomic(versionSidecarPath(name), sidecar)
+  // An install has just replaced the binary it describes, so it is rewritten even
+  // when a newer TapeBox wrote it: what it said is no longer true.
+  await writeJsonAtomic(versionSidecarPath(name), sidecar, { formatVersion: FORMAT_VERSIONS.binaryVersion })
 }
 
 const cache = new Map<BinaryName, Promise<string | null>>()
@@ -143,8 +146,13 @@ async function probe(
 async function readSidecar(name: BinaryName, parse: (stored: string) => string | null): Promise<string | null> {
   const path = versionSidecarPath(name)
   try {
-    const raw: unknown = JSON.parse(await readFile(path, 'utf8'))
-    const stored = (raw as Partial<VersionSidecar> | null)?.version
+    const found = parseStoreJson(await readFile(path, 'utf8'), FORMAT_VERSIONS.binaryVersion)
+    if (found.status === 'newer') {
+      log.warn('version sidecar is from a newer TapeBox', { name, path, formatVersion: found.version })
+      return null
+    }
+    if (found.status === 'unreadable') throw found.error
+    const stored = (found.value as Partial<VersionSidecar>).version
     if (typeof stored !== 'string' || stored.trim().length === 0) {
       log.warn('version sidecar holds no version', { name, path })
       return null

@@ -9,7 +9,6 @@ import * as session from '@main/store/session'
 import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { writeJsonAtomic } from '@main/io/atomic-json'
 import {
   claimFile,
   copyClaimedFileNoOverwrite,
@@ -21,6 +20,7 @@ import {
 } from '@main/io/atomic-file'
 import { portableSiblingExists, type AllowedPortableDirectoryEntry } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
+import { readSidecarFile, writeSidecar } from '@main/core/sidecar'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
@@ -104,9 +104,7 @@ export function registerLibraryHandlers(): void {
     if (!tape || !tape.sidecarFilename) {
       throw new Error(`Sidecar not available for tape ${tapeId}`)
     }
-    const path = join(getLibraryDir(), tape.sidecarFilename)
-    const text = await readFile(path, 'utf8')
-    return JSON.parse(text) as SidecarRaw
+    return await readSidecarFile(join(getLibraryDir(), tape.sidecarFilename)) as SidecarRaw
   })
 
   handle('library:reveal', async ({ tapeId }) => {
@@ -223,7 +221,7 @@ async function writeRefreshedSidecar(
   metadata: RefreshedMetadata,
   thumbnailFilename: string | null,
 ): Promise<void> {
-  const sidecar = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+  const sidecar = await readSidecarFile(path)
   let changed = false
   const fields = { title: metadata.title, uploader: metadata.uploader, description: metadata.description }
   for (const [key, value] of Object.entries(fields)) {
@@ -240,7 +238,7 @@ async function writeRefreshedSidecar(
   // not recorded: the sidecar is library-directory content, colocated with binary
   // media, so it is excluded (data-backup conventions) and takes the raw
   // writeJsonAtomic, not the choke point.
-  await writeJsonAtomic(path, sidecar)
+  await writeSidecar(path, sidecar)
 }
 
 /**
@@ -512,7 +510,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   const sidecarName = byArtifact('sidecar')!.finalName
   const thumbnailName = byArtifact('thumbnail')?.finalName ?? null
   const sidecarItem = byArtifact('sidecar')!
-  const sidecar = JSON.parse(await readFile(sidecarItem.old, 'utf8')) as Record<string, unknown>
+  const sidecar = await readSidecarFile(sidecarItem.old)
   const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
   tb['name'] = cleanName
   tb['renamedAtUtc'] = nowUtc
@@ -564,7 +562,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
         // media and thumbnail — a binary-bearing directory whose contents ride along
         // into exclusion (data-backup conventions). It uses the raw writeJsonAtomic,
         // not the managed-text choke point; the tape's catalog row records instead.
-        await writeJsonAtomic(it.stage, sidecar)
+        await writeSidecar(it.stage, sidecar)
         done.push(await publishFileNoOverwrite(it.stage, it.fresh))
       } else {
         // not recorded: the tape's existing media/thumbnail bytes gain a second
@@ -593,7 +591,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   const postCommitErrors: unknown[] = []
   if (sidecarItem.equivalent) {
     try {
-      await writeJsonAtomic(sidecarItem.old, sidecar)
+      await writeSidecar(sidecarItem.old, sidecar)
     } catch (sidecarError) {
       postCommitErrors.push(
         new AggregateError([sidecarError], `Committed sidecar could not be updated at ${sidecarItem.old}.`),

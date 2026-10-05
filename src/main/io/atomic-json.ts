@@ -2,11 +2,12 @@ import { chmod, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
+import { withFormatVersion } from './format-version'
 import { record } from '@main/store/backupStore'
 import { utcTimestampForFilenameMs } from '@shared/utc'
 
 /**
- * Atomic JSON read/write with zod validation.
+ * Atomic JSON store writes with zod validation.
  *
  * The write delegates to {@link writeFileAtomicVia}: write-temp -> fsync ->
  * rename -> fsync parent dir, with the temp a same-directory `<stem>-<nanoid>.tmp`
@@ -30,27 +31,21 @@ import { utcTimestampForFilenameMs } from '@shared/utc'
  * not the input shape.
  */
 
-export async function readJsonOptional<S extends z.ZodType>(
-  path: string,
-  schema: S,
-): Promise<z.infer<S> | null> {
-  let text: string
-  try {
-    text = await readFile(path, 'utf8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw err
-  }
-  return schema.parse(JSON.parse(text)) as z.infer<S>
-}
+/** How a store's JSON is written: its format version, and the shape it is
+ *  validated against first when given. */
+export type StoreJsonOptions<S extends z.ZodType> = { formatVersion: number; schema?: S }
 
-/** Serialize a value to the canonical on-disk JSON form (2-space indent, trailing
- *  newline), validating through `schema` first when given. The single serializer
- *  both write paths share, so the bytes recorded are byte-identical to the bytes on
- *  disk. */
-function serializeJson<S extends z.ZodType>(data: z.input<S> | z.infer<S>, schema?: S): string {
-  const validated = schema ? schema.parse(data) : data
-  return JSON.stringify(validated, null, 2) + '\n'
+/** Serialize a store's value to the canonical on-disk JSON form (2-space indent,
+ *  trailing newline), validating through `schema` first when given and leading
+ *  with its `formatVersion` (store-recovery-conventions). The single serializer
+ *  every JSON store write shares, so the bytes recorded are byte-identical to the
+ *  bytes on disk. */
+export function serializeStoreJson<S extends z.ZodType>(
+  data: z.input<S> | z.infer<S>,
+  { formatVersion, schema }: StoreJsonOptions<S>,
+): string {
+  const validated = (schema ? schema.parse(data) : data) as object
+  return JSON.stringify(withFormatVersion(validated, formatVersion), null, 2) + '\n'
 }
 
 /**
@@ -64,12 +59,14 @@ function serializeJson<S extends z.ZodType>(data: z.input<S> | z.infer<S>, schem
 export async function writeJsonAtomic<S extends z.ZodType>(
   path: string,
   data: z.input<S> | z.infer<S>,
-  schema?: S,
-  // POSIX file mode for the written file (e.g. 0o600 for a secrets file). When
-  // omitted, the file is created with the process's default mode.
-  mode?: number,
+  options: StoreJsonOptions<S> & {
+    // POSIX file mode for the written file (e.g. 0o600 for a secrets file). When
+    // omitted, the file is created with the process's default mode.
+    mode?: number
+  },
 ): Promise<void> {
-  const text = serializeJson(data, schema)
+  const { mode } = options
+  const text = serializeStoreJson(data, options)
   if (await holdsAlready(path, text, mode)) return
   await writeFileAtomicVia(path, async (tempPath) => {
     await writeFile(tempPath, text, 'utf8')
@@ -115,9 +112,9 @@ async function holdsAlready(path: string, text: string, mode: number | undefined
 export async function writeManagedJson<S extends z.ZodType>(
   path: string,
   data: z.input<S> | z.infer<S>,
-  schema?: S,
+  options: StoreJsonOptions<S>,
 ): Promise<void> {
-  const text = serializeJson(data, schema)
+  const text = serializeStoreJson(data, options)
   const bytes = Buffer.from(text, 'utf8')
   await writeFileAtomicVia(path, async (tempPath) => {
     await writeFile(tempPath, bytes)

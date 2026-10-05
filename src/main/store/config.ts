@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
+import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { describeError } from '@shared/error'
 import {
   cleanSettingsSets, defaultSettings, effectiveSettings, storedSets, summarizeSettings, type Settings,
@@ -42,7 +43,8 @@ export type ConfigLoadResult =
   | { status: 'missing' }
   | { status: 'recovered'; quarantinePath: string }
 
-/** Read an explicit path, preserving corrupt bytes and resolving absent sets. */
+/** Read an explicit path, preserving corrupt bytes and resolving absent sets. A
+ *  file in a newer format throws {@link NewerFormatError} and is left untouched. */
 export async function readSettingsFile(
   configPath: string,
 ): Promise<{ settings: Settings } | { quarantinePath: string } | null> {
@@ -53,19 +55,21 @@ export async function readSettingsFile(
 async function readSettingsStore(
   configPath: string,
 ): Promise<{ sets: SettingsSets } | { quarantinePath: string } | null> {
-  let raw: unknown
+  let text: string
   try {
-    raw = JSON.parse(await readFile(configPath, 'utf8'))
+    text = await readFile(configPath, 'utf8')
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(err) })
     return { quarantinePath: await quarantineFile(configPath) }
   }
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    log.warn('config invalid; quarantining and falling back to defaults')
+  const found = parseStoreJson(text, FORMAT_VERSIONS.config)
+  if (found.status === 'newer') throw new NewerFormatError(configPath, found.version, FORMAT_VERSIONS.config)
+  if (found.status === 'unreadable') {
+    log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(found.error) })
     return { quarantinePath: await quarantineFile(configPath) }
   }
-  return { sets: readSettingsSets(raw as Record<string, unknown>, (key) => {
+  return { sets: readSettingsSets(found.value, (key) => {
     log.warn('settings set invalid; using built-in', { key })
   }) }
 }
@@ -96,7 +100,7 @@ export function updateSettings(patch: SettingsSets): Promise<Settings> {
     const current = getSettings()
     const next = storedSets({ ...current, ...StoredSettingsSchema.parse(cleanSettingsSets(patch)) })
     if (JSON.stringify(next) !== JSON.stringify(storedSets(current))) {
-      await writeManagedJson(paths.config, next, StoredSettingsSchema)
+      await writeManagedJson(paths.config, next, { formatVersion: FORMAT_VERSIONS.config, schema: StoredSettingsSchema })
       log.info('settings updated', { keys: Object.keys(patch) })
     }
     // The in-memory view is authoritative only after the durable commit. A failed

@@ -16,7 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -186,6 +186,21 @@ describe('the sidecar, where a binary cannot report itself', () => {
 
   it('is null when absent — a hand-placed binary is unversioned, never assumed current', async () => {
     expect(await readInstalledVersion('ffmpeg')).toBeNull()
+  })
+
+  it('reads a sidecar with no format marker as format 1, and writes format 1', async () => {
+    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ version: 'autobuild-2026-08-19-19-21' }))
+    expect(await readInstalledVersion('ffmpeg')).toBe('autobuild-2026-08-19-19-21')
+
+    await writeVersionSidecar('ffmpeg', 'autobuild-2026-09-01-00-00')
+    expect(JSON.parse(readFileSync(versionSidecarPath('ffmpeg'), 'utf8'))).toMatchObject({ formatVersion: 1 })
+  })
+
+  it('reads a sidecar in a newer format as unknown and leaves it byte-identical', async () => {
+    const text = JSON.stringify({ formatVersion: 2, version: 'autobuild-2026-08-19-19-21' })
+    writeFileSync(versionSidecarPath('ffmpeg'), text)
+    expect(await readInstalledVersion('ffmpeg')).toBeNull()
+    expect(readFileSync(versionSidecarPath('ffmpeg'), 'utf8')).toBe(text)
   })
 
   it('is null when unreadable or empty, rather than a blank version', async () => {

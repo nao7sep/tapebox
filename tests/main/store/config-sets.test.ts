@@ -22,8 +22,11 @@ beforeEach(async () => {
 })
 afterEach(async () => rm(dir, { recursive: true, force: true }))
 
+/** The stored sets, without the file's format marker (config-format.test.ts owns it). */
 async function savedSets(): Promise<Record<string, unknown>> {
-  return JSON.parse(await readFile(paths.config, 'utf8')) as Record<string, unknown>
+  const { formatVersion, ...sets } = JSON.parse(await readFile(paths.config, 'utf8')) as Record<string, unknown>
+  if (formatVersion !== undefined) expect(formatVersion).toBe(1)
+  return sets
 }
 
 describe('settings by set', () => {
