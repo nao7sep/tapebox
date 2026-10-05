@@ -1,4 +1,4 @@
-import { chmod, readFile, rename, writeFile } from 'node:fs/promises'
+import { chmod, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
@@ -54,7 +54,8 @@ function serializeJson<S extends z.ZodType>(data: z.input<S> | z.infer<S>, schem
 }
 
 /**
- * Raw atomic JSON write, NOT recorded to the data-backup store. For JSON that is
+ * Raw atomic JSON write, NOT recorded to the data-backup store. A file that
+ * already holds the same bytes is left as it is. For JSON that is
  * excluded from the backup by design-time, per-write-site decision: the binary-
  * bearing library/export sidecars, the secret api-keys.json, re-derivable
  * dependency/update facts, and the volatile-state layout.json (see the module
@@ -69,12 +70,28 @@ export async function writeJsonAtomic<S extends z.ZodType>(
   mode?: number,
 ): Promise<void> {
   const text = serializeJson(data, schema)
+  if (await holdsAlready(path, text, mode)) return
   await writeFileAtomicVia(path, async (tempPath) => {
     await writeFile(tempPath, text, 'utf8')
     // chmod (not the open mode) is what guarantees the exact bits regardless of
     // the process umask — the same belt-and-suspenders write-file-atomic used.
     if (mode !== undefined) await chmod(tempPath, mode)
   })
+}
+
+/** Whether `path` already holds exactly `text` (and `mode`, when one is asked for),
+ * so writing it again would change nothing but the file's modified time
+ * (content-lifecycle conventions). */
+async function holdsAlready(path: string, text: string, mode: number | undefined): Promise<boolean> {
+  let current: Buffer
+  try {
+    current = await readFile(path)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw err
+  }
+  if (!current.equals(Buffer.from(text, 'utf8'))) return false
+  return mode === undefined || ((await stat(path)).mode & 0o777) === mode
 }
 
 /**

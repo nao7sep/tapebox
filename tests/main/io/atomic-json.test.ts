@@ -1,4 +1,4 @@
-import { access, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { access, chmod, mkdtemp, readdir, readFile, rm, utimes } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -74,6 +74,30 @@ describe('writeJsonAtomic', () => {
 
     expect(JSON.parse(await readFile(target, 'utf8'))).toEqual({ version: 2 })
     expect(await readdir(dir)).toEqual(['config.json'])
+  })
+
+  it('leaves a file that already holds the same JSON untouched', async () => {
+    const target = join(dir, 'layout.json')
+    await writeJsonAtomic(target, { volume: 0.5 })
+    const past = new Date('2020-01-01T00:00:00.000Z')
+    await utimes(target, past, past)
+    const before = statSync(target)
+
+    await writeJsonAtomic(target, { volume: 0.5 })
+
+    const after = statSync(target)
+    expect(after.mtimeMs).toBe(past.getTime())
+    expect(after.ino).toBe(before.ino)
+  })
+
+  it.runIf(process.platform !== 'win32')('rewrites same JSON whose file lacks the mode asked for', async () => {
+    const target = join(dir, 'api-keys.json')
+    await writeJsonAtomic(target, { keys: {} })
+    await chmod(target, 0o644)
+
+    await writeJsonAtomic(target, { keys: {} }, undefined, 0o600)
+
+    expect(statSync(target).mode & 0o777).toBe(0o600)
   })
 
   it.runIf(process.platform !== 'win32')('creates the file at exactly the given mode (e.g. 0600 for secrets)', async () => {

@@ -1,5 +1,5 @@
 import { mkdtempSync, statSync } from 'node:fs'
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readFile, readdir, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -55,6 +55,16 @@ describe('api-keys storage', () => {
     const onDisk = await readFile(apiKeysPath, 'utf8')
     expect(onDisk).not.toContain('sk-plaintext-secret')
     expect(JSON.parse(onDisk)).toHaveProperty(['keys', 'openai'])
+  })
+
+  it('leaves the key file alone when the same key is saved again', async () => {
+    await apiKeys.writeApiKey('openai', 'sk-stored-123')
+    const past = new Date('2020-01-01T00:00:00.000Z')
+    await utimes(apiKeysPath, past, past)
+
+    await apiKeys.writeApiKey('openai', ' sk-stored-123 ')
+
+    expect(statSync(apiKeysPath).mtimeMs).toBe(past.getTime())
   })
 
   it('clears the stored key', async () => {

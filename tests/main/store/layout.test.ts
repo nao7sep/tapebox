@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -39,5 +39,21 @@ describe('layout store', () => {
     const reloaded = await import('@main/store/layout')
     await reloaded.loadLayout()
     expect(reloaded.getLayout().recordsListWidth).toBe(512)
+  })
+
+  it('does not rewrite layout.json at quit when nothing changed', async () => {
+    const { layout, paths } = await freshLayout()
+    await layout.loadLayout()
+    layout.updateLayout({ leftPaneWidth: 420 })
+    await layout.persistNow()
+    const past = new Date('2020-01-01T00:00:00.000Z')
+    utimesSync(paths.layout, past, past)
+
+    vi.resetModules()
+    const relaunched = await import('@main/store/layout')
+    await relaunched.loadLayout()
+    await relaunched.persistNow()
+
+    expect(statSync(paths.layout).mtimeMs).toBe(past.getTime())
   })
 })
