@@ -33,7 +33,7 @@ export type RenamePlan =
     }
 
 export function planRename(
-  tape: { filename: string; sidecarFilename: string; thumbnailFilename: string | null },
+  tape: { name: string | null; filename: string; sidecarFilename: string; thumbnailFilename: string | null },
   rawName: string,
 ): RenamePlan {
   // Any filesystem-safe name, not just a slug — sanitizeFilename preserves Unicode
@@ -47,13 +47,15 @@ export function planRename(
   const newSidecarName = `${cleanName}.json`
   const newThumbName = tape.thumbnailFilename ? `${cleanName}${extname(tape.thumbnailFilename)}` : null
 
-  if (
-    newMediaName === tape.filename &&
-    newSidecarName === tape.sidecarFilename &&
-    newThumbName === tape.thumbnailFilename
-  ) {
-    return { status: 'noop' }
-  }
+  // A tape that has a name keeps it when given it again, whatever its files are
+  // called (a case-only rename keeps the old spelling on disk). One that has none
+  // is unchanged only when every file would keep its name.
+  const unchanged = tape.name !== null
+    ? cleanName === tape.name
+    : newMediaName === tape.filename &&
+      newSidecarName === tape.sidecarFilename &&
+      newThumbName === tape.thumbnailFilename
+  if (unchanged) return { status: 'noop' }
 
   const items: RenamePlanItem[] = [
     { artifact: 'media' as const, old: tape.filename, fresh: newMediaName },

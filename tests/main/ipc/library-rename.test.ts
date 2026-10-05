@@ -163,6 +163,21 @@ describe('library:rename', () => {
     expect(rollbackMutation.publishes).toBe(0)
   })
 
+  it('leaves the tape and its sidecar alone when a case-only rename is repeated', async () => {
+    const rename = handlers.get('library:rename')!
+    await rename({ tapeId: state.tape!.id, name: 'take' })
+    const renamed = state.tape
+    const sidecarBefore = await readFile(join(dir, 'Take.json'), 'utf8')
+    const sidecarMtime = (await stat(join(dir, 'Take.json'))).mtimeMs
+
+    await expect(rename({ tapeId: state.tape!.id, name: 'take' })).resolves.toEqual(renamed)
+
+    expect(state.tape, 'renamedAtUtc is not stamped again').toBe(renamed)
+    expect(renameTapeDurably).toHaveBeenCalledTimes(1)
+    expect(await readFile(join(dir, 'Take.json'), 'utf8')).toBe(sidecarBefore)
+    expect((await stat(join(dir, 'Take.json'))).mtimeMs).toBe(sidecarMtime)
+  })
+
   it('preserves every bundle member during a composed/decomposed rename', async () => {
     const decomposed = 'Cafe\u0301'
     const composed = 'Caf\u00e9'

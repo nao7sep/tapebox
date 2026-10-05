@@ -444,6 +444,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   }
   const plan = planRename(
     {
+      name: tape.name,
       filename: tape.filename,
       sidecarFilename: tape.sidecarFilename,
       thumbnailFilename: tape.thumbnailFilename,
