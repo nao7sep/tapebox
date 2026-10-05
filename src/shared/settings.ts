@@ -197,7 +197,8 @@ export type Settings = z.infer<typeof SettingsObjectSchema>
 /**
  * The built-ins under the stored sets. A role's thinking that is not stored is
  * the default of the model the role selects, since storedSets drops exactly that
- * value; a model with no row keeps the built-in, which is never sent.
+ * value; a model with no row keeps its stored value, else the built-in, and
+ * neither is sent.
  */
 export function effectiveSettings(sets: SettingsSets): Settings {
   const settings = { ...defaultSettings(), ...sets }
@@ -246,8 +247,8 @@ const THINKING_SET_ROLES = new Map<keyof Settings, (typeof AI_ROLES)[number]>(
  * The sets a file stores: every known set that differs from its built-in. A
  * model id is compared trimmed and case-insensitive. A role's thinking is stored
  * only while the value it sends differs from the default for the model the role
- * selects, and never for a model with no row. Every other set is compared as a
- * whole.
+ * selects; under a model with no row it is kept, unsent, while it differs from
+ * the built-in. Every other set is compared as a whole.
  */
 export function storedSets(sets: SettingsSets): SettingsSets {
   const builtIn = defaultSettings()
@@ -259,7 +260,7 @@ export function storedSets(sets: SettingsSets): SettingsSets {
     let equal: boolean
     if (role) {
       const row = rowFor('openai', sets[`openai.${role.id}`] ?? builtIn[`openai.${role.id}`])
-      equal = !row || thinkingFor(row, String(value)) === row.defaultThinking
+      equal = row ? thinkingFor(row, String(value)) === row.defaultThinking : value === builtIn[key]
     } else if (MODEL_SET_KEYS.has(key)) {
       equal = String(value).trim().toLowerCase() === String(builtIn[key]).toLowerCase()
     } else {

@@ -110,13 +110,17 @@ export function SettingsModal({ onClose }: Props) {
   // An edit that reaches a listed row other than the last listed row the field
   // held resets the role's thinking to the new model's default, since models
   // accept different values; returning to that row keeps the choice, and an id
-  // with no row keeps the stored value, hidden and not sent.
+  // with no row keeps the stored value, hidden and not sent. A dialog opened on
+  // an id with no row cannot know which row the stored value was chosen for, so
+  // it keeps the value wherever the reached row lists it.
   function changeSlugModel(model: string) {
     setDraft((prev) => {
       if (!prev) return prev
       lastSlugRow.current = rowFor('openai', prev['openai.slug']) ?? lastSlugRow.current
       const row = rowFor('openai', model)
-      const resets = row && row !== lastSlugRow.current
+      const resets = row && (lastSlugRow.current
+        ? row !== lastSlugRow.current
+        : !row.thinking.includes(prev['openai.thinking.slug']))
       return {
         ...prev,
         'openai.slug': model,

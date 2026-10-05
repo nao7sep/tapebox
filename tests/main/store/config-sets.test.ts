@@ -159,7 +159,17 @@ describe('settings by set', () => {
     await updateSettings({ 'openai.slug': 'gpt-6-luna', 'openai.thinking.slug': 'none' })
     expect(await savedSets()).toEqual({})
     await updateSettings({ 'openai.slug': 'local-model', 'openai.thinking.slug': 'high' })
+    expect(await savedSets()).toEqual({ 'openai.slug': 'local-model', 'openai.thinking.slug': 'high' })
+    await updateSettings({ 'openai.thinking.slug': defaultSettings()['openai.thinking.slug'] })
     expect(await savedSets()).toEqual({ 'openai.slug': 'local-model' })
+  })
+
+  it('keeps a thinking stored under a model with no row through a save and a relaunch', async () => {
+    await loadSettings()
+    await updateSettings({ 'openai.slug': 'local-model', 'openai.thinking.slug': 'xhigh' })
+    expect(await savedSets()).toEqual({ 'openai.slug': 'local-model', 'openai.thinking.slug': 'xhigh' })
+    await loadSettings()
+    expect(getSettings()['openai.thinking.slug']).toBe('xhigh')
   })
 
   it('gives a role whose thinking is not stored the selected model\'s own default, after a save and a relaunch', async () => {

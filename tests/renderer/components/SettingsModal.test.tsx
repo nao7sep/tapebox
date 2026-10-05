@@ -2,7 +2,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT, defaultSettings, settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
+import { DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT, defaultSettings, effectiveSettings, settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
 
 const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
@@ -214,6 +214,31 @@ describe('SettingsModal', () => {
     it('resets to the new model\'s default for a different supported id reached through an unlisted id', async () => {
       const other = SUPPORTED_MODELS.find((row) => row.id !== DEFAULT_AI_MODEL && row.thinking.includes('xhigh') && row.defaultThinking !== 'xhigh')!
       await type(model(), 'gpt-')
+      await type(model(), other.id)
+      expect(thinking()!.value).toBe(other.defaultThinking)
+    })
+  })
+
+  describe('Thinking stored under an unlisted id, after a relaunch', () => {
+    const thinking = () => document.getElementById('settings-openai-thinking-slug') as HTMLSelectElement | null
+    const model = () => document.getElementById('settings-openai-slug') as HTMLInputElement
+
+    it('keeps the stored choice when the field returns to the previously listed row', async () => {
+      saved = effectiveSettings({ 'openai.slug': 'my-local-model', 'openai.thinking.slug': 'xhigh' })
+      stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+      await render()
+      await click('AI')
+      expect(thinking()).toBeNull()
+      await type(model(), DEFAULT_AI_MODEL)
+      expect(thinking()!.value).toBe('xhigh')
+    })
+
+    it('resets to the reached row\'s default when that row does not list the stored choice', async () => {
+      const other = SUPPORTED_MODELS.find((row) => !row.thinking.includes('none'))!
+      saved = effectiveSettings({ 'openai.slug': 'my-local-model', 'openai.thinking.slug': 'none' })
+      stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+      await render()
+      await click('AI')
       await type(model(), other.id)
       expect(thinking()!.value).toBe(other.defaultThinking)
     })
