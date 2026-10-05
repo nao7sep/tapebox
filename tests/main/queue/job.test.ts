@@ -157,6 +157,37 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(tapes.get('t1')!.lastError).toMatch(/already in the library/)
   })
 
+  it('records one probe time for a duplicate and its failure', async () => {
+    const t = tape({ id: 't1' })
+    const existing = tape({ id: 't0', sourceId: 'vid1', extractor: 'youtube', state: 'downloaded' })
+    const { deps, tapes } = makeDeps({ initial: [existing, t], probe: async () => video })
+    let tick = 0
+    deps.now = () => `2026-06-26T00:00:0${tick++}.000Z`
+    await new Job(t, deps).run()
+    const failed = tapes.get('t1')!
+    expect(failed.failedAtUtc).not.toBeNull()
+    expect(failed.failedAtUtc).toBe(failed.probedAtUtc)
+  })
+
+  it('writes the same download time to the sidecar and the catalog', async () => {
+    const t = tape({ id: 't1' })
+    const { deps, tapes } = makeDeps({ initial: [t], probe: async () => video })
+    let tick = 0
+    deps.now = () => `2026-06-26T00:00:0${tick++}.000Z`
+    let sidecarDownloadedAt: string | null = null
+    deps.sidecar.finalize = async (opts) => { sidecarDownloadedAt = opts.tapeboxAdditions.downloadedAtUtc }
+    await new Job(t, deps).run()
+    expect(sidecarDownloadedAt).not.toBeNull()
+    expect(tapes.get('t1')!.downloadedAtUtc).toBe(sidecarDownloadedAt)
+  })
+
+  it('clears an earlier pause or failure time once the tape moves on', async () => {
+    const t = tape({ id: 't1', pausedAtUtc: T0, failedAtUtc: T0 })
+    const { deps, tapes } = makeDeps({ initial: [t], probe: async () => video })
+    await new Job(t, deps).run()
+    expect(tapes.get('t1')).toMatchObject({ state: 'downloaded', pausedAtUtc: null, failedAtUtc: null })
+  })
+
   it('lands a cancelled run in paused, not failed', async () => {
     const t = tape({ id: 't1' })
     const { deps, tapes } = makeDeps({
@@ -174,6 +205,7 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(reasons[0]).toBeInstanceOf(StopRequest)
     expect((reasons[0] as StopRequest).by).toBe('cancel')
     expect(tapes.get('t1')!.state).toBe('paused')
+    expect(tapes.get('t1')!.pausedAtUtc).toBe(T1)
     expect(tapes.get('t1')!.lastError).toBeNull()
   })
 

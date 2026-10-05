@@ -10,6 +10,7 @@ import { describeError } from '@shared/error'
 import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
+import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { librarySourceIndex } from '@shared/source-identity'
 import { StopRequest, type StopCause } from '@main/stop-request'
 
@@ -125,7 +126,7 @@ export class Job {
     } catch (err) {
       if (this.stopping) return
       if (this.cancelled) {
-        this.update({ state: 'paused', failureCode: null, lastError: null, pausedAtUtc: this.d.now() })
+        this.update({ state: 'paused', failureCode: null, lastError: null })
         return
       }
       this.d.log.error('job failed', { tapeId: this.tapeId, error: describeError(err) })
@@ -133,7 +134,6 @@ export class Job {
         state: 'failed',
         failureCode: 'download',
         lastError: DOWNLOAD_FAILURE_MESSAGE,
-        failedAtUtc: this.d.now(),
       })
       this.d.emit('tapes:failed', { tapeId: this.tapeId, code: 'download' })
     }
@@ -143,10 +143,11 @@ export class Job {
     return this.d.session.getTape(this.tapeId)
   }
 
-  private update(patch: Partial<Tape>): void {
+  /** Move the tape to a new state at `at`, by default the moment of the move. */
+  private update(move: TapeMove, at: string = this.d.now()): void {
     const cur = this.current()
     if (!cur) return
-    const next = { ...cur, ...patch }
+    const next = moveTape(cur, move, at)
     this.d.session.upsertTape(next)
     this.d.emit('tapes:updated', next)
   }
@@ -155,8 +156,10 @@ export class Job {
   private async probe(): Promise<boolean> {
     this.update({ state: 'probing' })
     const result = await this.d.ytdlp.probe(this.tapeId, this.current()!.sourceUrl, this.controller.signal)
+    // One time for the probe's answer and whatever it decides.
+    const probedAtUtc = this.d.now()
     if (result.kind === 'page') {
-      this.update({ state: 'listing', failureCode: null, lastError: null, probedAtUtc: this.d.now() })
+      this.update({ state: 'listing', failureCode: null, lastError: null, probedAtUtc })
       return false
     }
     // Two URLs can resolve to the same video (e.g. a short share link and the
@@ -176,9 +179,8 @@ export class Job {
         state: 'failed',
         failureCode: 'duplicate',
         lastError: DUPLICATE_FAILURE_MESSAGE,
-        failedAtUtc: this.d.now(),
-        probedAtUtc: this.d.now(),
-      })
+        probedAtUtc,
+      }, probedAtUtc)
       this.d.emit('tapes:failed', { tapeId: this.tapeId, code: 'duplicate' })
       return false
     }
@@ -191,7 +193,7 @@ export class Job {
       uploader: result.uploader,
       durationSeconds: result.duration,
       chapterCount: result.chapters?.length ?? 0,
-      probedAtUtc: this.d.now(),
+      probedAtUtc,
     })
     return true
   }
@@ -262,6 +264,8 @@ export class Job {
 
     const sidecarFilename = `${stem}.json`
     const sidecarPath = join(libraryDir, sidecarFilename)
+    // The sidecar and the catalog row record the same moment.
+    const downloadedAtUtc = this.d.now()
 
     await this.d.sidecar.finalize({
       infoJsonPath: result.infoJsonPath,
@@ -270,7 +274,7 @@ export class Job {
         sourceUrl: cur.sourceUrl,
         name: null,
         addedAtUtc: cur.addedAtUtc,
-        downloadedAtUtc: this.d.now(),
+        downloadedAtUtc,
         renamedAtUtc: null,
         media,
         mediaFilename: mediaBasename,
@@ -284,7 +288,7 @@ export class Job {
       filename: mediaBasename,
       sidecarFilename,
       thumbnailFilename,
-      downloadedAtUtc: this.d.now(),
+      downloadedAtUtc,
     })
     // The finished files are on disk; commit the row that names them before
     // reporting success, so a crash now cannot restore the tape as queued and

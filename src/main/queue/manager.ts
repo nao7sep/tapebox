@@ -3,6 +3,8 @@ import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
 import { isLibraryMoving, tryClaimLibraryWrite } from '@main/library-writes'
+import { moveTape } from '@main/core/tape-state'
+import { nowUtcIso } from '@shared/utc'
 import { Job } from './job'
 import { selectTapesToStart } from './schedule'
 
@@ -62,7 +64,7 @@ export function tick(): void {
 export function resumePaused(): void {
   for (const tape of session.getTapes()) {
     if (tape.state !== 'paused') continue
-    const next = { ...tape, state: 'queued' as const, failureCode: null, lastError: null }
+    const next = moveTape(tape, { state: 'queued', failureCode: null, lastError: null }, nowUtcIso())
     session.upsertTape(next)
     emit('tapes:updated', next)
   }

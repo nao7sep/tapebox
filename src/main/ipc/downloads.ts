@@ -9,6 +9,7 @@ import { frontOrders } from '@shared/order'
 import { isImportableUrl } from '@shared/url'
 import { librarySourceIndex } from '@shared/source-identity'
 import type { Tape } from '@shared/domain'
+import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
 
@@ -86,18 +87,18 @@ export function registerDownloadHandlers(): void {
  * re-queuing it would delete those files. Any other state is left as it is, so a
  * stray Retry can never send a finished tape back through a download.
  */
-export function retryPatch(tape: Tape): Partial<Tape> | null {
+export function retryPatch(tape: Tape): TapeMove | null {
   if (tape.state !== 'failed' && tape.state !== 'paused') return null
   if (tape.state === 'failed' && tape.filename && tape.sidecarFilename) {
-    return { state: 'downloaded', failureCode: null, lastError: null, failedAtUtc: null }
+    return { state: 'downloaded', failureCode: null, lastError: null }
   }
   return { state: 'queued', failureCode: null, lastError: null }
 }
 
-function transition(tapeId: string, patch: Partial<Tape>): void {
+function transition(tapeId: string, move: TapeMove): void {
   const tape = session.getTape(tapeId)
   if (!tape) return
-  const next = { ...tape, ...patch }
+  const next = moveTape(tape, move, nowUtcIso())
   session.upsertTape(next)
   emit('tapes:updated', next)
 }
