@@ -194,8 +194,19 @@ export const SettingsSchema = SettingsObjectSchema.partial()
 export type SettingsSets = z.infer<typeof SettingsSchema>
 export type Settings = z.infer<typeof SettingsObjectSchema>
 
+/**
+ * The built-ins under the stored sets. A role's thinking that is not stored is
+ * the default of the model the role selects, since storedSets drops exactly that
+ * value; a model with no row keeps the built-in, which is never sent.
+ */
 export function effectiveSettings(sets: SettingsSets): Settings {
-  return { ...defaultSettings(), ...sets }
+  const settings = { ...defaultSettings(), ...sets }
+  for (const role of AI_ROLES) {
+    const key = `openai.thinking.${role.id}` as const
+    const row = rowFor('openai', settings[`openai.${role.id}`])
+    if (sets[key] === undefined && row) settings[key] = row.defaultThinking
+  }
+  return settings
 }
 
 /** Validate a patch, in the form it will be stored, before any library relocation. */

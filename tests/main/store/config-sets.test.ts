@@ -162,6 +162,20 @@ describe('settings by set', () => {
     expect(await savedSets()).toEqual({ 'openai.slug': 'local-model' })
   })
 
+  it('gives a role whose thinking is not stored the selected model\'s own default, after a save and a relaunch', async () => {
+    await loadSettings()
+    // Terra lists none, the fast default model's value, but defaults to medium.
+    await updateSettings({ 'openai.slug': 'gpt-5.6-terra', 'openai.thinking.slug': 'medium' })
+    expect(await savedSets()).toEqual({ 'openai.slug': 'gpt-5.6-terra' })
+    expect(getSettings()['openai.thinking.slug']).toBe('medium')
+    await loadSettings()
+    expect(getSettings()['openai.thinking.slug']).toBe('medium')
+    await updateSettings({ 'openai.thinking.slug': 'none' })
+    expect(await savedSets()).toEqual({ 'openai.slug': 'gpt-5.6-terra', 'openai.thinking.slug': 'none' })
+    await loadSettings()
+    expect(getSettings()['openai.thinking.slug']).toBe('none')
+  })
+
   it('rejects an empty endpoint or model id and keeps the file as it is', async () => {
     await writeFile(paths.config, JSON.stringify({ autoplay: false }))
     await loadSettings()
