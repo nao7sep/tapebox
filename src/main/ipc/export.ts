@@ -18,13 +18,14 @@ import { withLibraryWrite } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
+import { nowUtcIso } from '@shared/utc'
 
 /**
  * export:files — copy a tape out of the library, verbatim. No transcoding:
  * TapeBox is a thin wrapper, not a converter. The media and its thumbnail (if any)
  * are byte-for-byte copies; the sidecar is copied with its tapebox.name /
  * thumbnailFilename rewritten to the exported names so the bundle stays
- * re-importable. All three land in destinationDir under `name`.
+ * re-importable, and with renamedAtUtc set when the name changes. All three land in destinationDir under `name`.
  *
  * Pre-flight refuses if any destination file already exists, so a partial export
  * can't half-overwrite something in the user's folder. When deleteFromApp is set,
@@ -81,6 +82,8 @@ async function exportTape(
   // partial files in the user's folder.
   const sidecar = JSON.parse(await readFile(join(libDir, tape.sidecarFilename), 'utf8')) as Record<string, unknown>
   const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+  // Exporting under another name renames the bundle, so the sidecar records when.
+  if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
   tb['name'] = cleanName
   tb['mediaFilename'] = mediaName
   tb['thumbnailFilename'] = newThumbName
