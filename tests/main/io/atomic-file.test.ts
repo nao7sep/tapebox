@@ -642,6 +642,32 @@ describe('single-pass no-overwrite copy', () => {
     })
   }
 
+  it('claims the file by the id it has once its content is written, as FAT ids change on the first write', async () => {
+    const source = join(dir, 'source.bin')
+    const bytes = Buffer.from('content')
+    await writeFile(source, bytes)
+    let wrote = false
+    const fixture = memoryPublishOperations(bytes, {
+      openExclusive: vi.fn(async () => ({
+        write: async (_buffer: Buffer, _offset: number, length: number) => {
+          wrote = true
+          return { bytesWritten: length }
+        },
+        chmod: async () => {},
+        utimes: async () => {},
+        sync: async () => {},
+        close: async () => {},
+        identity: async () => (wrote ? 'cluster-7' : 'entry-3'),
+      })),
+      pathIdentity: vi.fn(async (path: string) => (path === source ? 'claim' : wrote ? 'cluster-7' : 'entry-3')),
+    })
+
+    const claim = await copyFileNoOverwrite(source, join(dir, 'output.bin'), { hardLinks: false }, fixture.operations)
+
+    expect(claim.identity).toBe('cluster-7')
+    expect(fixture.operations.rename, 'nothing was taken for a replacement and moved aside').not.toHaveBeenCalled()
+  })
+
   it('stages in a sibling temp and links it into place where hard links work', async () => {
     const source = join(dir, 'source.bin')
     await writeFile(source, Buffer.alloc(300_000, 0x44))

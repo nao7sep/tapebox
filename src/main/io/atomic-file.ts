@@ -155,11 +155,9 @@ async function copyExclusive(
     // Taken before reading, which can move the access time.
     const stamp = await source.stamp()
     destination = await operations.openExclusive(destPath)
-    claimIdentity = await destination.identity()
     const buffer = Buffer.allocUnsafe(COPY_CHUNK_BYTES)
     let readPosition = 0
     for (;;) {
-      signal?.throwIfAborted()
       const { bytesRead } = await source.read(buffer, 0, buffer.length, readPosition)
       if (bytesRead === 0) break
       readPosition += bytesRead
@@ -170,11 +168,19 @@ async function copyExclusive(
         if (result.bytesWritten === 0) throw new Error(`Could not publish ${destPath}: write made no progress`)
         written += result.bytesWritten
       }
+      // Checked after a chunk lands, not before, so a claim given up for an abort
+      // holds content: an empty file's id on FAT changes with its name, and the
+      // cleanup could not tell it from a replacement.
+      signal?.throwIfAborted()
     }
     // The times go last, after everything else that touches the file.
     await operations.copyExtendedAttributes(sourcePath, destPath, signal)
     await applyFileStamp(destination, stamp)
     await destination.sync()
+    // The claim's id is read only now that its content is complete, from our own
+    // handle: FAT gives a file a new id once bytes are written (storage-path
+    // conventions).
+    claimIdentity = await destination.identity()
     await destination.close()
     destination = null
     signal?.throwIfAborted()
@@ -182,8 +188,21 @@ async function copyExclusive(
     committed = true
     return claimIdentity
   } catch (err) {
-    if (destination) await destination.close().catch(() => {})
     let failure = err
+    if (destination) {
+      // Writing has stopped, so the claim's id is settled.
+      if (claimIdentity === null) {
+        try {
+          claimIdentity = await destination.identity()
+        } catch (identityError) {
+          failure = new AggregateError(
+            [err, identityError],
+            `Exclusive publication failed and its destination claim could not be identified for cleanup: ${destPath}.`,
+          )
+        }
+      }
+      await destination.close().catch(() => {})
+    }
     if (claimIdentity !== null && !committed) {
       try {
         // Never check a public pathname and then unlink it: a replacement can land
