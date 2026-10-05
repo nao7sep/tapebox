@@ -38,7 +38,7 @@ describe('loadSessionFile', () => {
 
   it('loads a valid catalog file', async () => {
     const path = join(dir, 'catalog.json')
-    await writeFile(path, JSON.stringify({ tapes: [], boxes: [] }))
+    await writeFile(path, JSON.stringify({ formatVersion: 1, tapes: [], boxes: [] }))
 
     const { result } = await loadSessionFile(path)
 
@@ -66,7 +66,7 @@ describe('loadSessionFile', () => {
 
   it('sets aside a schema-invalid file rather than wiping it (one bad tape fails the whole load)', async () => {
     const path = join(dir, 'catalog.json')
-    await writeFile(path, JSON.stringify({ tapes: [{ id: 'x', sourceUrl: 'not-a-url' }], boxes: [] }))
+    await writeFile(path, JSON.stringify({ formatVersion: 1, tapes: [{ id: 'x', sourceUrl: 'not-a-url' }], boxes: [] }))
 
     const { result } = await loadSessionFile(path)
 
@@ -78,6 +78,7 @@ describe('loadSessionFile', () => {
   it('sets aside a legacy catalog whose tape bundles contain portable filename aliases', async () => {
     const path = join(dir, 'catalog.json')
     const legacy = JSON.stringify({
+      formatVersion: 1,
       tapes: [
         catalogTape('abc1234567', 'https://example.test/a', 'Caf\u00e9.MP4'),
         catalogTape('def1234567', 'https://example.test/b', 'Cafe\u0301.mp4'),

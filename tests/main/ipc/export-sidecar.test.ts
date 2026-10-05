@@ -50,6 +50,7 @@ beforeEach(async () => {
   await mkdir(destinationDir)
   await writeFile(join(libraryState.dir, 'Take.mp4'), 'video')
   await writeFile(join(libraryState.dir, 'Take.json'), JSON.stringify({
+    formatVersion: 1,
     tapebox: {
       sourceUrl: tape.sourceUrl, name: 'Take', addedAtUtc: tape.addedAtUtc,
       downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: RENAMED_AT, media: null,

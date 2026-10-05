@@ -188,9 +188,11 @@ describe('the sidecar, where a binary cannot report itself', () => {
     expect(await readInstalledVersion('ffmpeg')).toBeNull()
   })
 
-  it('reads a sidecar with no format marker as format 1, and writes format 1', async () => {
+  it('reads a sidecar without its format marker as unknown, and writes format 1', async () => {
     writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ version: 'autobuild-2026-08-19-19-21' }))
-    expect(await readInstalledVersion('ffmpeg')).toBe('autobuild-2026-08-19-19-21')
+    expect(await readInstalledVersion('ffmpeg')).toBeNull()
+
+    forgetInstalledVersion('ffmpeg')
 
     await writeVersionSidecar('ffmpeg', 'autobuild-2026-09-01-00-00')
     expect(JSON.parse(readFileSync(versionSidecarPath('ffmpeg'), 'utf8'))).toMatchObject({ formatVersion: 1 })
@@ -208,7 +210,7 @@ describe('the sidecar, where a binary cannot report itself', () => {
     expect(await readInstalledVersion('ffmpeg')).toBeNull()
 
     forgetInstalledVersion('ffmpeg')
-    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ version: '  ' }))
+    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ formatVersion: 1, version: '  ' }))
     expect(await readInstalledVersion('ffmpeg')).toBeNull()
   })
 })

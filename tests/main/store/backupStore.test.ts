@@ -333,20 +333,23 @@ describe('format version (store-recovery-conventions)', () => {
     }
   }
 
-  it('reads a store that never set PRAGMA user_version as format 1, keeps its rows, and stamps 1', async () => {
-    const older = new DatabaseSync(path.join(root, 'backups.sqlite3'))
-    older.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
+  it('leaves an existing store without its marker byte-identical, warning once and recording nothing', async () => {
+    const file = path.join(root, 'backups.sqlite3')
+    const unmarked = new DatabaseSync(file)
+    unmarked.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
       content_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL, written_at_utc TEXT NOT NULL)`)
-    older.prepare('INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)')
-      .run('/earlier', Buffer.from('x'), 'h', 1, '2026-01-01T00:00:00.000Z')
-    older.close()
-    const { record, flushBackupStore } = await import('@main/store/backupStore')
+    unmarked.close()
+    const bytes = readFileSync(file)
+    const { record, flushBackupStore, closeBackupStore } = await import('@main/store/backupStore')
 
-    record(path.join(root, 'config.json'), Buffer.from('{}'))
+    record(path.join(root, 'config.json'), Buffer.from('a'))
+    record(path.join(root, 'config.json'), Buffer.from('b'))
     await flushBackupStore()
+    await closeBackupStore()
 
-    expect(readRows(root).map((row) => row.path)).toEqual(['/earlier', path.join(root, 'config.json')])
-    expect(userVersion()).toBe(1)
+    expect(readFileSync(file).equals(bytes)).toBe(true)
+    expect(logCalls.warn).toHaveLength(1)
+    expect(userVersion()).toBe(0)
   })
 
   it('stamps format 1 on a store it creates, and records into it again after a relaunch', async () => {

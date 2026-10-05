@@ -145,12 +145,9 @@ describe('records reads', () => {
     })
   })
 
-  it('reads a database that never set PRAGMA user_version as format 1, and stamps 1 on the one it writes', async () => {
+  it('stamps format 1 on a database it creates, and reads it back', async () => {
     const { records, reader } = await freshApp()
     const { paths } = await import('@main/paths')
-    mkdirSync(dirname(paths.records), { recursive: true })
-    new DatabaseSync(paths.records).close()
-
     records.openRecords()
     logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'kept')
     records.closeRecords()
@@ -161,6 +158,27 @@ describe('records reads', () => {
     records.openRecords()
     const page = await reader.readRecords({ op: 'page', query: query() })
     expect(page.records.map((record) => record.title)).toEqual(['kept'])
+  })
+
+  it('leaves an existing database without its marker byte-identical: this launch writes its text file, and reads refuse it', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    mkdirSync(dirname(paths.records), { recursive: true })
+    const unmarked = new DatabaseSync(paths.records)
+    unmarked.exec('CREATE TABLE logs (id INTEGER PRIMARY KEY, session TEXT NOT NULL, time TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, tape_id TEXT, fields TEXT NOT NULL)')
+    unmarked.close()
+    const bytes = readFileSync(paths.records)
+
+    records.openRecords()
+    expect(records.writeRecord('logs', {
+      time: '2026-10-04T10:00:01.000Z', level: 'info', message: 'to the text file', tape_id: null, fields: '{}',
+    }, () => 'to the text file')).toBe(false)
+    await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow(/no format version/)
+    records.closeRecords()
+
+    expect(readFileSync(paths.records).equals(bytes)).toBe(true)
+    const [file] = readdirSync(paths.logs)
+    expect(readFileSync(join(paths.logs, file!), 'utf8').trim().split('\n').at(-1)).toBe('to the text file')
   })
 
   it('leaves a database in a newer format byte-identical: this launch writes its text file, and reads refuse it', async () => {

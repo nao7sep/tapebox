@@ -77,8 +77,9 @@ async function stageBundle(options: {
   const sidecarPath = join(dir, options.sidecarName ?? `${options.stem}.json`)
   const body =
     options.tapebox === null
-      ? {}
+      ? { formatVersion: 1 }
       : {
+          formatVersion: 1,
           tapebox: {
             sourceUrl: options.sourceUrl ?? `https://example.test/${options.stem}`,
             name: options.stem,

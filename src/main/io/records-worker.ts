@@ -32,9 +32,10 @@ function open(): DatabaseSync {
   const opened = new DatabaseSync(databasePath, { readOnly: true })
   try {
     opened.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`)
-    // A database in a newer format is one this build cannot read (store-recovery-conventions).
-    const version = databaseFormatVersion(opened)
-    if (version > FORMAT_VERSIONS.records) {
+    // A database in a newer format, or without its marker, is one this build
+    // cannot read (store-recovery-conventions).
+    const version = databaseFormatVersion(opened, databasePath)
+    if (version !== null && version > FORMAT_VERSIONS.records) {
       throw new NewerFormatError(databasePath, version, FORMAT_VERSIONS.records)
     }
   } catch (error) {

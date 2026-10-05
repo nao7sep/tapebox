@@ -85,7 +85,7 @@ describe('main-process interface language', () => {
   })
 
   it('speaks a saved choice at once and records it for AppKit’s next launch', async () => {
-    electron.configText = JSON.stringify({ language: 'de' })
+    electron.configText = JSON.stringify({ formatVersion: 1, language: 'de' })
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
     await i18n.settleLanguageWhenReady()
@@ -129,7 +129,7 @@ describe('main-process interface language', () => {
 
   it('leaves the defaults alone off macOS', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
-    electron.configText = JSON.stringify({ language: 'it' })
+    electron.configText = JSON.stringify({ formatVersion: 1, language: 'it' })
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
     await i18n.settleLanguageWhenReady()
@@ -139,7 +139,7 @@ describe('main-process interface language', () => {
 
   it('leaves the defaults alone on an unpackaged macOS run', async () => {
     electron.isPackaged = false
-    electron.configText = JSON.stringify({ language: 'it' })
+    electron.configText = JSON.stringify({ formatVersion: 1, language: 'it' })
     const i18n = await load()
     i18n.settleLanguageBeforeReady()
     await i18n.settleLanguageWhenReady()

@@ -26,7 +26,7 @@ describe('readSettingsFile', () => {
 
   it('returns the parsed settings for a valid config', async () => {
     const path = join(dir, 'config.json')
-    await writeFile(path, JSON.stringify(defaultSettings()))
+    await writeFile(path, JSON.stringify({ formatVersion: 1, ...defaultSettings() }))
 
     expect(await readSettingsFile(path)).toEqual({ settings: defaultSettings() })
   })

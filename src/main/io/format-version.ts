@@ -30,9 +30,6 @@ export const FORMAT_VERSIONS = {
 /** The marker's key in a JSON store. */
 export const FORMAT_VERSION_KEY = 'formatVersion'
 
-/** A store's marker when it has none. */
-const UNMARKED_VERSION = 1
-
 /**
  * A store written in a newer format than this build reads. It is intact: the
  * caller reports it by name and leaves it exactly as it is.
@@ -75,11 +72,14 @@ export function parseStoreJson(text: string, current: number): StoreJson {
 }
 
 /**
- * Read a parsed JSON store's marker against `current`. A missing marker reads as
- * 1; one that is not a positive integer makes the store unreadable.
+ * Read a parsed JSON store's marker against `current`. A missing marker, or one
+ * that is not a positive integer, makes the store unreadable.
  */
 export function checkFormatVersion(value: Record<string, unknown>, current: number): StoreJson {
-  const marker = Object.hasOwn(value, FORMAT_VERSION_KEY) ? value[FORMAT_VERSION_KEY] : UNMARKED_VERSION
+  const marker = value[FORMAT_VERSION_KEY]
+  if (marker === undefined) {
+    return { status: 'unreadable', error: new Error(`${FORMAT_VERSION_KEY} is missing`) }
+  }
   if (typeof marker !== 'number' || !Number.isSafeInteger(marker) || marker < 1) {
     return { status: 'unreadable', error: new Error(`${FORMAT_VERSION_KEY} is not a positive integer`) }
   }
@@ -93,16 +93,25 @@ export function withFormatVersion(data: object, version: number): Record<string,
 }
 
 /**
- * Read an open SQLite store's format version, `PRAGMA user_version`, where the
- * 0 of a database that never set it reads as 1.
+ * An open SQLite store's format version, `PRAGMA user_version`, or null for a
+ * brand-new database: no marker and no tables yet. An existing database without
+ * its marker is unreadable, and this throws.
  */
-export function databaseFormatVersion(db: DatabaseSync): number {
-  const row = db.prepare('PRAGMA user_version').get() as { user_version: number }
-  return row.user_version === 0 ? UNMARKED_VERSION : row.user_version
+export function databaseFormatVersion(db: DatabaseSync, path: string): number | null {
+  const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number }
+  if (version !== 0) return version
+  const { tables } = db.prepare('SELECT count(*) AS tables FROM sqlite_schema').get() as { tables: number }
+  if (tables > 0) throw new Error(`${path} has no format version (PRAGMA user_version)`)
+  return null
 }
 
-/** Record `version` in a SQLite store this build has just made current. */
-export function stampDatabaseFormatVersion(db: DatabaseSync, version: number): void {
-  const row = db.prepare('PRAGMA user_version').get() as { user_version: number }
-  if (row.user_version !== version) db.exec(`PRAGMA user_version = ${version}`)
+/**
+ * Prepare an open SQLite store for this build to write, before anything writes
+ * to it: a brand-new database is stamped `current`, and one in a newer format
+ * throws {@link NewerFormatError}, as does an unreadable one its own error.
+ */
+export function claimDatabaseFormat(db: DatabaseSync, path: string, current: number): void {
+  const version = databaseFormatVersion(db, path)
+  if (version === null) db.exec(`PRAGMA user_version = ${current}`)
+  else if (version > current) throw new NewerFormatError(path, version, current)
 }

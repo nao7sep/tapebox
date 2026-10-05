@@ -37,7 +37,7 @@ describe('a corrupt config on disk', () => {
   it('leaves a sound config in place and reports nothing', async () => {
     // A saved settings object remains untouched on read.
     const path = join(dir, 'config.json')
-    writeFileSync(path, JSON.stringify(defaultSettings()))
+    writeFileSync(path, JSON.stringify({ formatVersion: 1, ...defaultSettings() }))
     const result = await readSettingsFile(path)
     expect(result).toHaveProperty('settings')
     expect(readdirSync(dir)).toEqual(['config.json'])

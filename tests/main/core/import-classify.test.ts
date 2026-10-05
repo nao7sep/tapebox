@@ -5,35 +5,36 @@ import { inEnglish } from '../../helpers/i18n'
 
 describe('classifyImport', () => {
   it('rejects anything without a string tapebox.sourceUrl', () => {
-    expect(classifyImport({}).status).toBe('reject')
-    expect(classifyImport({ tapebox: {} }).status).toBe('reject')
-    expect(classifyImport({ tapebox: { sourceUrl: 123 } }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1 }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1, tapebox: {} }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 123 } }).status).toBe('reject')
     expect(classifyImport(null).status).toBe('reject')
     expect(classifyImport([]).status).toBe('reject')
-    expect(classifyImport({ tapebox: { sourceUrl: 'file:///etc/passwd', mediaFilename: 'v.mp4' } }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'file:///etc/passwd', mediaFilename: 'v.mp4' } }).status).toBe('reject')
   })
 
   it('rejects a sidecar that does not name its media file', () => {
-    const result = classifyImport({ tapebox: { sourceUrl: 'http://x' } })
+    const result = classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'http://x' } })
     expect(result.status).toBe('reject')
     if (result.status === 'reject') expect(inEnglish(result.reason)).toMatch(/name its media file/)
   })
 
   it('accepts and pulls out source url, media, and optional thumbnail', () => {
     expect(
-      classifyImport({ tapebox: { sourceUrl: 'http://x', mediaFilename: 'v.mp4', thumbnailFilename: 'v.webp' } }),
+      classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'http://x', mediaFilename: 'v.mp4', thumbnailFilename: 'v.webp' } }),
     ).toEqual({ status: 'accept', sourceUrl: 'http://x', mediaFilename: 'v.mp4', thumbnailFilename: 'v.webp' })
 
-    expect(classifyImport({ tapebox: { sourceUrl: 'http://x', mediaFilename: 'v.mp4' } })).toMatchObject({
+    expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'http://x', mediaFilename: 'v.mp4' } })).toMatchObject({
       status: 'accept',
       thumbnailFilename: null,
     })
   })
 
-  it('reads a sidecar with no format marker, or format 1, as this build\'s own', () => {
-    const tapebox = { sourceUrl: 'http://x', mediaFilename: 'v.mp4' }
-    expect(classifyImport({ tapebox }).status).toBe('accept')
-    expect(classifyImport({ formatVersion: 1, tapebox }).status).toBe('accept')
+  it('rejects a sidecar without its format marker as not TapeBox JSON', () => {
+    expect(classifyImport({ tapebox: { sourceUrl: 'http://x', mediaFilename: 'v.mp4' } })).toMatchObject({
+      status: 'reject',
+      reason: { key: 'import.sidecarInvalidJson' },
+    })
   })
 
   it('rejects a sidecar in a newer format, saying so, and one whose marker is not a version', () => {
@@ -48,11 +49,11 @@ describe('classifyImport', () => {
   })
 
   it('rejects path-bearing and colliding bundle filenames before filesystem use', () => {
-    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: '../../escape.mp4' } }).status).toBe('reject')
-    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: '../escape.jpg' } }).status).toBe('reject')
-    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.json' } }).status).toBe('reject')
-    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: 'CLIP.MP4' } }).status).toBe('reject')
-    expect(classifyImport({ tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'Caf\u00e9.mp4', thumbnailFilename: 'Cafe\u0301.MP4' } }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'https://x.test', mediaFilename: '../../escape.mp4' } }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: '../escape.jpg' } }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.json' } }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'clip.mp4', thumbnailFilename: 'CLIP.MP4' } }).status).toBe('reject')
+    expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'Caf\u00e9.mp4', thumbnailFilename: 'Cafe\u0301.MP4' } }).status).toBe('reject')
   })
 })
 

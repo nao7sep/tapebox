@@ -122,6 +122,7 @@ beforeEach(async () => {
   await writeFile(join(dir, 'Take.mp4'), 'video')
   await writeFile(join(dir, 'Take.jpg'), 'poster')
   await writeFile(join(dir, 'Take.json'), JSON.stringify({
+    formatVersion: 1,
     tapebox: {
       sourceUrl: state.tape.sourceUrl, name: 'Take', addedAtUtc: state.tape.addedAtUtc,
       downloadedAtUtc: state.tape.downloadedAtUtc, renamedAtUtc: null, media: null,

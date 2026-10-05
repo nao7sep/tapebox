@@ -120,7 +120,7 @@ describe('re-probing a tape', () => {
 describe('accepting refreshed metadata', () => {
   it('saves the catalog fields and puts the same values in the sidecar', async () => {
     const sidecar = join(state.libraryDir, 'Take.json')
-    await writeFile(sidecar, JSON.stringify({ id: 'source', description: 'Old description', extra: 'kept' }), 'utf8')
+    await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', description: 'Old description', extra: 'kept' }), 'utf8')
     state.tapes = [makeTape({ id: 'Acceptthis', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
 
     const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Acceptthis', metadata: ACCEPTED })
@@ -128,7 +128,7 @@ describe('accepting refreshed metadata', () => {
     expect(updated).toMatchObject({ title: 'New title', uploader: 'New uploader', thumbnailFilename: 'Take.jpg' })
     expect(updated.probedAtUtc, 'the probe time is when the source answered, not the Apply click').toBe(PROBED_AT)
     expect(updated, 'facts fixed by the file are not re-stated').toMatchObject({ durationSeconds: 61, chapterCount: 3 })
-    expect(JSON.parse(await readFile(sidecar, 'utf8')), 'a sidecar with no marker reads as format 1').toEqual({
+    expect(JSON.parse(await readFile(sidecar, 'utf8'))).toEqual({
       formatVersion: 1,
       id: 'source',
       title: 'New title',
@@ -143,7 +143,7 @@ describe('accepting refreshed metadata', () => {
 
   it('leaves a sidecar that already holds the accepted values unwritten', async () => {
     const sidecar = join(state.libraryDir, 'Take.json')
-    const text = JSON.stringify({ title: 'New title', uploader: 'New uploader', description: 'New description' })
+    const text = JSON.stringify({ formatVersion: 1, title: 'New title', uploader: 'New uploader', description: 'New description' })
     await writeFile(sidecar, text, 'utf8')
     const before = (await stat(sidecar)).mtimeMs
     state.tapes = [makeTape({ id: 'Unchanged1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
@@ -208,6 +208,7 @@ describe('accepting refreshed metadata', () => {
   it('names a backfilled poster in the sidecar too, so sidecar and catalog agree', async () => {
     const sidecar = join(state.libraryDir, 'Holiday.json')
     await writeFile(sidecar, JSON.stringify({
+      formatVersion: 1,
       id: 'source',
       tapebox: {
         sourceUrl: 'https://example.test/watch', name: 'Holiday', addedAtUtc: '2026-01-01T00:00:00.000Z',

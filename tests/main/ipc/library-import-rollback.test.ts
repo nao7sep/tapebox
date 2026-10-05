@@ -95,6 +95,7 @@ beforeEach(async () => {
   await mkdir(state.libraryDir)
   await writeFile(join(sourceDir, 'clip.mp4'), 'source video')
   await writeFile(join(sourceDir, 'clip.json'), JSON.stringify({
+    formatVersion: 1,
     tapebox: {
       sourceUrl: 'https://example.test/clip', name: 'Clip',
       addedAtUtc: '2026-01-01T00:00:00.000Z', downloadedAtUtc: '2026-01-01T00:00:00.000Z',
@@ -155,6 +156,7 @@ describe('library:import rollback ownership', () => {
     state.failureMode = 'plain'
     await writeFile(join(sourceDir, 'poster.jpg'), 'source poster')
     await writeFile(join(sourceDir, 'clip.json'), JSON.stringify({
+      formatVersion: 1,
       tapebox: {
         sourceUrl: 'https://example.test/clip', name: 'Clip',
         addedAtUtc: '2026-01-01T00:00:00.000Z', downloadedAtUtc: '2026-01-01T00:00:00.000Z',

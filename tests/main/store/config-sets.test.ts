@@ -25,7 +25,7 @@ afterEach(async () => rm(dir, { recursive: true, force: true }))
 /** The stored sets, without the file's format marker (config-format.test.ts owns it). */
 async function savedSets(): Promise<Record<string, unknown>> {
   const { formatVersion, ...sets } = JSON.parse(await readFile(paths.config, 'utf8')) as Record<string, unknown>
-  if (formatVersion !== undefined) expect(formatVersion).toBe(1)
+  expect(formatVersion).toBe(1)
   return sets
 }
 
@@ -45,14 +45,14 @@ describe('settings by set', () => {
   })
 
   it('reads absent sets from built-ins without writing them', async () => {
-    await writeFile(paths.config, JSON.stringify({ playSound: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, playSound: false }))
     await loadSettings()
     expect(getSettings()).toEqual({ ...defaultSettings(), playSound: false })
     expect(await savedSets()).toEqual({ playSound: false })
   })
 
   it('drops version and unknown keys at the next write, preserving untouched sets', async () => {
-    await writeFile(paths.config, JSON.stringify({ version: 20, future: 'x', playSound: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, version: 20, future: 'x', playSound: false }))
     await loadSettings()
     await updateSettings({ autoplay: false })
     expect(await savedSets()).toEqual({ playSound: false, autoplay: false })
@@ -60,14 +60,14 @@ describe('settings by set', () => {
 
   it('writes from the loaded settings, not from the file as it is now', async () => {
     await loadSettings()
-    await writeFile(paths.config, JSON.stringify({ playSound: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, playSound: false }))
     await updateSettings({ autoplay: false })
     expect(await savedSets()).toEqual({ autoplay: false })
     expect(getSettings().playSound).toBe(true)
   })
 
   it('reads a relative folder as its built-in and drops it at the next save', async () => {
-    await writeFile(paths.config, JSON.stringify({ libraryDir: 'relative/library', defaultExportDir: 'exports', autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, libraryDir: 'relative/library', defaultExportDir: 'exports', autoplay: false }))
     await loadSettings()
     expect(getSettings()).toEqual({ ...defaultSettings(), autoplay: false })
     expect(log.warn.mock.calls.map(([, fields]) => fields)).toEqual([{ key: 'libraryDir' }, { key: 'defaultExportDir' }])
@@ -76,7 +76,7 @@ describe('settings by set', () => {
   })
 
   it('refuses a relative folder on save and keeps the file as it is', async () => {
-    await writeFile(paths.config, JSON.stringify({ autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, autoplay: false }))
     await loadSettings()
     await expect(updateSettings({ libraryDir: 'relative/library' })).rejects.toThrow()
     await expect(updateSettings({ defaultExportDir: 'exports' })).rejects.toThrow()
@@ -85,7 +85,7 @@ describe('settings by set', () => {
 
   it('uses built-ins for malformed sets without quarantining or merging nested members', async () => {
     const raw = { 'openai.endpoint': 'http://remote.example', prompts: {}, language: 'unsupported', playSound: false }
-    await writeFile(paths.config, JSON.stringify(raw))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ...raw }))
     await loadSettings()
     expect(getSettings()).toEqual({ ...defaultSettings(), playSound: false })
     expect(await savedSets()).toEqual(raw)
@@ -96,7 +96,7 @@ describe('settings by set', () => {
   })
 
   it('removes a set saved back to its built-in while preserving every other stored set', async () => {
-    await writeFile(paths.config, JSON.stringify({ prompts: { slug: 'custom' }, autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, prompts: { slug: 'custom' }, autoplay: false }))
     await loadSettings()
     await updateSettings({ prompts: { slug: DEFAULT_SLUG_PROMPT } })
     expect(await savedSets()).toEqual({ autoplay: false })
@@ -104,7 +104,7 @@ describe('settings by set', () => {
   })
 
   it('removes every stored copy equal to its built-in, untouched ones included', async () => {
-    await writeFile(paths.config, JSON.stringify({ playSound: true, theme: 'system', autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, playSound: true, theme: 'system', autoplay: false }))
     await loadSettings()
     await updateSettings({ autoplay: true })
     expect(await savedSets()).toEqual({})
@@ -117,16 +117,16 @@ describe('settings by set', () => {
   })
 
   it('writes nothing when the result equals the file', async () => {
-    await writeFile(paths.config, JSON.stringify({ autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, autoplay: false }))
     const before = await stat(paths.config)
     await loadSettings()
     await updateSettings({ autoplay: false, playSound: true })
     expect((await stat(paths.config)).mtimeMs).toBe(before.mtimeMs)
-    expect(await readFile(paths.config, 'utf8')).toBe(JSON.stringify({ autoplay: false }))
+    expect(await readFile(paths.config, 'utf8')).toBe(JSON.stringify({ formatVersion: 1, autoplay: false }))
   })
 
   it('compares text after cleanup and a model id trimmed and case-insensitive', async () => {
-    await writeFile(paths.config, JSON.stringify({ 'openai.slug': 'custom-model', prompts: { slug: 'custom' } }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, 'openai.slug': 'custom-model', prompts: { slug: 'custom' } }))
     await loadSettings()
     await updateSettings({
       'openai.slug': ` ${defaultSettings()['openai.slug'].toUpperCase()} `,
@@ -190,7 +190,7 @@ describe('settings by set', () => {
   })
 
   it('rejects an empty endpoint or model id and keeps the file as it is', async () => {
-    await writeFile(paths.config, JSON.stringify({ autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, autoplay: false }))
     await loadSettings()
     await expect(updateSettings({ 'openai.endpoint': '' })).rejects.toThrow()
     await expect(updateSettings({ 'openai.slug': ' \n ' })).rejects.toThrow()
@@ -199,7 +199,7 @@ describe('settings by set', () => {
   })
 
   it('drops the old AI set and removes only the model saved back to its built-in', async () => {
-    await writeFile(paths.config, JSON.stringify({ ai: { baseUrl: 'https://old.example', model: 'old' }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ai: { baseUrl: 'https://old.example', model: 'old' }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
     await loadSettings()
     expect(getSettings()['openai.endpoint']).toBe('https://proxy.example/v1')
     await updateSettings({ 'openai.slug': defaultSettings()['openai.slug'] })

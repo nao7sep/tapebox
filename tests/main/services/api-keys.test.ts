@@ -94,12 +94,12 @@ describe('api-keys storage', () => {
   })
 
   it('treats an untagged stored value as plaintext and trims it', async () => {
-    await writeFile(apiKeysPath, JSON.stringify({ keys: { openai: '  sk-plain-pasted  ' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { openai: '  sk-plain-pasted  ' } }), 'utf8')
     expect(await apiKeys.resolveApiKey('openai')).toBe('sk-plain-pasted')
   })
 
   it('matches stored key ids case-insensitively', async () => {
-    await writeFile(apiKeysPath, JSON.stringify({ keys: { OpenAI: 'sk-case' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { OpenAI: 'sk-case' } }), 'utf8')
     expect(await apiKeys.resolveApiKey('openai')).toBe('sk-case')
   })
 
@@ -147,7 +147,7 @@ describe('api-keys storage', () => {
   it('treats a malformed obf: value as absent and warns naming the key id, rather than leniently decoding garbage', async () => {
     // Buffer.from(str, 'base64') is lenient and would happily "decode" this into
     // garbage bytes instead of throwing — the fix must reject it before decoding.
-    await writeFile(apiKeysPath, JSON.stringify({ keys: { openai: 'obf:not-valid-base64!!' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { openai: 'obf:not-valid-base64!!' } }), 'utf8')
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
@@ -165,7 +165,7 @@ describe('api-keys storage', () => {
 
   it('rejects a wrong-length obf: payload (fails the length % 4 check) as absent', async () => {
     // 'QQ' (2 chars) is valid base64 alphabet but not a canonical length/padding.
-    await writeFile(apiKeysPath, JSON.stringify({ keys: { openai: 'obf:QQ' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { openai: 'obf:QQ' } }), 'utf8')
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
   })
 

@@ -27,12 +27,7 @@ import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { paths } from '@main/paths'
 import { log } from '@main/io/logger'
-import {
-  databaseFormatVersion,
-  FORMAT_VERSIONS,
-  NewerFormatError,
-  stampDatabaseFormatVersion,
-} from '@main/io/format-version'
+import { claimDatabaseFormat, FORMAT_VERSIONS } from '@main/io/format-version'
 import { describeError } from '@shared/error'
 
 /**
@@ -84,18 +79,15 @@ function ensureOpen(): DatabaseSync | null {
     mkdirSync(dirname(file), { recursive: true })
     const opened = new DatabaseSync(file)
     try {
-      // A store in a newer format is left exactly as it is (store-recovery-conventions): checked before
-      // anything below writes to it, and recording stays disabled for the session.
-      const version = databaseFormatVersion(opened)
-      if (version > FORMAT_VERSIONS.backups) {
-        throw new NewerFormatError(file, version, FORMAT_VERSIONS.backups)
-      }
+      // A store in a newer format, or without its marker, is left exactly as it is
+      // (store-recovery-conventions): checked before anything below writes to it, and recording stays
+      // disabled for the session.
+      claimDatabaseFormat(opened, file, FORMAT_VERSIONS.backups)
       opened.exec('PRAGMA journal_mode = WAL')
       // Keep lock contention bounded tightly. A backup is best-effort; freezing the Electron main thread
       // for seconds is worse than dropping one history row and recording the next save.
       opened.exec('PRAGMA busy_timeout = 100')
       opened.exec(SCHEMA)
-      stampDatabaseFormatVersion(opened, FORMAT_VERSIONS.backups)
     } catch (err) {
       opened.close()
       throw err

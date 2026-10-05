@@ -6,9 +6,9 @@ import { defaultDependencies } from '@shared/dependencies'
 import { defaultLayout } from '@shared/layout'
 
 // Each JSON store's format version (store-recovery-conventions), through the
-// real store over a throwaway storage root: a file with no marker reads as 1,
-// what the store writes carries 1 and reads back, and a newer file is refused
-// and left byte-identical, with nothing written over it.
+// real store over a throwaway storage root: a file without its marker takes the
+// store's unreadable branch, what the store writes carries 1 and reads back, and
+// a newer file is refused and left byte-identical, with nothing written over it.
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn(), recordBeforeExit: vi.fn() }))
@@ -56,11 +56,14 @@ describe('catalog.json', () => {
   const session = () => import('@main/store/session')
   const path = () => join(root, 'catalog.json')
 
-  it('reads a file with no marker as format 1', async () => {
-    await writeFile(path(), JSON.stringify({ tapes: [], boxes: [BOX] }))
+  it('sets aside a file without its marker, as it does an unreadable one', async () => {
+    const text = JSON.stringify({ tapes: [], boxes: [BOX] })
+    await writeFile(path(), text)
     const store = await session()
-    expect(await store.loadSession()).toEqual({ status: 'loaded', tapeCount: 0 })
-    expect(store.getBoxes()).toEqual([BOX])
+    expect(await store.loadSession()).toMatchObject({ status: 'recovered' })
+    expect(store.getBoxes()).toEqual([])
+    const [aside] = (await readdir(root)).filter((name) => name.endsWith('.invalid'))
+    expect(await readFile(join(root, aside!), 'utf8')).toBe(text)
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -91,11 +94,12 @@ describe('config.json', () => {
   const config = () => import('@main/store/config')
   const path = () => join(root, 'config.json')
 
-  it('reads a file with no marker as format 1', async () => {
+  it('sets aside a file without its marker, as it does an unreadable one', async () => {
     await writeFile(path(), JSON.stringify({ autoplay: false }))
     const store = await config()
-    expect(await store.loadSettings()).toEqual({ status: 'loaded' })
-    expect(store.getSettings().autoplay).toBe(false)
+    expect(await store.loadSettings()).toMatchObject({ status: 'recovered' })
+    expect(store.getSettings().autoplay).toBe(true)
+    expect((await readdir(root)).filter((name) => name.endsWith('.invalid'))).toHaveLength(1)
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -125,11 +129,11 @@ describe('layout.json', () => {
   const layout = () => import('@main/store/layout')
   const path = () => join(root, 'layout.json')
 
-  it('reads a file with no marker as format 1', async () => {
+  it('uses the defaults for a file without its marker, as for an unreadable one', async () => {
     await writeFile(path(), JSON.stringify({ leftPaneWidth: 400 }))
     const store = await layout()
     await store.loadLayout()
-    expect(store.getLayout().leftPaneWidth).toBe(400)
+    expect(store.getLayout()).toEqual(defaultLayout)
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -163,11 +167,11 @@ describe('dependencies.json', () => {
   const path = () => join(root, 'dependencies.json')
   const FACT = { latestKnownVersion: '2026.09.01', lastCheckedAtUtc: '2026-09-01T00:00:00.000Z' }
 
-  it('reads a file with no marker as format 1', async () => {
+  it('uses fresh facts for a file without its marker, as for an unreadable one', async () => {
     await writeFile(path(), JSON.stringify({ ...defaultDependencies(), ffmpeg: FACT }))
     const store = await dependencies()
     await store.loadDependencies()
-    expect(store.getDependencies().ffmpeg).toEqual(FACT)
+    expect(store.getDependencies()).toEqual(defaultDependencies())
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -199,10 +203,11 @@ describe('api-keys.json', () => {
   const apiKeys = () => import('@main/services/api-keys')
   const path = () => join(root, 'api-keys.json')
 
-  it('reads a file with no marker as format 1', async () => {
+  it('sets aside a file without its marker and holds no key, as for an unreadable one', async () => {
     await writeFile(path(), JSON.stringify({ keys: { openai: 'sk-plain' } }), { mode: 0o600 })
     const store = await apiKeys()
-    expect(await store.resolveApiKey('openai')).toBe('sk-plain')
+    expect(await store.resolveApiKey('openai')).toBeNull()
+    expect((await readdir(root)).filter((name) => name.endsWith('.invalid'))).toHaveLength(1)
   })
 
   it('writes format 1 first and reads it back', async () => {

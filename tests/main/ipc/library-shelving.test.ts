@@ -261,10 +261,11 @@ describe('removing tapes from the library', () => {
 
 describe('reading a tape sidecar', () => {
   it('hands back the parsed sidecar', async () => {
-    await writeFile(join(state.libraryDir, 'Take.json'), JSON.stringify({ title: 'Take', description: 'note' }), 'utf8')
+    await writeFile(join(state.libraryDir, 'Take.json'), JSON.stringify({ formatVersion: 1, title: 'Take', description: 'note' }), 'utf8')
     state.tapes = [makeTape({ id: 'Hassidecar', sidecarFilename: 'Take.json' })]
 
     await expect(invoke('library:getSidecar', { tapeId: 'Hassidecar' })).resolves.toEqual({
+      formatVersion: 1,
       title: 'Take',
       description: 'note',
     })
