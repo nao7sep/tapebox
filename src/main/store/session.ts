@@ -138,9 +138,7 @@ export async function loadSessionFile(
  */
 export async function loadSession(): Promise<SessionLoadResult> {
   const { result, session } = await loadSessionFile(paths.catalog)
-  // A catalog written by an older version may still hold in-flight states; they
-  // resume from the queue exactly like a download stopped at quit.
-  cache = durableSession(session)
+  cache = session
   lastWritten = JSON.stringify({ tapes: session.tapes, boxes: session.boxes })
   loaded = true
   switch (result.status) {

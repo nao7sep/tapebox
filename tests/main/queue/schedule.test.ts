@@ -29,6 +29,7 @@ function tape(id: string, state: Tape['state']): Tape {
     order: 0,
     pausedAtUtc: null,
     failedAtUtc: null,
+    failureCode: null,
     lastError: null,
   }
 }

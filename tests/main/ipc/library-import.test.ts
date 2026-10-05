@@ -103,7 +103,7 @@ function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
     probedAtUtc: null, filename: 'existing.mp4', sidecarFilename: 'existing.json',
     thumbnailFilename: null, downloadStartedAtUtc: null, downloadedAtUtc: null,
     name: null, renamedAtUtc: null, archivedAtUtc: null, boxId: null, order: 0,
-    pausedAtUtc: null, failedAtUtc: null, lastError: null,
+    pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...overrides,
   }
 }

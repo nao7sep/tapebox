@@ -9,7 +9,7 @@ function tape(overrides: Partial<Tape>): Tape {
     uploader: null, durationSeconds: null, chapterCount: null, probedAtUtc: null,
     filename: null, sidecarFilename: null, thumbnailFilename: null, downloadStartedAtUtc: null,
     downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: null, boxId: null,
-    order: 0, pausedAtUtc: null, failedAtUtc: null, lastError: null,
+    order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...overrides,
   })
 }

@@ -95,9 +95,7 @@ export const TapeSchema = z.object({
   // State-transition markers.
   pausedAtUtc: z.string().nullable(),          // when state → 'paused'
   failedAtUtc: z.string().nullable(),          // when state → 'failed'
-  // Optional for catalogs written before failure codes were introduced. The
-  // renderer treats a missing/unknown legacy value as a generic download failure.
-  failureCode: z.enum(tapeFailureCodes).nullable().optional(),
+  failureCode: z.enum(tapeFailureCodes).nullable(),  // why state → 'failed'; null otherwise
   lastError: z.string().nullable(),
 })
 export type Tape = z.infer<typeof TapeSchema>

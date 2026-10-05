@@ -27,6 +27,7 @@ function completeTape(): Record<string, unknown> {
     order: 0,
     pausedAtUtc: null,
     failedAtUtc: null,
+    failureCode: null,
     lastError: null,
   }
 }

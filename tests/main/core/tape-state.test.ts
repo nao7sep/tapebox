@@ -13,7 +13,7 @@ function tape(over: Partial<Tape>): Tape {
     durationSeconds: null, chapterCount: 0, probedAtUtc: null, filename: null,
     sidecarFilename: null, thumbnailFilename: null, downloadStartedAtUtc: null,
     downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: null,
-    boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, lastError: null,
+    boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...over,
   }
 }

@@ -60,7 +60,7 @@ const tape: Tape = {
   sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg',
   downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
   name: 'Take', renamedAtUtc: null, archivedAtUtc: null, boxId: null, order: 0,
-  pausedAtUtc: null, failedAtUtc: null, lastError: null,
+  pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
 const libraryState = vi.hoisted(() => ({ dir: '' }))
 const sessionState = vi.hoisted(() => ({ tape: null as Tape | null }))

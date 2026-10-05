@@ -2,7 +2,7 @@ import type { TapeFailureCode } from '@shared/domain'
 import { message, type Message } from '@shared/i18n/translate'
 
 /** Map durable failure facts to renderer-authored copy. */
-export function downloadFailurePresentation(code: TapeFailureCode | null | undefined): Message {
+export function downloadFailurePresentation(code: TapeFailureCode | null): Message {
   if (code === 'duplicate') {
     return message('download.duplicate')
   }

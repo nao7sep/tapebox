@@ -117,7 +117,7 @@ beforeEach(async () => {
     sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg',
     downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
     name: 'Take', renamedAtUtc: null, archivedAtUtc: null, boxId: null, order: 0,
-    pausedAtUtc: null, failedAtUtc: null, lastError: null,
+    pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
   await writeFile(join(dir, 'Take.mp4'), 'video')
   await writeFile(join(dir, 'Take.jpg'), 'poster')

@@ -28,6 +28,7 @@ function tape(overrides: Partial<Tape> & { id: string }): Tape {
     order: 0,
     pausedAtUtc: null,
     failedAtUtc: null,
+    failureCode: null,
     lastError: null,
     ...overrides,
   })

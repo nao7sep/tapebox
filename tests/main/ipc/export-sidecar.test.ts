@@ -25,7 +25,7 @@ const tape: Tape = {
   sidecarFilename: 'Take.json', thumbnailFilename: null,
   downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
   name: 'Take', renamedAtUtc: RENAMED_AT, archivedAtUtc: null, boxId: null, order: 0,
-  pausedAtUtc: null, failedAtUtc: null, lastError: null,
+  pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
 const libraryState = vi.hoisted(() => ({ dir: '' }))
 vi.mock('@main/store/session', () => ({ getTape: () => tape }))

@@ -69,7 +69,7 @@ function tape(id = 'abc1234567', order = 0): Tape {
     probedAtUtc: '2026-01-01T00:00:00.000Z', filename: `${id}.mp4`,
     sidecarFilename: `${id}.json`, thumbnailFilename: null, downloadStartedAtUtc: null,
     downloadedAtUtc: '2026-01-01T00:00:00.000Z', name: 'Take', renamedAtUtc: null,
-    archivedAtUtc: null, boxId: null, order, pausedAtUtc: null, failedAtUtc: null, lastError: null,
+    archivedAtUtc: null, boxId: null, order, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
 }
 
@@ -246,15 +246,5 @@ describe('terminal catalog persistence', () => {
 
     await expect(persistNow()).resolves.toBe(true)
     onCatalogSaveFailure(() => {})
-  })
-
-  it('resumes a download an older catalog left in flight', async () => {
-    const { writeFile } = await import('node:fs/promises')
-    const inFlight = { ...tape('old1234567'), state: 'downloading', downloadStartedAtUtc: '2026-01-02T00:00:01.000Z' }
-    await writeFile(join(testRoot, 'catalog.json'), JSON.stringify({ tapes: [inFlight], boxes: [] }))
-
-    await loadSession()
-
-    expect(getTape('old1234567')).toMatchObject({ state: 'queued', downloadStartedAtUtc: null })
   })
 })

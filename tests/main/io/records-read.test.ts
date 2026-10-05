@@ -145,31 +145,6 @@ describe('records reads', () => {
     })
   })
 
-  it('gives a database made before runs recorded why they ended early the column, unknown for its earlier rows', async () => {
-    const { records, reader } = await freshApp()
-    const { paths } = await import('@main/paths')
-    mkdirSync(dirname(paths.records), { recursive: true })
-    const older = new DatabaseSync(paths.records)
-    older.exec(`CREATE TABLE ytdlp_runs (id INTEGER PRIMARY KEY, session TEXT NOT NULL, tape_id TEXT, scan_id TEXT,
-      kind TEXT NOT NULL, url TEXT NOT NULL, args TEXT NOT NULL, started_at_utc TEXT NOT NULL, ended_at_utc TEXT NOT NULL,
-      exit_code INTEGER, signal TEXT, stdout TEXT NOT NULL, stderr TEXT NOT NULL)`)
-    older.exec(`INSERT INTO ytdlp_runs (session, kind, url, args, started_at_utc, ended_at_utc, exit_code, signal, stdout, stderr)
-      VALUES ('earlier', 'download', 'https://example.com/v', '[]', '2026-10-03T10:00:00.000Z', '2026-10-03T10:00:01.000Z',
-      NULL, 'SIGTERM', '', '')`)
-    older.close()
-
-    records.openRecords()
-    expect(records.writeRecord('ytdlp_runs', {
-      tape_id: null, scan_id: null, kind: 'download', url: 'https://example.com/v', args: '[]',
-      started_at_utc: '2026-10-04T10:00:00.000Z', ended_at_utc: '2026-10-04T10:00:01.000Z',
-      exit_code: null, signal: 'SIGTERM', stop_reason: 'cancel', stdout: '', stderr: '',
-    }, () => 'yt-dlp run')).toBe(false)
-
-    const page = await reader.readRecords({ op: 'page', query: query() })
-    expect(page.records.map((record) => [record.session === 'earlier', record.level])).toEqual([[false, 'warn'], [true, 'error']])
-    expect(await reader.readRecords({ op: 'detail', kind: 'ytdlp-run', id: page.records[1]!.id })).toMatchObject({ stopReason: null })
-  })
-
   it('reads a database that never set PRAGMA user_version as format 1, and stamps 1 on the one it writes', async () => {
     const { records, reader } = await freshApp()
     const { paths } = await import('@main/paths')
