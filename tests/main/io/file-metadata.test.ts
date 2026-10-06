@@ -38,11 +38,13 @@ describe('applyFileStamp', () => {
     expect(copy.calls).toEqual(['chmod 640', 'utimes 1700000000 1600000000'])
   })
 
-  it('does not move a birth time that is not earlier than the modified time', async () => {
-    const copy = target()
-    await applyFileStamp(copy, { ...STAMP, birthtime: STAMP.mtime }, 'darwin')
-    expect(copy.calls).toEqual(['chmod 640', 'utimes 1700000000 1600000000'])
-  })
+  for (const birthtime of [STAMP.mtime, STAMP.mtime + 1]) {
+    it(`does not move a birth time that is not earlier than the modified time (${birthtime - STAMP.mtime}s later)`, async () => {
+      const copy = target()
+      await applyFileStamp(copy, { ...STAMP, birthtime }, 'darwin')
+      expect(copy.calls).toEqual(['chmod 640', 'utimes 1700000000 1600000000'])
+    })
+  }
 
   it('drops permissions the volume refuses and still keeps the times', async () => {
     const copy = target(failure('EPERM'))

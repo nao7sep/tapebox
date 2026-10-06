@@ -44,10 +44,15 @@ export function fileStampOf(stats: BigIntStats): FileStamp {
 
 /**
  * Give a copy its source's permissions and times. The modified time always holds;
- * permissions a volume refuses are dropped. macOS lowers a file's birth time to an
- * earlier modified time it is given, so there the birth time goes in first and the
- * real times after it; a volume whose birth time does not follow keeps its own.
- * Other platforms offer no way to set a birth time, so a copy there has a new one.
+ * permissions a volume refuses are dropped. The birth time is kept only as far as
+ * the platform lets Node set it (content-lifecycle conventions: a copy keeps what
+ * it can). macOS lowers a file's birth time to an earlier modified time it is
+ * given, so there the birth time goes in first and the real times after it: a
+ * source born no later than it was modified keeps its birth time, and one born
+ * later, which Node cannot express, gives the copy its modified time as birth
+ * time. A volume whose birth time does not follow keeps its own. Other platforms,
+ * Windows among them, offer Node no way to set a birth time, so a copy there has a
+ * new one.
  */
 export async function applyFileStamp(
   target: StampTarget,
