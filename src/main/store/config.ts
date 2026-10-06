@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises'
+import { isDeepStrictEqual } from 'node:util'
 import { paths } from '@main/paths'
 import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
+import { FORMAT_VERSION_KEY, FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { describeError } from '@shared/error'
 import {
   cleanSettingsSets, defaultSettings, effectiveSettings, storedSets, summarizeSettings, type Settings,
@@ -18,14 +19,21 @@ import { StoredSettingsSchema, readSettingsSets } from './settings-sets'
  */
 
 let cache: Settings | null = null
+/** Whether config.json holds more than the sets it would be saved with: a set that
+ *  read as its built-in, an unknown key, or a copy equal to its built-in. The next
+ *  Save then writes even when it changes no set, so the file heals
+ *  (config-sets-conventions, Reading and healing). */
+let healAtSave = false
 
 export async function loadSettings(): Promise<ConfigLoadResult> {
   const found = await readSettingsStore(paths.config)
   if (found !== null && 'sets' in found) {
     cache = effectiveSettings(found.sets)
+    healAtSave = !isDeepStrictEqual(found.written, storedSets(cache))
     log.info('settings loaded', { config: summarizeSettings(cache) })
     return { status: 'loaded' }
   }
+  healAtSave = false
   const defaults = defaultSettings()
   cache = defaults
   if (found === null) {
@@ -54,7 +62,7 @@ export async function readSettingsFile(
 
 async function readSettingsStore(
   configPath: string,
-): Promise<{ sets: SettingsSets } | { quarantinePath: string } | null> {
+): Promise<{ sets: SettingsSets; written: Record<string, unknown> } | { quarantinePath: string } | null> {
   let text: string
   try {
     text = await readFile(configPath, 'utf8')
@@ -69,9 +77,11 @@ async function readSettingsStore(
     log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(found.error) })
     return { quarantinePath: await quarantineFile(configPath) }
   }
-  return { sets: readSettingsSets(found.value, (key) => {
+  const { [FORMAT_VERSION_KEY]: _marker, ...written } = found.value
+  const sets = readSettingsSets(found.value, (key) => {
     log.warn('settings set invalid; using built-in', { key })
-  }) }
+  })
+  return { sets, written }
 }
 
 export function getSettings(): Settings {
@@ -92,15 +102,16 @@ export function getLibraryDir(): string {
 
 // One serialized owner applies the cleaned patch to the cached settings and
 // writes every set that differs from its built-in. A result equal to what the
-// cache already stores writes nothing.
+// cache already stores writes nothing, unless the loaded file still needs healing.
 let writeChain: Promise<unknown> = Promise.resolve()
 
 export function updateSettings(patch: SettingsSets): Promise<Settings> {
   const run = writeChain.then(async () => {
     const current = getSettings()
     const next = storedSets({ ...current, ...StoredSettingsSchema.parse(cleanSettingsSets(patch)) })
-    if (JSON.stringify(next) !== JSON.stringify(storedSets(current))) {
+    if (healAtSave || JSON.stringify(next) !== JSON.stringify(storedSets(current))) {
       await writeManagedJson(paths.config, next, { formatVersion: FORMAT_VERSIONS.config, schema: StoredSettingsSchema })
+      healAtSave = false
       log.info('settings updated', { keys: Object.keys(patch) })
     }
     // The in-memory view is authoritative only after the durable commit. A failed

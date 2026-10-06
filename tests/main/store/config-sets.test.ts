@@ -125,6 +125,13 @@ describe('settings by set', () => {
     expect(await readFile(paths.config, 'utf8')).toBe(JSON.stringify({ formatVersion: 1, autoplay: false }))
   })
 
+  it('heals the loaded file at a Save that changes no set', async () => {
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, language: 'unsupported', future: 'x', playSound: true, autoplay: false }))
+    await loadSettings()
+    await updateSettings({ autoplay: false })
+    expect(await savedSets()).toEqual({ autoplay: false })
+  })
+
   it('compares text after cleanup and a model id trimmed and case-insensitive', async () => {
     await writeFile(paths.config, JSON.stringify({ formatVersion: 1, 'openai.slug': 'custom-model', prompts: { slug: 'custom' } }))
     await loadSettings()
