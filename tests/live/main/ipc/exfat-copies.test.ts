@@ -14,6 +14,7 @@ import { promisify } from 'node:util'
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { FORMAT_VERSIONS } from '@main/io/format-version'
 import type { ImportResult, IpcCalls } from '@shared/ipc-contract'
 
 const run = promisify(execFile)
@@ -84,6 +85,7 @@ async function writeBundle(dir: string, stem: string, sourceUrl: string): Promis
   await writeFile(media, Buffer.alloc(MEDIA_BYTES, 0x5a))
   await writeFile(poster, Buffer.alloc(1_000, 0x11))
   await writeFile(sidecar, JSON.stringify({
+    formatVersion: FORMAT_VERSIONS.sidecar,
     id: stem, extractor: 'generic', title: stem,
     tapebox: {
       sourceUrl, name: stem, addedAtUtc: '2021-04-05T00:00:00.000Z',
