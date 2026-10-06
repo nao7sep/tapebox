@@ -1,13 +1,14 @@
-import { lstat, unlink, writeFile } from 'node:fs/promises'
-import type { BigIntStats } from 'node:fs'
+import { chmod, lstat, stat, unlink, writeFile } from 'node:fs/promises'
+import { chmodSync, statSync, type BigIntStats } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { nanoid } from 'nanoid'
 import { execCapture } from './spawn'
 
 /**
- * What a copy keeps of its source's own metadata (content-lifecycle conventions,
- * Files): the permissions and times live here, the extended attributes, Finder
- * tags among them, in {@link copyExtendedAttributes}.
+ * What a copy keeps of its source's own metadata, and what a replacement keeps of
+ * the file it replaces (content-lifecycle conventions, Files): the permissions and
+ * times live here, the extended attributes, Finder tags among them, in
+ * {@link copyExtendedAttributes}.
  */
 
 /** A file's permissions and times, the times in seconds since the epoch. */
@@ -25,6 +26,11 @@ export interface StampTarget {
 
 /** Errors with which a volume refuses metadata it cannot hold. */
 const CANNOT_HOLD = new Set(['EACCES', 'EINVAL', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM'])
+
+/** Whether `err` is a volume refusing metadata it cannot hold. */
+function refusesMetadata(err: unknown): boolean {
+  return CANNOT_HOLD.has((err as NodeJS.ErrnoException).code ?? '')
+}
 
 export function fileStampOf(stats: BigIntStats): FileStamp {
   const seconds = (ns: bigint) => Number(ns) / 1e9
@@ -51,12 +57,53 @@ export async function applyFileStamp(
   try {
     await target.chmod(stamp.mode)
   } catch (err) {
-    if (!CANNOT_HOLD.has((err as NodeJS.ErrnoException).code ?? '')) throw err
+    if (!refusesMetadata(err)) throw err
   }
   if (platform === 'darwin' && stamp.birthtime > 0 && stamp.birthtime < stamp.mtime) {
     await target.utimes(stamp.atime, stamp.birthtime)
   }
   await target.utimes(stamp.atime, stamp.mtime)
+}
+
+/**
+ * Give `replacementPath`, a file about to be renamed over `originalPath`, the
+ * original's permissions and extended attributes. Its times stay its own. With no
+ * original there is nothing to keep; permissions or attributes the volume refuses
+ * are dropped.
+ */
+export async function keepOriginalMetadata(
+  originalPath: string,
+  replacementPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  let mode: number
+  try {
+    mode = (await stat(originalPath)).mode & 0o777
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw err
+  }
+  try {
+    await chmod(replacementPath, mode)
+  } catch (err) {
+    if (!refusesMetadata(err)) throw err
+  }
+  await copyExtendedAttributes(originalPath, replacementPath, signal)
+}
+
+/**
+ * {@link keepOriginalMetadata} for a path that cannot wait, such as a write on the
+ * way out of the process: the permissions only, since the extended attributes
+ * take the asynchronous `xattr` tool.
+ */
+export function keepOriginalModeSync(originalPath: string, replacementPath: string): void {
+  const original = statSync(originalPath, { throwIfNoEntry: false })
+  if (!original) return
+  try {
+    chmodSync(replacementPath, original.mode & 0o777)
+  } catch (err) {
+    if (!refusesMetadata(err)) throw err
+  }
 }
 
 const XATTR = '/usr/bin/xattr'

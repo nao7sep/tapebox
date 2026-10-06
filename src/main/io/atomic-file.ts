@@ -1,7 +1,7 @@
-import { link, lstat, open, rename, unlink, writeFile } from 'node:fs/promises'
+import { chmod, link, lstat, open, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { nanoid } from 'nanoid'
-import { applyFileStamp, copyExtendedAttributes, fileStampOf, type FileStamp } from './file-metadata'
+import { applyFileStamp, copyExtendedAttributes, fileStampOf, keepOriginalMetadata, type FileStamp } from './file-metadata'
 
 /**
  * Atomically publish a file. Runs `produce(tempPath)` to write the complete,
@@ -18,6 +18,10 @@ import { applyFileStamp, copyExtendedAttributes, fileStampOf, type FileStamp } f
  * existing `destPath` is left untouched (the rename is the single atomic commit).
  * When supplied, `signal` is checked after production and again after fsync,
  * immediately before that commit.
+ *
+ * A file being replaced hands the temp its permissions and extended attributes
+ * before the rename, never its times (content-lifecycle conventions, Files). A
+ * caller that decides the file's permissions itself passes `mode`, which wins.
  *
  * The temp defaults to a `<stem>-<nanoid>.tmp` sibling (see {@link defaultTempPath})
  * so the rename is always same-filesystem (atomic, never a cross-device copy), and
@@ -36,10 +40,15 @@ export async function writeFileAtomicVia(
   produce: (tempPath: string) => Promise<void>,
   tempPath: string = defaultTempPath(destPath),
   signal?: AbortSignal,
+  mode?: number,
 ): Promise<void> {
   try {
     await produce(tempPath)
     signal?.throwIfAborted()
+    await keepOriginalMetadata(destPath, tempPath, signal)
+    // chmod (not the open mode) is what guarantees the exact bits regardless of
+    // the process umask.
+    if (mode !== undefined) await chmod(tempPath, mode)
     await fsyncFile(tempPath)
     // fsync can block long enough for a user cancellation to arrive. This is the
     // final safe boundary: the staged file is durable but has not replaced the

@@ -247,12 +247,12 @@ describe('writeFileAtomicVia', () => {
     let checks = 0
     // Abort precisely on the second check: the first follows produce, while the
     // second is the required post-fsync/pre-rename commit gate.
-    const signal = {
-      throwIfAborted() {
-        checks += 1
-        if (checks === 2) throw new DOMException('cancel before publish', 'AbortError')
-      },
-    } as AbortSignal
+    // A real signal, since keeping the original's attributes hands it on.
+    const signal = new AbortController().signal
+    signal.throwIfAborted = () => {
+      checks += 1
+      if (checks === 2) throw new DOMException('cancel before publish', 'AbortError')
+    }
 
     await expect(
       writeFileAtomicVia(
@@ -269,6 +269,44 @@ describe('writeFileAtomicVia', () => {
     expect(checks).toBe(2)
     expect(await readFile(dest, 'utf8')).toBe('original')
     expect(await exists(temp)).toBe(false)
+  })
+})
+
+describe('writeFileAtomicVia keeps what a replace keeps', () => {
+  it("gives the replacement the original's permissions and extended attributes, never its times", async () => {
+    const dest = join(dir, 'clip.json')
+    await writeFile(dest, 'old')
+    const modified = new Date('2020-08-09T10:11:12.000Z')
+    await utimes(dest, modified, modified)
+    if (process.platform !== 'win32') await chmod(dest, 0o600)
+    if (process.platform === 'darwin') {
+      await execFileAsync('/usr/bin/xattr', ['-w', TAG_ATTRIBUTE, 'Red', dest])
+    }
+
+    await writeFileAtomicVia(dest, async (tmp) => {
+      await writeFile(tmp, 'new')
+    })
+
+    const replaced = await stat(dest)
+    expect(await readFile(dest, 'utf8')).toBe('new')
+    expect(replaced.mtimeMs).not.toBe(modified.getTime())
+    if (process.platform !== 'win32') expect(replaced.mode & 0o777).toBe(0o600)
+    if (process.platform === 'darwin') {
+      const { stdout } = await execFileAsync('/usr/bin/xattr', ['-p', TAG_ATTRIBUTE, dest])
+      expect(stdout.trim()).toBe('Red')
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')("lets a caller's own mode win over the original's", async () => {
+    const dest = join(dir, 'api-keys.json')
+    await writeFile(dest, 'old')
+    await chmod(dest, 0o644)
+
+    await writeFileAtomicVia(dest, async (tmp) => {
+      await writeFile(tmp, 'new')
+    }, undefined, undefined, 0o600)
+
+    expect((await stat(dest)).mode & 0o777).toBe(0o600)
   })
 })
 

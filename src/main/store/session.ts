@@ -4,6 +4,7 @@ import { extname } from 'node:path'
 import { nanoid } from 'nanoid'
 import { paths } from '@main/paths'
 import { quarantineFile, serializeStoreJson, writeManagedJson } from '@main/io/atomic-json'
+import { keepOriginalModeSync } from '@main/io/file-metadata'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { recordBeforeExit } from '@main/store/backupStore'
 import { log } from '@main/io/logger'
@@ -413,6 +414,7 @@ export function persistNowSync(): void {
     const stem = paths.catalog.slice(0, -extname(paths.catalog).length)
     const tmp = `${stem}-${nanoid(10)}.tmp`
     writeFileSync(tmp, bytes)
+    keepOriginalModeSync(paths.catalog, tmp)
     renameSync(tmp, paths.catalog)
     // This is a managed-text save on a terminal path (uncaughtException / process
     // 'exit'), where the async writeManagedJson choke point cannot run — so it

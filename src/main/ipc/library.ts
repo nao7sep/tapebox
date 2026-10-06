@@ -18,6 +18,7 @@ import {
   unlinkClaimedFiles,
   type FileClaim,
 } from '@main/io/atomic-file'
+import { keepOriginalMetadata } from '@main/io/file-metadata'
 import { portableSiblingExists, type AllowedPortableDirectoryEntry } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
 import { readSidecarFile, writeSidecar } from '@main/core/sidecar'
@@ -563,6 +564,8 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
         // into exclusion (data-backup conventions). It uses the raw writeJsonAtomic,
         // not the managed-text choke point; the tape's catalog row records instead.
         await writeSidecar(it.stage, sidecar)
+        // The renamed sidecar replaces the old one, so it keeps what a replace keeps.
+        await keepOriginalMetadata(it.old, it.stage, signal)
         done.push(await publishFileNoOverwrite(it.stage, it.fresh))
       } else {
         // not recorded: the tape's existing media/thumbnail bytes gain a second

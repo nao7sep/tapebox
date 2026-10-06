@@ -1,4 +1,4 @@
-import { access, chmod, constants, rename, unlink } from 'node:fs/promises'
+import { access, constants, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { nanoid } from 'nanoid'
 import { binaryPath, ensureDirs, hostTag, paths } from '@main/paths'
@@ -349,7 +349,6 @@ async function performInstall(
         }
         signal.throwIfAborted()
         if (process.platform !== 'win32') {
-          await chmod(stage, 0o755)
           // Strip macOS Gatekeeper quarantine if present; harmless when absent.
           if (process.platform === 'darwin') {
             const xattrSignal = AbortSignal.any([
@@ -378,6 +377,8 @@ async function performInstall(
       },
       undefined,
       signal,
+      // Executable, whatever the binary it replaces was.
+      process.platform === 'win32' ? undefined : 0o755,
     )
   } finally {
     await unlink(downloadTemp).catch(() => {})

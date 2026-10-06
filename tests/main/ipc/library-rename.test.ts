@@ -1,5 +1,5 @@
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
-import { mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -230,6 +230,14 @@ describe('library:rename', () => {
       rollbackMutation.order.indexOf('cleanup:obsolete'),
     )
     expect((await readdir(dir)).sort()).toEqual(['renamed.jpg', 'renamed.json', 'renamed.mp4'])
+  })
+
+  it.skipIf(process.platform === 'win32')("gives the renamed sidecar the old sidecar's permissions", async () => {
+    await chmod(join(dir, 'Take.json'), 0o600)
+
+    await handlers.get('library:rename')!({ tapeId: state.tape!.id, name: 'renamed' })
+
+    expect((await stat(join(dir, 'renamed.json'))).mode & 0o777).toBe(0o600)
   })
 
   it('gives the media and poster their new names without copying their bytes', async () => {

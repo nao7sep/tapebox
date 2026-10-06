@@ -1,4 +1,4 @@
-import { chmod, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
@@ -61,7 +61,8 @@ export async function writeJsonAtomic<S extends z.ZodType>(
   data: z.input<S> | z.infer<S>,
   options: StoreJsonOptions<S> & {
     // POSIX file mode for the written file (e.g. 0o600 for a secrets file). When
-    // omitted, the file is created with the process's default mode.
+    // omitted, the file keeps the mode of the one it replaces, or the process's
+    // default when it is new.
     mode?: number
   },
 ): Promise<void> {
@@ -70,10 +71,7 @@ export async function writeJsonAtomic<S extends z.ZodType>(
   if (await holdsAlready(path, text, mode)) return
   await writeFileAtomicVia(path, async (tempPath) => {
     await writeFile(tempPath, text, 'utf8')
-    // chmod (not the open mode) is what guarantees the exact bits regardless of
-    // the process umask — the same belt-and-suspenders write-file-atomic used.
-    if (mode !== undefined) await chmod(tempPath, mode)
-  })
+  }, undefined, undefined, mode)
 }
 
 /** Whether `path` already holds exactly `text` (and `mode`, when one is asked for),
