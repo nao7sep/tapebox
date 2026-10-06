@@ -23,26 +23,26 @@ beforeEach(() => {
 })
 
 describe('startup recovery dialogs', () => {
-  it('keeps config quarantine paths in diagnostics only', async () => {
+  it('names where an unreadable settings file was set aside and what TapeBox started with', async () => {
     const owner = {} as BrowserWindow
-    await notifyCorruptConfig(owner)
+    await notifyCorruptConfig('/data/config-20260101-000000-000-utc.invalid', owner)
 
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
       owner,
       title: 'Settings could not be read',
-      detail: expect.stringContaining('recorded in the session log'),
+      message: expect.stringContaining('/data/config-20260101-000000-000-utc.invalid'),
+      detail: expect.stringContaining('default settings'),
     }))
-    expect(JSON.stringify(showPlainMessageDialog.mock.calls[0])).not.toMatch(/\/private\/tmp|\.invalid/)
   })
 
-  it('keeps session quarantine paths in diagnostics only', async () => {
-    await notifyCorruptSession()
+  it('names where an unreadable library file was set aside and what TapeBox started with', async () => {
+    await notifyCorruptSession('/data/catalog-20260101-000000-000-utc.invalid')
 
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Library could not be opened',
-      detail: expect.stringContaining('recorded in the session log'),
+      message: expect.stringContaining('/data/catalog-20260101-000000-000-utc.invalid'),
+      detail: expect.stringContaining('empty library'),
     }))
-    expect(JSON.stringify(showPlainMessageDialog.mock.calls[0])).not.toMatch(/\/private\/tmp|\.invalid/)
   })
 
   it('speaks the interface language, declaring it for the dialog page', async () => {

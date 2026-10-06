@@ -26,12 +26,14 @@ async function showNotice(notice: Notice, owner?: BrowserWindow, values?: Messag
   })
 }
 
-export async function notifyCorruptConfig(owner?: BrowserWindow): Promise<void> {
-  await showNotice('settingsUnreadable', owner)
+/** A store set aside and reset is named by where its bytes now are, beside what
+ *  the app started with instead (store-recovery-conventions). */
+export async function notifyCorruptConfig(quarantinePath: string, owner?: BrowserWindow): Promise<void> {
+  await showNotice('settingsUnreadable', owner, { path: quarantinePath })
 }
 
-export async function notifyCorruptSession(owner?: BrowserWindow): Promise<void> {
-  await showNotice('libraryUnreadable', owner)
+export async function notifyCorruptSession(quarantinePath: string, owner?: BrowserWindow): Promise<void> {
+  await showNotice('libraryUnreadable', owner, { path: quarantinePath })
 }
 
 /** Startup stopped. A store in a newer format is named with its path, and was
