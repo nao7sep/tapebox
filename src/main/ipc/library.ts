@@ -1,4 +1,4 @@
-import { access, constants, readFile, stat, unlink } from 'node:fs/promises'
+import { access, constants, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
@@ -33,7 +33,7 @@ import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import { SidecarTapeBoxSchema, trackedFilenameIdentities, type Tape } from '@shared/domain'
+import { SidecarTapeBoxSchema, TRACKED_FILENAME_FIELDS, trackedFilenameIdentities, type Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, RefreshedMetadata, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
@@ -171,10 +171,14 @@ export function registerLibraryHandlers(): void {
     if (thumbnailFilename === null && tape.filename) {
       const stem = tape.filename.slice(0, -extname(tape.filename).length)
       try {
-        thumbnailFilename = await runCancellable(async (signal) => {
-          const raw = await downloadThumbnail(tape.id, tape.sourceUrl, dir, stem, signal)
-          return raw ? saveThumbnailJpeg(tape.id, raw, dir, stem, signal) : null
-        })
+        if (await posterStemFree(tape, dir, stem)) {
+          thumbnailFilename = await runCancellable(async (signal) => {
+            const raw = await downloadThumbnail(tape.id, tape.sourceUrl, dir, stem, signal)
+            return raw ? saveThumbnailJpeg(tape.id, raw, dir, stem, signal) : null
+          })
+        } else {
+          log.warn('thumbnail backfill skipped; another file has the poster name', { tapeId, stem })
+        }
       } catch (err) {
         log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })
       }
@@ -210,6 +214,28 @@ export function registerLibraryHandlers(): void {
   // sidecar = one tape, so a duplicate is reported once, not once per selected file.
   handle('library:import', ({ paths }) => runCancellable((signal) =>
     withLibraryWrite((libraryDir) => importBundles(paths, libraryDir, signal))))
+}
+
+/**
+ * Whether a poster can be fetched under `stem` without touching a file that is not
+ * the tape's own: yt-dlp writes the raw image as `<stem>.<ext>` and the image gate
+ * replaces `<stem>.jpg`. No other tape may track a name with this stem, and no
+ * entry in the library may spell the stem differently (storage-path-conventions);
+ * an entry spelled exactly is the tape's own, such as a poster an earlier Apply
+ * left for the next one.
+ */
+async function posterStemFree(tape: Tape, dir: string, stem: string): Promise<boolean> {
+  const identity = portableFilenameIdentity(stem)
+  const stemOf = (name: string) => name.slice(0, name.length - extname(name).length)
+  for (const other of session.getTapes()) {
+    if (other.id === tape.id) continue
+    for (const field of TRACKED_FILENAME_FIELDS) {
+      const name = other[field]
+      if (name !== null && portableFilenameIdentity(stemOf(name)) === identity) return false
+    }
+  }
+  const entries = await readdir(dir)
+  return entries.every((name) => stemOf(name) === stem || portableFilenameIdentity(stemOf(name)) !== identity)
 }
 
 /**

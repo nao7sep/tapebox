@@ -229,6 +229,31 @@ describe('accepting refreshed metadata', () => {
     expect(written.title).toBe('New title')
   })
 
+  it("leaves another tape's poster alone when it has this tape's poster name", async () => {
+    const poster = join(state.libraryDir, 'Holiday.jpg')
+    await writeFile(poster, 'other poster')
+    state.tapes = [
+      makeTape({ id: 'Takenname', filename: 'Holiday.mp4' }),
+      makeTape({ id: 'Posterownr', filename: 'Other.mp4', thumbnailFilename: 'Holiday.jpg' }),
+    ]
+
+    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Takenname', metadata: ACCEPTED })
+
+    expect(downloadThumbnail).not.toHaveBeenCalled()
+    expect(updated).toMatchObject({ title: 'New title', thumbnailFilename: null })
+    expect(await readFile(poster, 'utf8')).toBe('other poster')
+  })
+
+  it('fetches no poster beside a file that spells the stem differently', async () => {
+    await writeFile(join(state.libraryDir, 'holiday.webp'), 'untracked')
+    state.tapes = [makeTape({ id: 'Casealias1', filename: 'Holiday.mp4' })]
+
+    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Casealias1', metadata: ACCEPTED })
+
+    expect(downloadThumbnail).not.toHaveBeenCalled()
+    expect(updated.thumbnailFilename).toBeNull()
+  })
+
   it('leaves the poster empty when the source has none to give', async () => {
     state.tapes = [makeTape({ id: 'Sourcehasn', filename: 'Holiday.mp4' })]
     downloadThumbnail.mockResolvedValue(null)

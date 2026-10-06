@@ -370,7 +370,8 @@ const THUMBNAIL_SOURCE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif'])
 /**
  * Locate the raw thumbnail yt-dlp wrote for a stem, whatever image format it
  * chose, or null if --write-thumbnail produced none (the source had no
- * thumbnail). The stem is the tape's unique id, so only its own file can match.
+ * thumbnail). Every name with this stem is the caller's own tape's, so only its
+ * own file can match.
  */
 export async function findThumbnail(libraryDir: string, stem: string): Promise<string | null> {
   let entries: string[]
