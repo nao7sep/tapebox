@@ -36,4 +36,23 @@ describe('plain message dialog', () => {
     expect(document.documentElement.lang).toBe('ja')
     expect(document.getElementById('close')?.textContent).toBe('OK')
   })
+
+  it('places further choices after the dismiss button, draws a destructive one as such, and wraps them rather than clip', () => {
+    const html = renderPlainMessageDialogHtml({
+      language: 'de',
+      title: 't',
+      message: 'm',
+      closeLabel: 'Abbrechen',
+      actions: [{ id: 'retry', label: 'Erneut versuchen' }, { id: 'quit-anyway', label: 'Trotzdem beenden', danger: true }],
+    })
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    const buttons = [...document.querySelectorAll('#dialog-footer button')]
+    expect(buttons.map((button) => button.textContent)).toEqual(['Abbrechen', 'Erneut versuchen', 'Trotzdem beenden'])
+    expect(buttons[0]?.id).toBe('close')
+    expect(buttons.map((button) => button.classList.contains('danger'))).toEqual([false, false, true])
+    expect(buttons[2]?.getAttribute('onclick')).toBe("location.href='https://tapebox-dialog.invalid/choose/quit-anyway'")
+    const style = document.querySelector('style')?.textContent ?? ''
+    expect(style).toMatch(/\.actions\{[^}]*flex-wrap:wrap/)
+    expect(style).toMatch(/\.button\{max-width:100%;overflow-wrap:anywhere/)
+  })
 })

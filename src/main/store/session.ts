@@ -362,9 +362,10 @@ function cancelScheduledSave(): void {
  * owned here rather than by the caller: the change stays in the cache (it already
  * happened — a finished download's files are on disk), the save is retried after
  * {@link SAVE_RETRY_AFTER_FAILURE_MS} and at quit, the failure listener tells the
- * user, and this resolves false.
+ * user, and this resolves false. A quit tells the user itself, in its own
+ * dialog rather than a notice while exiting, so it passes `quitting`.
  */
-export async function persistNow(): Promise<boolean> {
+export async function persistNow(options: { quitting?: boolean } = {}): Promise<boolean> {
   if (!loaded) return true
   if (saveTimer) {
     clearTimeout(saveTimer)
@@ -384,7 +385,7 @@ export async function persistNow(): Promise<boolean> {
     if (!saveTimer) scheduleSave(SAVE_RETRY_AFTER_FAILURE_MS)
     if (!saveFailing) {
       saveFailing = true
-      saveFailureListener?.()
+      if (!options.quitting) saveFailureListener?.()
     }
     return false
   }

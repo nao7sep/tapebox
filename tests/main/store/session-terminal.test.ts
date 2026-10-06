@@ -247,4 +247,20 @@ describe('terminal catalog persistence', () => {
     await expect(persistNow()).resolves.toBe(true)
     onCatalogSaveFailure(() => {})
   })
+
+  it('leaves a quit-time save failure to the quit to tell, and does not report it again afterwards', async () => {
+    await loadSession()
+    const failures = vi.fn()
+    onCatalogSaveFailure(failures)
+    upsertTape(tape('qui1234567'))
+
+    catalogMutation.failOrdinaryWrites = 2
+    await expect(persistNow({ quitting: true })).resolves.toBe(false)
+    // The quit's dialog told the user; a later autosave failure does not repeat it.
+    await expect(persistNow()).resolves.toBe(false)
+    expect(failures).not.toHaveBeenCalled()
+
+    await expect(persistNow()).resolves.toBe(true)
+    onCatalogSaveFailure(() => {})
+  })
 })

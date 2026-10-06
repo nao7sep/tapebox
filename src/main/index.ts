@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, powerMonitor, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureDirs, sweepAbandonedStaging } from './paths.js'
@@ -27,12 +27,14 @@ import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
-import { quitAfterShutdown } from './quit-after-shutdown.js'
+import { createQuit, type QuitChoice } from './quit.js'
+import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 import { BINARY_ACQUIRE_TIMEOUT_MS } from './io/network.js'
 import {
   applyLanguagePreference,
   registerLanguageHandlers,
+  mainTranslator,
   settleLanguageBeforeReady,
   settleLanguageWhenReady,
 } from './i18n.js'
@@ -69,6 +71,8 @@ async function createMainWindow(): Promise<BrowserWindow> {
   configureWindowActivity(app, win)
   configureWindowMinimum(win, () => ({ width: WINDOW_MIN_WIDTH, height: WINDOW_MIN_HEIGHT }),
     (error) => log.warn('window minimum could not be updated', { error: describeError(error) }))
+  // Windows ends a logoff or shutdown here and never raises a quit event.
+  win.on('session-end', quit.endSessionNow)
   win.once('closed', () => {
     if (mainWindow === win) mainWindow = null
     // The Records window beside it does not keep the app running: closing the
@@ -187,48 +191,53 @@ async function handleTerminalStartupFailure(error: unknown): Promise<void> {
   })
 }
 
-/** Upper bound on stopping in-flight work at quit. Each owner's own teardown is
- * already bounded (a process-tree kill settles within ~2 s on POSIX and 5 s on
- * Windows; file copies stop at their next chunk); this only keeps an unforeseen
- * stall from turning Quit into a hang. */
-const WORK_STOP_BOUND_MS = 15_000
+/** The quit's steps; quit.ts owns their order and bounds. Stopping work stops
+ * downloads, tool installs, scans and other in-flight work, whose child
+ * processes and library writes must not outlive the app; a download stopped
+ * here resumes at the next launch. The media server is in-process, so it dies
+ * with this process. */
+const quit = createQuit({
+  saveLibrary: () => persistNow({ quitting: true }),
+  ask: askAfterFailedLibrarySave,
+  resume: showOrCreateMainWindow,
+  stopWork: async () => {
+    // The renderer can't report a final pause once we're tearing down.
+    releaseWakeLock()
+    log.info('shutdown')
+    await Promise.all([shutdownBinaryOperations(), queue.shutdown(), cancelAllScans(), cancelAllWork()])
+  },
+  saveLayout: () => layout.persistNow(),
+  close: async () => {
+    await Promise.all([stopMediaServer(), closeBackupStore()])
+    closeRecordsReader()
+    closeRecords()
+  },
+  endNow: () => {
+    log.info('shutdown', { reason: 'session-end' })
+    persistNowSync()
+    closeRecordsReader()
+    closeRecords()
+  },
+  warn: (message, details) => log.warn(message, details),
+  exit: () => app.exit(0),
+})
 
-/**
- * Teardown, run once on before-quit (quit-after-shutdown.ts): stop downloads,
- * scans and other in-flight work (their child processes and library writes must
- * not outlive the app), flush session, stop the media server, close the records
- * database. The media server is in-process, so it dies with this process — there
- * is no separate server to leave stale.
- */
-async function shutdown(reason: string): Promise<void> {
-  log.info('shutdown', { reason })
-  // The renderer can't report a final pause once we're tearing down, so drop any
-  // held playback wake lock up front.
-  releaseWakeLock()
-  await shutdownBinaryOperations()
-  await stopInFlightWork()
-  // A failed final save is logged by the session store; the process 'exit'
-  // handler's synchronous flush makes one last attempt.
-  await persistNow()
-  await layout.persistNow()
-  await stopMediaServer()
-  await closeBackupStore()
-  closeRecordsReader()
-  closeRecords()
-}
-
-async function stopInFlightWork(): Promise<void> {
-  let timer: NodeJS.Timeout | undefined
-  const bound = new Promise<'timeout'>((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), WORK_STOP_BOUND_MS)
+async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoice> {
+  const t = mainTranslator()
+  const choice = await showPlainMessageDialog({
+    owner: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    language: t.language,
+    title: t.t('quit.libraryNotSaved.title'),
+    message: t.t('quit.libraryNotSaved.message'),
+    detail: t.t('quit.libraryNotSaved.detail'),
+    closeLabel: t.t('common.cancel'),
+    actions: [
+      { id: 'retry', label: t.t('common.tryAgain') },
+      { id: 'quit-anyway', label: t.t('quit.libraryNotSaved.quitAnyway'), danger: true },
+    ],
+    signal,
   })
-  const stopped = Promise.all([queue.shutdown(), cancelAllScans(), cancelAllWork()]).then(() => 'stopped' as const)
-  const outcome = await Promise.race([stopped, bound]).catch((error: unknown) => {
-    log.error('in-flight work could not be stopped', { error: describeError(error) })
-    return 'failed' as const
-  })
-  clearTimeout(timer)
-  if (outcome === 'timeout') log.warn('in-flight work did not stop within the quit bound', { boundMs: WORK_STOP_BOUND_MS })
+  return choice === 'retry' || choice === 'quit-anyway' ? choice : 'cancel'
 }
 
 // Global last-resort hooks. An uncaught exception is fatal: log it with full
@@ -256,6 +265,8 @@ void app.whenReady().then(() => {
   // activation while stores/server/IPC are still loading. The handler defers;
   // startup creates the one owner window as soon as readiness is established.
   app.on('activate', showOrCreateMainWindow)
+  // macOS and Linux: an OS logout, restart or shutdown, before its quit arrives.
+  powerMonitor.on('shutdown', quit.markSessionEnd)
   // The computer's languages, the menu and AppKit's record of the choice, before
   // any window exists.
   void settleLanguageWhenReady().then(startup).catch(handleTerminalStartupFailure)
@@ -270,4 +281,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', quitAfterShutdown(() => shutdown('before-quit'), () => app.exit(0)))
+app.on('before-quit', quit.beforeQuit)
