@@ -1,4 +1,4 @@
-import { chmod, readFile, stat } from 'node:fs/promises'
+import { open, readFile, type FileHandle } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { z } from 'zod'
 import { paths } from '@main/paths'
@@ -7,6 +7,7 @@ import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
+import { describeError } from '@shared/error'
 
 /**
  * API key storage and resolution — the secret store at ~/.tapebox/api-keys.json,
@@ -90,72 +91,106 @@ function decodeApiKey(stored: string, id: string): string | null {
 
 let modeWarned = false
 
-async function warnIfInsecureMode(): Promise<void> {
-  if (!ENFORCE_FILE_MODE || modeWarned) return
+async function warnIfInsecureMode(file: FileHandle): Promise<void> {
+  if (!ENFORCE_FILE_MODE) return
   try {
-    const st = await stat(paths.apiKeys)
+    const st = await file.stat()
     if ((st.mode & 0o077) !== 0) {
-      modeWarned = true
-      log.warn('api key file is readable beyond the owner; tightening to 0600', {
-        path: paths.apiKeys,
-        mode: (st.mode & 0o777).toString(8).padStart(3, '0'),
-      })
-      await chmod(paths.apiKeys, SECRETS_FILE_MODE).catch(() => {})
+      if (!modeWarned) {
+        modeWarned = true
+        log.warn('api key file is readable beyond the owner; tightening to 0600', {
+          path: paths.apiKeys,
+          mode: (st.mode & 0o777).toString(8).padStart(3, '0'),
+        })
+      }
+      await file.chmod(SECRETS_FILE_MODE)
     }
-  } catch {
-    // No file yet, or stat failed — nothing to tighten.
+  } catch (error) {
+    log.warn('api key file permissions could not be tightened', { error: describeError(error) })
   }
 }
 
 // Validate and canonicalize the on-disk shape: `{ keys: { id: value } }`, ids
 // lowercased and matched against the id grammar, values kept only when strings.
-function normalize(raw: unknown): ApiKeysFile {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { keys: {} }
+function normalize(raw: unknown): ApiKeysFile | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
   const rawKeys = (raw as { keys?: unknown }).keys
-  if (!rawKeys || typeof rawKeys !== 'object' || Array.isArray(rawKeys)) return { keys: {} }
+  if (!rawKeys || typeof rawKeys !== 'object' || Array.isArray(rawKeys)) return null
   const keys: Record<string, string> = {}
   for (const [id, value] of Object.entries(rawKeys as Record<string, unknown>)) {
     const canonical = id.toLowerCase()
-    if (typeof value === 'string' && KEY_ID_RE.test(canonical)) keys[canonical] = value
+    if (!KEY_ID_RE.test(canonical)) continue
+    if (typeof value !== 'string' || decodeApiKey(value, canonical) === null) return null
+    keys[canonical] = value
   }
   return { keys }
 }
 
 /** The stored keys, or `newer` when api-keys.json is in a newer format: intact,
  *  so it is left exactly as it is and no key resolves from it. */
-async function readAll(): Promise<ApiKeysFile | 'newer'> {
-  await warnIfInsecureMode()
-  let text: string
+type KeyRead = ApiKeysFile | 'newer' | Error
+
+async function readAll(): Promise<KeyRead> {
+  let file: FileHandle | undefined
   try {
-    text = await readFile(paths.apiKeys, 'utf8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { keys: {} }
-    return setAside()
+    let text: string
+    try {
+      file = await open(paths.apiKeys, 'r')
+      text = await file.readFile('utf8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { keys: {} }
+      if (file) { await closeKeyFile(file); file = undefined }
+      return await setAside()
+    }
+    const found = parseStoreJson(text, FORMAT_VERSIONS.apiKeys)
+    if (found.status === 'newer') {
+      log.warn('api-keys.json is from a newer TapeBox; treating it as empty and leaving it as it is', {
+        path: paths.apiKeys,
+        formatVersion: found.version,
+      })
+      return 'newer'
+    }
+    const normalized = found.status === 'read' ? normalize(found.value) : null
+    if (!normalized) {
+      await closeKeyFile(file)
+      file = undefined
+      return await setAside()
+    }
+    await warnIfInsecureMode(file)
+    return normalized
+  } finally {
+    if (file) await closeKeyFile(file)
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.apiKeys)
-  if (found.status === 'newer') {
-    log.warn('api-keys.json is from a newer TapeBox; treating it as empty and leaving it as it is', {
-      path: paths.apiKeys,
-      formatVersion: found.version,
-    })
-    return 'newer'
+}
+
+async function closeKeyFile(file: FileHandle): Promise<void> {
+  try { await file.close() } catch (error) {
+    log.warn('api key file did not close cleanly', { error: describeError(error) })
   }
-  if (found.status === 'unreadable') return setAside()
-  return normalize(found.value)
 }
 
 // Corrupt/unreadable: never fail key resolution over it. Move the bad file aside
 // (timestamped) so its bytes are preserved and it is handled once, then degrade to
 // "no key" — it is rebuilt on the next write.
-async function setAside(): Promise<ApiKeysFile> {
+async function setAside(): Promise<KeyRead> {
   try {
+    // A different read or writer may have repaired/replaced the governing file.
+    try {
+      const current = parseStoreJson(await readFile(paths.apiKeys, 'utf8'), FORMAT_VERSIONS.apiKeys)
+      if (current.status === 'newer') return 'newer'
+      const normalized = current.status === 'read' ? normalize(current.value) : null
+      if (normalized) return normalized
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { keys: {} }
+    }
     const quarantine = await quarantineFile(paths.apiKeys)
     log.warn('api-keys.json was unreadable; set aside and treating as empty', { path: paths.apiKeys, quarantine })
   } catch (asideErr) {
     log.warn('api-keys.json was unreadable and could not be set aside; treating as empty', {
       path: paths.apiKeys,
-      error: (asideErr as Error)?.message ?? String(asideErr),
+      error: describeError(asideErr),
     })
+    return new Error(`${paths.apiKeys} could not be set aside and was left in place`, { cause: asideErr })
   }
   return { keys: {} }
 }
@@ -167,6 +202,7 @@ async function readAllForWrite(): Promise<ApiKeysFile> {
   if (all === 'newer') {
     throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(paths.apiKeys) }))
   }
+  if (all instanceof Error) throw all
   return all
 }
 
@@ -200,7 +236,7 @@ export async function resolveApiKey(id: string): Promise<string | null> {
   if (fromEnv) return fromEnv
 
   const all = await readAll()
-  const stored = all === 'newer' ? undefined : all.keys[id]
+  const stored = all === 'newer' || all instanceof Error ? undefined : all.keys[id]
   if (typeof stored === 'string') {
     const key = decodeApiKey(stored, id)?.trim()
     if (key) return key

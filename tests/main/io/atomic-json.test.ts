@@ -1,10 +1,16 @@
-import { access, chmod, mkdtemp, readdir, readFile, rm, utimes } from 'node:fs/promises'
+import { access, chmod, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import * as fileIo from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { serializeStoreJson, writeJsonAtomic } from '@main/io/atomic-json'
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...original, open: vi.fn(original.open) }
+})
 
 // Real filesystem (a temp dir) so the write-temp -> fsync -> rename discipline
 // (delegated to writeFileAtomicVia — see atomic-file.test.ts for that layer's own
@@ -20,6 +26,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -33,6 +40,67 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe('writeJsonAtomic', () => {
+  it('refuses a current newer file and preserves its bytes and mode', async () => {
+    const target = join(dir, 'config.json')
+    const future = '{"formatVersion":2,"authored":"kept"}'
+    await writeFile(target, future, { mode: 0o640 })
+    const before = statSync(target)
+    await expect(writeJsonAtomic(target, { authored: 'replacement' }, V1)).rejects.toThrow('format 2')
+    expect(await readFile(target, 'utf8')).toBe(future)
+    expect(statSync(target).mode).toBe(before.mode)
+    expect(await readdir(dir)).toEqual(['config.json'])
+  })
+
+  it('rechecks the public target after private staging and cleans its stage on refusal', async () => {
+    const target = join(dir, 'api-keys.json')
+    await writeJsonAtomic(target, { keys: {} }, V1)
+    const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    const future = '{"formatVersion":2,"keys":{"openai":"kept"}}'
+    const opened = vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
+      const file = await original.open(...args)
+      try {
+        if (String(args[0]).endsWith('.tmp') && args[1] === 'wx') {
+          const stage = statSync(String(args[0]))
+          expect(stage.size).toBe(0)
+          if (process.platform !== 'win32') expect(stage.mode & 0o777).toBe(0o600)
+          await original.writeFile(target, future)
+        }
+      } catch (error) { await file.close(); throw error }
+      return file
+    })
+    await expect(writeJsonAtomic(target, { keys: { openai: 'replacement' } }, { ...V1, mode: 0o600 }))
+      .rejects.toThrow('format 2')
+    opened.mockRestore()
+    expect(await readFile(target, 'utf8')).toBe(future)
+    expect(await readdir(dir)).toEqual(['api-keys.json'])
+  })
+
+  it('does not remove a colliding stage whose exclusive creation failed', async () => {
+    const target = join(dir, 'config.json')
+    const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    let collision: string | undefined
+    const opened = vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
+      if (String(args[0]).endsWith('.tmp') && args[1] === 'wx') {
+        collision = String(args[0])
+        await original.writeFile(collision, 'existing stage')
+      }
+      return original.open(...args)
+    })
+    await expect(writeJsonAtomic(target, { count: 1 }, V1)).rejects.toMatchObject({ code: 'EEXIST' })
+    opened.mockRestore()
+    expect(collision).toBeDefined()
+    expect(await readFile(collision!, 'utf8')).toBe('existing stage')
+    expect(await exists(target)).toBe(false)
+  })
+
+  it('only permits unreadable replacement for explicitly disposable data', async () => {
+    const target = join(dir, 'layout.json')
+    await writeFile(target, 'invalid')
+    await expect(writeJsonAtomic(target, { width: 300 }, V1)).rejects.toThrow('left in place')
+    expect(await readFile(target, 'utf8')).toBe('invalid')
+    await writeJsonAtomic(target, { width: 300 }, { ...V1, discardUnreadable: true })
+    expect(JSON.parse(await readFile(target, 'utf8'))).toEqual({ formatVersion: 1, width: 300 })
+  })
   it('writes pretty-printed JSON with a trailing newline', async () => {
     const target = join(dir, 'config.json')
 
@@ -117,10 +185,8 @@ describe('writeJsonAtomic', () => {
 
     await writeJsonAtomic(target, { a: 1 }, V1)
 
-    // No assertion on the exact bits (that is the process umask's call) — just that
-    // the write succeeds and produces a normal, readable file with no mode forced.
     const mode = statSync(target).mode & 0o777
-    expect(mode & 0o400).toBe(0o400) // owner-readable at least
+    expect(mode).toBe(0o666 & ~process.umask())
   })
 })
 

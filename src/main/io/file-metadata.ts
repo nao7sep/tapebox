@@ -49,12 +49,12 @@ export async function applyFileStamp(
 export async function keepOriginalMode(
   originalPath: string,
   replacementPath: string,
-): Promise<void> {
+): Promise<boolean> {
   let mode: number
   try {
     mode = (await stat(originalPath)).mode & 0o777
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw err
   }
   try {
@@ -62,6 +62,7 @@ export async function keepOriginalMode(
   } catch (err) {
     if (!refusesMetadata(err)) throw err
   }
+  return true
 }
 
 /** Synchronous ordinary-mode counterpart for existing synchronous writers. */

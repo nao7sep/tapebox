@@ -73,9 +73,8 @@ export async function writeVersionSidecar(name: BinaryName, version: string): Pr
   // the re-fetchable binary it sits beside — meaningless without that binary (itself
   // excluded as a re-fetchable binary) and rewritten by the next install, so it rides
   // along into exclusion rather than being recorded orphaned (data-backup conventions).
-  // An install has just replaced the binary it describes, so it is rewritten even
-  // when a newer TapeBox wrote it: what it said is no longer true.
-  await writeJsonAtomic(versionSidecarPath(name), sidecar, { formatVersion: FORMAT_VERSIONS.binaryVersion })
+  // Unreadable facts are replaceable after a fresh install; newer formats are not.
+  await writeJsonAtomic(versionSidecarPath(name), sidecar, { formatVersion: FORMAT_VERSIONS.binaryVersion, discardUnreadable: true })
 }
 
 const cache = new Map<BinaryName, Promise<string | null>>()

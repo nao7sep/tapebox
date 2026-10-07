@@ -96,6 +96,7 @@ export function mutateDependencies(
       await writeJsonAtomic(paths.dependencies, merged, {
         formatVersion: FORMAT_VERSIONS.dependencies,
         schema: DependenciesSchema,
+        discardUnreadable: true,
       })
     }
     log.info('dependencies updated', { keys: Object.keys(patch) })

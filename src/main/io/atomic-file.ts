@@ -41,23 +41,28 @@ export async function writeFileAtomicVia(
   tempPath: string = defaultTempPath(destPath),
   signal?: AbortSignal,
   mode?: number,
+  beforePublish?: () => Promise<void>,
+  cleanupStage: (path: string) => Promise<void> = unlink,
 ): Promise<void> {
   try {
     await produce(tempPath)
     signal?.throwIfAborted()
-    await keepOriginalMode(destPath, tempPath)
+    const keptMode = await keepOriginalMode(destPath, tempPath)
     // chmod (not the open mode) is what guarantees the exact bits regardless of
     // the process umask.
     if (mode !== undefined) await chmod(tempPath, mode)
+    else if (!keptMode) await chmod(tempPath, 0o666 & ~process.umask())
     await fsyncFile(tempPath)
     // fsync can block long enough for a user cancellation to arrive. This is the
     // final safe boundary: the staged file is durable but has not replaced the
     // destination, so aborting here preserves the old artifact and removes stage.
     signal?.throwIfAborted()
+    await beforePublish?.()
+    signal?.throwIfAborted()
     await rename(tempPath, destPath)
     await fsyncDirBestEffort(dirname(destPath))
   } catch (err) {
-    await unlink(tempPath).catch(() => {})
+    await cleanupStage(tempPath).catch(() => {})
     throw err
   }
 }

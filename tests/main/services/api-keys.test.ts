@@ -1,5 +1,6 @@
 import { mkdtempSync, statSync } from 'node:fs'
-import { readFile, readdir, utimes, writeFile } from 'node:fs/promises'
+import { chmod, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import * as atomicJson from '@main/io/atomic-json'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -29,17 +30,39 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   // Reset the stored key between tests so each starts from a known state.
   await apiKeys.clearApiKey('openai').catch(() => {})
+  await rm(apiKeysPath, { force: true })
 })
 
-afterAll(() => {
+afterAll(async () => {
   if (prevHome === undefined) delete process.env.TAPEBOX_DATA_DIR
   else process.env.TAPEBOX_DATA_DIR = prevHome
   clearOpenAiEnv()
+  await rm(root, { recursive: true, force: true })
 })
 
 describe('api-keys storage', () => {
+  it('leaves a future key file mode untouched and refuses a change', async () => {
+    const future = '{"formatVersion":2,"keys":{"openai":"kept"}}'
+    await writeFile(apiKeysPath, future)
+    if (ENFORCE_MODE) await chmod(apiKeysPath, 0o644)
+    const before = statSync(apiKeysPath)
+    await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
+    await expect(apiKeys.writeApiKey('openai', 'replacement')).rejects.toThrow()
+    expect(await readFile(apiKeysPath, 'utf8')).toBe(future)
+    expect(statSync(apiKeysPath).mode).toBe(before.mode)
+  })
+
+  it('resolves absent but refuses writes if an unreadable file cannot be quarantined', async () => {
+    await writeFile(apiKeysPath, '{"formatVersion":1,"keys":[]}', 'utf8')
+    const failure = new Error('quarantine unavailable')
+    vi.spyOn(atomicJson, 'quarantineFile').mockRejectedValue(failure)
+    await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
+    await expect(apiKeys.writeApiKey('openai', 'replacement')).rejects.toMatchObject({ cause: failure })
+    expect(await readFile(apiKeysPath, 'utf8')).toBe('{"formatVersion":1,"keys":[]}')
+  })
   it('derives the conventional environment variable from the id', () => {
     expect(OPENAI).toBe('OPENAI_API_KEY')
   })

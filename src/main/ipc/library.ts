@@ -19,6 +19,8 @@ import {
 } from '@main/io/atomic-file'
 import { keepOriginalMode } from '@main/io/file-metadata'
 import { openExternalPlayer } from '@main/io/external-player'
+import { assertJsonFileCurrent } from '@main/io/atomic-json'
+import { FORMAT_VERSIONS } from '@main/io/format-version'
 import { portableSiblingExists, type AllowedPortableDirectoryEntry } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
 import { readSidecarFile, writeSidecar } from '@main/core/sidecar'
@@ -677,6 +679,9 @@ async function removeTapesFrom(
 
     if (deleteFiles) {
       try {
+        if (tape.sidecarFilename) {
+          await assertJsonFileCurrent(join(libraryDir, tape.sidecarFilename), FORMAT_VERSIONS.sidecar)
+        }
         if (tape.filename) {
           await discardFile(join(libraryDir, tape.filename), settings.trashOnRemove)
         }

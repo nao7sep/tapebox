@@ -178,7 +178,7 @@ describe('reordering one list by hand', () => {
 describe('removing tapes from the library', () => {
   async function stageFiles(id: string): Promise<Tape> {
     for (const name of [`${id}.mp4`, `${id}.json`, `${id}.jpg`]) {
-      await writeFile(join(state.libraryDir, name), 'content', 'utf8')
+      await writeFile(join(state.libraryDir, name), name.endsWith('.json') ? '{"formatVersion":1}' : 'content', 'utf8')
     }
     return makeTape({ id, filename: `${id}.mp4`, sidecarFilename: `${id}.json`, thumbnailFilename: `${id}.jpg` })
   }
@@ -206,6 +206,18 @@ describe('removing tapes from the library', () => {
     expect(await readdir(state.libraryDir)).toEqual([])
     expect(clearPartials).toHaveBeenCalledExactlyOnceWith(state.libraryDir, 'Deletethem')
     expect(shell.trashItem).not.toHaveBeenCalled()
+  })
+
+  it.each(['{"formatVersion":2}', 'unreadable'])('keeps every bundle file when its governing sidecar is %s', async (sidecar) => {
+    const tape = await stageFiles('Protected1')
+    state.tapes = [tape]
+    await writeFile(join(state.libraryDir, 'Protected1.json'), sidecar)
+    await expect(invoke('library:remove', { tapeIds: ['Protected1'], deleteFiles: true })).rejects.toThrow('could not be removed')
+    expect(state.tapes).toEqual([tape])
+    expect((await readdir(state.libraryDir)).sort()).toEqual(['Protected1.jpg', 'Protected1.json', 'Protected1.mp4'])
+    expect(clearPartials).not.toHaveBeenCalled()
+    expect(shell.trashItem).not.toHaveBeenCalled()
+    expect(emitted('tapes:removed')).toEqual([])
   })
 
   it('sends the files to the Trash instead when the user asked for that, and skips ones already gone', async () => {

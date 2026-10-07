@@ -1,10 +1,12 @@
-import { readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { open, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
-import { withFormatVersion } from './format-version'
+import { NewerFormatError, parseStoreJson, withFormatVersion } from './format-version'
 import { record } from '@main/store/backupStore'
 import { utcTimestampForFilenameMs } from '@shared/utc'
+import { log } from './logger'
+import { describeError } from '@shared/error'
 
 /**
  * Atomic JSON store writes with zod validation.
@@ -33,7 +35,47 @@ import { utcTimestampForFilenameMs } from '@shared/utc'
 
 /** How a store's JSON is written: its format version, and the shape it is
  *  validated against first when given. */
-export type StoreJsonOptions<S extends z.ZodType> = { formatVersion: number; schema?: S }
+export type StoreJsonOptions<S extends z.ZodType> = {
+  formatVersion: number
+  schema?: S
+  /** Only disposable state and re-derived caches may replace unreadable bytes. */
+  discardUnreadable?: boolean
+}
+
+/** Admit the current governing file; absence permits creating a new store. */
+export async function assertJsonFileCurrent(path: string, current: number, discardUnreadable = false): Promise<void> {
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  const found = parseStoreJson(text, current)
+  if (found.status === 'newer') throw new NewerFormatError(path, found.version, current)
+  if (found.status === 'unreadable' && !discardUnreadable) {
+    throw new Error(`${path} is unreadable and was left in place`, { cause: found.error })
+  }
+}
+
+async function publishJson(path: string, bytes: string | Buffer, options: { mode?: number; admit: () => Promise<void> }): Promise<void> {
+  let stageCreated = false
+  await writeFileAtomicVia(path, async (tempPath) => {
+    const file = await open(tempPath, 'wx', 0o600)
+    stageCreated = true
+    try {
+      await file.writeFile(bytes)
+    } catch (error) {
+      await file.close().catch((closeError: unknown) => {
+        log.warn('JSON stage did not close cleanly', { error: describeError(closeError) })
+      })
+      throw error
+    }
+    await file.close()
+  }, undefined, undefined, options.mode, options.admit, async (tempPath) => {
+    if (stageCreated) await unlink(tempPath)
+  })
+}
 
 /** Serialize a store's value to the canonical on-disk JSON form (2-space indent,
  *  trailing newline), validating through `schema` first when given and leading
@@ -62,16 +104,16 @@ export async function writeJsonAtomic<S extends z.ZodType>(
   options: StoreJsonOptions<S> & {
     // POSIX file mode for the written file (e.g. 0o600 for a secrets file). When
     // omitted, the file keeps the mode of the one it replaces, or the process's
-    // default when it is new.
+    // ordinary runtime defaults when it is new.
     mode?: number
   },
 ): Promise<void> {
   const { mode } = options
   const text = serializeStoreJson(data, options)
+  const admit = () => assertJsonFileCurrent(path, options.formatVersion, options.discardUnreadable)
+  await admit()
   if (await holdsAlready(path, text, mode)) return
-  await writeFileAtomicVia(path, async (tempPath) => {
-    await writeFile(tempPath, text, 'utf8')
-  }, undefined, undefined, mode)
+  await publishJson(path, text, { mode, admit })
 }
 
 /** Whether `path` already holds exactly `text` (and `mode`, when one is asked for),
@@ -114,9 +156,10 @@ export async function writeManagedJson<S extends z.ZodType>(
 ): Promise<void> {
   const text = serializeStoreJson(data, options)
   const bytes = Buffer.from(text, 'utf8')
-  await writeFileAtomicVia(path, async (tempPath) => {
-    await writeFile(tempPath, bytes)
-  })
+  const admit = () => assertJsonFileCurrent(path, options.formatVersion, options.discardUnreadable)
+  await admit()
+  if (await holdsAlready(path, text, undefined)) return
+  await publishJson(path, bytes, { admit })
   // After the rename: the file is exactly where it belongs, so record the bytes we
   // just wrote. Best-effort — record() never throws — so a backup problem can never
   // break the save that already succeeded above.
