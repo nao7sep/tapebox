@@ -1,7 +1,7 @@
 import { chmod, link, lstat, open, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { nanoid } from 'nanoid'
-import { applyFileStamp, copyExtendedAttributes, fileStampOf, keepOriginalMetadata, type FileStamp } from './file-metadata'
+import { applyFileStamp, fileStampOf, keepOriginalMode, type FileStamp } from './file-metadata'
 
 /**
  * Atomically publish a file. Runs `produce(tempPath)` to write the complete,
@@ -19,7 +19,7 @@ import { applyFileStamp, copyExtendedAttributes, fileStampOf, keepOriginalMetada
  * When supplied, `signal` is checked after production and again after fsync,
  * immediately before that commit.
  *
- * A file being replaced hands the temp its permissions and extended attributes
+ * A file being replaced hands the temp its ordinary permission bits
  * before the rename, never its times (content-lifecycle conventions, Files). A
  * caller that decides the file's permissions itself passes `mode`, which wins.
  *
@@ -45,7 +45,7 @@ export async function writeFileAtomicVia(
   try {
     await produce(tempPath)
     signal?.throwIfAborted()
-    await keepOriginalMetadata(destPath, tempPath, signal)
+    await keepOriginalMode(destPath, tempPath)
     // chmod (not the open mode) is what guarantees the exact bits regardless of
     // the process umask.
     if (mode !== undefined) await chmod(tempPath, mode)
@@ -86,7 +86,6 @@ export interface ExclusivePublishOperations {
   rename(fromPath: string, toPath: string): Promise<void>
   openRead(path: string): Promise<ExclusivePublishSource>
   openExclusive(path: string): Promise<ExclusivePublishDestination>
-  copyExtendedAttributes(sourcePath: string, destPath: string, signal?: AbortSignal): Promise<void>
   pathIdentity(path: string): Promise<string | null>
   unlink(path: string): Promise<void>
 }
@@ -123,7 +122,6 @@ const realPublishOperations: ExclusivePublishOperations = {
       },
     }
   },
-  copyExtendedAttributes,
   pathIdentity: async (path) => {
     try {
       const stat = await lstat(path, { bigint: true })
@@ -145,7 +143,7 @@ function destinationChanged(destPath: string): NodeJS.ErrnoException {
 /** Stream `sourcePath` into an exclusive claim on `destPath`. The claim is the
  * final name, so any failure or abort (checked per chunk) removes it again. This
  * is the one place a file's bytes are copied, so it is where the copy keeps the
- * source's own metadata: its extended attributes, permissions and times
+ * source's ordinary permission bits and copy times
  * (content-lifecycle conventions, Files). */
 async function copyExclusive(
   sourcePath: string,
@@ -183,7 +181,6 @@ async function copyExclusive(
       signal?.throwIfAborted()
     }
     // The times go last, after everything else that touches the file.
-    await operations.copyExtendedAttributes(sourcePath, destPath, signal)
     await applyFileStamp(destination, stamp)
     await destination.sync()
     // The claim's id is read only now that its content is complete, from our own

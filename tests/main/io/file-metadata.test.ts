@@ -5,7 +5,7 @@ import { applyFileStamp, type FileStamp, type StampTarget } from '@main/io/file-
 // The permissions and times a copy takes from its source. The real-filesystem
 // path through the copy primitive is covered in atomic-file.test.ts.
 
-const STAMP: FileStamp = { mode: 0o640, atime: 1_700_000_000, mtime: 1_600_000_000, birthtime: 1_500_000_000 }
+const STAMP: FileStamp = { mode: 0o640, atime: 1_700_000_000, mtime: 1_600_000_000 }
 
 function target(chmodError?: NodeJS.ErrnoException): StampTarget & { calls: string[] } {
   const calls: string[] = []
@@ -26,39 +26,25 @@ function failure(code: string): NodeJS.ErrnoException {
 }
 
 describe('applyFileStamp', () => {
-  it('on macOS sets the birth time through an earlier modified time, then the real times', async () => {
+  it('applies ordinary permissions and access/modified times once', async () => {
     const copy = target()
-    await applyFileStamp(copy, STAMP, 'darwin')
-    expect(copy.calls).toEqual(['chmod 640', 'utimes 1700000000 1500000000', 'utimes 1700000000 1600000000'])
-  })
-
-  it('elsewhere sets the access and modified times only', async () => {
-    const copy = target()
-    await applyFileStamp(copy, STAMP, 'win32')
+    await applyFileStamp(copy, STAMP)
     expect(copy.calls).toEqual(['chmod 640', 'utimes 1700000000 1600000000'])
   })
 
-  for (const birthtime of [STAMP.mtime, STAMP.mtime + 1]) {
-    it(`does not move a birth time that is not earlier than the modified time (${birthtime - STAMP.mtime}s later)`, async () => {
-      const copy = target()
-      await applyFileStamp(copy, { ...STAMP, birthtime }, 'darwin')
-      expect(copy.calls).toEqual(['chmod 640', 'utimes 1700000000 1600000000'])
-    })
-  }
-
   it('drops permissions the volume refuses and still keeps the times', async () => {
     const copy = target(failure('EPERM'))
-    await applyFileStamp(copy, STAMP, 'win32')
+    await applyFileStamp(copy, STAMP)
     expect(copy.calls).toEqual(['chmod 640', 'utimes 1700000000 1600000000'])
   })
 
   it('fails on any other permission error', async () => {
-    await expect(applyFileStamp(target(failure('EIO')), STAMP, 'win32')).rejects.toMatchObject({ code: 'EIO' })
+    await expect(applyFileStamp(target(failure('EIO')), STAMP)).rejects.toMatchObject({ code: 'EIO' })
   })
 
   it('fails when the modified time cannot be set', async () => {
     const copy = target()
     vi.mocked(copy.utimes).mockRejectedValue(failure('EIO'))
-    await expect(applyFileStamp(copy, STAMP, 'win32')).rejects.toMatchObject({ code: 'EIO' })
+    await expect(applyFileStamp(copy, STAMP)).rejects.toMatchObject({ code: 'EIO' })
   })
 })
