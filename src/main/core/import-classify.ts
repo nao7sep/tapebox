@@ -3,9 +3,28 @@ import { extname } from 'node:path'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { checkFormatVersion, FORMAT_VERSIONS } from '@main/io/format-version'
 import { message, type Message } from '@shared/i18n/translate'
+import { z } from 'zod'
+
+const recordedUtc = z.iso.datetime({ offset: true })
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/)
+
+/** Validate present fields that enter the catalog; unrelated yt-dlp data is opaque. */
+function consumedFieldsValid(sidecar: Record<string, unknown>, fields: Record<string, unknown>): boolean {
+  for (const key of ['id', 'extractor', 'title', 'uploader']) {
+    if (sidecar[key] != null && typeof sidecar[key] !== 'string') return false
+  }
+  const duration = sidecar['duration']
+  if (duration != null && (typeof duration !== 'number' || !Number.isFinite(duration) || duration < 0)) return false
+  if (sidecar['chapters'] != null && !Array.isArray(sidecar['chapters'])) return false
+  if (fields['name'] != null && typeof fields['name'] !== 'string') return false
+  for (const key of ['addedAtUtc', 'downloadedAtUtc', 'renamedAtUtc']) {
+    if (fields[key] != null && !recordedUtc.safeParse(fields[key]).success) return false
+  }
+  return true
+}
 
 // The pure decisions behind `library:import`, lifted out of the IPC handler: the
-// sidecar-shape accept/reject classification and the ~25-field Tape coercion. The
+// sidecar-shape accept/reject classification and the ~25-field Tape construction. The
 // handler keeps the filesystem and session work (reading files, the
 // already-in-library check, copying into the library); these decide.
 
@@ -32,6 +51,9 @@ export function classifyImport(sidecar: unknown): ImportClassification {
     return { status: 'reject', reason: message('import.notSidecarNoSection') }
   }
   const fields = tb as Record<string, unknown>
+  if (!consumedFieldsValid(sidecar as Record<string, unknown>, fields)) {
+    return { status: 'reject', reason: message('import.sidecarInvalidJson') }
+  }
 
   const sourceUrl = ImportableUrlSchema.safeParse(fields['sourceUrl'])
   if (!sourceUrl.success) return { status: 'reject', reason: message('import.sourceUrlInvalid') }
@@ -64,8 +86,8 @@ export function classifyImport(sidecar: unknown): ImportClassification {
 }
 
 /**
- * Build the library Tape from an imported sidecar, coercing every field with the
- * same type guards the live import uses. Identity, naming, ordering, and the
+ * Build the library Tape from an imported sidecar after checking consumed fields.
+ * Identity, naming, ordering, and the
  * resolved thumbnail are passed in (they depend on nanoid / the order window /
  * filesystem). A time the sidecar does not record stays empty; the import does not
  * probe or download, so it has no such time of its own. The one required time,
@@ -85,12 +107,14 @@ export function tapeFromSidecar(
   },
 ): Tape {
   const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
-  const downloadedAtUtc = typeof tb['downloadedAtUtc'] === 'string' ? tb['downloadedAtUtc'] : null
+  if (!consumedFieldsValid(sidecar, tb)) throw new Error('The sidecar has invalid catalog fields')
+  const recordedTime = (key: string): string | null => typeof tb[key] === 'string' ? new Date(tb[key]).toISOString() : null
+  const downloadedAtUtc = recordedTime('downloadedAtUtc')
   return {
     id: params.id,
     sourceUrl: params.sourceUrl,
     state: 'downloaded',
-    addedAtUtc: (typeof tb['addedAtUtc'] === 'string' ? tb['addedAtUtc'] : null) ?? downloadedAtUtc ?? params.nowUtc,
+    addedAtUtc: recordedTime('addedAtUtc') ?? downloadedAtUtc ?? params.nowUtc,
     sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
     extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
     title: typeof sidecar['title'] === 'string' ? sidecar['title'] : null,
@@ -104,7 +128,7 @@ export function tapeFromSidecar(
     downloadStartedAtUtc: null,
     downloadedAtUtc,
     name: typeof tb['name'] === 'string' ? tb['name'] : null,
-    renamedAtUtc: typeof tb['renamedAtUtc'] === 'string' ? tb['renamedAtUtc'] : null,
+    renamedAtUtc: recordedTime('renamedAtUtc'),
     archivedAtUtc: null,
     boxId: null,
     order: params.order,
