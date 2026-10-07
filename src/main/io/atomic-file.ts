@@ -346,9 +346,9 @@ export async function copyFileNoOverwrite(
   }
   const tempPath = defaultTempPath(destPath)
   try {
-    const tempIdentity = await copyExclusive(sourcePath, tempPath, operations, sourceIdentity, options.signal)
+    await copyExclusive(sourcePath, tempPath, operations, sourceIdentity, options.signal)
     options.signal?.throwIfAborted()
-    return (await publishFileNoOverwriteDetailed(tempPath, destPath, operations, tempIdentity, false)).claim
+    return (await publishFileNoOverwriteDetailed(tempPath, destPath, operations, undefined, false)).claim
   } catch (err) {
     await operations.unlink(tempPath).catch(() => {})
     throw err
@@ -479,24 +479,24 @@ export async function copyClaimedFileNoOverwrite(
     const stageIdentity = await operations.pathIdentity(stagePath)
     if (stageIdentity !== claim.identity) {
       if (stageIdentity !== null) {
-        await unlinkClaimedFile({ path: stagePath, identity: stageIdentity }, operations)
+        await operations.unlink(stagePath).catch((err: NodeJS.ErrnoException) => {
+          if (err.code !== 'ENOENT') throw err
+        })
       }
       return null
     }
-    const boundStage = { path: stagePath, identity: stageIdentity }
     try {
-      const published = await publishFileNoOverwriteDetailed(boundStage.path, destPath, operations, boundStage.identity, false)
+      const published = await publishFileNoOverwriteDetailed(stagePath, destPath, operations, undefined, false)
       return { claim: published.claim, crossDevice: false }
     } catch (publishError) {
       try {
-        const cleaned = await unlinkClaimedFile(boundStage, operations)
-        if (!cleaned && (await operations.pathIdentity(boundStage.path)) !== null) {
-          throw new Error(`Bound relocation stage changed before cleanup: ${boundStage.path}`)
-        }
+        await operations.unlink(stagePath).catch((err: NodeJS.ErrnoException) => {
+          if (err.code !== 'ENOENT') throw err
+        })
       } catch (cleanupError) {
         throw new AggregateError(
           [publishError, cleanupError],
-          `File publication failed and its bound source stage could not be cleaned up: ${boundStage.path}.`,
+          `File publication failed and its source stage could not be cleaned up: ${stagePath}.`,
         )
       }
       throw publishError

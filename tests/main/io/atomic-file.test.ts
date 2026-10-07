@@ -448,7 +448,9 @@ describe('physical claim transitions', () => {
     await writeFile(source, 'source')
     const claim = await claimFile(source)
     let insertedWinner = false
+    const stageRename = vi.fn(rename)
     const operations = realOperations({
+      rename: stageRename,
       link: async (from, to) => {
         if (!insertedWinner && to === destination) {
           insertedWinner = true
@@ -465,6 +467,34 @@ describe('physical claim transitions', () => {
     expect(await readFile(source, 'utf8')).toBe('source')
     expect(await readFile(destination, 'utf8')).toBe('winner')
     expect((await readdir(dir)).filter((name) => name.endsWith('.tmp'))).toEqual([])
+    expect(stageRename).not.toHaveBeenCalled()
+  })
+
+  it('reports publication and owned-stage cleanup failures while retaining the public source', async () => {
+    const source = join(dir, 'source.bin')
+    const destination = join(dir, 'destination.bin')
+    await writeFile(source, 'source')
+    await writeFile(destination, 'winner')
+    const publicationError = failure('EEXIST')
+    const cleanupError = failure('EACCES')
+    const operations = realOperations({
+      link: async (from, to) => {
+        if (to === destination) throw publicationError
+        await link(from, to)
+      },
+      unlink: async () => { throw cleanupError },
+    })
+
+    const error = await relocateClaimedFileNoOverwrite(await claimFile(source), destination, operations)
+      .catch((err: unknown) => err)
+
+    expect(error).toBeInstanceOf(AggregateError)
+    expect((error as AggregateError).errors).toEqual([publicationError, cleanupError])
+    expect(await readFile(source, 'utf8')).toBe('source')
+    expect(await readFile(destination, 'utf8')).toBe('winner')
+    const stages = (await readdir(dir)).filter((name) => name.endsWith('.tmp'))
+    expect(stages).toHaveLength(1)
+    expect(await readFile(join(dir, stages[0]!), 'utf8')).toBe('source')
   })
 
   it('does not publish a source winner linked at the same-filesystem bind boundary', async () => {
