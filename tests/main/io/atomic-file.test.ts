@@ -1,3 +1,4 @@
+import * as fileIo from 'node:fs/promises'
 import { access, chmod, link, lstat, mkdtemp, open, readFile, readdir, rename, rm, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,6 +17,8 @@ import {
   writeFileAtomicVia,
 } from '@main/io/atomic-file'
 import { fileStampOf, type FileStamp } from '@main/io/file-metadata'
+
+vi.mock('node:fs/promises', async (importOriginal) => ({ ...await importOriginal<typeof import('node:fs/promises')>() }))
 
 // Real filesystem (a temp dir) so the temp → fsync → rename → cleanup is actually
 // exercised end to end; the producer is the seam every caller plugs into.
@@ -321,6 +324,28 @@ describe('writeFileAtomicVia keeps what a replace keeps', () => {
 })
 
 describe('writeFileAtomicNoOverwriteVia', () => {
+  it('reserves a private export stage, then publishes ordinary permissions', async () => {
+    const dest = join(dir, 'export.json')
+    await writeFileAtomicNoOverwriteVia(dest, async (stage) => {
+      expect((await stat(stage)).size).toBe(0)
+      if (process.platform !== 'win32') expect((await stat(stage)).mode & 0o777).toBe(0o600)
+      await writeFile(stage, 'exported content')
+    })
+    expect(await readFile(dest, 'utf8')).toBe('exported content')
+    if (process.platform !== 'win32') expect((await stat(dest)).mode & 0o777).toBe(0o666 & ~process.umask())
+  })
+
+  it('leaves a colliding export stage untouched when exclusive creation fails', async () => {
+    const dest = join(dir, 'export.json')
+    const stage = join(dir, 'foreign.tmp')
+    await writeFile(stage, 'foreign content')
+    const produce = vi.fn(async () => {})
+    await expect(writeFileAtomicNoOverwriteVia(dest, produce, stage)).rejects.toMatchObject({ code: 'EEXIST' })
+    expect(produce).not.toHaveBeenCalled()
+    expect(await readFile(stage, 'utf8')).toBe('foreign content')
+    expect(await exists(dest)).toBe(false)
+  })
+
   it('preserves a destination created after production began and removes its temp', async () => {
     const dest = join(dir, 'claimed.bin')
     let temp = ''
@@ -817,4 +842,51 @@ describe('single-pass no-overwrite copy', () => {
     expect((await readFile(destination)).length).toBe(600_000)
     expect(await readdir(dir)).toEqual(['destination.bin'])
   })
+})
+
+it('does not remove a colliding copy stage it never opened', async () => {
+  const source = join(dir, 'source')
+  const dest = join(dir, 'copied')
+  await writeFile(source, 'real source')
+  const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  let collision: string | undefined
+  const opened = vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
+    if (String(args[0]).endsWith('.tmp') && args[1] === 'wx') {
+      collision = String(args[0]); await real.writeFile(collision, 'foreign content')
+    }
+    return real.open(...args)
+  })
+  try {
+    await expect(copyFileNoOverwrite(source, dest, { hardLinks: true })).rejects.toMatchObject({ code: 'EEXIST' })
+    expect(await readFile(collision!, 'utf8')).toBe('foreign content')
+    expect(await readFile(source, 'utf8')).toBe('real source')
+    expect(await exists(dest)).toBe(false)
+  } finally { opened.mockRestore() }
+})
+
+it('opens an exclusive real copy privately before its first bytes and restores the source mode', async () => {
+  const source = join(dir, 'private-copy-source')
+  const dest = join(dir, 'private-copy-destination')
+  await writeFile(source, 'copied content')
+  const sourceMode = (await stat(source)).mode & 0o777
+  const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  let observed = false
+  const opened = vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
+    const file = await real.open(...args)
+    try {
+      if (String(args[0]) === dest && args[1] === 'wx') {
+        const initial = await file.stat()
+        expect(initial.size).toBe(0)
+        if (process.platform !== 'win32') expect(initial.mode & 0o777).toBe(0o600)
+        observed = true
+      }
+      return file
+    } catch (error) { await file.close(); throw error }
+  })
+  try {
+    await copyFileNoOverwrite(source, dest, { hardLinks: false })
+    expect(observed).toBe(true)
+    expect(await readFile(dest, 'utf8')).toBe('copied content')
+    if (process.platform !== 'win32') expect((await stat(dest)).mode & 0o777).toBe(sourceMode)
+  } finally { opened.mockRestore() }
 })

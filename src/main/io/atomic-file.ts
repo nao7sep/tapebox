@@ -122,7 +122,7 @@ const realPublishOperations: ExclusivePublishOperations = {
     }
   },
   openExclusive: async (path) => {
-    const handle = await open(path, 'wx')
+    const handle = await open(path, 'wx', 0o600)
     return {
       write: (buffer, offset, length, position) => handle.write(buffer, offset, length, position),
       chmod: (mode) => handle.chmod(mode),
@@ -300,11 +300,18 @@ export async function writeFileAtomicNoOverwriteVia(
   produce: (tempPath: string) => Promise<void>,
   tempPath: string = defaultTempPath(destPath),
 ): Promise<FileClaim> {
+  let stageCreated = false
   try {
+    const stage = await open(tempPath, 'wx', 0o600)
+    stageCreated = true
+    await stage.close()
     await produce(tempPath)
+    await chmod(tempPath, 0o666 & ~process.umask())
     return await publishFileNoOverwrite(tempPath, destPath)
   } catch (err) {
-    await unlink(tempPath).catch(() => {})
+    if (stageCreated) await unlink(tempPath).catch((cleanupError: unknown) => {
+      if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('atomic stage cleanup failed', { path: tempPath, error: describeError(cleanupError) })
+    })
     throw err
   }
 }
@@ -317,7 +324,7 @@ export async function writeFileAtomicNoOverwriteVia(
 export async function directorySupportsHardLinks(dir: string): Promise<boolean> {
   const probe = join(dir, `.tapebox-link-probe-${nanoid(10)}.tmp`)
   const linked = `${probe}.link`
-  await writeFile(probe, '', { flag: 'wx' })
+  await writeFile(probe, '', { flag: 'wx', mode: 0o600 })
   try {
     await link(probe, linked)
     await unlink(linked).catch(() => {})
@@ -358,12 +365,16 @@ export async function copyFileNoOverwrite(
     return { path: destPath, identity }
   }
   const tempPath = defaultTempPath(destPath)
+  let copied = false
   try {
     await copyExclusive(sourcePath, tempPath, operations, sourceIdentity, options.signal)
+    copied = true
     options.signal?.throwIfAborted()
     return (await publishFileNoOverwriteDetailed(tempPath, destPath, operations, undefined, false)).claim
   } catch (err) {
-    await operations.unlink(tempPath).catch(() => {})
+    if (copied) await operations.unlink(tempPath).catch((cleanupError: unknown) => {
+      if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('copy stage cleanup failed', { path: tempPath, error: describeError(cleanupError) })
+    })
     throw err
   }
 }
