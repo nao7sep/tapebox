@@ -9,9 +9,9 @@
  *
  * The library catalog is the user's own work. A user's quit saves it before
  * anything is stopped, so a failed save can cancel the quit with the app still
- * whole: the user chooses Cancel, Retry or Quit anyway. Everything after that
- * (stopping work, the final saves, closing the stores) is logged only. A session
- * end never asks.
+ * whole: the user chooses Cancel, Retry or Quit anyway. Stopping work can
+ * change the catalog, so its final save has the same choices. A session end
+ * never asks.
  */
 
 import { describeError } from '@shared/error'
@@ -97,6 +97,7 @@ export function createQuit(steps: QuitSteps): Quit {
   let running = false
   let sessionEnding = false
   let exited = false
+  let allowUnsaved = false
   let limitTimer: ReturnType<typeof setTimeout> | null = null
   let question: AbortController | null = null
 
@@ -134,13 +135,22 @@ export function createQuit(steps: QuitSteps): Quit {
         steps.warn('quitting for the session end without the library save', {})
         return true
       }
+      if (allowUnsaved) return true
       question = new AbortController()
-      const choice = await steps.ask(question.signal)
-      question = null
+      let choice: QuitChoice
+      try {
+        choice = await steps.ask(question.signal)
+      } catch (error) {
+        steps.warn('the failed-save question could not be shown; cancelling the quit', { error: describeError(error) })
+        choice = 'cancel'
+      } finally {
+        question = null
+      }
       // A session end closed the question: it never asks, and goes on.
       if (sessionEnding) return true
       if (choice === 'retry') continue
       if (choice === 'quit-anyway') {
+        allowUnsaved = true
         steps.warn('quit anyway without the library save', {})
         return true
       }
@@ -156,15 +166,17 @@ export function createQuit(steps: QuitSteps): Quit {
     }
     let b = bounds()
     warnUnsettled('stopping work in flight', await within(steps.stopWork(), b.stop), b.stop)
-    // Stopping work can change the library, so it is saved again, logged only.
+    // Finalized downloads may have changed the catalog while work stopped.
     b = bounds()
-    const [library, layout] = await Promise.all([
-      within(steps.saveLibrary(), b.save),
-      within(steps.saveLayout(), b.save),
-    ])
-    if (library.outcome === 'done' && !library.value) steps.warn('the library save after stopping work failed', {})
-    else warnUnsettled('the library save after stopping work', library, b.save)
-    warnUnsettled('the layout save', layout, b.save)
+    const library = saveOrAsk()
+    const layout = within(steps.saveLayout(), b.save)
+    if (!(await library)) {
+      running = false
+      steps.resume()
+      return
+    }
+    b = bounds()
+    warnUnsettled('the layout save', await layout, b.save)
     b = bounds()
     warnUnsettled('closing the stores', await within(steps.close(), b.close), b.close)
     exit()
@@ -175,6 +187,7 @@ export function createQuit(steps: QuitSteps): Quit {
       event.preventDefault()
       if (running || exited) return
       running = true
+      allowUnsaved = false
       if (sessionEnding) startLimit()
       // A step that throws past its bound still exits: quit must never hang.
       void run().catch((error: unknown) => {

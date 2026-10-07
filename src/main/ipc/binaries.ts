@@ -56,3 +56,9 @@ export async function shutdownBinaryOperations(): Promise<void> {
     check?.settled ?? Promise.resolve(),
   ])
 }
+
+/** A cancelled quit keeps any old operation claim and permits fresh commands. */
+export function resumeBinaryOperations(): void {
+  shuttingDown = false
+  manager.resumeInstalls()
+}

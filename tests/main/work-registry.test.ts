@@ -54,4 +54,20 @@ describe('work registry', () => {
     await expect(Promise.all(runs)).resolves.toEqual(['stopped', 'stopped'])
     await expect(registry.runCancellable(async () => 'late')).rejects.toBeInstanceOf(registry.WorkClosedError)
   })
+  it('reopens after a cancelled quit without losing a still-settling run', async () => {
+    let release!: () => void
+    const run = registry.runCancellable(async () => { await new Promise<void>((resolve) => { release = resolve }); return 'old' })
+    const closing = registry.cancelAllWork()
+    registry.resumeWork()
+    await expect(registry.runCancellable(async () => 'fresh')).resolves.toBe('fresh')
+    let closed = false
+    void closing.then(() => { closed = true })
+    await Promise.resolve()
+    expect(closed).toBe(false)
+    release()
+    await expect(run).resolves.toBe('old')
+    await closing
+    await expect(registry.runCancellable(async () => 'still open')).resolves.toBe('still open')
+  })
+
 })

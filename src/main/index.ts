@@ -13,10 +13,10 @@ import { loadDependencies } from './store/dependencies.js'
 import { loadSession, persistNow, persistNowSync } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
-import { shutdownBinaryOperations } from './ipc/binaries.js'
+import { resumeBinaryOperations, shutdownBinaryOperations } from './ipc/binaries.js'
 import * as queue from './queue/manager.js'
-import { cancelAllScans } from './ipc/scan.js'
-import { cancelAllWork } from './work-registry.js'
+import { cancelAllScans, resumeScans } from './ipc/scan.js'
+import { cancelAllWork, resumeWork } from './work-registry.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
@@ -199,7 +199,13 @@ async function handleTerminalStartupFailure(error: unknown): Promise<void> {
 const quit = createQuit({
   saveLibrary: () => persistNow({ quitting: true }),
   ask: askAfterFailedLibrarySave,
-  resume: showOrCreateMainWindow,
+  resume: () => {
+    resumeWork()
+    resumeScans()
+    resumeBinaryOperations()
+    queue.resumeAfterQuit()
+    showOrCreateMainWindow()
+  },
   stopWork: async () => {
     // The renderer can't report a final pause once we're tearing down.
     releaseWakeLock()

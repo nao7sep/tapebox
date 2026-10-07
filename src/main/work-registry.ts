@@ -54,3 +54,8 @@ export async function cancelAllWork(): Promise<void> {
   for (const run of pending) run.controller.abort(new StopRequest('quit'))
   await Promise.all(pending.map((run) => run.settled))
 }
+
+/** A cancelled quit reopens admission; existing runs retain their own identities. */
+export function resumeWork(): void {
+  closed = false
+}

@@ -36,7 +36,8 @@ vi.mock('@main/queue/job', () => ({
 const tapes = vi.hoisted(() => [] as Tape[])
 vi.mock('@main/store/session', () => ({
   getTapes: () => tapes,
-  upsertTape: vi.fn(),
+  upsertTape: vi.fn((tape: Tape) => { const index = tapes.findIndex((value) => value.id === tape.id); if (index >= 0) tapes[index] = tape }),
+  durableTape: (tape: Tape) => ['probing', 'ready', 'downloading'].includes(tape.state) ? { ...tape, state: 'queued', downloadStartedAtUtc: null } : tape,
 }))
 vi.mock('@main/store/config', () => ({
   getSettings: () => ({ maxConcurrentDownloads: 2, autoStartDownloads: true }),
@@ -94,6 +95,31 @@ describe('library move while a download runs', () => {
 })
 
 describe('queue shutdown', () => {
+  it.each([false, true])('resumes stopped attempts only after their jobs settle (drained=%s)', async (drained) => {
+    vi.resetModules()
+    jobs.started.length = 0
+    jobs.stopped.length = 0
+    jobs.settled.length = 0
+    tapes.length = 0
+    const queue = await import('@main/queue/manager')
+    tapes.push(queued('resume'))
+    queue.tick()
+    tapes[0] = { ...tapes[0]!, state: 'downloading' }
+    const closing = queue.shutdown()
+    if (drained) await closing
+    queue.resumeAfterQuit()
+    if (!drained) expect(jobs.started).toEqual(['resume'])
+    await closing
+    await Promise.resolve()
+    expect(jobs.started).toEqual(['resume', 'resume'])
+    expect(tapes[0]!.state).toBe('queued')
+    await queue.shutdown()
+    tapes.length = 0
+    jobs.started.length = 0
+    jobs.stopped.length = 0
+    jobs.settled.length = 0
+  })
+
   it('stops every running job, waits for each to settle, and starts no more', async () => {
     vi.resetModules()
     const queue = await import('@main/queue/manager')

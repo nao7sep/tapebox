@@ -27,6 +27,7 @@ import { selectTapesToStart } from './schedule'
 
 const active = new Map<string, Job>()
 let stopped = false
+const stoppedTapeIds = new Set<string>()
 
 /**
  * Start what the concurrency cap allows. Each job holds a library write claim for
@@ -50,6 +51,7 @@ export function tick(): void {
       .finally(() => {
         release()
         active.delete(tape.id)
+        if (!stopped && stoppedTapeIds.delete(tape.id)) restoreStoppedTape(tape.id)
         tick()
       })
   }
@@ -88,7 +90,29 @@ export async function cancel(tapeId: string): Promise<void> {
  */
 export async function shutdown(): Promise<void> {
   stopped = true
+  for (const id of active.keys()) stoppedTapeIds.add(id)
   await Promise.all([...active.values()].map((job) => job.stop()))
+}
+
+function restoreStoppedTape(tapeId: string): void {
+  const tape = session.getTapes().find((candidate) => candidate.id === tapeId)
+  if (!tape) return
+  const restored = session.durableTape(tape)
+  if (restored !== tape) {
+    session.upsertTape(restored)
+    emit('tapes:updated', restored)
+  }
+}
+
+/** Restore stopped attempts only once their actual jobs have settled. */
+export function resumeAfterQuit(): void {
+  stopped = false
+  for (const id of stoppedTapeIds) {
+    if (active.has(id)) continue
+    stoppedTapeIds.delete(id)
+    restoreStoppedTape(id)
+  }
+  tick()
 }
 
 export function isActive(tapeId: string): boolean {

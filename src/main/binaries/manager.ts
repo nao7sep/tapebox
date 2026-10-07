@@ -133,6 +133,11 @@ export async function shutdownInstalls(): Promise<void> {
   await Promise.all(active.map((operation) => operation.settled))
 }
 
+/** Reopen admission without releasing any still-owned install claim. */
+export function resumeInstalls(): void {
+  shuttingDown = false
+}
+
 /**
  * The `<name>-<hostTag>-<pid>-<nanoid>.partial` download-staging filename inside
  * paths.temp — `<stem>-<discriminator>.<role-extension>` per the derived-sibling-

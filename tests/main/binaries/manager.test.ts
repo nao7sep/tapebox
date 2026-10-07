@@ -85,6 +85,7 @@ import {
   downloadTempPath,
   installOrUpdate,
   shutdownInstalls,
+  resumeInstalls,
 } from '@main/binaries/manager'
 import { binaryNames, binarySpecs } from '@main/binaries/registry'
 import { mutateDependencies } from '@main/store/dependencies'
@@ -404,4 +405,33 @@ describe('install final-preparation cancellation', () => {
     await expectNoPublishedArtifact(install, operationId)
     expect(cancelInstall('yt-dlp', operationId)).toEqual({ outcome: 'not-running' })
   })
+  it('reopens a cancelled quit while retaining the still-settling install claim', async () => {
+    resumeInstalls()
+    arrangeInstall()
+    let release!: () => void
+    const released = new Promise<void>((resolve) => { release = resolve })
+    execCapture.mockImplementation(async (_command: string, _args: readonly string[], opts: { signal: AbortSignal }) => {
+      await new Promise<void>((resolve) => opts.signal.addEventListener('abort', () => resolve(), { once: true }))
+      await released
+      opts.signal.throwIfAborted()
+    })
+    const install = installOrUpdate('yt-dlp', 'held-shutdown')
+    let closing: Promise<void> | undefined
+    try {
+      await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce())
+      closing = shutdownInstalls()
+      resumeInstalls()
+      await expect(installOrUpdate('yt-dlp', 'too-early')).resolves.toMatchObject({ outcome: 'failed', error: { key: 'tools.installBusy' } })
+      release()
+      await closing
+      await expectNoPublishedArtifact(install, 'held-shutdown')
+      vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockRejectedValue(new Error('upstream unavailable'))
+      await expect(installOrUpdate('yt-dlp', 'fresh-after-resume')).resolves.toMatchObject({ outcome: 'failed', operationId: 'fresh-after-resume' })
+    } finally {
+      release()
+      await closing
+      await install
+    }
+  })
+
 })

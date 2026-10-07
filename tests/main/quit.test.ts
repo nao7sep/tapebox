@@ -76,6 +76,48 @@ describe('quit', () => {
     expect(steps.exit).toHaveBeenCalledOnce()
   })
 
+  it('keeps the final catalog save required after work changes it', async () => {
+    const saveLibrary = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValue(true)
+    const { steps, questions } = makeSteps({ saveLibrary })
+    const quit = createQuit(steps)
+    quit.beforeQuit(quitEvent())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(steps.stopWork).toHaveBeenCalledOnce()
+    expect(steps.close).not.toHaveBeenCalled()
+    expect(steps.exit).not.toHaveBeenCalled()
+    questions[0]!.answer('retry')
+    await vi.runAllTimersAsync()
+    expect(saveLibrary).toHaveBeenCalledTimes(3)
+    expect(steps.exit).toHaveBeenCalledOnce()
+  })
+
+  it.each(['cancel', 'failed-question'] as const)('resumes after a final-save %s without closing stores', async (choice) => {
+    const saveLibrary = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false)
+    const { steps, questions } = makeSteps({ saveLibrary })
+    if (choice === 'failed-question') steps.ask = vi.fn(async () => { throw new Error('dialog failed') })
+    const quit = createQuit(steps)
+    quit.beforeQuit(quitEvent())
+    await vi.advanceTimersByTimeAsync(0)
+    if (choice === 'cancel') questions[0]!.answer('cancel')
+    await vi.runAllTimersAsync()
+    expect(steps.resume).toHaveBeenCalledOnce()
+    expect(steps.close).not.toHaveBeenCalled()
+    expect(steps.exit).not.toHaveBeenCalled()
+    if (choice === 'failed-question') expect(steps.warn).toHaveBeenCalledWith(
+      'the failed-save question could not be shown; cancelling the quit',
+      { error: expect.objectContaining({ stack: expect.stringContaining('dialog failed') }) },
+    )
+  })
+
+  it('cancels safely when the initial failed-save question rejects', async () => {
+    const { steps } = makeSteps({ saveLibrary: vi.fn(async () => false), ask: vi.fn(async () => { throw new Error('dialog failed') }) })
+    createQuit(steps).beforeQuit(quitEvent())
+    await vi.runAllTimersAsync()
+    expect(steps.resume).toHaveBeenCalledOnce()
+    expect(steps.stopWork).not.toHaveBeenCalled()
+    expect(steps.exit).not.toHaveBeenCalled()
+  })
+
   it('retries the save and quits once it succeeds', async () => {
     const saveLibrary = vi.fn(async () => false)
     const { steps, questions, order } = makeSteps({ saveLibrary })
