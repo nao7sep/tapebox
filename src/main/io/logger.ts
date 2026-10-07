@@ -54,6 +54,7 @@ function write(level: LogLevel, message: string, fields?: LogFields): void {
     },
     text,
     level,
+    debugEnabled,
   )
   if (debugEnabled && !printed) toConsole(level, text())
 }

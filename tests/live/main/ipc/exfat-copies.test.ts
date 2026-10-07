@@ -72,7 +72,7 @@ async function startApp(home: string) {
     await session.persistNow()
     await layout.persistNow()
     await closeBackupStore()
-    closeRecords()
+    await closeRecords()
   }
 }
 

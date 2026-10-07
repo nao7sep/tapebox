@@ -150,7 +150,7 @@ describe('records reads', () => {
     const { paths } = await import('@main/paths')
     records.openRecords()
     logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'kept')
-    records.closeRecords()
+    await records.closeRecords()
     const check = new DatabaseSync(paths.records, { readOnly: true })
     try {
       expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(1)
@@ -176,7 +176,7 @@ describe('records reads', () => {
       time: '2026-10-04T10:00:01.000Z', level: 'info', message: 'to the text file', tape_id: null, fields: '{}',
     }, () => 'to the text file')).toBe(false)
     await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow(/no format version/)
-    records.closeRecords()
+    await records.closeRecords()
 
     expect(readFileSync(paths.records).equals(bytes)).toBe(true)
     const [file] = readdirSync(paths.logs)
@@ -199,7 +199,7 @@ describe('records reads', () => {
       time: '2026-10-04T10:00:01.000Z', level: 'info', message: 'to the text file', tape_id: null, fields: '{}',
     }, () => 'to the text file')).toBe(false)
     await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow(/NewerFormatError/)
-    records.closeRecords()
+    await records.closeRecords()
 
     expect(readFileSync(paths.records).equals(bytes)).toBe(true)
     const [file] = readdirSync(paths.logs)

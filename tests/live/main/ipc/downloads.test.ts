@@ -94,7 +94,7 @@ async function startApp(home: string) {
       await layout.persistNow()
       await stopMediaServer()
       await closeBackupStore()
-      closeRecords()
+      await closeRecords()
     },
   }
 }

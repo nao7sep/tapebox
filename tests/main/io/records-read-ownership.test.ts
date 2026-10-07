@@ -26,6 +26,7 @@ vi.mock('node:worker_threads', async () => {
 })
 vi.mock('@main/paths', () => ({ paths: { records: '/unused-records-reader-fixture.sqlite3' } }))
 vi.mock('@main/io/logger', () => ({ log: { warn: vi.fn() } }))
+vi.mock('@main/io/records', () => ({ flushRecords: async () => {} }))
 
 let reader: typeof import('@main/io/records-read')
 
@@ -53,6 +54,7 @@ describe('records reader ownership', () => {
 
     const second = reader.readRecords({ op: 'sources' })
     const current = state.workers[1]!
+    await Promise.resolve()
     old.emit('error', new Error('late old worker error'))
     current.emit('message', { id: current.requests[0]!.id, ok: true, value: { sessions: ['current'], tapeIds: [] } })
     await expect(second).resolves.toEqual({ sessions: ['current'], tapeIds: [] })

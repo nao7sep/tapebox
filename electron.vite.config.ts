@@ -36,6 +36,7 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           'records-worker': resolve('src/main/io/records-worker.ts'),
+          'records-write-worker': resolve('src/main/io/records-write-worker.ts'),
           'backup-worker': resolve('src/main/store/backup-worker.ts'),
         },
         output: { format: 'es', entryFileNames: '[name].js' },

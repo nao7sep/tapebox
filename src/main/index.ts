@@ -210,7 +210,7 @@ const quit = createQuit({
   close: async () => {
     await Promise.all([stopMediaServer(), closeBackupStore()])
     await closeRecordsReader()
-    closeRecords()
+    await closeRecords()
   },
   endNow: () => {
     log.info('shutdown', { reason: 'session-end' })

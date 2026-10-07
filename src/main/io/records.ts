@@ -1,209 +1,133 @@
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { Worker } from 'node:worker_threads'
 import { join } from 'node:path'
-import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 import { paths } from '@main/paths'
 import { describeError } from '@shared/error'
 import type { LogLevel } from '@shared/log'
 import { utcTimestampForFilenameMs } from '@shared/utc'
 import { toJson } from './log-format'
-import { FORMAT_VERSIONS } from './format-version'
-import { databaseTransaction, openWritableDatabase } from './sqlite-store'
+import type { RecordWriteData, RecordWriteRequest, RecordWriteResponse } from './records-write-worker'
+export type { RecordTable, RecordRow } from './records-write-worker'
+import type { RecordTable, RecordRow } from './records-write-worker'
 
-/**
- * The records database, `records.sqlite3` under the storage root, per the
- * logging and data-lifecycle conventions. The main process is its one owner: the
- * renderer forwards its log entries over IPC (ipc/log.ts). The Records window
- * reads it on another thread through io/records-read.ts.
- *
- * Every row carries its session, this launch's start time, and the tape or
- * scan it concerns when there is one. No table is transient, so nothing here
- * deletes a row.
- *
- * Writes are synchronous, each one its own committed statement under
- * `synchronous = FULL`. A row the database refuses goes to this session's text
- * file under `logs/`, then to the console; nothing here throws.
- */
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS logs (
-  id      INTEGER PRIMARY KEY,
-  session TEXT NOT NULL,
-  time    TEXT NOT NULL,
-  level   TEXT NOT NULL,
-  message TEXT NOT NULL,
-  tape_id TEXT,
-  fields  TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_logs_session ON logs (session);
-CREATE INDEX IF NOT EXISTS idx_logs_tape_id ON logs (tape_id);
-CREATE TABLE IF NOT EXISTS ai_calls (
-  id             INTEGER PRIMARY KEY,
-  session        TEXT NOT NULL,
-  tape_id        TEXT,
-  started_at_utc TEXT NOT NULL,
-  ended_at_utc   TEXT NOT NULL,
-  endpoint       TEXT NOT NULL,
-  model          TEXT NOT NULL,
-  request        TEXT,
-  status         INTEGER,
-  response       TEXT,
-  error          TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_ai_calls_session ON ai_calls (session);
-CREATE INDEX IF NOT EXISTS idx_ai_calls_tape_id ON ai_calls (tape_id);
-CREATE TABLE IF NOT EXISTS ytdlp_runs (
-  id             INTEGER PRIMARY KEY,
-  session        TEXT NOT NULL,
-  tape_id        TEXT,
-  scan_id        TEXT,
-  kind           TEXT NOT NULL,
-  url            TEXT NOT NULL,
-  args           TEXT NOT NULL,
-  started_at_utc TEXT NOT NULL,
-  ended_at_utc   TEXT NOT NULL,
-  exit_code      INTEGER,
-  signal         TEXT,
-  stop_reason    TEXT,
-  stdout         TEXT NOT NULL,
-  stderr         TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_session ON ytdlp_runs (session);
-CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_tape_id ON ytdlp_runs (tape_id);
-CREATE TABLE IF NOT EXISTS ffmpeg_runs (
-  id             INTEGER PRIMARY KEY,
-  session        TEXT NOT NULL,
-  tape_id        TEXT,
-  kind           TEXT NOT NULL,
-  args           TEXT NOT NULL,
-  started_at_utc TEXT NOT NULL,
-  ended_at_utc   TEXT NOT NULL,
-  exit_code      INTEGER,
-  signal         TEXT,
-  stop_reason    TEXT,
-  stdout         TEXT NOT NULL,
-  stderr         TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_session ON ffmpeg_runs (session);
-CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_tape_id ON ffmpeg_runs (tape_id);
-`
-
-export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
-export type RecordRow = Record<string, SQLInputValue>
-
+/** Records SQLite and fallback filesystem work belong to the writer thread.
+ * Main owns admission, acknowledgements, deadlines and commit notifications. */
+export const RECORD_WRITE_TIMEOUT_MS = 10_000
+const CLOSE_DRAIN_TIMEOUT_MS = 1_000
 let session: string | null = null
-let fallbackPath: string | null = null
-let db: DatabaseSync | null = null
+let worker: Worker | null = null
 let closed = false
-let failing = false
-const statements = new Map<string, StatementSync>()
+let nextId = 1
+let closing: Promise<void> | null = null
 let storedListener: (() => void) | null = null
+type Pending = { worker: Worker; settled: Promise<void>; resolve: () => void; timer: NodeJS.Timeout; text: string; level: LogLevel; mirrored: boolean }
+const pending = new Map<number, Pending>()
+const retirements = new Map<Worker, Promise<void>>()
 
-/** Start this launch's session and open the database. Returns the session. */
+function note(message: string, error: unknown): string {
+  return toJson({ time: new Date().toISOString(), level: 'error', message, error: describeError(error) })
+}
+
+function retire(current: Worker): Promise<void> {
+  const existing = retirements.get(current)
+  if (existing) return existing
+  const retirement = current.terminate().then(() => {}, (error: unknown) => {
+    toConsole('error', note('records writer did not retire cleanly', error))
+  }).finally(() => { retirements.delete(current) })
+  retirements.set(current, retirement)
+  return retirement
+}
+
+function abandon(current: Worker, error: unknown): void {
+  if (worker !== current && ![...pending.values()].some((entry) => entry.worker === current)) return
+  if (worker === current) worker = null
+  toConsole('error', note('records writer failed; unfinished write outcomes are unknown', error))
+  for (const [id, entry] of pending) {
+    if (entry.worker !== current) continue
+    pending.delete(id)
+    clearTimeout(entry.timer)
+    if (entry.text && !entry.mirrored) toConsole(entry.level, entry.text)
+    entry.resolve()
+  }
+  void retire(current)
+}
+
+/** Begin a launch synchronously; opening storage runs off thread. */
 export function openRecords(): string {
+  if (worker) throw new Error('Records are already open.')
   const started = new Date()
   session = started.toISOString()
-  fallbackPath = join(paths.logs, `${utcTimestampForFilenameMs(started)}.log`)
   closed = false
-  failing = false
-  statements.clear()
+  closing = null
   try {
-    db = openWritableDatabase(paths.records, FORMAT_VERSIONS.records, SCHEMA)
-  } catch (err) {
-    db = null
-    writeFallback(failureNote('records database could not be opened; writing to a text file', err))
-  }
+    const module = import.meta.url.endsWith('.ts') ? './records-write-worker.ts' : './records-write-worker.js'
+    const created = new Worker(new URL(module, import.meta.url), { workerData: {
+      databasePath: paths.records, logsPath: paths.logs,
+      fallbackPath: join(paths.logs, `${utcTimestampForFilenameMs(started)}.log`), session,
+    } satisfies RecordWriteData })
+    created.on('message', (response: RecordWriteResponse) => {
+      const entry = pending.get(response.id)
+      if (!entry || entry.worker !== created) return
+      pending.delete(response.id)
+      clearTimeout(entry.timer)
+      for (const diagnostic of response.diagnostics) toConsole('error', diagnostic)
+      if (response.console && !entry.mirrored) toConsole(entry.level, response.console)
+      if (response.stored) {
+        try { storedListener?.() } catch (error) { toConsole('error', note('records stored listener failed', error)) }
+      }
+      entry.resolve()
+    })
+    created.on('error', (error: unknown) => abandon(created, error))
+    created.on('exit', (code) => { if (worker === created) abandon(created, new Error(`Records writer exited with code ${code}.`)) })
+    created.unref()
+    worker = created
+    enqueue({}, '', 'error', false)
+  } catch (error) { toConsole('error', note('records writer could not start; using the console', error)) }
   return session
 }
 
-/** This launch's session, or null before {@link openRecords}. */
-export function currentSession(): string | null {
-  return session
+export function currentSession(): string | null { return session }
+export function onRecordStored(listener: (() => void) | null): void { storedListener = listener }
+
+function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: LogLevel, mirrored: boolean): void {
+  const current = worker
+  if (!current) return
+  const id = nextId++
+  let resolve!: () => void
+  const settled = new Promise<void>((done) => { resolve = done })
+  const timer = setTimeout(() => abandon(current, new Error(`Records write did not finish within ${RECORD_WRITE_TIMEOUT_MS} ms.`)), RECORD_WRITE_TIMEOUT_MS)
+  pending.set(id, { worker: current, settled, resolve, timer, text, level, mirrored })
+  try { current.postMessage({ ...request, id } satisfies RecordWriteRequest) }
+  catch (error) { abandon(current, error) }
 }
 
-/**
- * Called after each row the database stored, so the Records window can show it;
- * a row that went to the text file or the console is not in the database and
- * calls nothing.
- */
-export function onRecordStored(listener: (() => void) | null): void {
-  storedListener = listener
+/** Whether this call already printed its fallback to the console. */
+export function writeRecord(table: RecordTable, row: RecordRow, text: () => string, level: LogLevel = 'info', mirrored = false): boolean {
+  if (session === null || closed || !worker) { toConsole(level, text()); return true }
+  const line = text()
+  enqueue({ table, row, text: line }, line, level, mirrored)
+  return false
 }
 
-/** Close the database. Idempotent and synchronous, so an `exit` handler can call it. */
-export function closeRecords(): void {
+export function flushRecords(): Promise<void> {
+  return Promise.all([...pending.values()].map((entry) => entry.settled)).then(() => {})
+}
+
+/** Seal admission immediately, bound the drain, and join actual retirement. */
+export function closeRecords(): Promise<void> {
+  if (closing) return closing
   closed = true
-  statements.clear()
-  const d = db
-  db = null
-  try {
-    d?.close()
-  } catch (err) {
-    console.error('tapebox: records database did not close cleanly', err)
-  }
-}
-
-/**
- * Insert one row. `text` is the row's plain-text form, built only when the row
- * goes to the text file or the console instead: before the session opens, after
- * it closes, or when the database refuses the row. Returns whether the row was
- * printed to the console.
- */
-export function writeRecord(table: RecordTable, row: RecordRow, text: () => string, level: LogLevel = 'info'): boolean {
-  if (session === null || closed) {
-    toConsole(level, text())
-    return true
-  }
-  if (db) {
-    try {
-      const opened = db
-      databaseTransaction(opened, paths.records, FORMAT_VERSIONS.records, true, () => insert(opened, table, row))
-      failing = false
-      notifyStored()
-      return false
-    } catch (err) {
-      if (!failing) writeFallback(failureNote('records write failed; writing to a text file', err))
-      failing = true
+  closing = (async () => {
+    let timer: NodeJS.Timeout | undefined
+    await Promise.race([flushRecords(), new Promise<void>((resolve) => { timer = setTimeout(resolve, CLOSE_DRAIN_TIMEOUT_MS) })])
+    clearTimeout(timer)
+    const current = worker
+    if (current) {
+      if ([...pending.values()].some((entry) => entry.worker === current)) abandon(current, new Error('Records quit drain expired.'))
+      else { worker = null; void retire(current) }
     }
-  }
-  return writeFallback(text(), level)
-}
-
-function insert(d: DatabaseSync, table: RecordTable, row: RecordRow): void {
-  const columns = ['session', ...Object.keys(row)]
-  const sql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`
-  let statement = statements.get(sql)
-  if (!statement) {
-    statement = d.prepare(sql)
-    statements.set(sql, statement)
-  }
-  statement.run(session, ...Object.values(row))
-}
-
-function notifyStored(): void {
-  try {
-    storedListener?.()
-  } catch (err) {
-    // Recording it would call the listener again, so the console is the record.
-    toConsole('error', failureNote('records stored listener failed', err))
-  }
-}
-
-function failureNote(message: string, err: unknown): string {
-  return toJson({ time: new Date().toISOString(), level: 'error', message, error: describeError(err) })
-}
-
-function writeFallback(line: string, level: LogLevel = 'error'): boolean {
-  const path = fallbackPath
-  if (path) {
-    try {
-      mkdirSync(paths.logs, { recursive: true })
-      appendFileSync(path, line.endsWith('\n') ? line : `${line}\n`)
-      return false
-    } catch (err) {
-      toConsole('error', failureNote('records text file could not be written; using the console', err))
-    }
-  }
-  toConsole(level, line)
-  return true
+    await Promise.all([...retirements.values()])
+  })()
+  return closing
 }
 
 export function toConsole(level: LogLevel, line: string): void {

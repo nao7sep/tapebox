@@ -4,6 +4,7 @@ import type { RecordsRead, RecordsReadResults } from './records-query'
 import type { RecordsWorkerData, RecordsWorkerRequest, RecordsWorkerResponse } from './records-worker'
 import { log } from './logger'
 import { describeError } from '@shared/error'
+import { flushRecords } from './records'
 
 /**
  * The main process's side of the Records window's reads: each one goes to the
@@ -88,11 +89,11 @@ export function readRecords<R extends RecordsRead>(read: R): Promise<RecordsRead
       abandon(current, new Error(`The records read did not answer within ${READ_TIMEOUT_MS} ms.`))
     }, READ_TIMEOUT_MS)
     pending.set(id, { worker: current, resolve: resolve as (value: never) => void, reject, timer })
-    try {
-      current.postMessage({ id, read } satisfies RecordsWorkerRequest)
-    } catch (error) {
-      abandon(current, error instanceof Error ? error : new Error(String(error)))
-    }
+    void flushRecords().then(() => {
+      if (pending.get(id)?.worker !== current) return
+      try { current.postMessage({ id, read } satisfies RecordsWorkerRequest) }
+      catch (error) { abandon(current, error instanceof Error ? error : new Error(String(error))) }
+    }, (error: unknown) => abandon(current, error instanceof Error ? error : new Error(String(error))))
   })
 }
 
