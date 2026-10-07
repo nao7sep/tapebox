@@ -2,13 +2,14 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { binaryPath, paths } from '@main/paths'
 import { execCapture } from '@main/io/spawn'
-import { writeJsonAtomic } from '@main/io/atomic-json'
+import { assertJsonFileCurrent, writeJsonAtomic } from '@main/io/atomic-json'
 import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
 import type { BinaryName } from '@shared/ipc-contract'
 import { binarySpecs } from './registry'
+import { sha256OfFile } from './integrity'
 
 /**
  * The installed version of a managed binary, read FROM THE ARTIFACT
@@ -47,6 +48,7 @@ import { binarySpecs } from './registry'
 // seconds in OS validation before it prints its version. Keep the probe bounded,
 // but leave enough room for that supported artifact to start on a fast local disk.
 const PROBE_IDLE_TIMEOUT_MS = 30_000
+const SIDECAR_HASH_TIMEOUT_MS = 10_000
 
 /**
  * `bin/<name>.json` — the version sidecar beside `bin/<name>[.exe]`. Stem plus the
@@ -57,7 +59,16 @@ export function versionSidecarPath(name: BinaryName): string {
   return join(paths.bin, `${name}.json`)
 }
 
-type VersionSidecar = { version: string; installedAt: string }
+type VersionSidecar = { version: string; installedAt: string; binarySha256: string }
+
+export function admitVersionSidecar(name: BinaryName): Promise<void> {
+  return assertJsonFileCurrent(versionSidecarPath(name), FORMAT_VERSIONS.binaryVersion, true)
+}
+
+function hashBinary(name: BinaryName, signal?: AbortSignal): Promise<string> {
+  const timeout = AbortSignal.timeout(SIDECAR_HASH_TIMEOUT_MS)
+  return sha256OfFile(binaryPath(name), signal ? AbortSignal.any([signal, timeout]) : timeout)
+}
 
 /**
  * Record the version of a just-published binary beside it. Called only for a
@@ -67,8 +78,10 @@ type VersionSidecar = { version: string; installedAt: string }
  * Writing the sidecar first would instead leave the OLD binary labelled with the
  * NEW version on a failed publish, which reads as up to date while it is not.
  */
-export async function writeVersionSidecar(name: BinaryName, version: string): Promise<void> {
-  const sidecar: VersionSidecar = { version, installedAt: nowUtcIso() }
+export async function writeVersionSidecar(name: BinaryName, version: string, signal?: AbortSignal): Promise<void> {
+  const binarySha256 = await hashBinary(name, signal)
+  signal?.throwIfAborted()
+  const sidecar: VersionSidecar = { version, installedAt: nowUtcIso(), binarySha256 }
   // not recorded: a sidecar colocated in the binary-bearing bin/ directory, describing
   // the re-fetchable binary it sits beside — meaningless without that binary (itself
   // excluded as a re-fetchable binary) and rewritten by the next install, so it rides
@@ -151,7 +164,13 @@ async function readSidecar(name: BinaryName, parse: (stored: string) => string |
       return null
     }
     if (found.status === 'unreadable') throw found.error
-    const stored = (found.value as Partial<VersionSidecar>).version
+    const sidecar = found.value as Partial<VersionSidecar>
+    if (typeof sidecar.binarySha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sidecar.binarySha256) ||
+        sidecar.binarySha256 !== await hashBinary(name)) {
+      log.warn('version sidecar does not describe the installed binary', { name, path })
+      return null
+    }
+    const stored = sidecar.version
     if (typeof stored !== 'string' || stored.trim().length === 0) {
       log.warn('version sidecar holds no version', { name, path })
       return null

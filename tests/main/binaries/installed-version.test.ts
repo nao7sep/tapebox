@@ -87,6 +87,7 @@ import {
 
 beforeEach(() => {
   home.bin = mkdtempSync(join(tmpdir(), 'tapebox-bin-'))
+  writeFileSync(join(home.bin, 'ffmpeg'), 'installed executable bytes')
   capture.calls = []
   capture.idleTimeouts = []
   capture.result = null
@@ -170,6 +171,24 @@ describe('the sidecar, where a binary cannot report itself', () => {
     await writeVersionSidecar('ffmpeg', 'autobuild-2026-08-19-19-21')
     expect(await readInstalledVersion('ffmpeg')).toBe('autobuild-2026-08-19-19-21')
     expect(capture.calls).toHaveLength(0)
+  })
+
+  it('does not label a replacement binary with the old sidecar version', async () => {
+    await writeVersionSidecar('ffmpeg', 'autobuild-2026-08-19-19-21')
+    writeFileSync(join(home.bin, 'ffmpeg'), 'replacement executable bytes')
+    expect(await readInstalledVersion('ffmpeg')).toBeNull()
+  })
+
+  it('treats an old unbound sidecar as an unknown version', async () => {
+    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ formatVersion: 1, version: 'autobuild-2026-08-19-19-21' }))
+    expect(await readInstalledVersion('ffmpeg')).toBeNull()
+  })
+
+  it('cancels hashing without publishing a sidecar', async () => {
+    const controller = new AbortController()
+    controller.abort(new DOMException('cancelled', 'AbortError'))
+    await expect(writeVersionSidecar('ffmpeg', 'autobuild-2026-08-19-19-21', controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(() => readFileSync(versionSidecarPath('ffmpeg'))).toThrow()
   })
 
   it('reads anything but a build tag as unreadable, so the row offers Update', async () => {

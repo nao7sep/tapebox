@@ -27,6 +27,7 @@ import type {
 } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import {
+  admitVersionSidecar,
   forgetInstalledVersion,
   readInstalledVersion,
   writeVersionSidecar,
@@ -282,6 +283,7 @@ async function performInstall(
   emit('binaries:progress', { name, operationId, percent: 0, phase: 'download' })
 
   const spec = binarySpecs[name]
+  if (spec.installedVersion.kind === 'sidecar') await admitVersionSidecar(name)
   const resolved = await spec.resolveLatest(signal)
   signal.throwIfAborted()
   log.info('binary resolved', { name, version: resolved.version, url: resolved.downloadUrl })
@@ -379,6 +381,7 @@ async function performInstall(
       signal,
       // Executable, whatever the binary it replaces was.
       process.platform === 'win32' ? undefined : 0o755,
+      spec.installedVersion.kind === 'sidecar' ? () => admitVersionSidecar(name) : undefined,
     )
   } finally {
     await unlink(downloadTemp).catch(() => {})
@@ -390,8 +393,10 @@ async function performInstall(
   // binary wearing the new version's label.
   try {
     if (spec.installedVersion.kind === 'sidecar') {
-      await writeVersionSidecar(name, resolved.version)
+      await writeVersionSidecar(name, resolved.version, signal)
     }
+  } catch (err) {
+    log.warn('installed binary version could not be recorded', { name, error: describeError(err) })
   } finally {
     // Drop the cached read even when the sidecar write fails: the artifact
     // changed, and the next status must read the disk truth, not the
@@ -403,8 +408,12 @@ async function performInstall(
 
   // Only the upstream fact is persisted. What is now installed is read back from
   // the binary, so an install has nothing to record about it.
-  await mutateDependencies((d) => ({
-    [name]: recordLatest(d[name], resolved.version, nowUtcIso()),
-  }))
+  try {
+    await mutateDependencies((d) => ({
+      [name]: recordLatest(d[name], resolved.version, nowUtcIso()),
+    }))
+  } catch (err) {
+    log.warn('installed binary upstream facts could not be recorded', { name, error: describeError(err) })
+  }
 
 }
