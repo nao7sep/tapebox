@@ -1,0 +1,63 @@
+import { createHash } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
+import { parentPort, workerData } from 'node:worker_threads'
+import { databaseTransaction, openWritableDatabase } from '../io/sqlite-store.ts'
+import { FORMAT_VERSIONS } from '../io/format-version.ts'
+import { describeError } from '../../shared/error.ts'
+
+export type BackupRequest = { id: number; absolutePath: string; bytes: Uint8Array; completion?: SharedArrayBuffer }
+export type BackupResponse = { id: number; warning?: { message: string; fields: Record<string, unknown> }; disabled?: boolean }
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS backups (
+  id             INTEGER PRIMARY KEY,
+  path           TEXT NOT NULL,
+  content        BLOB NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  byte_size      INTEGER NOT NULL,
+  written_at_utc TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_backups_path_id ON backups (path, id);
+`
+
+if (!parentPort) throw new Error('The backup worker needs a parent port.')
+const port = parentPort
+const { databasePath } = workerData as { databasePath: string }
+let db: DatabaseSync | null = null
+let initialized = false
+
+port.on('message', (request: BackupRequest) => {
+  const response: BackupResponse = { id: request.id }
+  try {
+    if (!initialized) {
+      initialized = true
+      try { db = openWritableDatabase(databasePath, FORMAT_VERSIONS.backups, SCHEMA) }
+      catch (error) {
+        response.disabled = true
+        response.warning = { message: 'backup store: could not open; recording disabled for this session', fields: { file: databasePath, error: describeError(error) } }
+      }
+    }
+    if (db) {
+      const store = db
+      const bytes = Buffer.from(request.bytes)
+      const hash = createHash('sha256').update(bytes).digest('hex')
+      databaseTransaction(store, databasePath, FORMAT_VERSIONS.backups, true, () => {
+        const latest = store.prepare('SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1').get(request.absolutePath) as { h: string } | undefined
+        if (latest?.h === hash) return
+        store.prepare('INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)')
+          .run(request.absolutePath, bytes, hash, bytes.byteLength, new Date().toISOString())
+      })
+    }
+  } catch (error) {
+    response.warning = { message: 'backup store: failed to record a managed write', fields: { file: request.absolutePath, error: describeError(error) } }
+  } finally {
+    // Terminal callers can wait for this actual attempt without running SQLite
+    // on the main thread or depending on another main-loop turn.
+    if (request.completion) {
+      const completion = new Int32Array(request.completion)
+      Atomics.store(completion, 0, 1)
+      Atomics.notify(completion, 0)
+    }
+    port.postMessage(response)
+  }
+})

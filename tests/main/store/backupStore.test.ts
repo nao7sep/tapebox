@@ -27,7 +27,7 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DatabaseSync, type StatementSync } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 
 // Capturing logger swapped in for @main/io/logger's `log` so warn/error lines are asserted exactly and
 // nothing is written to the real session log. Hoisted so the vi.mock factory can close over it.
@@ -85,6 +85,16 @@ afterEach(async () => {
 })
 
 describe('record: BLOB fidelity, hash, size, path, and timestamp shape', () => {
+  it('performs hashing and SQLite work through the real worker without opening SQLite on main', async () => {
+    const backup = await import('@main/store/backupStore')
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(() => { throw new Error('main-thread SQLite must not run') })
+    try {
+      backup.record(path.join(root, 'config.json'), Buffer.from('off-thread bytes'))
+      await backup.flushBackupStore()
+    } finally { prepare.mockRestore() }
+    expect(readRows(root)).toHaveLength(1)
+    expect(logCalls.warn).toHaveLength(0)
+  })
   it('stores byte-identical content (CR/LF + non-UTF-8 byte), correct sha256, size, absolute path, ISO-ms time', async () => {
     const { record, flushBackupStore } = await import('@main/store/backupStore')
     // A UTF-8 BOM, a CR/LF pair, and a lone 0xFF (invalid UTF-8) — reading this as a string then storing
@@ -212,32 +222,13 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
     }
     expect(readRows(root)).toHaveLength(1)
 
-    // Now make the NEXT open's insert throw: wrap DatabaseSync so prepare() of the INSERT yields a
-    // statement whose run() throws. get()/exec() still work, so open + dedup lookup succeed and the
-    // failure is isolated to the insert — exactly the "an insert throws" case the convention names.
+    // A real SQLite trigger refuses the next insert without altering earlier
+    // history; it also applies to the actual off-thread connection.
+    const refusing = new DatabaseSync(path.join(root, 'backups.sqlite3'))
+    try {
+      refusing.exec("CREATE TRIGGER refuse_insert BEFORE INSERT ON backups BEGIN SELECT RAISE(FAIL, 'disk full: simulated insert failure'); END")
+    } finally { refusing.close() }
     vi.resetModules()
-    vi.doMock('node:sqlite', async (importActual) => {
-      const actual = await importActual<typeof import('node:sqlite')>()
-      class FailingInsertDb extends actual.DatabaseSync {
-        override prepare(sql: string): StatementSync {
-          const stmt = super.prepare(sql)
-          if (/^\s*INSERT/i.test(sql)) {
-            return new Proxy(stmt, {
-              get(target, prop, receiver) {
-                if (prop === 'run') {
-                  return () => {
-                    throw new Error('disk full: simulated insert failure')
-                  }
-                }
-                return Reflect.get(target, prop, receiver)
-              },
-            }) as typeof stmt
-          }
-          return stmt
-        }
-      }
-      return { ...actual, DatabaseSync: FailingInsertDb }
-    })
 
     const { record, flushBackupStore } = await import('@main/store/backupStore')
     // A DIFFERENT content so dedup does not short-circuit before the insert is attempted.
