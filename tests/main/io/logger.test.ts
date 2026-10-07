@@ -39,6 +39,17 @@ afterEach(async () => {
 })
 
 describe('log records', () => {
+  it('writes the final queued record without another main-loop turn', async () => {
+    const { records, log, paths } = await freshApp()
+    records.openRecords()
+    log.error('last fatal entry', { error: { message: 'fatal cause', stack: 'full fatal stack' } })
+    records.flushRecordsBeforeExit()
+    expect(rows(paths.records, 'SELECT message, fields FROM logs')).toEqual([
+      { message: 'last fatal entry', fields: JSON.stringify({ error: { message: 'fatal cause', stack: 'full fatal stack' } }) },
+    ])
+    await records.closeRecords()
+  })
+
   it('opens and writes SQLite through the real worker without a main-thread prepare', async () => {
     const { records, log, paths } = await freshApp()
     const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(() => { throw new Error('main-thread SQLite must not run') })
@@ -58,7 +69,7 @@ describe('log records', () => {
     const info = vi.spyOn(console, 'log').mockImplementation(() => {})
     records.openRecords()
     log.info('original record')
-    await records.closeRecords()
+    records.flushRecordsBeforeExit()
     const notes = errors.mock.calls.map(([line]) => JSON.parse(String(line)))
     expect(notes).toEqual(expect.arrayContaining([
       expect.objectContaining({ message: 'records database could not be opened; writing to a text file', error: expect.objectContaining({ stack: expect.any(String) }) }),

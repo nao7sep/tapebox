@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { ensureDirs, sweepAbandonedStaging } from './paths.js'
 import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
 import { initLogger, isDebugEnabled, log } from './io/logger.js'
-import { closeRecords, onRecordStored, openRecords } from './io/records.js'
+import { closeRecords, flushRecordsBeforeExit, onRecordStored, openRecords } from './io/records.js'
 import { closeRecordsReader } from './io/records-read.js'
 import { notifyRecordsChanged } from './records-window.js'
 import { describeError } from '@shared/error'
@@ -222,7 +222,8 @@ const quit = createQuit({
     log.info('shutdown', { reason: 'session-end' })
     persistNowSync()
     void closeRecordsReader()
-    closeRecords()
+    flushRecordsBeforeExit()
+    void closeRecords()
   },
   warn: (message, details) => log.warn(message, details),
   exit: () => app.exit(0),
@@ -255,7 +256,8 @@ async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoic
 process.on('uncaughtException', (err) => {
   log.error('uncaught exception', { error: describeError(err) })
   persistNowSync()
-  closeRecords()
+  flushRecordsBeforeExit()
+  void closeRecords()
   process.exit(1)
 })
 process.on('unhandledRejection', (reason) => {
@@ -263,7 +265,8 @@ process.on('unhandledRejection', (reason) => {
 })
 process.on('exit', () => {
   persistNowSync()
-  closeRecords()
+  flushRecordsBeforeExit()
+  void closeRecords()
 })
 
 void app.whenReady().then(() => {

@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
-import { parentPort, workerData } from 'node:worker_threads'
+import { parentPort, workerData, type MessagePort } from 'node:worker_threads'
 import { describeError } from '../../shared/error.ts'
 import { toJson } from './log-format.ts'
 import { FORMAT_VERSIONS } from './format-version.ts'
@@ -8,9 +8,9 @@ import { databaseTransaction, openWritableDatabase } from './sqlite-store.ts'
 
 export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
 export type RecordRow = Record<string, SQLInputValue>
-export type RecordWriteRequest = { id: number; table?: RecordTable; row?: RecordRow; text?: string }
+export type RecordWriteRequest = { id: number; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer }
 export type RecordWriteResponse = { id: number; stored: boolean; console?: string; diagnostics: string[] }
-export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string }
+export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; responsePort?: MessagePort }
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS logs (
@@ -78,6 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_tape_id ON ffmpeg_runs (tape_id);
 if (!parentPort) throw new Error('The Records writer needs a parent port.')
 const port = parentPort
 const data = workerData as RecordWriteData
+const replyPort = data.responsePort ?? port
 let db: DatabaseSync | null = null
 let initialized = false
 let failing = false
@@ -126,5 +127,11 @@ port.on('message', (request: RecordWriteRequest) => {
     }
     if (!response.stored) fallback(request.text ?? '', response)
   }
-  port.postMessage(response)
+  // Publish the acknowledgement before releasing a terminal waiter.
+  replyPort.postMessage(response)
+  if (request.completion) {
+    const completion = new Int32Array(request.completion)
+    Atomics.store(completion, 0, 1)
+    Atomics.notify(completion, 0)
+  }
 })
