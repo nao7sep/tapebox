@@ -1,6 +1,5 @@
 import { access, constants, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
-import { spawn } from 'node:child_process'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
 import { handle } from './handle'
@@ -19,6 +18,7 @@ import {
   type FileClaim,
 } from '@main/io/atomic-file'
 import { keepOriginalMetadata } from '@main/io/file-metadata'
+import { openExternalPlayer } from '@main/io/external-player'
 import { portableSiblingExists, type AllowedPortableDirectoryEntry } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
 import { readSidecarFile, writeSidecar } from '@main/core/sidecar'
@@ -125,14 +125,7 @@ export function registerLibraryHandlers(): void {
       if (error) throw new Error(error)
       return
     }
-    // A specific player: macOS resolves app names/bundles via `open -a`; other
-    // platforms spawn the executable directly. Detached so it outlives nothing.
-    const child =
-      process.platform === 'darwin'
-        ? spawn('open', ['-a', player, full], { detached: true, stdio: 'ignore' })
-        : spawn(player, [full], { detached: true, stdio: 'ignore' })
-    child.on('error', (err) => log.error('library:playExternal failed', { player, error: describeError(err) }))
-    child.unref()
+    await openExternalPlayer(player, full)
   })
 
   handle('library:rename', ({ tapeId, name }) => runCancellable((signal) =>

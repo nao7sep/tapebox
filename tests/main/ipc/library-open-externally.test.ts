@@ -1,6 +1,6 @@
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 
 // Handing a tape to the OS: reveal it in the file manager, or play it in the
@@ -21,9 +21,8 @@ vi.mock('electron', () => ({
   shell,
 }))
 
-const child = vi.hoisted(() => ({ on: vi.fn(), unref: vi.fn() }))
-const spawn = vi.hoisted(() => vi.fn(() => child))
-vi.mock('node:child_process', () => ({ spawn }))
+const openExternalPlayer = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@main/io/external-player', () => ({ openExternalPlayer }))
 
 const state = vi.hoisted(() => ({ libraryDir: '/library', tapes: [] as Tape[], externalPlayer: '' }))
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
@@ -50,12 +49,6 @@ vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 const { registerLibraryHandlers } = await import('@main/ipc/library')
 
 const FULL_PATH = join('/library', 'Take.mp4')
-const realPlatform = process.platform
-
-function asPlatform(platform: NodeJS.Platform): void {
-  Object.defineProperty(process, 'platform', { value: platform, configurable: true })
-}
-
 function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
   return {
     sourceUrl: 'https://example.test/watch', state: 'downloaded',
@@ -80,13 +73,10 @@ beforeEach(() => {
   handlers.clear()
   vi.clearAllMocks()
   shell.openPath.mockResolvedValue('')
+  openExternalPlayer.mockResolvedValue()
   state.externalPlayer = ''
   state.tapes = [makeTape({ id: 'Hasafile12' }), makeTape({ id: 'Nofileyet1', filename: null })]
   registerLibraryHandlers()
-})
-
-afterEach(() => {
-  Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
 })
 
 describe('revealing a tape in the file manager', () => {
@@ -110,7 +100,7 @@ describe('playing a tape outside the app', () => {
     await invoke('library:playExternal', { tapeId: 'Hasafile12' })
 
     expect(shell.openPath).toHaveBeenCalledExactlyOnceWith(FULL_PATH)
-    expect(spawn).not.toHaveBeenCalled()
+    expect(openExternalPlayer).not.toHaveBeenCalled()
   })
 
   it('passes on what the OS said when it could not open the file', async () => {
@@ -121,37 +111,24 @@ describe('playing a tape outside the app', () => {
     )
   })
 
-  it('opens the chosen app with the file on macOS', async () => {
-    asPlatform('darwin')
+  it('hands the chosen player the file', async () => {
     state.externalPlayer = '  IINA  '
 
     await invoke('library:playExternal', { tapeId: 'Hasafile12' })
 
-    expect(spawn).toHaveBeenCalledExactlyOnceWith('open', ['-a', 'IINA', FULL_PATH], { detached: true, stdio: 'ignore' })
-    expect(child.unref, 'the player outlives this call').toHaveBeenCalledOnce()
+    expect(openExternalPlayer).toHaveBeenCalledExactlyOnceWith('IINA', FULL_PATH)
     expect(shell.openPath).not.toHaveBeenCalled()
   })
 
-  it('runs the configured executable directly elsewhere', async () => {
-    asPlatform('win32')
-    state.externalPlayer = 'C:\\Program Files\\VLC\\vlc.exe'
-
-    await invoke('library:playExternal', { tapeId: 'Hasafile12' })
-
-    expect(spawn).toHaveBeenCalledExactlyOnceWith('C:\\Program Files\\VLC\\vlc.exe', [FULL_PATH], {
-      detached: true,
-      stdio: 'ignore',
-    })
-  })
-
-  it('logs a player that will not start rather than failing the click', async () => {
+  it('rejects the click when the configured player cannot start, keeping diagnostics out of the reply', async () => {
     state.externalPlayer = 'not-a-player'
+    const error = Object.assign(new Error('ENOENT /internal/player SENTINEL'), { code: 'ENOENT' })
+    openExternalPlayer.mockRejectedValue(error)
 
-    await invoke('library:playExternal', { tapeId: 'Hasafile12' })
-
-    const onError = child.on.mock.calls.find((call) => call[0] === 'error')?.[1] as (err: Error) => void
-    onError(new Error('ENOENT'))
-    expect(log.error).toHaveBeenCalledWith('library:playExternal failed', expect.objectContaining({ player: 'not-a-player' }))
+    await expect(invoke('library:playExternal', { tapeId: 'Hasafile12' })).rejects.toThrow('The operation could not be completed.')
+    expect(log.error).toHaveBeenCalledWith('ipc handler failed', expect.objectContaining({
+      channel: 'library:playExternal', error: expect.objectContaining({ message: expect.stringContaining('SENTINEL') }),
+    }))
   })
 
   it.each([
@@ -160,6 +137,6 @@ describe('playing a tape outside the app', () => {
   ])('refuses for %s', async (_case, tapeId) => {
     await expect(invoke('library:playExternal', { tapeId })).rejects.toThrow('The operation could not be completed.')
     expect(shell.openPath).not.toHaveBeenCalled()
-    expect(spawn).not.toHaveBeenCalled()
+    expect(openExternalPlayer).not.toHaveBeenCalled()
   })
 })
