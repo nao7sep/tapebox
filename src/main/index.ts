@@ -209,13 +209,13 @@ const quit = createQuit({
   saveLayout: () => layout.persistNow(),
   close: async () => {
     await Promise.all([stopMediaServer(), closeBackupStore()])
-    closeRecordsReader()
+    await closeRecordsReader()
     closeRecords()
   },
   endNow: () => {
     log.info('shutdown', { reason: 'session-end' })
     persistNowSync()
-    closeRecordsReader()
+    void closeRecordsReader()
     closeRecords()
   },
   warn: (message, details) => log.warn(message, details),

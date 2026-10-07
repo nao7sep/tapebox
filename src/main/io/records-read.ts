@@ -2,6 +2,8 @@ import { Worker } from 'node:worker_threads'
 import { paths } from '@main/paths'
 import type { RecordsRead, RecordsReadResults } from './records-query'
 import type { RecordsWorkerData, RecordsWorkerRequest, RecordsWorkerResponse } from './records-worker'
+import { log } from './logger'
+import { describeError } from '@shared/error'
 
 /**
  * The main process's side of the Records window's reads: each one goes to the
@@ -13,28 +15,45 @@ import type { RecordsWorkerData, RecordsWorkerRequest, RecordsWorkerResponse } f
 
 export const READ_TIMEOUT_MS = 10_000
 
-type Pending = { resolve: (value: never) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+type Pending = { worker: Worker; resolve: (value: never) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
 
 let worker: Worker | null = null
 let nextId = 1
 const pending = new Map<number, Pending>()
+const retirements = new Map<Worker, Promise<void>>()
+let closing: Promise<void> | null = null
 
-function failAll(error: Error): void {
-  const unanswered = [...pending.values()]
-  pending.clear()
-  for (const { reject, timer } of unanswered) {
+function failOwned(current: Worker, error: Error): void {
+  for (const [id, entry] of pending) {
+    if (entry.worker !== current) continue
+    pending.delete(id)
+    const { reject, timer } = entry
     clearTimeout(timer)
     reject(error)
   }
 }
 
+function retire(current: Worker): Promise<void> {
+  const existing = retirements.get(current)
+  if (existing) return existing
+  const retirement = current.terminate().then(() => {
+    retirements.delete(current)
+  }, (error: unknown) => {
+    retirements.delete(current)
+    log.warn('records reader did not retire cleanly', { error: describeError(error) })
+  })
+  retirements.set(current, retirement)
+  return retirement
+}
+
 function abandon(current: Worker, error: Error): void {
   if (worker === current) worker = null
-  void current.terminate().catch(() => undefined)
-  failAll(error)
+  void retire(current)
+  failOwned(current, error)
 }
 
 function ensureWorker(): Worker {
+  if (closing) throw new Error('The records reader was closed.')
   if (worker) return worker
   // Tests run the source through Node's type stripping; the app runs
   // electron-vite's records-worker.js entry beside index.js.
@@ -45,7 +64,7 @@ function ensureWorker(): Worker {
   created.unref()
   created.on('message', (response: RecordsWorkerResponse) => {
     const entry = pending.get(response.id)
-    if (!entry) return
+    if (!entry || entry.worker !== created) return
     pending.delete(response.id)
     clearTimeout(entry.timer)
     if (response.ok) entry.resolve(response.value as never)
@@ -68,15 +87,24 @@ export function readRecords<R extends RecordsRead>(read: R): Promise<RecordsRead
     const timer = setTimeout(() => {
       abandon(current, new Error(`The records read did not answer within ${READ_TIMEOUT_MS} ms.`))
     }, READ_TIMEOUT_MS)
-    pending.set(id, { resolve: resolve as (value: never) => void, reject, timer })
-    current.postMessage({ id, read } satisfies RecordsWorkerRequest)
+    pending.set(id, { worker: current, resolve: resolve as (value: never) => void, reject, timer })
+    try {
+      current.postMessage({ id, read } satisfies RecordsWorkerRequest)
+    } catch (error) {
+      abandon(current, error instanceof Error ? error : new Error(String(error)))
+    }
   })
 }
 
 /** Stop the reader thread at quit; any read still waiting fails. */
-export function closeRecordsReader(): void {
+export function closeRecordsReader(): Promise<void> {
+  if (closing) return closing
   const current = worker
   worker = null
-  if (current) void current.terminate().catch(() => undefined)
-  failAll(new Error('The records reader was closed.'))
+  if (current) {
+    failOwned(current, new Error('The records reader was closed.'))
+    void retire(current)
+  }
+  closing = Promise.all([...retirements.values()]).then(() => undefined)
+  return closing
 }

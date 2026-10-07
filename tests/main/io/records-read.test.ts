@@ -10,7 +10,7 @@ import type { RecordsQuery } from '@shared/records'
 
 const prevHome = process.env.TAPEBOX_DATA_DIR
 const roots: string[] = []
-const closers: Array<() => void> = []
+const closers: Array<() => void | Promise<void>> = []
 
 async function freshApp() {
   const root = mkdtempSync(join(tmpdir(), 'tapebox-records-read-'))
@@ -23,9 +23,9 @@ async function freshApp() {
   return { records, reader }
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.useRealTimers()
-  for (const close of closers.splice(0)) close()
+  for (const close of closers.splice(0)) await close()
   if (prevHome === undefined) delete process.env.TAPEBOX_DATA_DIR
   else process.env.TAPEBOX_DATA_DIR = prevHome
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -152,8 +152,9 @@ describe('records reads', () => {
     logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'kept')
     records.closeRecords()
     const check = new DatabaseSync(paths.records, { readOnly: true })
-    expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(1)
-    check.close()
+    try {
+      expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(1)
+    } finally { check.close() }
 
     records.openRecords()
     const page = await reader.readRecords({ op: 'page', query: query() })
@@ -165,8 +166,9 @@ describe('records reads', () => {
     const { paths } = await import('@main/paths')
     mkdirSync(dirname(paths.records), { recursive: true })
     const unmarked = new DatabaseSync(paths.records)
-    unmarked.exec('CREATE TABLE logs (id INTEGER PRIMARY KEY, session TEXT NOT NULL, time TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, tape_id TEXT, fields TEXT NOT NULL)')
-    unmarked.close()
+    try {
+      unmarked.exec('CREATE TABLE logs (id INTEGER PRIMARY KEY, session TEXT NOT NULL, time TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, tape_id TEXT, fields TEXT NOT NULL)')
+    } finally { unmarked.close() }
     const bytes = readFileSync(paths.records)
 
     records.openRecords()
@@ -186,9 +188,10 @@ describe('records reads', () => {
     const { paths } = await import('@main/paths')
     mkdirSync(dirname(paths.records), { recursive: true })
     const newer = new DatabaseSync(paths.records)
-    newer.exec('CREATE TABLE logs (id INTEGER PRIMARY KEY, future TEXT)')
-    newer.exec('PRAGMA user_version = 2')
-    newer.close()
+    try {
+      newer.exec('CREATE TABLE logs (id INTEGER PRIMARY KEY, future TEXT)')
+      newer.exec('PRAGMA user_version = 2')
+    } finally { newer.close() }
     const bytes = readFileSync(paths.records)
 
     records.openRecords()
