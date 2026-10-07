@@ -46,6 +46,7 @@ describe('quit', () => {
     expect(first.preventDefault).toHaveBeenCalledOnce()
     expect(second.preventDefault).toHaveBeenCalledOnce()
     expect(order).toEqual(['saveLibrary', 'stopWork', 'saveLibrary', 'saveLayout', 'close', 'exit'])
+    expect(steps.exit).toHaveBeenCalledWith(false)
     expect(steps.ask).not.toHaveBeenCalled()
 
     const late = quitEvent()
@@ -157,6 +158,20 @@ describe('quit', () => {
     expect(steps.warn).toHaveBeenCalledWith('the library save did not finish within the quit bound', { boundMs: QUIT_BOUNDS_MS.user.save })
   })
 
+  it('clears the forced-exit decision after a timed-out quit is cancelled', async () => {
+    const saveLibrary = vi.fn().mockImplementationOnce(() => never<boolean>()).mockResolvedValue(true)
+    const { steps, questions } = makeSteps({ saveLibrary })
+    const quit = createQuit(steps)
+    quit.beforeQuit(quitEvent())
+    await vi.advanceTimersByTimeAsync(QUIT_BOUNDS_MS.user.save)
+    questions[0]!.answer('cancel')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(steps.exit).not.toHaveBeenCalled()
+    quit.beforeQuit(quitEvent())
+    await vi.runAllTimersAsync()
+    expect(steps.exit).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
   it('ends a user quit whose every later step stalls within the sum of its bounds', async () => {
     const { steps } = makeSteps({
       stopWork: vi.fn(() => never<void>()),
@@ -170,6 +185,7 @@ describe('quit', () => {
     expect(steps.exit).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
     expect(steps.exit).toHaveBeenCalledOnce()
+    expect(steps.exit).toHaveBeenCalledWith(true)
   })
 
   it('never asks during a session end, and exits within the limit when every step stalls', async () => {
@@ -215,6 +231,7 @@ describe('quit', () => {
     await vi.advanceTimersByTimeAsync(SESSION_END_LIMIT_MS)
     expect(steps.exit).toHaveBeenCalledOnce()
     expect(steps.warn).toHaveBeenCalledWith('the session ended before the quit finished; exiting', { limitMs: SESSION_END_LIMIT_MS })
+    expect(steps.exit).toHaveBeenCalledWith(true)
   })
 
   it('saves and exits synchronously on a Windows session end, before the handler returns', () => {
@@ -222,6 +239,7 @@ describe('quit', () => {
     const quit = createQuit(steps)
     quit.endSessionNow()
     expect(order).toEqual(['endNow', 'exit'])
+    expect(steps.exit).toHaveBeenCalledWith(true)
     expect(steps.ask).not.toHaveBeenCalled()
   })
 
@@ -255,6 +273,7 @@ describe('quit', () => {
     quit.beforeQuit(quitEvent())
     await vi.runAllTimersAsync()
     expect(steps.warn).toHaveBeenCalledWith('the quit failed; exiting', expect.any(Object))
+    expect(steps.exit).toHaveBeenCalledWith(true)
     expect(steps.exit).toHaveBeenCalledOnce()
   })
 })

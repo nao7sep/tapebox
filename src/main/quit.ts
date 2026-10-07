@@ -60,7 +60,7 @@ export interface QuitSteps {
    * Windows session end, after which the process may be ended at any time. */
   endNow(): void
   warn(message: string, details: Record<string, unknown>): void
-  exit(): void
+  exit(forced?: boolean): void
 }
 
 type Settled<T> =
@@ -98,14 +98,15 @@ export function createQuit(steps: QuitSteps): Quit {
   let sessionEnding = false
   let exited = false
   let allowUnsaved = false
+  let forced = false
   let limitTimer: ReturnType<typeof setTimeout> | null = null
   let question: AbortController | null = null
 
-  const exit = (): void => {
+  const exit = (force = forced): void => {
     if (exited) return
     exited = true
     if (limitTimer) clearTimeout(limitTimer)
-    steps.exit()
+    steps.exit(force)
   }
 
   const bounds = (): QuitBounds => QUIT_BOUNDS_MS[sessionEnding ? 'session-end' : 'user']
@@ -114,12 +115,12 @@ export function createQuit(steps: QuitSteps): Quit {
     if (limitTimer) return
     limitTimer = setTimeout(() => {
       steps.warn('the session ended before the quit finished; exiting', { limitMs: SESSION_END_LIMIT_MS })
-      exit()
+      exit(true)
     }, SESSION_END_LIMIT_MS)
   }
 
   function warnUnsettled(step: string, settled: Settled<unknown>, boundMs: number): void {
-    if (settled.outcome === 'timeout') steps.warn(`${step} did not finish within the quit bound`, { boundMs })
+    if (settled.outcome === 'timeout') { forced = true; steps.warn(`${step} did not finish within the quit bound`, { boundMs }) }
     else if (settled.outcome === 'failed') steps.warn(`${step} failed at quit`, { error: describeError(settled.error) })
   }
 
@@ -188,11 +189,12 @@ export function createQuit(steps: QuitSteps): Quit {
       if (running || exited) return
       running = true
       allowUnsaved = false
+      forced = false
       if (sessionEnding) startLimit()
       // A step that throws past its bound still exits: quit must never hang.
       void run().catch((error: unknown) => {
         steps.warn('the quit failed; exiting', { error: describeError(error) })
-        exit()
+        exit(true)
       })
     },
     markSessionEnd() {
@@ -211,7 +213,7 @@ export function createQuit(steps: QuitSteps): Quit {
       } catch (error) {
         steps.warn('the session-end save failed', { error: describeError(error) })
       }
-      exit()
+      exit(true)
     },
   }
 }

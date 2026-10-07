@@ -28,6 +28,7 @@ import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
 import { createQuit, type QuitChoice } from './quit.js'
+import { forceExitProcess } from './force-exit.js'
 import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 import { BINARY_ACQUIRE_TIMEOUT_MS } from './io/network.js'
@@ -226,7 +227,10 @@ const quit = createQuit({
     void closeRecords()
   },
   warn: (message, details) => log.warn(message, details),
-  exit: () => app.exit(0),
+  exit: (forced) => {
+    if (forced) { forceExitProcess(); return }
+    app.exit(0)
+  },
 })
 
 async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoice> {
@@ -258,7 +262,7 @@ process.on('uncaughtException', (err) => {
   persistNowSync()
   flushRecordsBeforeExit()
   void closeRecords()
-  process.exit(1)
+  forceExitProcess()
 })
 process.on('unhandledRejection', (reason) => {
   log.error('unhandled rejection', { error: describeError(reason) })
