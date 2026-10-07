@@ -1,7 +1,7 @@
 import { readFile, unlink } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { writeJsonAtomic } from '@main/io/atomic-json'
-import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
+import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { UserFacingError } from '@main/user-facing-error'
 import type { SidecarTapeBox } from '@shared/domain'
 import { message } from '@shared/i18n/translate'
@@ -68,8 +68,15 @@ export const SIDECAR_JSON = { formatVersion: FORMAT_VERSIONS.sidecar }
  * Write a sidecar in the library, stamped with its format version. Not recorded:
  * see {@link finalize}.
  */
-export async function writeSidecar(path: string, sidecar: Record<string, unknown>): Promise<void> {
-  await writeJsonAtomic(path, sidecar, SIDECAR_JSON)
+export async function writeSidecar(path: string, sidecar: Record<string, unknown>, validateCurrent?: () => Promise<void>): Promise<void> {
+  try {
+    await writeJsonAtomic(path, sidecar, { ...SIDECAR_JSON, validateCurrent })
+  } catch (error) {
+    if (error instanceof NewerFormatError) {
+      throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(path) }), { cause: error })
+    }
+    throw error
+  }
 }
 
 /**

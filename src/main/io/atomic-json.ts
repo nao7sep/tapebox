@@ -40,6 +40,8 @@ export type StoreJsonOptions<S extends z.ZodType> = {
   schema?: S
   /** Only disposable state and re-derived caches may replace unreadable bytes. */
   discardUnreadable?: boolean
+  /** Recheck the caller's live mutation basis at the final publication boundary. */
+  validateCurrent?: () => Promise<void>
 }
 
 /** Admit the current governing file; absence permits creating a new store. */
@@ -110,7 +112,10 @@ export async function writeJsonAtomic<S extends z.ZodType>(
 ): Promise<void> {
   const { mode } = options
   const text = serializeStoreJson(data, options)
-  const admit = () => assertJsonFileCurrent(path, options.formatVersion, options.discardUnreadable)
+  const admit = async () => {
+    await assertJsonFileCurrent(path, options.formatVersion, options.discardUnreadable)
+    await options.validateCurrent?.()
+  }
   await admit()
   if (await holdsAlready(path, text, mode)) return
   await publishJson(path, text, { mode, admit })
@@ -156,7 +161,10 @@ export async function writeManagedJson<S extends z.ZodType>(
 ): Promise<void> {
   const text = serializeStoreJson(data, options)
   const bytes = Buffer.from(text, 'utf8')
-  const admit = () => assertJsonFileCurrent(path, options.formatVersion, options.discardUnreadable)
+  const admit = async () => {
+    await assertJsonFileCurrent(path, options.formatVersion, options.discardUnreadable)
+    await options.validateCurrent?.()
+  }
   await admit()
   if (await holdsAlready(path, text, undefined)) return
   await publishJson(path, bytes, { admit })

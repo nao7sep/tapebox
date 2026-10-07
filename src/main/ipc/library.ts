@@ -41,6 +41,20 @@ import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
 import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
 
+const tapeWrites = new Set<string>()
+
+function claimTapeWrite(id: string): (() => void) | null {
+  if (tapeWrites.has(id)) return null
+  tapeWrites.add(id)
+  return () => { tapeWrites.delete(id) }
+}
+
+async function withTapeWrite<T>(id: string, work: () => Promise<T>): Promise<T> {
+  const release = claimTapeWrite(id)
+  if (!release) throw new UserFacingError('refused', message('errors.tapeBusy'))
+  try { return await work() } finally { release() }
+}
+
 export function registerLibraryHandlers(): void {
   session.onCatalogSaveFailure(() => emit('library:saveFailed', null))
 
@@ -131,7 +145,7 @@ export function registerLibraryHandlers(): void {
   })
 
   handle('library:rename', ({ tapeId, name }) => runCancellable((signal) =>
-    withLibraryWrite((libraryDir) => renameTape(tapeId, name, libraryDir, signal))))
+    withLibraryWrite((libraryDir) => withTapeWrite(tapeId, () => renameTape(tapeId, name, libraryDir, signal)))))
 
   handle('library:probeMetadata', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
@@ -154,61 +168,84 @@ export function registerLibraryHandlers(): void {
   })
 
   // Writes the sidecar and may save a poster into the library, so it holds a write claim.
-  handle('library:applyMetadata', ({ tapeId, metadata }) => withLibraryWrite(async (dir) => {
-    const tape = session.getTape(tapeId)
-    if (!tape) throw new Error(`Tape not found: ${tapeId}`)
-
-    // Backfill a local poster for a downloaded tape that has none — e.g. one
-    // downloaded before thumbnails were saved locally. Best-effort: the catalog
-    // metadata the user reviewed must still apply even if the fetch fails. Routed
-    // through the same image gate as a fresh download.
-    let thumbnailFilename = tape.thumbnailFilename
-    if (thumbnailFilename === null && tape.filename) {
-      const stem = tape.filename.slice(0, -extname(tape.filename).length)
-      try {
-        if (await posterStemFree(tape, dir, stem)) {
-          thumbnailFilename = await runCancellable(async (signal) => {
-            const raw = await downloadThumbnail(tape.id, tape.sourceUrl, dir, stem, signal)
-            return raw ? saveThumbnailJpeg(tape.id, raw, dir, stem, signal) : null
-          })
-        } else {
-          log.warn('thumbnail backfill skipped; another file has the poster name', { tapeId, stem })
-        }
-      } catch (err) {
-        log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })
-      }
-    }
-
-    // The sidecar is the bundle's own record: export carries it and import reads
-    // its title, uploader and poster back. So it takes everything the catalog is
-    // about to hold, and it is written before the catalog, so a failed write leaves
-    // the catalog as it was rather than the two disagreeing. A poster fetched for
-    // it stays in the library under the tape's own stem, for the next Apply.
-    if (tape.sidecarFilename) {
-      await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename)
-    }
-
-    // Persist the accepted catalog fields. Duration and chapter count are NOT here:
-    // they're fixed by the file and can't change unless it's replaced. sourceId and
-    // the on-disk filenames are the tape's identity — left untouched.
-    const updated: Tape = {
-      ...tape,
-      title: metadata.title,
-      uploader: metadata.uploader,
-      thumbnailFilename,
-      probedAtUtc: metadata.probedAtUtc,
-    }
-    session.upsertTape(updated)
-    emit('tapes:updated', updated)
-    log.info('applied refreshed metadata', { tapeId: tape.id })
-    return updated
-  }))
+  handle('library:applyMetadata', ({ tapeId, metadata }) => runCancellable((signal) =>
+    withLibraryWrite((dir) => withTapeWrite(tapeId, () => applyMetadata(tapeId, metadata, dir, signal)))))
 
   // Sidecar-driven import: the whole selection arrives here so this filesystem-owning
   // boundary can tell referenced bundle companions from unsupported extras. One
   // sidecar = one tape, so a duplicate is reported once, not once per selected file.
   handle('library:import', ({ paths }) => runCancellable((signal) =>
     withLibraryWrite((libraryDir) => importBundles(paths, libraryDir, signal))))
+}
+
+async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: string, signal: AbortSignal): Promise<Tape> {
+  const existing = session.getTape(tapeId)
+  if (!existing) throw new Error(`Tape not found: ${tapeId}`)
+  if (queue.isActive(tapeId)) throw new UserFacingError('refused', message('errors.tapeBusy'))
+  const tape = structuredClone(existing)
+  const assertCurrent = (): Tape => {
+    signal.throwIfAborted()
+    const current = session.getTape(tapeId)
+    const fields = ['sourceUrl', 'state', 'filename', 'sidecarFilename', 'thumbnailFilename', 'title', 'uploader', 'probedAtUtc', 'name'] as const
+    if (!current || fields.some((key) => current[key] !== tape[key])) {
+      throw new UserFacingError('refused', message('refresh.applyStale'))
+    }
+    return current
+  }
+  // Refuse a protected sidecar before attempting its optional poster backfill.
+  if (tape.sidecarFilename) await readSidecarFile(join(dir, tape.sidecarFilename))
+  assertCurrent()
+
+  // Backfill a local poster for a downloaded tape that has none — e.g. one
+  // downloaded before thumbnails were saved locally. Best-effort: the catalog
+  // metadata the user reviewed must still apply even if the fetch fails. Routed
+  // through the same image gate as a fresh download.
+  let thumbnailFilename = tape.thumbnailFilename
+  if (thumbnailFilename === null && tape.filename) {
+    const stem = tape.filename.slice(0, -extname(tape.filename).length)
+    try {
+      if (await posterStemFree(tape, dir, stem)) {
+        assertCurrent()
+        const raw = await downloadThumbnail(tape.id, tape.sourceUrl, dir, stem, signal)
+        assertCurrent()
+        thumbnailFilename = raw ? await saveThumbnailJpeg(tape.id, raw, dir, stem, signal) : null
+      } else {
+        log.warn('thumbnail backfill skipped; another file has the poster name', { tapeId, stem })
+      }
+    } catch (err) {
+      log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })
+    }
+  }
+  assertCurrent()
+
+  // The sidecar is the bundle's own record: export carries it and import reads
+  // its title, uploader and poster back. So it takes everything the catalog is
+  // about to hold, and it is written before the catalog, so a failed write leaves
+  // the catalog as it was rather than the two disagreeing. A poster fetched for
+  // it stays in the library under the tape's own stem, for the next Apply.
+  if (tape.sidecarFilename) {
+    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, assertCurrent)
+  }
+
+  // Persist the accepted catalog fields. Duration and chapter count are NOT here:
+  // they're fixed by the file and can't change unless it's replaced. sourceId and
+  // the on-disk filenames are the tape's identity — left untouched.
+  const updated: Tape = {
+    ...assertCurrent(),
+    title: metadata.title,
+    uploader: metadata.uploader,
+    thumbnailFilename,
+    probedAtUtc: metadata.probedAtUtc,
+  }
+  session.upsertTape(updated)
+  emit('tapes:updated', updated)
+  let saved: boolean
+  try { saved = await session.persistNow() } catch (error) {
+    throw new UserFacingError('refused', message('refresh.applyPartial'), { cause: error })
+  }
+  if (!saved) throw new UserFacingError('refused', message('refresh.applyPartial'))
+  log.info('applied refreshed metadata', { tapeId: tape.id })
+  return updated
 }
 
 /**
@@ -242,8 +279,10 @@ async function writeRefreshedSidecar(
   path: string,
   metadata: RefreshedMetadata,
   thumbnailFilename: string | null,
+  assertCurrent: () => Tape,
 ): Promise<void> {
   const sidecar = await readSidecarFile(path)
+  const original = JSON.stringify(sidecar)
   let changed = false
   const fields = { title: metadata.title, uploader: metadata.uploader, description: metadata.description }
   for (const [key, value] of Object.entries(fields)) {
@@ -260,7 +299,13 @@ async function writeRefreshedSidecar(
   // not recorded: the sidecar is library-directory content, colocated with binary
   // media, so it is excluded (data-backup conventions) and takes the raw
   // writeJsonAtomic, not the choke point.
-  await writeSidecar(path, sidecar)
+  await writeSidecar(path, sidecar, async () => {
+    assertCurrent()
+    if (JSON.stringify(await readSidecarFile(path)) !== original) {
+      throw new UserFacingError('refused', message('refresh.applyStale'))
+    }
+    assertCurrent()
+  })
 }
 
 /**
@@ -668,53 +713,61 @@ async function removeTapesFrom(
   const settings = getSettings()
   const removed: string[] = []
   const failed: string[] = []
+  const releases: Array<() => void> = []
 
-  for (const id of tapeIds) {
-    const tape = session.getTape(id)
-    if (!tape) continue
+  try {
+    for (const id of new Set(tapeIds)) {
+      const tape = session.getTape(id)
+      if (!tape) continue
+      const release = claimTapeWrite(id)
+      if (!release) { failed.push(id); continue }
+      releases.push(release)
 
-    if (queue.isActive(id)) {
-      await queue.cancel(id)
-    }
-
-    if (deleteFiles) {
-      try {
-        if (tape.sidecarFilename) {
-          await assertJsonFileCurrent(join(libraryDir, tape.sidecarFilename), FORMAT_VERSIONS.sidecar)
-        }
-        if (tape.filename) {
-          await discardFile(join(libraryDir, tape.filename), settings.trashOnRemove)
-        }
-        if (tape.sidecarFilename) {
-          await discardFile(join(libraryDir, tape.sidecarFilename), settings.trashOnRemove)
-        }
-        if (tape.thumbnailFilename) {
-          await discardFile(join(libraryDir, tape.thumbnailFilename), settings.trashOnRemove)
-        }
-        // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
-        // junk, always deleted outright (never trashed). They're named by the
-        // on-disk stem, which is the tape id.
-        await clearPartials(libraryDir, tape.id)
-      } catch (err) {
-        // The files couldn't be discarded — keep the catalog entry so the tape never
-        // vanishes from the list while its files are left orphaned on disk.
-        log.error('library removal failed', { tapeId: id, error: describeError(err) })
-        failed.push(id)
-        continue
+      if (queue.isActive(id)) {
+        await queue.cancel(id)
       }
-    }
-    removed.push(id)
-  }
 
-  if (removed.length > 0) {
-    session.removeTapes(removed)
-    // Files are already discarded; commit the removal before reporting it, so a
-    // crash now cannot bring back rows that point at trashed files. The removal
-    // stands either way; a failed write is the session store's to retry and report.
-    await session.persistNow()
-    emit('tapes:removed', { tapeIds: removed })
+      if (deleteFiles) {
+        try {
+          if (tape.sidecarFilename) {
+            await assertJsonFileCurrent(join(libraryDir, tape.sidecarFilename), FORMAT_VERSIONS.sidecar)
+          }
+          if (tape.filename) {
+            await discardFile(join(libraryDir, tape.filename), settings.trashOnRemove)
+          }
+          if (tape.sidecarFilename) {
+            await discardFile(join(libraryDir, tape.sidecarFilename), settings.trashOnRemove)
+          }
+          if (tape.thumbnailFilename) {
+            await discardFile(join(libraryDir, tape.thumbnailFilename), settings.trashOnRemove)
+          }
+          // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
+          // junk, always deleted outright (never trashed). They're named by the
+          // on-disk stem, which is the tape id.
+          await clearPartials(libraryDir, tape.id)
+        } catch (err) {
+          // The files couldn't be discarded — keep the catalog entry so the tape never
+          // vanishes from the list while its files are left orphaned on disk.
+          log.error('library removal failed', { tapeId: id, error: describeError(err) })
+          failed.push(id)
+          continue
+        }
+      }
+      removed.push(id)
+    }
+
+    if (removed.length > 0) {
+      session.removeTapes(removed)
+      // Files are already discarded; commit the removal before reporting it, so a
+      // crash now cannot bring back rows that point at trashed files. The removal
+      // stands either way; a failed write is the session store's to retry and report.
+      await session.persistNow()
+      emit('tapes:removed', { tapeIds: removed })
+    }
+    return { removed, failed }
+  } finally {
+    for (const release of releases) release()
   }
-  return { removed, failed }
 }
 
 /**
