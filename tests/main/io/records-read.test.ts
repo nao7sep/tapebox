@@ -207,6 +207,23 @@ describe('records reads', () => {
     expect(lines.at(-1)).toBe('to the text file')
   })
 
+  it('refuses later writes and cached reader requests after another instance advances the format', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    records.openRecords()
+    logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'kept')
+    expect((await reader.readRecords({ op: 'page', query: query() })).records).toHaveLength(1)
+    const other = new DatabaseSync(paths.records)
+    try {
+      other.exec('PRAGMA user_version = 2')
+      logRow(records, '2026-10-04T10:00:02.000Z', 'info', 'refused')
+      await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow(/NewerFormatError/)
+      expect(other.prepare('SELECT message FROM logs').all()).toEqual([{ message: 'kept' }])
+      const [fallback] = readdirSync(paths.logs)
+      expect(readFileSync(join(paths.logs, fallback!), 'utf8')).toContain('refused')
+    } finally { other.close() }
+  })
+
   it('continues a long list from the last record of the page before', async () => {
     const { records, reader } = await freshApp()
     records.openRecords()

@@ -1,12 +1,13 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 import { paths } from '@main/paths'
 import { describeError } from '@shared/error'
 import type { LogLevel } from '@shared/log'
 import { utcTimestampForFilenameMs } from '@shared/utc'
 import { toJson } from './log-format'
-import { claimDatabaseFormat, FORMAT_VERSIONS } from './format-version'
+import { FORMAT_VERSIONS } from './format-version'
+import { databaseTransaction, openWritableDatabase } from './sqlite-store'
 
 /**
  * The records database, `records.sqlite3` under the storage root, per the
@@ -105,22 +106,7 @@ export function openRecords(): string {
   failing = false
   statements.clear()
   try {
-    const opened = new DatabaseSync(paths.records)
-    try {
-      // A database in a newer format, or without its marker, is left exactly as it is
-      // (store-recovery-conventions): checked before anything below writes to it, and
-      // this launch writes the text file.
-      claimDatabaseFormat(opened, paths.records, FORMAT_VERSIONS.records)
-      opened.exec('PRAGMA journal_mode = WAL')
-      opened.exec('PRAGMA synchronous = FULL')
-      // A busy database costs one entry a text-file line, never a stalled main thread.
-      opened.exec('PRAGMA busy_timeout = 100')
-      opened.exec(SCHEMA)
-    } catch (err) {
-      opened.close()
-      throw err
-    }
-    db = opened
+    db = openWritableDatabase(paths.records, FORMAT_VERSIONS.records, SCHEMA)
   } catch (err) {
     db = null
     writeFallback(failureNote('records database could not be opened; writing to a text file', err))
@@ -168,7 +154,8 @@ export function writeRecord(table: RecordTable, row: RecordRow, text: () => stri
   }
   if (db) {
     try {
-      insert(db, table, row)
+      const opened = db
+      databaseTransaction(opened, paths.records, FORMAT_VERSIONS.records, true, () => insert(opened, table, row))
       failing = false
       notifyStored()
       return false

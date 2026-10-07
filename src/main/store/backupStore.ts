@@ -22,12 +22,11 @@
  */
 
 import { createHash } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
 import { paths } from '@main/paths'
 import { log } from '@main/io/logger'
-import { claimDatabaseFormat, FORMAT_VERSIONS } from '@main/io/format-version'
+import { FORMAT_VERSIONS } from '@main/io/format-version'
+import { databaseTransaction, openWritableDatabase } from '@main/io/sqlite-store'
 import { describeError } from '@shared/error'
 
 /**
@@ -76,23 +75,7 @@ function ensureOpen(): DatabaseSync | null {
     // case (data-backup conventions: "A binary store, excluded from itself").
     // The first writer under the root does the `mkdir -p` (storage-path convention); the store may be the
     // first thing written on a fresh root.
-    mkdirSync(dirname(file), { recursive: true })
-    const opened = new DatabaseSync(file)
-    try {
-      // A store in a newer format, or without its marker, is left exactly as it is
-      // (store-recovery-conventions): checked before anything below writes to it, and recording stays
-      // disabled for the session.
-      claimDatabaseFormat(opened, file, FORMAT_VERSIONS.backups)
-      opened.exec('PRAGMA journal_mode = WAL')
-      // Keep lock contention bounded tightly. A backup is best-effort; freezing the Electron main thread
-      // for seconds is worse than dropping one history row and recording the next save.
-      opened.exec('PRAGMA busy_timeout = 100')
-      opened.exec(SCHEMA)
-    } catch (err) {
-      opened.close()
-      throw err
-    }
-    db = opened
+    db = openWritableDatabase(file, FORMAT_VERSIONS.backups, SCHEMA)
   } catch (err) {
     log.warn('backup store: could not open; recording disabled for this session', {
       file: paths.backupsDb,
@@ -125,16 +108,18 @@ function recordNow(absolutePath: string, bytes: Buffer): void {
   if (!store) return // open failed earlier; disabled for the session (already warned once)
   try {
     const hash = sha256(bytes)
-    const latest = store
-      .prepare('SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1')
-      .get(absolutePath) as { h: string } | undefined
-    if (latest?.h === hash) return // unchanged since the last recorded version — dedup skip
+    databaseTransaction(store, paths.backupsDb, FORMAT_VERSIONS.backups, true, () => {
+      const latest = store
+        .prepare('SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1')
+        .get(absolutePath) as { h: string } | undefined
+      if (latest?.h === hash) return // unchanged since the last recorded version — dedup skip
 
-    store
-      .prepare(
-        'INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)',
-      )
-      .run(absolutePath, bytes, hash, bytes.byteLength, new Date().toISOString())
+      store
+        .prepare(
+          'INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)',
+        )
+        .run(absolutePath, bytes, hash, bytes.byteLength, new Date().toISOString())
+    })
   } catch (err) {
     log.warn('backup store: failed to record a managed write', {
       file: absolutePath,

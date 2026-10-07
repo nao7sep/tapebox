@@ -1,7 +1,8 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
 import { readRecords, type RecordsRead, type RecordsReadResult } from './records-query.ts'
-import { databaseFormatVersion, FORMAT_VERSIONS, NewerFormatError } from './format-version.ts'
+import { FORMAT_VERSIONS } from './format-version.ts'
+import { databaseTransaction } from './sqlite-store.ts'
 
 /**
  * The Records window's reader thread (records-read.ts starts it). It holds its
@@ -32,14 +33,8 @@ function open(): DatabaseSync {
   const opened = new DatabaseSync(databasePath, { readOnly: true })
   try {
     opened.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`)
-    // A database in a newer format, or without its marker, is one this build
-    // cannot read (store-recovery-conventions).
-    const version = databaseFormatVersion(opened, databasePath)
-    if (version !== null && version > FORMAT_VERSIONS.records) {
-      throw new NewerFormatError(databasePath, version, FORMAT_VERSIONS.records)
-    }
   } catch (error) {
-    opened.close()
+    try { opened.close() } catch (cleanupError) { console.error('tapebox: Records reader close failed', cleanupError) }
     throw error
   }
   db = opened
@@ -49,7 +44,8 @@ function open(): DatabaseSync {
 port.on('message', ({ id, read }: RecordsWorkerRequest) => {
   let response: RecordsWorkerResponse
   try {
-    response = { id, ok: true, value: readRecords(open(), read) }
+    const opened = open()
+    response = { id, ok: true, value: databaseTransaction(opened, databasePath, FORMAT_VERSIONS.records, false, () => readRecords(opened, read)) }
   } catch (error) {
     response = { id, ok: false, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }
   }

@@ -384,4 +384,20 @@ describe('format version (store-recovery-conventions)', () => {
     expect(logCalls.warn).toHaveLength(1)
     expect(logCalls.warn[0]!.fields).toMatchObject({ error: expect.objectContaining({ name: 'NewerFormatError' }) })
   })
+
+  it('refuses a queued write when the cached database has acquired a newer marker', async () => {
+    const backup = await import('@main/store/backupStore')
+    const file = path.join(root, 'config.json')
+    backup.record(file, Buffer.from('kept'))
+    await backup.flushBackupStore()
+    const other = new DatabaseSync(path.join(root, 'backups.sqlite3'))
+    try {
+      other.exec('PRAGMA user_version = 2')
+      backup.record(file, Buffer.from('refused'))
+      await backup.flushBackupStore()
+      expect(other.prepare('SELECT content FROM backups').all()).toEqual([{ content: new Uint8Array(Buffer.from('kept')) }])
+      expect(logCalls.warn).toHaveLength(1)
+      expect(logCalls.warn[0]!.fields).toMatchObject({ error: expect.objectContaining({ name: 'NewerFormatError' }) })
+    } finally { other.close() }
+  })
 })

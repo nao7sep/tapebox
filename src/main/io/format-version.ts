@@ -99,6 +99,7 @@ export function withFormatVersion(data: object, version: number): Record<string,
  */
 export function databaseFormatVersion(db: DatabaseSync, path: string): number | null {
   const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number }
+  if (!Number.isSafeInteger(version) || version < 0) throw new Error(`${path} has an invalid format version (PRAGMA user_version)`)
   if (version !== 0) return version
   const { tables } = db.prepare('SELECT count(*) AS tables FROM sqlite_schema').get() as { tables: number }
   if (tables > 0) throw new Error(`${path} has no format version (PRAGMA user_version)`)
@@ -106,12 +107,11 @@ export function databaseFormatVersion(db: DatabaseSync, path: string): number | 
 }
 
 /**
- * Prepare an open SQLite store for this build to write, before anything writes
- * to it: a brand-new database is stamped `current`, and one in a newer format
- * throws {@link NewerFormatError}, as does an unreadable one its own error.
+ * Admit an existing SQLite store before using it in the current transaction.
+ * Unmarked and invalid markers are unreadable; newer markers are protected.
  */
-export function claimDatabaseFormat(db: DatabaseSync, path: string, current: number): void {
+export function assertDatabaseCurrent(db: DatabaseSync, path: string, current: number): void {
   const version = databaseFormatVersion(db, path)
-  if (version === null) db.exec(`PRAGMA user_version = ${current}`)
+  if (version === null) throw new Error(`${path} has no format version (PRAGMA user_version)`)
   else if (version > current) throw new NewerFormatError(path, version, current)
 }
