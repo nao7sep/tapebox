@@ -152,6 +152,29 @@ describe('writeFileAtomicVia', () => {
     expect(await exists(seenTemp)).toBe(false)
   })
 
+  it('hands streamed and subprocess producers an empty private stage before any bytes', async () => {
+    const dest = join(dir, 'private-stage')
+    await writeFileAtomicVia(dest, async (stage) => {
+      const initial = await stat(stage)
+      expect(initial.size).toBe(0)
+      if (process.platform !== 'win32') expect(initial.mode & 0o777).toBe(0o600)
+      await writeFile(stage, 'produced bytes')
+    })
+    if (process.platform !== 'win32') expect((await stat(dest)).mode & 0o777).toBe(0o666 & ~process.umask())
+  })
+
+  it('does not produce into or clean a colliding stage it did not create', async () => {
+    const dest = join(dir, 'destination')
+    const stage = join(dir, 'collision.tmp')
+    await writeFile(dest, 'original')
+    await writeFile(stage, 'foreign stage')
+    const produce = vi.fn(async () => {})
+    await expect(writeFileAtomicVia(dest, produce, stage)).rejects.toMatchObject({ code: 'EEXIST' })
+    expect(produce).not.toHaveBeenCalled()
+    expect(await readFile(dest, 'utf8')).toBe('original')
+    expect(await readFile(stage, 'utf8')).toBe('foreign stage')
+  })
+
   it('atomically replaces an existing destPath', async () => {
     const dest = join(dir, 'binary')
     await writeFile(dest, 'old')

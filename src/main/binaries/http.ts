@@ -1,4 +1,7 @@
 import { createWriteStream } from 'node:fs'
+import { unlink } from 'node:fs/promises'
+import { log } from '@main/io/logger'
+import { describeError } from '@shared/error'
 import { Readable, Transform, type Writable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import { pipeline } from 'node:stream/promises'
@@ -60,15 +63,24 @@ export async function downloadWithProgress(opts: DownloadOptions): Promise<void>
     await res.body.cancel().catch(() => {})
     throw new Error(`Download from ${opts.url} is too large (${total} bytes; limit ${opts.maxBytes})`)
   }
-  const out = createWriteStream(opts.destPath)
-  await pumpToFile(res.body, out, {
-    total,
-    url: opts.url,
-    idleTimeoutMs: opts.idleTimeoutMs,
-    signal: opts.signal,
-    maxBytes: opts.maxBytes,
-    onProgress: opts.onProgress,
-  })
+  const out = createWriteStream(opts.destPath, { flags: 'wx', mode: 0o600 })
+  let created = false
+  out.once('open', () => { created = true })
+  try {
+    await pumpToFile(res.body, out, {
+      total,
+      url: opts.url,
+      idleTimeoutMs: opts.idleTimeoutMs,
+      signal: opts.signal,
+      maxBytes: opts.maxBytes,
+      onProgress: opts.onProgress,
+    })
+  } catch (error) {
+    if (created) await unlink(opts.destPath).catch((cleanupError: unknown) => {
+      if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('binary download stage cleanup failed', { error: describeError(cleanupError) })
+    })
+    throw error
+  }
 }
 
 /**

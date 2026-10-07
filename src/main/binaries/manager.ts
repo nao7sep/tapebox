@@ -297,6 +297,7 @@ async function performInstall(
   const downloadTemp = downloadTempPath(name)
 
   let lastEmittedPct = -1
+  let downloadReady = false
   try {
     // not recorded: this .partial is disposable staging for a re-fetchable native
     // binary or its archive, not user-authored text. The completed executable has
@@ -321,6 +322,7 @@ async function performInstall(
       { signal, isRetryable: isRetryableHttpFailure },
     )
 
+    downloadReady = true
     const finalPath = binaryPath(name)
     emit('binaries:progress', { name, operationId, percent: 0, phase: 'verify' })
     // Integrity gate: verify the downloaded bytes against the vendor's published
@@ -389,7 +391,9 @@ async function performInstall(
       spec.installedVersion.kind === 'sidecar' ? () => admitVersionSidecar(name) : undefined,
     )
   } finally {
-    await unlink(downloadTemp).catch(() => {})
+    if (downloadReady) await unlink(downloadTemp).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('binary download stage cleanup failed', { error: describeError(error) })
+    })
   }
 
   // The binary has landed. Where it cannot report its own version, record the

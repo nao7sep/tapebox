@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { Writable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { downloadWithProgress, pumpToFile } from '@main/binaries/http'
@@ -241,4 +244,45 @@ describe('pumpToFile', () => {
     ).rejects.toThrow('exceeded 3 bytes')
     expect(Buffer.concat(received)).toEqual(Buffer.from([1, 2]))
   })
+})
+
+function downloadResponse(body: ReadableStream<Uint8Array>): void {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ url: 'https://example.test/file', ok: true, body, headers: new Headers() } as Response)))
+}
+
+it('creates a private download before streaming bytes, then keeps those bytes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tapebox-download-mode-'))
+  const controller = new AbortController()
+  let source!: ReadableStreamDefaultController<Uint8Array>
+  downloadResponse(new ReadableStream({ start(stream) { source = stream } }))
+  const path = join(root, 'tool.partial')
+  const run = downloadWithProgress({ ...OPTS, destPath: path, signal: controller.signal })
+  const settled = run.catch(() => {})
+  try {
+    await vi.waitFor(async () => { expect((await stat(path)).size).toBe(0) })
+    if (process.platform !== 'win32') expect((await stat(path)).mode & 0o777).toBe(0o600)
+    source.enqueue(new Uint8Array([1, 2, 3])); source.close()
+    await run
+    expect(await readFile(path)).toEqual(Buffer.from([1, 2, 3]))
+  } finally { controller.abort(); await settled; await rm(root, { recursive: true, force: true }) }
+})
+
+it('cleans its actual failed download even when the body fails before the file opens', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tapebox-download-failure-'))
+  try {
+    downloadResponse(new ReadableStream({ start(stream) { stream.error(new Error('body failed')) } }))
+    await expect(downloadWithProgress({ ...OPTS, destPath: join(root, 'tool.partial') })).rejects.toThrow('body failed')
+    expect(await readdir(root)).toEqual([])
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+it('retains a colliding download file whose exclusive creation failed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tapebox-download-collision-'))
+  const path = join(root, 'tool.partial')
+  try {
+    await writeFile(path, 'existing contender')
+    downloadResponse(bodyOf(new Uint8Array([1, 2, 3])))
+    await expect(downloadWithProgress({ ...OPTS, destPath: path })).rejects.toMatchObject({ code: 'EEXIST' })
+    expect(await readFile(path, 'utf8')).toBe('existing contender')
+  } finally { await rm(root, { recursive: true, force: true }) }
 })

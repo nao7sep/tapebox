@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 
 // Node stands in for ffmpeg: the service's own args reach `-e <script> --` as
@@ -14,7 +17,7 @@ vi.mock('@main/io/spawn', async (importOriginal) => {
   }
 })
 
-const { collectRun, probeMedia } = await import('@main/services/ffmpeg')
+const { collectRun, probeMedia, saveThumbnailJpeg } = await import('@main/services/ffmpeg')
 const { spawnStreaming, waitForExit } = await import('@main/io/spawn')
 
 describe('collectRun', () => {
@@ -60,5 +63,28 @@ describe('probeMedia', () => {
     expect(table).toBe('ffmpeg_runs')
     expect(row).toMatchObject({ tape_id: 't1', kind: 'probe', exit_code: 1, stderr: info })
     expect(JSON.parse(row.args)).toEqual(['-hide_banner', '-i', '/library/clip.mp4'])
+  })
+})
+
+describe('thumbnail private staging', () => {
+  it.each([true, false])('creates a private empty subprocess output and requires produced bytes (writes=%s)', async (writes) => {
+    const root = await mkdtemp(join(tmpdir(), 'tapebox-thumbnail-stage-'))
+    const source = join(root, 'source.png')
+    const output = join(root, 'Poster.jpg')
+    try {
+      await writeFile(source, 'source image')
+      await writeFile(output, 'original poster')
+      script.text = `const fs=require('node:fs'); const path=process.argv.at(-1); const s=fs.statSync(path); if(s.size!==0 || (process.platform!=='win32' && (s.mode & 511)!==384)) throw new Error('output was not private before bytes'); ${writes ? "fs.writeFileSync(path,'new poster')" : ''}`
+      if (writes) {
+        await expect(saveThumbnailJpeg('t1', source, root, 'Poster')).resolves.toBe('Poster.jpg')
+        expect(await readFile(output, 'utf8')).toBe('new poster')
+        expect(await readdir(root)).toEqual(['Poster.jpg'])
+      } else {
+        await expect(saveThumbnailJpeg('t1', source, root, 'Poster')).rejects.toThrow('did not produce a thumbnail')
+        expect(await readFile(output, 'utf8')).toBe('original poster')
+        expect(await readFile(source, 'utf8')).toBe('source image')
+        expect((await readdir(root)).sort()).toEqual(['Poster.jpg', 'source.png'])
+      }
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 })

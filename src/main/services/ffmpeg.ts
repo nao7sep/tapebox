@@ -1,4 +1,4 @@
-import { unlink } from 'node:fs/promises'
+import { stat, unlink } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { nanoid } from 'nanoid'
 import { binaryPath } from '@main/paths'
@@ -133,8 +133,10 @@ export async function saveThumbnailJpeg(
       } finally {
         run.record()
       }
+      if ((await stat(stage)).size === 0) throw new Error('ffmpeg did not produce a thumbnail')
     },
     stagePath,
+    signal,
   )
 
   // The source is consumed. Drop it unless it WAS the destination (a jpg→jpg

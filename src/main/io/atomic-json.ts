@@ -1,4 +1,4 @@
-import { open, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { open, readFile, rename, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
@@ -61,10 +61,8 @@ export async function assertJsonFileCurrent(path: string, current: number, disca
 }
 
 async function publishJson(path: string, bytes: string | Buffer, options: { mode?: number; admit: () => Promise<void> }): Promise<void> {
-  let stageCreated = false
   await writeFileAtomicVia(path, async (tempPath) => {
-    const file = await open(tempPath, 'wx', 0o600)
-    stageCreated = true
+    const file = await open(tempPath, 'r+')
     try {
       await file.writeFile(bytes)
     } catch (error) {
@@ -74,9 +72,7 @@ async function publishJson(path: string, bytes: string | Buffer, options: { mode
       throw error
     }
     await file.close()
-  }, undefined, undefined, options.mode, options.admit, async (tempPath) => {
-    if (stageCreated) await unlink(tempPath)
-  })
+  }, undefined, undefined, options.mode, options.admit)
 }
 
 /** Serialize a store's value to the canonical on-disk JSON form (2-space indent,

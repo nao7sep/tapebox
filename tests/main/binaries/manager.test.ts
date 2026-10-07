@@ -96,6 +96,7 @@ import { log } from '@main/io/logger'
 
 afterEach(async () => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
   downloadWithProgress.mockReset()
   verifyBinaryIntegrity.mockReset()
   execCapture.mockReset()
@@ -217,10 +218,12 @@ describe('install download cleanup', () => {
   it('removes a partial file when the final download attempt fails', async () => {
     seed()
     vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue(resolved('2026.08.21'))
-    downloadWithProgress.mockImplementation(async ({ destPath }: { destPath: string }) => {
-      await writeFile(destPath, 'partial bytes')
-      throw new UnsafeUrlError('refusing downgraded response')
-    })
+    const realHttp = await vi.importActual<typeof import('@main/binaries/http')>('@main/binaries/http')
+    downloadWithProgress.mockImplementation(realHttp.downloadWithProgress)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      url: 'https://x', ok: true, headers: new Headers(),
+      body: new ReadableStream({ start(controller) { controller.error(new UnsafeUrlError('refusing downgraded response')) } }),
+    } as Response)))
 
     await expect(installOrUpdate('yt-dlp', 'op-download-failure')).resolves.toMatchObject({
       outcome: 'failed',

@@ -1,6 +1,8 @@
 import { chmod, link, lstat, open, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { nanoid } from 'nanoid'
+import { log } from './logger'
+import { describeError } from '../../shared/error'
 import { applyFileStamp, fileStampOf, keepOriginalMode, type FileStamp } from './file-metadata'
 
 /**
@@ -12,7 +14,7 @@ import { applyFileStamp, fileStampOf, keepOriginalMode, type FileStamp } from '.
  * the same crash-durability: a power loss can never expose a half-written or
  * unflushed file at `destPath`.
  *
- * `produce` is handed the temp path and must leave a finished artifact there —
+ * `produce` is handed an exclusively created, empty private file and must leave a finished artifact there —
  * stream into it, run a subprocess that writes it, or move a file onto it. On any
  * failure the temp is removed and the original error is rethrown unchanged; an
  * existing `destPath` is left untouched (the rename is the single atomic commit).
@@ -33,7 +35,7 @@ import { applyFileStamp, fileStampOf, keepOriginalMode, type FileStamp } from '.
  *
  * A hard kill (SIGKILL / power loss) between produce() and rename() can strand
  * the temp; it is inert — callers key off `destPath`, never the temp — and the
- * next attempt overwrites it. That is the same trade-off write-file-atomic makes.
+ * later attempts use fresh sibling names and leave that stage inert.
  */
 export async function writeFileAtomicVia(
   destPath: string,
@@ -42,9 +44,13 @@ export async function writeFileAtomicVia(
   signal?: AbortSignal,
   mode?: number,
   beforePublish?: () => Promise<void>,
-  cleanupStage: (path: string) => Promise<void> = unlink,
 ): Promise<void> {
+  let stageCreated = false
   try {
+    signal?.throwIfAborted()
+    const stage = await open(tempPath, 'wx', 0o600)
+    stageCreated = true
+    await stage.close()
     await produce(tempPath)
     signal?.throwIfAborted()
     const keptMode = await keepOriginalMode(destPath, tempPath)
@@ -62,7 +68,9 @@ export async function writeFileAtomicVia(
     await rename(tempPath, destPath)
     await fsyncDirBestEffort(dirname(destPath))
   } catch (err) {
-    await cleanupStage(tempPath).catch(() => {})
+    if (stageCreated) await unlink(tempPath).catch((cleanupError: unknown) => {
+      if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('atomic stage cleanup failed', { path: tempPath, error: describeError(cleanupError) })
+    })
     throw err
   }
 }

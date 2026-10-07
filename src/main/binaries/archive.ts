@@ -59,5 +59,5 @@ export async function extractFileFromZip(
       callback(null, chunk)
     },
   })
-  await pipeline(file.stream(), limiter, createWriteStream(outPath), { signal })
+  await pipeline(file.stream(), limiter, createWriteStream(outPath, { mode: 0o600 }), { signal })
 }
