@@ -492,8 +492,8 @@
     "one": "Moving library: {done} of {count} file ({bytesDone} of {bytesTotal})",
     "other": "Moving library: {done} of {count} files ({bytesDone} of {bytesTotal})"
   },
-  "common.unsavedTitle": "Unsaved changes",
-  "common.unsavedMessage": "Discard your changes?",
+  "common.unsavedTitle": "Discard changes?",
+  "common.unsavedMessage": "You have unsaved changes. Discard them and close?",
   "common.keepEditing": "Keep editing",
   "common.discard": "Discard",
   "settings.moveTitle": "Move library?",
@@ -561,6 +561,7 @@
   "settings.slugTokens": "Tokens: {tokens}.",
   "settings.resetSlugPrompt": "Reset slug prompt",
   "settings.ytdlpIntro": "TapeBox's own flags (output, info json) always win on conflict.",
+  "settings.credentialHistoryHint": "Passwords and cookies typed here, including in site profiles, remain in settings history after you remove them. For site logins, use --cookies with a file or --cookies-from-browser instead.",
   "settings.globalArgs": "Global arguments",
   "settings.globalArgsHint": "One flag per line (or space-separated). Quote any value that contains spaces. Backslashes are literal — not line-continuations — so Windows paths work as written.",
   "settings.siteProfiles": "Site profiles",

@@ -465,8 +465,8 @@
   "settings.moveProgress": {
     "other": "라이브러리 이동 중: 파일 {count}개 중 {done}개({bytesTotal} 중 {bytesDone})"
   },
-  "common.unsavedTitle": "저장하지 않은 변경 사항",
-  "common.unsavedMessage": "변경 사항을 버리겠습니까?",
+  "common.unsavedTitle": "변경 사항을 버리시겠습니까?",
+  "common.unsavedMessage": "저장하지 않은 변경 사항이 있습니다. 버리고 닫으시겠습니까?",
   "common.keepEditing": "계속 편집",
   "common.discard": "버리기",
   "settings.moveTitle": "라이브러리를 이동하겠습니까?",
@@ -533,6 +533,7 @@
   "settings.slugTokens": "토큰: {tokens}",
   "settings.resetSlugPrompt": "슬러그 프롬프트 재설정",
   "settings.ytdlpIntro": "충돌할 때는 항상 TapeBox 자체 플래그(출력, info json)가 우선합니다.",
+  "settings.credentialHistoryHint": "여기 또는 사이트 프로필에 입력한 비밀번호와 쿠키는 삭제한 후에도 설정 기록에 남습니다. 사이트 로그인에는 대신 --cookies로 파일을 지정하거나 --cookies-from-browser를 사용하십시오.",
   "settings.globalArgs": "전역 인수",
   "settings.globalArgsHint": "한 줄에 플래그 하나씩 입력합니다(공백으로 구분해도 됨). 공백이 포함된 값은 따옴표로 묶으십시오. 백슬래시는 줄 이어 쓰기가 아니라 문자 그대로 취급되므로 Windows 경로를 그대로 쓸 수 있습니다.",
   "settings.siteProfiles": "사이트 프로필",

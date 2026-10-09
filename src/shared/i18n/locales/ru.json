@@ -546,10 +546,10 @@
     "many": "Перемещение медиатеки: {done} из {count} файлов ({bytesDone} из {bytesTotal})",
     "other": "Перемещение медиатеки: {done} из {count} файла ({bytesDone} из {bytesTotal})"
   },
-  "common.unsavedTitle": "Несохранённые изменения",
-  "common.unsavedMessage": "Отменить ваши изменения?",
-  "common.keepEditing": "Продолжить правку",
-  "common.discard": "Отменить изменения",
+  "common.unsavedTitle": "Отказаться от изменений?",
+  "common.unsavedMessage": "Есть несохранённые изменения. Отказаться от них и закрыть?",
+  "common.keepEditing": "Продолжить редактирование",
+  "common.discard": "Отказаться",
   "settings.moveTitle": "Переместить медиатеку?",
   "settings.moveMessage": {
     "one": "В новую папку будет перемещена {count} кассета. Перемещение должно полностью завершиться, прежде чем новая папка будет сохранена.",
@@ -617,6 +617,7 @@
   "settings.slugTokens": "Подстановки: {tokens}.",
   "settings.resetSlugPrompt": "Сбросить промпт для слага",
   "settings.ytdlpIntro": "Собственные параметры TapeBox (вывод, info json) при конфликте всегда имеют приоритет.",
+  "settings.credentialHistoryHint": "Пароли и файлы cookie, введённые здесь, в том числе в профилях сайтов, остаются в истории настроек после удаления. Для входа на сайты используйте --cookies с файлом или --cookies-from-browser.",
   "settings.globalArgs": "Общие аргументы",
   "settings.globalArgsHint": "По одному параметру в строке (или через пробел). Значения с пробелами заключайте в кавычки. Обратные косые черты понимаются буквально — это не перенос строки, — поэтому пути Windows работают как написаны.",
   "settings.siteProfiles": "Профили сайтов",

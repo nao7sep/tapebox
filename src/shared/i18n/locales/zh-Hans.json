@@ -465,8 +465,8 @@
   "settings.moveProgress": {
     "other": "正在移动资料库：{done}/{count} 个文件（{bytesDone}/{bytesTotal}）"
   },
-  "common.unsavedTitle": "未保存的更改",
-  "common.unsavedMessage": "要放弃你的更改吗？",
+  "common.unsavedTitle": "放弃更改？",
+  "common.unsavedMessage": "你有未保存的更改。要放弃这些更改并关闭吗？",
   "common.keepEditing": "继续编辑",
   "common.discard": "放弃",
   "settings.moveTitle": "要移动资料库吗？",
@@ -533,6 +533,7 @@
   "settings.slugTokens": "占位符：{tokens}。",
   "settings.resetSlugPrompt": "重置别名提示词",
   "settings.ytdlpIntro": "发生冲突时，始终以 TapeBox 自身的参数（输出、info json）为准。",
+  "settings.credentialHistoryHint": "在这里或网站配置中输入的密码和 Cookie，即使删除后也会保留在设置历史记录中。登录网站时，请改用 --cookies 指定文件，或使用 --cookies-from-browser。",
   "settings.globalArgs": "全局参数",
   "settings.globalArgsHint": "每行一个参数（也可用空格分隔）。含空格的值请加引号。反斜杠按字面处理，不表示续行，因此 Windows 路径可以照原样书写。",
   "settings.siteProfiles": "网站配置",

@@ -58,7 +58,7 @@ describe('RenameModal', () => {
     await type('Another name')
     await act(async () => button('Cancel').click())
     expect(onClose).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('Discard your changes?')
+    expect(document.body.textContent).toContain('You have unsaved changes. Discard them and close?')
 
     await act(async () => button('Keep editing').click())
     expect(onClose).not.toHaveBeenCalled()

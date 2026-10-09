@@ -465,8 +465,8 @@
   "settings.moveProgress": {
     "other": "ライブラリを移動中: {count} 個中 {done} 個のファイル ({bytesTotal} 中 {bytesDone})"
   },
-  "common.unsavedTitle": "未保存の変更",
-  "common.unsavedMessage": "変更を破棄しますか？",
+  "common.unsavedTitle": "変更を破棄しますか？",
+  "common.unsavedMessage": "保存していない変更があります。破棄して閉じますか？",
   "common.keepEditing": "編集を続ける",
   "common.discard": "破棄",
   "settings.moveTitle": "ライブラリを移動しますか？",
@@ -533,6 +533,7 @@
   "settings.slugTokens": "トークン: {tokens}",
   "settings.resetSlugPrompt": "スラッグのプロンプトをリセット",
   "settings.ytdlpIntro": "TapeBox 自身のフラグ (出力、info json) が競合時には常に優先されます。",
+  "settings.credentialHistoryHint": "ここやサイトプロファイルに入力したパスワードや Cookie は、削除しても設定の履歴に残ります。サイトへのログインには、代わりに --cookies でファイルを指定するか、--cookies-from-browser を使用してください。",
   "settings.globalArgs": "共通の引数",
   "settings.globalArgsHint": "1 行に 1 つのフラグを書きます (スペース区切りも可)。スペースを含む値は引用符で囲んでください。バックスラッシュは行の継続ではなく文字どおりに扱われるため、Windows のパスはそのまま書けます。",
   "settings.siteProfiles": "サイトプロファイル",

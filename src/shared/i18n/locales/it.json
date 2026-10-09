@@ -519,8 +519,8 @@
     "many": "Spostamento della libreria: {done} di {count} di file ({bytesDone} di {bytesTotal})",
     "other": "Spostamento della libreria: {done} di {count} file ({bytesDone} di {bytesTotal})"
   },
-  "common.unsavedTitle": "Modifiche non salvate",
-  "common.unsavedMessage": "Scartare le modifiche?",
+  "common.unsavedTitle": "Scartare le modifiche?",
+  "common.unsavedMessage": "Hai modifiche non salvate. Scartarle e chiudere?",
   "common.keepEditing": "Continua a modificare",
   "common.discard": "Scarta",
   "settings.moveTitle": "Spostare la libreria?",
@@ -589,6 +589,7 @@
   "settings.slugTokens": "Segnaposto: {tokens}.",
   "settings.resetSlugPrompt": "Ripristina prompt dello slug",
   "settings.ytdlpIntro": "In caso di conflitto prevalgono sempre le opzioni proprie di TapeBox (output, info json).",
+  "settings.credentialHistoryHint": "Le password e i cookie inseriti qui, anche nei profili dei siti, rimangono nella cronologia delle impostazioni dopo la rimozione. Per accedere ai siti, usa invece --cookies con un file o --cookies-from-browser.",
   "settings.globalArgs": "Argomenti globali",
   "settings.globalArgsHint": "Un’opzione per riga (o separate da spazi). Metti tra virgolette i valori che contengono spazi. Le barre rovesciate sono letterali — non continuazioni di riga —, quindi i percorsi Windows funzionano così come sono scritti.",
   "settings.siteProfiles": "Profili dei siti",

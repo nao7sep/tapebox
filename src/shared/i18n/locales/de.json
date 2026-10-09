@@ -492,8 +492,8 @@
     "one": "Mediathek wird verschoben: {done} von {count} Datei ({bytesDone} von {bytesTotal})",
     "other": "Mediathek wird verschoben: {done} von {count} Dateien ({bytesDone} von {bytesTotal})"
   },
-  "common.unsavedTitle": "Nicht gespeicherte Änderungen",
-  "common.unsavedMessage": "Ihre Änderungen verwerfen?",
+  "common.unsavedTitle": "Änderungen verwerfen?",
+  "common.unsavedMessage": "Sie haben nicht gespeicherte Änderungen. Verwerfen und schließen?",
   "common.keepEditing": "Weiter bearbeiten",
   "common.discard": "Verwerfen",
   "settings.moveTitle": "Mediathek verschieben?",
@@ -561,6 +561,7 @@
   "settings.slugTokens": "Platzhalter: {tokens}.",
   "settings.resetSlugPrompt": "Slug-Prompt zurücksetzen",
   "settings.ytdlpIntro": "Die eigenen Optionen von TapeBox (Ausgabe, Info-JSON) haben bei Konflikten immer Vorrang.",
+  "settings.credentialHistoryHint": "Hier eingegebene Passwörter und Cookies, auch in Website-Profilen, bleiben nach dem Entfernen im Einstellungsverlauf erhalten. Verwenden Sie für Website-Anmeldungen stattdessen --cookies mit einer Datei oder --cookies-from-browser.",
   "settings.globalArgs": "Globale Argumente",
   "settings.globalArgsHint": "Eine Option pro Zeile (oder durch Leerzeichen getrennt). Setzen Sie Werte mit Leerzeichen in Anführungszeichen. Backslashes sind wörtlich gemeint – keine Zeilenfortsetzung –, daher funktionieren Windows-Pfade wie geschrieben.",
   "settings.siteProfiles": "Website-Profile",

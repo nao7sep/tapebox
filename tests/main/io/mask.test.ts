@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { maskCredentials, maskUrlCredentials, maskYtdlpArgs, REDACTED } from '@main/io/mask'
+import { maskCredentials, maskUrlCredentials, maskYtdlpArgs, maskYtdlpOutput, REDACTED } from '@main/io/mask'
+
+describe('maskYtdlpOutput', () => {
+  it('keeps metadata and URL structure while masking nested login material', () => {
+    const info = {
+      title: 'A video about cookies', description: 'Ordinary text and "cookies": "a recipe"',
+      formats: [{ cookies: 'sid=browser-secret; Domain=example.test', http_headers: {
+        Authorization: 'Bearer access-secret', Cookie: 'sid=header-secret', 'Accept-Language': 'ja',
+      }, url: 'https://media.test/video?id=42&sig=signed-secret&expire=99&pot=proof-secret' }],
+    }
+    const masked = JSON.parse(maskYtdlpOutput(JSON.stringify(info)))
+    expect(masked.title).toBe(info.title)
+    expect(masked.description).toBe(info.description)
+    expect(masked.formats[0]).toEqual({
+      cookies: REDACTED,
+      http_headers: { Authorization: `Bearer ${REDACTED}`, Cookie: REDACTED, 'Accept-Language': 'ja' },
+      url: `https://media.test/video?id=42&sig=${REDACTED}&expire=99&pot=${REDACTED}`,
+    })
+    expect(info.formats[0]!.cookies).toContain('browser-secret')
+  })
+
+  it('masks an interrupted JSON string and signed URLs in non-JSON error output', () => {
+    expect(maskYtdlpOutput('{"cookies":"session=unfinished')).toBe(`{"cookies":"${REDACTED}`)
+    expect(maskYtdlpOutput('ERROR https://media.test/v?signature=secret&x=1')).toBe(`ERROR https://media.test/v?signature=${REDACTED}&x=1`)
+    expect(maskYtdlpOutput('ordinary non-JSON output')).toBe('ordinary non-JSON output')
+  })
+})
 
 // Credentials in diagnostic copies become [REDACTED]; names, nesting and an
 // authorization scheme stay (data-lifecycle conventions).

@@ -519,8 +519,8 @@
     "many": "Moviendo la biblioteca: {done} de {count} de archivos ({bytesDone} de {bytesTotal})",
     "other": "Moviendo la biblioteca: {done} de {count} archivos ({bytesDone} de {bytesTotal})"
   },
-  "common.unsavedTitle": "Cambios sin guardar",
-  "common.unsavedMessage": "¿Descartar tus cambios?",
+  "common.unsavedTitle": "¿Descartar los cambios?",
+  "common.unsavedMessage": "Tienes cambios sin guardar. ¿Descartarlos y cerrar?",
   "common.keepEditing": "Seguir editando",
   "common.discard": "Descartar",
   "settings.moveTitle": "¿Mover la biblioteca?",
@@ -589,6 +589,7 @@
   "settings.slugTokens": "Marcadores: {tokens}.",
   "settings.resetSlugPrompt": "Restablecer prompt del slug",
   "settings.ytdlpIntro": "Las opciones propias de TapeBox (salida, info json) siempre tienen prioridad en caso de conflicto.",
+  "settings.credentialHistoryHint": "Las contraseñas y cookies que escribas aquí, incluso en los perfiles de sitios, permanecen en el historial de configuración después de eliminarlas. Para iniciar sesión en sitios, usa --cookies con un archivo o --cookies-from-browser.",
   "settings.globalArgs": "Argumentos globales",
   "settings.globalArgsHint": "Una opción por línea (o separadas por espacios). Pon entre comillas cualquier valor que contenga espacios. Las barras invertidas son literales, no continuaciones de línea, así que las rutas de Windows funcionan tal cual.",
   "settings.siteProfiles": "Perfiles de sitio",

@@ -519,9 +519,9 @@
     "many": "Déplacement de la bibliothèque\u00a0: {done} sur {count} de fichiers ({bytesDone} sur {bytesTotal})",
     "other": "Déplacement de la bibliothèque\u00a0: {done} sur {count} fichiers ({bytesDone} sur {bytesTotal})"
   },
-  "common.unsavedTitle": "Modifications non enregistrées",
-  "common.unsavedMessage": "Abandonner vos modifications\u00a0?",
-  "common.keepEditing": "Continuer la modification",
+  "common.unsavedTitle": "Abandonner les modifications\u00a0?",
+  "common.unsavedMessage": "Des modifications ne sont pas enregistrées. Les abandonner et fermer\u00a0?",
+  "common.keepEditing": "Continuer à modifier",
   "common.discard": "Abandonner",
   "settings.moveTitle": "Déplacer la bibliothèque\u00a0?",
   "settings.moveMessage": {
@@ -589,6 +589,7 @@
   "settings.slugTokens": "Jetons\u00a0: {tokens}.",
   "settings.resetSlugPrompt": "Réinitialiser le prompt du slug",
   "settings.ytdlpIntro": "Les options propres à TapeBox (sortie, info json) l’emportent toujours en cas de conflit.",
+  "settings.credentialHistoryHint": "Les mots de passe et cookies saisis ici, y compris dans les profils de sites, restent dans l’historique des paramètres après leur suppression. Pour vous connecter aux sites, utilisez plutôt --cookies avec un fichier ou --cookies-from-browser.",
   "settings.globalArgs": "Arguments globaux",
   "settings.globalArgsHint": "Une option par ligne (ou séparées par des espaces). Mettez entre guillemets toute valeur contenant des espaces. Les barres obliques inverses sont prises à la lettre — ce ne sont pas des continuations de ligne —, les chemins Windows fonctionnent donc tels quels.",
   "settings.siteProfiles": "Profils de site",

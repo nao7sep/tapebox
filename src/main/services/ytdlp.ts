@@ -6,7 +6,7 @@ import { watchForStall } from './download-stall'
 import { YTDLP_PROBE_IDLE_TIMEOUT_MS } from '@main/io/network'
 import { toJson } from '@main/io/log-format'
 import { writeRecord } from '@main/io/records'
-import { maskCredentials, maskYtdlpArgs } from '@main/io/mask'
+import { maskCredentials, maskYtdlpArgs, maskYtdlpOutput } from '@main/io/mask'
 import { nowUtcIso } from '@shared/utc'
 import {
   collectOutput,
@@ -56,7 +56,7 @@ export function collectRun(
 ): { stdout: () => string; stderr: () => string; mask: (text: string) => string; record: () => void } {
   const output = collectOutput(child)
   const { args, credentials } = maskYtdlpArgs(run.args)
-  const mask = (text: string): string => maskCredentials(text, credentials)
+  const mask = (text: string): string => maskYtdlpOutput(maskCredentials(text, credentials))
   return {
     stdout: output.stdout,
     stderr: () => mask(output.stderr()),

@@ -838,6 +838,9 @@ function YtdlpTab({
       <p className="text-xs text-fg-muted">
         {t.t('settings.ytdlpIntro')}
       </p>
+      <p className="text-xs text-fg-muted">
+        {t.t('settings.credentialHistoryHint')}
+      </p>
 
       <div>
         <div className="text-xs font-medium text-fg">{t.t('settings.globalArgs')}</div>

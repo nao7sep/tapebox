@@ -8,7 +8,23 @@ const { collectRun } = await import('@main/services/ytdlp')
 const { spawnStreaming, waitForExit } = await import('@main/io/spawn')
 
 describe('collectRun', () => {
+  it('masks credentials learned only from probe output in records and fallback, leaving parsing raw', async () => {
+    writeRecord.mockClear()
+    const raw = JSON.stringify({ formats: [{ cookies: 'sid=browser-secret', http_headers: { Authorization: 'Bearer header-secret' }, url: 'https://media.test/v?sig=link-secret&id=3' }] })
+    const child = spawnStreaming(process.execPath, ['-e', `process.stdout.write(${JSON.stringify(raw)})`])
+    const run = collectRun(child, { kind: 'probe', tapeId: 't1', scanId: null, url: 'https://example.test/v', args: ['--cookies-from-browser', 'firefox'] })
+    await waitForExit(child)
+    expect(run.stdout()).toBe(raw)
+    run.record()
+    const [, row, fallback] = writeRecord.mock.calls[0]!
+    for (const diagnostic of [JSON.stringify(row), fallback()]) {
+      expect(diagnostic).not.toMatch(/browser-secret|header-secret|link-secret/)
+      expect(diagnostic).toContain('[REDACTED]')
+    }
+  })
+
   it('records both streams whole with the exit code once the run ends', async () => {
+    writeRecord.mockClear()
     const stdoutText = Array.from({ length: 200 }, (_, i) => `line ${i} ✓`).join('\n')
     const script = `process.stdout.write(${JSON.stringify(stdoutText)}); process.stderr.write('ERROR: nope'); process.exit(3)`
     const args = ['-e', script]

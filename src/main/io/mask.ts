@@ -10,6 +10,29 @@
 export const REDACTED = '[REDACTED]'
 
 /**
+ * yt-dlp's YoutubeDL._calc_headers puts browser/file cookies in `cookies`
+ * and request headers in `http_headers`, including nested formats. They are
+ * not necessarily present in the arguments. Mask JSON string tokens without
+ * parsing the output so a killed process's incomplete JSON is protected too.
+ * Escaped quotes inside ordinary metadata strings are not property boundaries.
+ * YouTube's extractor also emits signature and proof-of-origin URL parameters;
+ * keep the URL and other parameters useful for diagnosing format selection.
+ * This is a diagnostic copy only, never the info passed back to the caller.
+ */
+export function maskYtdlpOutput(text: string): string {
+  const fields = text.replace(
+    /(^|[,{]\s*)"(cookies|cookie|authorization|proxy-authorization)"(\s*:\s*)"((?:\\.|[^"\\])*)("|$)/gim,
+    (_match, before: string, key: string, separator: string, value: string, end: string) => {
+      const scheme = /authorization$/i.test(key) ? /^(Basic|Bearer|Digest|Token|Negotiate)\s+/i.exec(value)?.[0] ?? '' : ''
+      return `${before}"${key}"${separator}"${scheme}${REDACTED}${end}`
+    },
+  )
+  return fields.replace(/https?:\/\/[^\s"<>\\]+/gi, (url) => url.replace(
+    /([?&](?:signature|sig|lsig|pot)=)[^&#]*/gi, `$1${REDACTED}`,
+  ))
+}
+
+/**
  * Output is searched only for credentials at least this long: a shorter one
  * would also match ordinary text. Arguments are masked by position whatever
  * their length.
