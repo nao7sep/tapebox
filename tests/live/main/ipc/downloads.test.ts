@@ -57,7 +57,6 @@ async function startApp(home: string) {
   vi.resetModules()
   handlers.clear()
   const { ensureDirs, sweepAbandonedStaging } = await import('@main/paths')
-  const { BINARY_ACQUIRE_TIMEOUT_MS } = await import('@main/io/network')
   const { openRecords, closeRecords } = await import('@main/io/records')
   const { loadSettings } = await import('@main/store/config')
   const { loadDependencies } = await import('@main/store/dependencies')
@@ -71,7 +70,7 @@ async function startApp(home: string) {
 
   await ensureDirs()
   openRecords()
-  await sweepAbandonedStaging(BINARY_ACQUIRE_TIMEOUT_MS)
+  await sweepAbandonedStaging()
   await loadSettings()
   await loadDependencies()
   await session.loadSession()

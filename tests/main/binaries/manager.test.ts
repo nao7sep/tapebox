@@ -2,7 +2,6 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Dependencies } from '@shared/dependencies'
-import { hostTag } from '@main/paths'
 
 const testRoot = vi.hoisted(
   () => `${process.env.TEMP ?? process.env.TMPDIR ?? '/tmp'}/tapebox-manager-${process.pid}`,
@@ -16,8 +15,6 @@ const extractFileFromZip = vi.hoisted(() => vi.fn())
 vi.mock('@main/paths', async () => {
   const { join } = await import('node:path')
   const { mkdir } = await import('node:fs/promises')
-  const { createHash } = await import('node:crypto')
-  const { hostname } = await import('node:os')
   return {
     paths: { temp: join(testRoot, 'temp'), bin: join(testRoot, 'bin') },
     binaryPath: (name: string) => join(testRoot, 'bin', `${name}.exe`),
@@ -25,9 +22,6 @@ vi.mock('@main/paths', async () => {
       await mkdir(join(testRoot, 'temp'), { recursive: true })
       await mkdir(join(testRoot, 'bin'), { recursive: true })
     },
-    // Mirrors the real @main/paths hostTag exactly, so downloadTempPath's assertion
-    // below checks the real staged-name grammar rather than a test-local stand-in.
-    hostTag: () => createHash('sha256').update(hostname()).digest('hex').slice(0, 8),
   }
 })
 
@@ -196,12 +190,9 @@ describe('checkForUpdates — the app-wide attempt time', () => {
 })
 
 describe('downloadTempPath', () => {
-  it('is <name>-<hostTag>-<pid>-<nanoid>.partial under temp/, so a crash-left file\'s ' +
-    'ownership can be proven before it is swept', () => {
+  it('is <name>-<nanoid>.partial under temp/', () => {
     const p = downloadTempPath('yt-dlp')
-    expect(p).toMatch(
-      new RegExp(`[/\\\\]temp[/\\\\]yt-dlp-${hostTag()}-${process.pid}-[A-Za-z0-9_-]{10}\\.partial$`),
-    )
+    expect(p).toMatch(/[/\\]temp[/\\]yt-dlp-[A-Za-z0-9_-]{10}\.partial$/)
   })
 
   it('discriminates by a random nanoid, not a raw Date.now() epoch', () => {

@@ -31,7 +31,6 @@ import { createQuit, type QuitChoice } from './quit.js'
 import { forceExitProcess } from './force-exit.js'
 import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
-import { BINARY_ACQUIRE_TIMEOUT_MS } from './io/network.js'
 import {
   applyLanguagePreference,
   registerLanguageHandlers,
@@ -135,15 +134,11 @@ async function startup(): Promise<void> {
     platform: process.platform,
     arch: process.arch,
   })
-  // Sweep this host's crash-left download staging once at launch (a
-  // crash-interrupted download must not leave a stale partial forever), proving
-  // ownership by host+pid before removing anything (managed-runtime-dependencies-
-  // conventions) rather than wiping the whole staging dir, which could delete
-  // another host's in-flight download on a relocated/shared TAPEBOX_DATA_DIR. It is
-  // optional startup cleanup, but its diagnostic must remain visible in this
-  // launch's log.
+  // Clear what an interrupted managed-tool install left in temp/ once at launch,
+  // before any install can start (paths.ts). It is optional startup cleanup, but
+  // its diagnostic must remain visible in this launch's log.
   try {
-    await sweepAbandonedStaging(BINARY_ACQUIRE_TIMEOUT_MS)
+    await sweepAbandonedStaging()
   } catch (error) {
     log.warn('temporary download staging could not be swept', { error: describeError(error) })
   }
