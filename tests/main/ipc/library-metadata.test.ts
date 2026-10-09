@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
-import { cancelAllWork } from '@main/work-registry'
+import { cancelAllWork, resumeWork } from '@main/work-registry'
 
 // Re-probing a tape and accepting the result. The catalog fields and the
 // sidecar's description are written for real; only the network-facing services
@@ -90,6 +90,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  // A test that quits closes the work registry; reopen it for the next one.
+  resumeWork()
   vi.restoreAllMocks()
   await rm(state.libraryDir, { recursive: true, force: true })
 })
@@ -388,5 +390,25 @@ describe('accepting refreshed metadata', () => {
     expect(state.tapes[0]?.title).toBe('Old title')
     expect(saveThumbnailJpeg).not.toHaveBeenCalled()
     expect(persistNow).not.toHaveBeenCalled()
+  })
+
+  it('finishes its catalog commit when cancelled after the sidecar has committed', async () => {
+    const sidecar = join(state.libraryDir, 'Take.json')
+    await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source' }), 'utf8')
+    state.tapes = [makeTape({ id: 'Lateabort1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
+    const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    let quitting: Promise<void> | undefined
+    // The library folder is opened for its sync right after the sidecar's rename.
+    vi.mocked(fileIo.open).mockImplementation(async (...args) => {
+      if (String(args[0]) === state.libraryDir && !quitting) quitting = cancelAllWork()
+      return original.open(...args)
+    })
+    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Lateabort1', metadata: ACCEPTED })
+    expect(quitting, 'the quit arrived after the sidecar committed').toBeDefined()
+    await quitting
+    expect(JSON.parse(await readFile(sidecar, 'utf8'))).toMatchObject({ title: 'New title' })
+    expect(persistNow).toHaveBeenCalledOnce()
+    expect(updated).toMatchObject({ title: 'New title', uploader: 'New uploader' })
+    expect(state.tapes[0]).toEqual(updated)
   })
 })

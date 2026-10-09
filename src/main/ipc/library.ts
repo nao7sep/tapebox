@@ -227,11 +227,18 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: s
     await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, assertCurrent)
   }
 
+  // Once the sidecar has committed, Apply finishes with its catalog commit even if
+  // it is cancelled or the app is quitting, so the two never disagree; the tape
+  // write claim keeps the fields checked above unchanged. Without a sidecar there
+  // was no await since the last check.
+  const current = session.getTape(tapeId)
+  if (!current) throw new Error(`Tape not found: ${tapeId}`)
+
   // Persist the accepted catalog fields. Duration and chapter count are NOT here:
   // they're fixed by the file and can't change unless it's replaced. sourceId and
   // the on-disk filenames are the tape's identity — left untouched.
   const updated: Tape = {
-    ...assertCurrent(),
+    ...current,
     title: metadata.title,
     uploader: metadata.uploader,
     thumbnailFilename,
