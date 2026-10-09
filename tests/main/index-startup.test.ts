@@ -48,7 +48,7 @@ const step = (name: string) => vi.fn(async () => { order.push(name) })
 vi.mock('@main/paths', () => ({ ensureDirs: vi.fn(async () => {}), sweepAbandonedStaging: vi.fn(async () => {}) }))
 vi.mock('@main/startup-dialog', () => ({ notifyCorruptConfig: vi.fn(), notifyCorruptSession: vi.fn(), notifyStartupFailure: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ initLogger: vi.fn(), isDebugEnabled: () => false, log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
-vi.mock('@main/io/records', () => ({ closeRecords: vi.fn(async () => {}), flushRecordsBeforeExit: vi.fn(), onRecordStored: vi.fn(), openRecords: () => 'session' }))
+vi.mock('@main/io/records', () => ({ closeRecords: vi.fn(async () => {}), flushRecordsBeforeExit: vi.fn(() => { order.push('records-drain') }), onRecordStored: vi.fn(), openRecords: () => 'session' }))
 vi.mock('@main/io/records-read', () => ({ closeRecordsReader: vi.fn(async () => {}) }))
 vi.mock('@main/records-window', () => ({ notifyRecordsChanged: vi.fn() }))
 vi.mock('@main/store/config', () => ({ getSettings: () => ({ language: 'en', theme: 'system' }), loadSettings: vi.fn(async () => ({ status: 'loaded' })) }))
@@ -112,10 +112,11 @@ describe('the Electron entry', () => {
     expect(windows[0]!.focus).toHaveBeenCalledOnce()
   })
 
-  it('kills the download tools before a forced exit', () => {
+  it('lands the fatal record, then kills the download tools before a forced exit', () => {
     order.length = 0
     const uncaught = processHandlers.find(([event]) => event === 'uncaughtException')![1]
     uncaught(new Error('fatal'))
-    expect(order).toEqual(['kill-tools', 'force-exit'])
+    expect(order).toEqual(['records-drain', 'kill-tools', 'force-exit'])
+    expect(processHandlers.map(([event]) => event), 'no exit hook: every way out closes the records itself').not.toContain('exit')
   })
 })

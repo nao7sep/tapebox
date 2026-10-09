@@ -124,7 +124,7 @@ describe('log records', () => {
     await records.closeRecords()
 
     const [file] = readdirSync(paths.logs)
-    expect(file).toMatch(/^\d{8}-\d{6}-\d{3}-utc\.log$/)
+    expect(file).toMatch(/^\d{8}-\d{6}-utc\.log$/)
     const lines = readFileSync(join(paths.logs, file!), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
     expect(lines).toMatchObject([
       { level: 'error', message: 'records database could not be opened; writing to a text file' },

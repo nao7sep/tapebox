@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { paths } from '@main/paths'
 import { describeError } from '@shared/error'
 import type { LogLevel } from '@shared/log'
-import { utcTimestampForFilenameMs } from '@shared/utc'
+import { utcTimestampForFilename } from '@shared/utc'
 import { toJson } from './log-format'
 import type { RecordWriteData, RecordWriteRequest, RecordWriteResponse } from './records-write-worker'
 export type { RecordTable, RecordRow } from './records-write-worker'
@@ -14,7 +14,13 @@ import type { RecordTable, RecordRow } from './records-write-worker'
 export const RECORD_WRITE_TIMEOUT_MS = 10_000
 const CLOSE_DRAIN_TIMEOUT_MS = 1_000
 export const TERMINAL_RECORD_DRAIN_MS = 500
+/** Records waiting on the writer at most; beyond it a record goes to the console
+ *  rather than queue without bound behind a slow writer (logging-conventions). */
+export const RECORD_PENDING_LIMIT = 1_000
 let session: string | null = null
+let fallbackPath: string | null = null
+/** Whether this launch's writer was already replaced once after a stall. */
+let replaced = false
 let worker: Worker | null = null
 let closed = false
 let nextId = 1
@@ -42,7 +48,8 @@ function retire(current: Worker): Promise<void> {
 
 function abandon(current: Worker, error: unknown): void {
   if (worker !== current && ![...pending.values()].some((entry) => entry.worker === current)) return
-  if (worker === current) worker = null
+  const wasCurrent = worker === current
+  if (wasCurrent) worker = null
   toConsole('error', note('records writer failed; unfinished write outcomes are unknown', error))
   for (const [id, entry] of pending) {
     if (entry.worker !== current) continue
@@ -52,6 +59,12 @@ function abandon(current: Worker, error: unknown): void {
     entry.resolve()
   }
   void retire(current)
+  // Later records still reach this launch's text file, through one replacement
+  // writer that never touches the database the first one stalled on.
+  if (wasCurrent && !closed && !replaced && session !== null && fallbackPath !== null) {
+    replaced = true
+    startWriter(true)
+  }
 }
 
 function acknowledge(created: Worker, response: RecordWriteResponse): void {
@@ -72,15 +85,23 @@ export function openRecords(): string {
   if (worker) throw new Error('Records are already open.')
   const started = new Date()
   session = started.toISOString()
+  // Seconds name it: one launch writes one file, and a launch takes longer than one.
+  fallbackPath = join(paths.logs, `${utcTimestampForFilename(started)}.log`)
   closed = false
   closing = null
   terminalFlushed = false
+  replaced = false
+  startWriter(false)
+  return session
+}
+
+function startWriter(textOnly: boolean): void {
   const { port1, port2 } = new MessageChannel()
   try {
     const module = import.meta.url.endsWith('.ts') ? './records-write-worker.ts' : './records-write-worker.js'
     const created = new Worker(new URL(module, import.meta.url), { workerData: {
       databasePath: paths.records, logsPath: paths.logs, responsePort: port2,
-      fallbackPath: join(paths.logs, `${utcTimestampForFilenameMs(started)}.log`), session,
+      fallbackPath: fallbackPath!, session: session!, textOnly,
     } satisfies RecordWriteData, transferList: [port2] })
     responsePorts.set(created, port1)
     port1.on('message', (response: RecordWriteResponse) => acknowledge(created, response))
@@ -91,7 +112,6 @@ export function openRecords(): string {
     worker = created
     enqueue({}, '', 'error', false)
   } catch (error) { port1.close(); port2.close(); toConsole('error', note('records writer could not start; using the console', error)) }
-  return session
 }
 
 export function currentSession(): string | null { return session }
@@ -111,7 +131,7 @@ function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: L
 
 /** Whether this call already printed its fallback to the console. */
 export function writeRecord(table: RecordTable, row: RecordRow, text: () => string, level: LogLevel = 'info', mirrored = false): boolean {
-  if (session === null || closed || !worker) { toConsole(level, text()); return true }
+  if (session === null || closed || !worker || pending.size >= RECORD_PENDING_LIMIT) { toConsole(level, text()); return true }
   const line = text()
   enqueue({ table, row, text: line }, line, level, mirrored)
   return false

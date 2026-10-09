@@ -21,8 +21,9 @@ class FakeWorker extends EventEmitter {
   retirement = new Promise<number>((resolve) => { this.release = () => resolve(0) })
   terminate = vi.fn(() => this.retirement)
   responsePort: FakePort
-  constructor(_url: URL, options: { workerData: { responsePort: FakePort } }) {
-    super(); this.responsePort = options.workerData.responsePort; state.workers.push(this)
+  textOnly: boolean
+  constructor(_url: URL, options: { workerData: { responsePort: FakePort; textOnly?: boolean } }) {
+    super(); this.responsePort = options.workerData.responsePort; this.textOnly = options.workerData.textOnly ?? false; state.workers.push(this)
   }
   override emit(event: string, ...args: unknown[]): boolean {
     if (event === 'message') { this.responsePort.postMessage(args[0]); return true }
@@ -62,6 +63,12 @@ it('bounds a held writer, retains unknown outcome diagnostics and joins its actu
   expect(worker.terminate).toHaveBeenCalledOnce()
   expect(console.error).toHaveBeenCalledWith(expect.stringContaining('unfinished write outcomes are unknown'))
   expect(console.log).toHaveBeenCalledWith('record fallback')
+  // Later records still reach the launch's text file through one replacement writer.
+  expect(state.workers.map((created) => created.textOnly)).toEqual([false, true])
+  const replacement = state.workers[1]!
+  records.writeRecord('logs', { message: 'after the stall' }, () => 'after the stall')
+  expect(replacement.requests.map((request) => request.text ?? null)).toEqual([null, 'after the stall'])
+  for (const request of replacement.requests) replacement.emit('message', { id: request.id, stored: false, diagnostics: [] })
   const closing = records.closeRecords()
   let closed = false
   void closing.then(() => { closed = true })
@@ -71,8 +78,18 @@ it('bounds a held writer, retains unknown outcome diagnostics and joins its actu
   worker.emit('message', { id: worker.requests[1]!.id, stored: true, diagnostics: [] })
   expect(worker.terminate).toHaveBeenCalledOnce()
   worker.release()
+  replacement.release()
   await closing
   expect(vi.getTimerCount()).toBe(0)
+})
+
+it('sends a record to the console rather than queue it without bound behind a slow writer', () => {
+  records.openRecords()
+  const worker = state.workers[0]!
+  for (let index = 0; index < records.RECORD_PENDING_LIMIT - 1; index++) records.writeRecord('logs', { message: 'queued' }, () => 'queued')
+  expect(records.writeRecord('logs', { message: 'over' }, () => 'over the limit')).toBe(true)
+  expect(console.log).toHaveBeenCalledWith('over the limit')
+  expect(worker.requests).toHaveLength(records.RECORD_PENDING_LIMIT)
 })
 
 it('seals writes at close while draining stored acknowledgements exactly once', async () => {

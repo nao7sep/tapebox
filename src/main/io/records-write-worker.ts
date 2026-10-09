@@ -10,7 +10,9 @@ export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
 export type RecordRow = Record<string, SQLInputValue>
 export type RecordWriteRequest = { id: number; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer }
 export type RecordWriteResponse = { id: number; stored: boolean; console?: string; diagnostics: string[] }
-export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; responsePort?: MessagePort }
+/** `textOnly`: the replacement for a writer that stalled, which writes only the
+ *  text file and never opens the database that stalled it. */
+export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; responsePort?: MessagePort; textOnly?: boolean }
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS logs (
@@ -103,7 +105,8 @@ port.on('message', (request: RecordWriteRequest) => {
   const response: RecordWriteResponse = { id: request.id, stored: false, diagnostics: [] }
   if (!initialized) {
     initialized = true
-    try { db = openWritableDatabase(data.databasePath, FORMAT_VERSIONS.records, SCHEMA) }
+    if (data.textOnly) fallback(failureNote('records writer replaced after a stall; writing to a text file', new Error('replaced')), response, true)
+    else try { db = openWritableDatabase(data.databasePath, FORMAT_VERSIONS.records, SCHEMA) }
     catch (error) { fallback(failureNote('records database could not be opened; writing to a text file', error), response, true) }
   }
   if (request.table && request.row) {

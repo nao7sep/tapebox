@@ -226,11 +226,11 @@ const quit = createQuit({
     await closeRecordsReader()
     await closeRecords()
   },
+  // The forced exit follows at once, so only the synchronous records drain can
+  // still land the shutdown line.
   endNow: () => {
     log.info('shutdown', { reason: 'session-end' })
-    void closeRecordsReader()
     flushRecordsBeforeExit()
-    void closeRecords()
   },
   warn: (message, details) => log.warn(message, details),
   exit: (forced) => {
@@ -258,23 +258,19 @@ async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoic
 }
 
 // Global last-resort hooks. An uncaught exception is fatal: log it with full
-// fidelity, close the records database, then exit. The catalog keeps its last
-// committed state (store/session.ts). An unhandled rejection is logged but not
-// fatal — a stray fire-and-forget should not take a desktop app down, and a
-// logged error at `error` level is a record, not a silent swallow. `exit` is a
-// final synchronous records flush for any path that bypasses the clean shutdown.
+// fidelity, drain the records synchronously so that line lands, then force the
+// exit. The catalog keeps its last committed state (store/session.ts). An
+// unhandled rejection is logged but not fatal — a stray fire-and-forget should
+// not take a desktop app down, and a logged error at `error` level is a record,
+// not a silent swallow. Every other way out closes the records itself: a quit
+// through its close step, a forced exit without any cleanup at all.
 process.on('uncaughtException', (err) => {
   log.error('uncaught exception', { error: describeError(err) })
   flushRecordsBeforeExit()
-  void closeRecords()
   exitNow()
 })
 process.on('unhandledRejection', (reason) => {
   log.error('unhandled rejection', { error: describeError(reason) })
-})
-process.on('exit', () => {
-  flushRecordsBeforeExit()
-  void closeRecords()
 })
 
 void app.whenReady().then(() => {
