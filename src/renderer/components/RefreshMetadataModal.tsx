@@ -103,7 +103,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
         </Button>
       )}
       {probed ? (
-        <Button variant="primary" onClick={() => void apply()} loading={applying} disabled={!dirty}>
+        <Button variant="primary" onClick={() => void apply()} loading={applying} disabled={!dirty || probing}>
           {t.t(applying ? 'refresh.applying' : 'refresh.apply')}
         </Button>
       ) : (

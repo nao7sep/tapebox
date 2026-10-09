@@ -464,10 +464,10 @@
   "settings.moveProgress": {
     "other": "ライブラリを移動中: {count} 個中 {done} 個のファイル ({bytesTotal} 中 {bytesDone})"
   },
-  "settings.unsavedTitle": "未保存の変更",
-  "settings.unsavedMessage": "変更を破棄しますか？",
-  "settings.keepEditing": "編集を続ける",
-  "settings.discard": "破棄",
+  "common.unsavedTitle": "未保存の変更",
+  "common.unsavedMessage": "変更を破棄しますか？",
+  "common.keepEditing": "編集を続ける",
+  "common.discard": "破棄",
   "settings.moveTitle": "ライブラリを移動しますか？",
   "settings.moveMessage": {
     "other": "{count} 本のテープを新しいフォルダに移動します。新しいフォルダが保存される前に、移動が完全に終わる必要があります。"

@@ -5,7 +5,7 @@ const { ipcInvoke, logError } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), logError
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
-import { archiveTape, moveTapeToBox } from '@renderer/lib/tapeActions'
+import { advanceSelection, archiveTape, moveTapeToBox } from '@renderer/lib/tapeActions'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -86,5 +86,40 @@ describe('archive and placement settlement', () => {
       reveal: 'This tape could not be shown in its folder. The tape is unchanged; try again.',
       placement: 'This tape could not be moved to that box. Its previous location remains in use; try again.',
     })
+  })
+})
+
+describe('selection after an action settles', () => {
+  it('moves to the neighbour only while the leaving tape is still the one selected', () => {
+    const leaving = tape({ id: 'Leaving001', order: 0 })
+    const next = tape({ id: 'Neighbour1', order: 1 })
+    const other = tape({ id: 'Elsewhere1', order: 2 })
+    useTapesStore.setState({ tapes: [leaving, next, other] })
+    useSelectionStore.setState({ selectedId: leaving.id })
+
+    const advance = advanceSelection(leaving)
+    // The user moves on, say to rename another tape, while the removal is still running.
+    useSelectionStore.getState().select(other.id)
+    advance()
+    expect(useSelectionStore.getState().selectedId).toBe(other.id)
+
+    useSelectionStore.getState().select(leaving.id)
+    advanceSelection(leaving)()
+    expect(useSelectionStore.getState().selectedId).toBe(next.id)
+  })
+
+  it('returns a tape whose archive failed to view only while it is still selected', async () => {
+    const archived = tape({ id: 'Archived01' })
+    const other = tape({ id: 'Elsewhere2', order: 1 })
+    useTapesStore.setState({ tapes: [archived, other] })
+    useSelectionStore.setState({ selectedId: archived.id })
+    let reject!: (error: Error) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+
+    archiveTape(archived, 'tape')
+    useSelectionStore.getState().select(other.id)
+    reject(new Error('archive failed'))
+    await vi.waitFor(() => expect(useTapesStore.getState().tapes.find((t) => t.id === archived.id)?.archivedAtUtc).toBeNull())
+    expect(useSelectionStore.getState().selectedId).toBe(other.id)
   })
 })

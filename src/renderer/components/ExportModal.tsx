@@ -5,6 +5,7 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { releaseVideo } from '@renderer/lib/video'
 import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
+import { DiscardChangesPrompt } from '@renderer/components/DiscardChangesPrompt'
 import { Button, Field, InlineError, Toggle } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
@@ -34,7 +35,15 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   const [generating, setGenerating] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<Message | null>(null)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const t = useI18n()
+
+  function requestClose() {
+    if (exporting) return
+    const edited = name !== currentName || dir !== defaultDir || deleteFromApp !== (settings?.deleteAfterExport ?? true)
+    if (edited) setConfirmDiscard(true)
+    else onClose()
+  }
 
   async function pickDir() {
     setError(null)
@@ -66,7 +75,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   const busy = exporting || generating
   const footer = (
     <>
-      <Button variant="ghost" onClick={onClose} disabled={exporting}>{t.t('common.cancel')}</Button>
+      <Button variant="ghost" onClick={requestClose} disabled={exporting}>{t.t('common.cancel')}</Button>
       <Button
         variant="primary"
         onClick={() => void run()}
@@ -79,7 +88,8 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   )
 
   return (
-    <Modal title={t.t('export.title')} onClose={onClose} size="2xl" footer={footer} closeDisabled={exporting}>
+    <>
+    <Modal title={t.t('export.title')} onClose={requestClose} size="2xl" footer={footer} closeDisabled={exporting}>
       <NameEditor
         tape={tape}
         value={name}
@@ -135,5 +145,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
 
       {error && <InlineError className="mt-4">{t.text(error)}</InlineError>}
     </Modal>
+    {confirmDiscard && <DiscardChangesPrompt onKeepEditing={() => setConfirmDiscard(false)} onDiscard={onClose} />}
+    </>
   )
 }

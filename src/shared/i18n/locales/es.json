@@ -518,10 +518,10 @@
     "many": "Moviendo la biblioteca: {done} de {count} de archivos ({bytesDone} de {bytesTotal})",
     "other": "Moviendo la biblioteca: {done} de {count} archivos ({bytesDone} de {bytesTotal})"
   },
-  "settings.unsavedTitle": "Cambios sin guardar",
-  "settings.unsavedMessage": "¿Descartar tus cambios?",
-  "settings.keepEditing": "Seguir editando",
-  "settings.discard": "Descartar",
+  "common.unsavedTitle": "Cambios sin guardar",
+  "common.unsavedMessage": "¿Descartar tus cambios?",
+  "common.keepEditing": "Seguir editando",
+  "common.discard": "Descartar",
   "settings.moveTitle": "¿Mover la biblioteca?",
   "settings.moveMessage": {
     "one": "Se moverá {count} cinta a la carpeta nueva. El traslado debe terminar por completo antes de que se guarde la carpeta nueva.",

@@ -133,6 +133,19 @@ describe('ScanPageModal bulk add', () => {
     expect(buttonByText('Add 1 tape')).toBeTruthy()
   })
 
+  it('cannot be closed while its tapes are being added, so a failure is still shown', async () => {
+    const onClose = vi.fn()
+    await mount(onClose)
+    await scanOneEntry()
+    ipcInvoke.mockImplementationOnce(() => new Promise(() => {})) // downloads:addBulk, still running
+    await act(async () => { buttonByText('Add 1 tape').click() })
+    const panel = document.querySelector('[role="dialog"]') as HTMLElement
+    await act(async () => {
+      panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('closes without an error result when addBulk succeeds', async () => {
     const onClose = vi.fn()
     await mount(onClose)

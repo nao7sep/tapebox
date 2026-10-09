@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useDroppable } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -55,6 +55,10 @@ export function BoxList({
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
+  // Read by a rename that fails after its editor closed: it reopens with the name
+  // the user typed only while no other edit has started.
+  const editingRef = useRef(editingId)
+  editingRef.current = editingId
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const actionErrors = useBoxActionResultsStore((state) => state.results)
   const setActionResult = useBoxActionResultsStore((state) => state.setResult)
@@ -110,6 +114,10 @@ export function BoxList({
       await ipcInvoke('boxes:rename', { boxId: id, name })
     } catch (error) {
       setActionResult('rename', presentFailure(error, message('boxes.renameFailed'), 'box rename failed'))
+      if (editingRef.current === null) {
+        setDraftName(name)
+        setEditingId(id)
+      }
     }
   }
 

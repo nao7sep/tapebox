@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Tape } from '@shared/domain'
 import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
+import { DiscardChangesPrompt } from '@renderer/components/DiscardChangesPrompt'
 import { Button, InlineError } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
@@ -28,6 +29,13 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
   const t = useI18n()
   const [applying, setApplying] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+
+  function requestClose() {
+    if (applying) return
+    if (name !== (tape.name ?? '')) setConfirmDiscard(true)
+    else onClose()
+  }
 
   async function apply() {
     setError(null)
@@ -44,7 +52,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
   const busy = applying || generating
   const footer = (
     <>
-      <Button variant="ghost" onClick={onClose} disabled={applying}>{t.t('common.cancel')}</Button>
+      <Button variant="ghost" onClick={requestClose} disabled={applying}>{t.t('common.cancel')}</Button>
       <Button
         variant="primary"
         onClick={() => void apply()}
@@ -57,7 +65,8 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
   )
 
   return (
-    <Modal title={t.t('rename.title')} onClose={onClose} size="2xl" footer={footer} closeDisabled={applying}>
+    <>
+    <Modal title={t.t('rename.title')} onClose={requestClose} size="2xl" footer={footer} closeDisabled={applying}>
       <div className="mb-4">
         <div className="text-xs text-fg-muted">{t.t('rename.currentName')}</div>
         <div className="mt-1 truncate text-base text-fg-emphasis">{tape.filename ?? '—'}</div>
@@ -74,5 +83,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
 
       {error && <InlineError className="mt-4">{t.text(error)}</InlineError>}
     </Modal>
+    {confirmDiscard && <DiscardChangesPrompt onKeepEditing={() => setConfirmDiscard(false)} onDiscard={onClose} />}
+    </>
   )
 }

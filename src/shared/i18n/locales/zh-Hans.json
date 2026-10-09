@@ -464,10 +464,10 @@
   "settings.moveProgress": {
     "other": "正在移动资料库：{done}/{count} 个文件（{bytesDone}/{bytesTotal}）"
   },
-  "settings.unsavedTitle": "未保存的更改",
-  "settings.unsavedMessage": "要放弃你的更改吗？",
-  "settings.keepEditing": "继续编辑",
-  "settings.discard": "放弃",
+  "common.unsavedTitle": "未保存的更改",
+  "common.unsavedMessage": "要放弃你的更改吗？",
+  "common.keepEditing": "继续编辑",
+  "common.discard": "放弃",
   "settings.moveTitle": "要移动资料库吗？",
   "settings.moveMessage": {
     "other": "这会将 {count} 盘录像带移到新文件夹。新文件夹保存之前，移动必须全部完成。"

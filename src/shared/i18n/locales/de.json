@@ -491,10 +491,10 @@
     "one": "Mediathek wird verschoben: {done} von {count} Datei ({bytesDone} von {bytesTotal})",
     "other": "Mediathek wird verschoben: {done} von {count} Dateien ({bytesDone} von {bytesTotal})"
   },
-  "settings.unsavedTitle": "Nicht gespeicherte Änderungen",
-  "settings.unsavedMessage": "Ihre Änderungen verwerfen?",
-  "settings.keepEditing": "Weiter bearbeiten",
-  "settings.discard": "Verwerfen",
+  "common.unsavedTitle": "Nicht gespeicherte Änderungen",
+  "common.unsavedMessage": "Ihre Änderungen verwerfen?",
+  "common.keepEditing": "Weiter bearbeiten",
+  "common.discard": "Verwerfen",
   "settings.moveTitle": "Mediathek verschieben?",
   "settings.moveMessage": {
     "one": "Dadurch wird {count} Band in den neuen Ordner verschoben. Das Verschieben muss vollständig abgeschlossen sein, bevor der neue Ordner gespeichert wird.",

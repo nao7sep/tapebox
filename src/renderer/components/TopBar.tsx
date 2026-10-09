@@ -41,7 +41,7 @@ export function TopBar({ clipboardEnabled }: Props) {
     try {
       await ipcInvoke('downloads:add', { url: v })
       setError(null)
-      consume()
+      consume(v)
     } catch (err) {
       setError(presentFailure(err, message('topBar.addFailed'), 'add URL failed'))
     } finally {

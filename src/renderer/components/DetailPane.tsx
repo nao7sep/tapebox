@@ -70,9 +70,12 @@ export function DetailPane({
   const [sidecar, setSidecar] = useState<SidecarRaw | null>(null)
   const [sidecarError, setSidecarError] = useState<Message | null>(null)
   const [playbackError, setPlaybackError] = useState<Message | null>(null)
-  const [showRefresh, setShowRefresh] = useState(false)
-  const [showRename, setShowRename] = useState(false)
-  const [showExport, setShowExport] = useState(false)
+  // Each editor is opened for one tape and stays bound to it: should the pane be
+  // handed another tape while one is open, that editor closes rather than carry
+  // its draft over to the other tape.
+  const [refreshFor, setRefreshFor] = useState<string | null>(null)
+  const [renameFor, setRenameFor] = useState<string | null>(null)
+  const [exportFor, setExportFor] = useState<string | null>(null)
   // The player keeps playing while the rename modal is open; it's only torn down
   // for the brief moment the file is actually re-stemmed (renaming), after which
   // it remounts and seeks back to where it was (resumeRef).
@@ -333,9 +336,9 @@ export function DetailPane({
 
       if (tape.state !== 'downloaded') return // R / E / M act on a downloaded tape's files
       const key = e.key.toLowerCase()
-      if (key === 'r') { e.preventDefault(); setShowRename(true) }
-      else if (key === 'e') { e.preventDefault(); setShowExport(true) }
-      else if (key === 'm') { e.preventDefault(); setShowRefresh(true) }
+      if (key === 'r') { e.preventDefault(); setRenameFor(tape.id) }
+      else if (key === 'e') { e.preventDefault(); setExportFor(tape.id) }
+      else if (key === 'm') { e.preventDefault(); setRefreshFor(tape.id) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -550,9 +553,9 @@ export function DetailPane({
               <ActionButton onClick={() => void revealFile()}>{t.t('detail.showInFolder')}</ActionButton>
               {/* Housekeep: refresh first (rename and export both benefit from
                   up-to-date metadata), then rename, then export. */}
-              <ActionButton onClick={() => setShowRefresh(true)}>{t.t('detail.refreshMetadata')}</ActionButton>
-              <ActionButton onClick={() => setShowRename(true)}>{t.t('detail.rename')}</ActionButton>
-              <ActionButton onClick={() => setShowExport(true)}>{t.t('detail.export')}</ActionButton>
+              <ActionButton onClick={() => setRefreshFor(tape.id)}>{t.t('detail.refreshMetadata')}</ActionButton>
+              <ActionButton onClick={() => setRenameFor(tape.id)}>{t.t('detail.rename')}</ActionButton>
+              <ActionButton onClick={() => setExportFor(tape.id)}>{t.t('detail.export')}</ActionButton>
               {/* Organize, once the work is done. */}
               {tape.archivedAtUtc ? (
                 <>
@@ -610,14 +613,14 @@ export function DetailPane({
         </aside>
       )}
 
-      {showRefresh && (
-        <RefreshMetadataModal tape={tape} onClose={() => setShowRefresh(false)} />
+      {refreshFor === tape.id && (
+        <RefreshMetadataModal key={tape.id} tape={tape} onClose={() => setRefreshFor(null)} />
       )}
-      {showRename && (
-        <RenameModal tape={tape} onRename={performRename} onClose={() => setShowRename(false)} />
+      {renameFor === tape.id && (
+        <RenameModal key={tape.id} tape={tape} onRename={performRename} onClose={() => setRenameFor(null)} />
       )}
-      {showExport && (
-        <ExportModal tape={tape} videoRef={videoRef} onClose={() => setShowExport(false)} />
+      {exportFor === tape.id && (
+        <ExportModal key={tape.id} tape={tape} videoRef={videoRef} onClose={() => setExportFor(null)} />
       )}
     </div>
   )

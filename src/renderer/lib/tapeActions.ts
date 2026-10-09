@@ -61,13 +61,16 @@ export function neighborOf(tape: Tape): string | null {
 /**
  * The 'list' policy, captured BEFORE the list changes: returns a function to run
  * after the action that selects the leaving tape's neighbor — but only if that tape
- * was the selected one. Dragging or removing some other row must never steal the
- * current selection.
+ * was the selected one, and still is when the action finishes. Dragging or removing
+ * some other row, or a selection the user made while the action ran, must never be
+ * taken over: an open editor belongs to the tape it was opened for.
  */
 export function advanceSelection(tape: Tape): () => void {
   if (useSelectionStore.getState().selectedId !== tape.id) return () => {}
   const next = neighborOf(tape)
-  return () => useSelectionStore.getState().select(next)
+  return () => {
+    if (useSelectionStore.getState().selectedId === tape.id) useSelectionStore.getState().select(next)
+  }
 }
 
 /** The 'tape' policy: point the view at where the tape now lives and select it.
@@ -119,7 +122,8 @@ function relocate(
     if (!current) return
     if (current.archivedAtUtc !== optimistic.archivedAtUtc || current.boxId !== optimistic.boxId) return
     useTapesStore.getState().upsert(tape)
-    if (keep === 'tape') {
+    // Back where it was, but only while it is still the tape the user is on.
+    if (keep === 'tape' && useSelectionStore.getState().selectedId === tape.id) {
       revealTape(tape.id, { archived: !!tape.archivedAtUtc, boxId: tape.boxId })
     }
   })

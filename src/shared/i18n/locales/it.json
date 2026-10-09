@@ -518,10 +518,10 @@
     "many": "Spostamento della libreria: {done} di {count} di file ({bytesDone} di {bytesTotal})",
     "other": "Spostamento della libreria: {done} di {count} file ({bytesDone} di {bytesTotal})"
   },
-  "settings.unsavedTitle": "Modifiche non salvate",
-  "settings.unsavedMessage": "Scartare le modifiche?",
-  "settings.keepEditing": "Continua a modificare",
-  "settings.discard": "Scarta",
+  "common.unsavedTitle": "Modifiche non salvate",
+  "common.unsavedMessage": "Scartare le modifiche?",
+  "common.keepEditing": "Continua a modificare",
+  "common.discard": "Scarta",
   "settings.moveTitle": "Spostare la libreria?",
   "settings.moveMessage": {
     "one": "{count} cassetta verrà spostata nella nuova cartella. Lo spostamento deve finire completamente prima che la nuova cartella venga salvata.",

@@ -12,6 +12,7 @@ import { useTapesStore } from '@renderer/store/tapes'
 import { useToastStore } from '@renderer/store/toast'
 import { Modal } from '@renderer/components/Modal'
 import { ConfirmModal } from '@renderer/components/ConfirmModal'
+import { DiscardChangesPrompt } from '@renderer/components/DiscardChangesPrompt'
 import {
   AutoTextarea,
   Button,
@@ -181,7 +182,8 @@ export function SettingsModal({ onClose }: Props) {
       const patch: SettingsSets = changedSettings(pickEditable(original), pickEditable(draft))
       if (Object.keys(patch).length > 0) {
         const { settings: updated, warning } = await ipcInvoke('settings:update', patch)
-        useSettingsStore.getState().setHydratedSettings(updated)
+        // Not a rehydration: a playback toggle's own save may still be in flight.
+        useSettingsStore.getState().setSettings(updated)
         setOriginal(updated)
         setDraft(updated)
         // A committed save's cleanup warning remains after the dialog closes.
@@ -319,14 +321,9 @@ export function SettingsModal({ onClose }: Props) {
       </Modal>
 
       {confirmDiscard && (
-        <ConfirmModal
-          title={t.t('settings.unsavedTitle')}
-          message={t.t('settings.unsavedMessage')}
-          cancelLabel={t.t('settings.keepEditing')}
-          confirmLabel={t.t('settings.discard')}
-          danger
-          onCancel={() => setConfirmDiscard(false)}
-          onConfirm={() => {
+        <DiscardChangesPrompt
+          onKeepEditing={() => setConfirmDiscard(false)}
+          onDiscard={() => {
             setConfirmDiscard(false)
             onClose()
           }}

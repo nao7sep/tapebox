@@ -491,10 +491,10 @@
     "one": "Moving library: {done} of {count} file ({bytesDone} of {bytesTotal})",
     "other": "Moving library: {done} of {count} files ({bytesDone} of {bytesTotal})"
   },
-  "settings.unsavedTitle": "Unsaved changes",
-  "settings.unsavedMessage": "Discard your changes?",
-  "settings.keepEditing": "Keep editing",
-  "settings.discard": "Discard",
+  "common.unsavedTitle": "Unsaved changes",
+  "common.unsavedMessage": "Discard your changes?",
+  "common.keepEditing": "Keep editing",
+  "common.discard": "Discard",
   "settings.moveTitle": "Move library?",
   "settings.moveMessage": {
     "one": "This will move {count} tape to the new folder. The move must finish completely before the new folder is saved.",

@@ -56,10 +56,11 @@ export function useClipboardUrl(enabled: boolean, initial = '') {
     if (isImportableUrl(pasted)) autoFilledRef.current = pasted
   }
 
-  /** Clear the field after using its value, suppressing immediate re-fill. */
-  function consume() {
-    autoFilledRef.current = urlRef.current.trim()
-    setUrl('')
+  /** Clear the field after using `sent`, suppressing its immediate re-fill. A URL
+   *  typed while `sent` was being added stays: it is the user's newer input. */
+  function consume(sent: string) {
+    autoFilledRef.current = sent
+    if (urlRef.current.trim() === sent) setUrl('')
   }
 
   return { url, setUrl, onPaste, consume }

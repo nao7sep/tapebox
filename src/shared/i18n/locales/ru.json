@@ -545,10 +545,10 @@
     "many": "Перемещение медиатеки: {done} из {count} файлов ({bytesDone} из {bytesTotal})",
     "other": "Перемещение медиатеки: {done} из {count} файла ({bytesDone} из {bytesTotal})"
   },
-  "settings.unsavedTitle": "Несохранённые изменения",
-  "settings.unsavedMessage": "Отменить ваши изменения?",
-  "settings.keepEditing": "Продолжить правку",
-  "settings.discard": "Отменить изменения",
+  "common.unsavedTitle": "Несохранённые изменения",
+  "common.unsavedMessage": "Отменить ваши изменения?",
+  "common.keepEditing": "Продолжить правку",
+  "common.discard": "Отменить изменения",
   "settings.moveTitle": "Переместить медиатеку?",
   "settings.moveMessage": {
     "one": "В новую папку будет перемещена {count} кассета. Перемещение должно полностью завершиться, прежде чем новая папка будет сохранена.",

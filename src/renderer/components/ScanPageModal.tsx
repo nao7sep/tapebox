@@ -216,7 +216,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   )
 
   return (
-    <Modal title={t.t('scan.title')} onClose={onClose} size="2xl" footer={footer}>
+    <Modal title={t.t('scan.title')} onClose={onClose} size="2xl" footer={footer} closeDisabled={adding}>
       <div className="flex gap-2">
         <input
           type="text"

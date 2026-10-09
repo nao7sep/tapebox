@@ -518,10 +518,10 @@
     "many": "Déplacement de la bibliothèque\u00a0: {done} sur {count} de fichiers ({bytesDone} sur {bytesTotal})",
     "other": "Déplacement de la bibliothèque\u00a0: {done} sur {count} fichiers ({bytesDone} sur {bytesTotal})"
   },
-  "settings.unsavedTitle": "Modifications non enregistrées",
-  "settings.unsavedMessage": "Abandonner vos modifications\u00a0?",
-  "settings.keepEditing": "Continuer la modification",
-  "settings.discard": "Abandonner",
+  "common.unsavedTitle": "Modifications non enregistrées",
+  "common.unsavedMessage": "Abandonner vos modifications\u00a0?",
+  "common.keepEditing": "Continuer la modification",
+  "common.discard": "Abandonner",
   "settings.moveTitle": "Déplacer la bibliothèque\u00a0?",
   "settings.moveMessage": {
     "one": "{count} cassette va être déplacée vers le nouveau dossier. Le déplacement doit se terminer entièrement avant que le nouveau dossier soit enregistré.",

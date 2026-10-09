@@ -518,10 +518,10 @@
     "many": "Movendo a biblioteca: {done} de {count} de arquivos ({bytesDone} de {bytesTotal})",
     "other": "Movendo a biblioteca: {done} de {count} arquivos ({bytesDone} de {bytesTotal})"
   },
-  "settings.unsavedTitle": "Alterações não salvas",
-  "settings.unsavedMessage": "Descartar suas alterações?",
-  "settings.keepEditing": "Continuar editando",
-  "settings.discard": "Descartar",
+  "common.unsavedTitle": "Alterações não salvas",
+  "common.unsavedMessage": "Descartar suas alterações?",
+  "common.keepEditing": "Continuar editando",
+  "common.discard": "Descartar",
   "settings.moveTitle": "Mover a biblioteca?",
   "settings.moveMessage": {
     "one": "{count} fita será movida para a nova pasta. A movimentação precisa terminar por completo antes que a nova pasta seja salva.",
