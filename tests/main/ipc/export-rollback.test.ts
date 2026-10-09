@@ -1,5 +1,5 @@
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,40 +14,21 @@ vi.mock('electron', () => ({
   },
 }))
 
-const state = vi.hoisted(() => ({
-  destinationDir: '', calls: 0, first: null as null | { path: string; identity: string }, cleanupThrows: false,
-}))
+const state = vi.hoisted(() => ({ destinationDir: '', cleanupThrows: false }))
 const logError = vi.hoisted(() => vi.fn())
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
     ...actual,
-    copyFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.copyFileNoOverwrite>) => {
-      state.calls += 1
-      const claim = await actual.copyFileNoOverwrite(...args)
-      state.first ??= claim
-      return claim
-    }),
-    writeFileAtomicNoOverwriteVia: vi.fn(async (...args: Parameters<typeof actual.writeFileAtomicNoOverwriteVia>) => {
-      state.calls += 1
-      if (state.calls === 3) {
-        const winner = join(state.destinationDir, 'external-export-winner.tmp')
-        await writeFile(winner, 'external winner')
-        await rename(winner, state.first!.path)
-        throw new Error('sidecar publication failed')
-      }
-      const claim = await actual.writeFileAtomicNoOverwriteVia(...args)
-      state.first ??= claim
-      return claim
-    }),
-    unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
+    writeFileAtomicNoOverwriteVia: vi.fn(async () => { throw new Error('sidecar publication failed') }),
+    unlinkFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkFiles>) => {
       if (state.cleanupThrows) {
         throw new AggregateError(
-          [new Error(`Recovery claim remains at ${join(state.destinationDir, 'export-recovery.tmp')}`)],
+          [new Error(`Could not remove ${join(state.destinationDir, 'Exported.mp4')}`)],
           'cleanup permission denied',
         )
       }
-      return actual.unlinkClaimedFiles(...args)
+      return actual.unlinkFiles(...args)
     }),
   }
 })
@@ -66,10 +47,7 @@ const libraryState = vi.hoisted(() => ({ dir: '' }))
 const sessionState = vi.hoisted(() => ({ tape: null as Tape | null }))
 vi.mock('@main/store/session', () => ({ getTape: () => sessionState.tape }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => libraryState.dir }))
-vi.mock('@main/ipc/library', () => ({
-  caseInsensitiveSiblingExists: vi.fn(async () => false),
-  removeTapes: vi.fn(async () => ({ failed: [] })),
-}))
+vi.mock('@main/ipc/library', () => ({ removeTapes: vi.fn(async () => ({ failed: [] })) }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() } }))
 
 const { registerExportHandlers } = await import('@main/ipc/export')
@@ -79,8 +57,6 @@ let root: string
 beforeEach(async () => {
   handlers.clear()
   logError.mockClear()
-  state.calls = 0
-  state.first = null
   state.cleanupThrows = false
   sessionState.tape = tape
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-rollback-'))
@@ -106,14 +82,13 @@ afterEach(async () => {
 })
 
 describe('export:files rollback ownership', () => {
-  it('preserves a replacement winner and removes only still-owned committed members', async () => {
+  it('removes every member it published when a later publication fails', async () => {
     const failure = handlers.get('export:files')!({
       tapeId: tape.id, destinationDir: state.destinationDir, name: 'Exported', deleteFromApp: false,
     })
     await expect(failure).rejects.toThrow('The operation could not be completed.')
-
-    expect(await readFile(join(state.destinationDir, 'Exported.mp4'), 'utf8')).toBe('external winner')
-    await expect(readFile(join(state.destinationDir, 'Exported.jpg'))).rejects.toThrow()
+    expect(await readdir(state.destinationDir)).toEqual([])
+    expect(await readFile(join(libraryState.dir, 'Take.mp4'), 'utf8')).toBe('source video')
   })
 
   it('keeps rollback cleanup details in diagnostics while the rejection stays authored', async () => {
@@ -124,6 +99,6 @@ describe('export:files rollback ownership', () => {
 
     await expect(failure).rejects.toThrow('The operation could not be completed.')
     expect(JSON.stringify(logError.mock.calls)).toContain('sidecar publication failed')
-    expect(JSON.stringify(logError.mock.calls)).toContain('export-recovery.tmp')
+    expect(JSON.stringify(logError.mock.calls)).toContain('Exported.mp4')
   })
 })

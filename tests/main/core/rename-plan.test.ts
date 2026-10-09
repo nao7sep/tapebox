@@ -4,7 +4,7 @@ import { planRename } from '@main/core/rename-plan'
 import { inEnglish } from '../../helpers/i18n'
 
 describe('planRename', () => {
-  it('derives the media/sidecar/thumbnail names and their staging files', () => {
+  it('derives the media/sidecar/thumbnail names', () => {
     const plan = planRename(
       { name: null, filename: 'old.mp4', sidecarFilename: 'old.json', thumbnailFilename: 'old.webp' },
       'My Tape',
@@ -15,15 +15,7 @@ describe('planRename', () => {
     expect(plan.newMediaName).toBe('My Tape.mp4')
     expect(plan.newSidecarName).toBe('My Tape.json')
     expect(plan.newThumbName).toBe('My Tape.webp')
-    // Staging names are <stem>-<nanoid>.tmp: the target's own stem plus a `.tmp`
-    // role-extension (never the final name's own extension dot-appended a suffix).
-    for (const item of plan.items) {
-      expect(item.stage.startsWith('My Tape-')).toBe(true)
-      expect(item.stage.endsWith('.tmp')).toBe(true)
-    }
-    // Distinct nanoids keep the three artifacts' staging files from colliding even
-    // though their `fresh` names all share the "My Tape" stem.
-    expect(new Set(plan.items.map((i) => i.stage)).size).toBe(plan.items.length)
+    expect(plan.items.map((item) => item.fresh)).toEqual(['My Tape.mp4', 'My Tape.json', 'My Tape.webp'])
   })
 
   it('is a no-op when the names would not change', () => {

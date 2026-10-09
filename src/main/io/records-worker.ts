@@ -1,7 +1,7 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
 import { readRecords, type RecordsRead, type RecordsReadResult } from './records-query.ts'
-import { FORMAT_VERSIONS } from './format-version.ts'
+import { assertDatabaseCurrent, FORMAT_VERSIONS } from './format-version.ts'
 import { databaseTransaction } from './sqlite-store.ts'
 
 /**
@@ -33,6 +33,7 @@ function open(): DatabaseSync {
   const opened = new DatabaseSync(databasePath, { readOnly: true })
   try {
     opened.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`)
+    assertDatabaseCurrent(opened, databasePath, FORMAT_VERSIONS.records)
   } catch (error) {
     try { opened.close() } catch (cleanupError) { console.error('tapebox: Records reader close failed', cleanupError) }
     throw error
@@ -45,7 +46,7 @@ port.on('message', ({ id, read }: RecordsWorkerRequest) => {
   let response: RecordsWorkerResponse
   try {
     const opened = open()
-    response = { id, ok: true, value: databaseTransaction(opened, databasePath, FORMAT_VERSIONS.records, false, () => readRecords(opened, read)) }
+    response = { id, ok: true, value: databaseTransaction(opened, false, () => readRecords(opened, read)) }
   } catch (error) {
     response = { id, ok: false, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }
   }

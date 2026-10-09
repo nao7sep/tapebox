@@ -1,11 +1,6 @@
 import { mkdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import {
-  claimFile,
-  copyClaimedFileNoOverwrite,
-  unlinkClaimedFiles,
-  type FileClaim,
-} from '@main/io/atomic-file'
+import { linkOrCopyNoOverwrite, unlinkFiles } from '@main/io/atomic-file'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { portableFilenameIdentity } from '@shared/filename'
 import { UserFacingError } from '@main/user-facing-error'
@@ -29,15 +24,16 @@ import { message } from '@shared/i18n/translate'
  *   3. Collision guard, up front: if ANY entry already exists at the destination we
  *      abort before moving a single file — a relocation must never overwrite a file
  *      already in the new folder, and aborting early means nothing has moved yet.
- *   4. Per file: claim its inode and publish to the destination without overwrite,
- *      retaining the exact public source. Cross-device publication copies into a
- *      destination temp that is linked into place (or, where the destination has
- *      no hard links, into an exclusive claim that any failure removes) while the
- *      public source remains visible.
+ *   4. Per file: publish to the destination without overwrite, keeping the source:
+ *      a hard link on one volume; across volumes a copy into a destination temp
+ *      that is linked into place (or, where the destination has no hard links,
+ *      into an exclusive file that any failure removes).
  *   5. If publication fails, the caller's signal aborts it (checked between files
- *      and copy chunks), or the later config save fails, remove every exact
- *      destination claim. Only after config commits may the caller remove exact source claims;
+ *      and copy chunks), or the later config save fails, remove every published
+ *      destination. Only after config commits may the caller remove the sources;
  *      a crash at any earlier phase therefore leaves the old config fully readable.
+ *      A crash leaves the copies already made, so a retry reports them as
+ *      collisions for the user to clear (accepted: rare).
  *
  * Only the named entries are touched — files the app created and tracks (media,
  * sidecars, thumbnails). Unrelated files the user dropped in the folder are left
@@ -48,7 +44,7 @@ export type RelocateResult =
   | { moved: false; reason: 'same-dir' }
   | { moved: true; count: number; crossDevice: boolean; files: RelocatedFile[] }
 
-export type RelocatedFile = { name: string; sourceClaim: FileClaim; claim: FileClaim }
+export type RelocatedFile = { name: string; source: string; destination: string }
 
 export type RelocateProgress = { filesDone: number; filesTotal: number; bytesDone: number; bytesTotal: number }
 
@@ -78,11 +74,11 @@ async function fileSize(path: string): Promise<number | null> {
 }
 
 async function rollbackPublishedFiles(files: readonly RelocatedFile[]): Promise<void> {
-  await unlinkClaimedFiles([...files].reverse().map((file) => file.claim))
+  await unlinkFiles([...files].reverse().map((file) => file.destination))
 }
 
-/** Roll back pre-config publication using exact destination claims. The old
- * catalog-visible source claims were never removed. */
+/** Roll back pre-config publication. The catalog-visible sources were never
+ * removed. */
 export async function rollbackLibraryRelocation(
   files: readonly RelocatedFile[],
 ): Promise<void> {
@@ -90,10 +86,10 @@ export async function rollbackLibraryRelocation(
 }
 
 /** Complete a relocation only after config.json durably names the destination.
- * A changed source winner is preserved and reported as an explicit partial
- * success; the authoritative destination bundle remains complete. */
+ * A source that cannot be removed is reported as an explicit partial success;
+ * the authoritative destination bundle remains complete. */
 export async function completeLibraryRelocation(files: readonly RelocatedFile[]): Promise<void> {
-  await unlinkClaimedFiles(files.map((file) => file.sourceClaim))
+  await unlinkFiles(files.map((file) => file.source))
 }
 
 /**
@@ -154,19 +150,13 @@ export async function relocateLibrary(
   try {
     for (const { name, size } of present) {
       signal?.throwIfAborted()
-      const src = join(fromDir, name)
-      const sourceClaim = await claimFile(src).catch((err: unknown) => {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-        throw err
-      })
-      if (sourceClaim) {
-        // not recorded: relocation preserves an already-accounted media bundle at
-        // a new managed location; it does not author new content.
-        const copied = await copyClaimedFileNoOverwrite(sourceClaim, join(toDir, name), undefined, signal)
-        if (!copied) throw new Error(`Library file changed while being copied: ${src}`)
-        crossDevice = crossDevice || copied.crossDevice
-        movedFiles.push({ name, sourceClaim, claim: copied.claim })
-      }
+      const source = join(fromDir, name)
+      const destination = join(toDir, name)
+      // not recorded: relocation preserves an already-accounted media bundle at
+      // a new managed location; it does not author new content.
+      const copied = await linkOrCopyNoOverwrite(source, destination, signal)
+      crossDevice = crossDevice || copied.crossDevice
+      movedFiles.push({ name, source, destination })
       progress.filesDone += 1
       progress.bytesDone += size
       onProgress?.({ ...progress })

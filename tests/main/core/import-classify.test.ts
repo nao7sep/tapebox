@@ -59,10 +59,10 @@ describe('classifyImport', () => {
     })
   })
 
-  it('rejects a sidecar without its format marker as not TapeBox JSON', () => {
-    expect(classifyImport({ tapebox: { sourceUrl: 'http://x', mediaFilename: 'v.mp4' } })).toMatchObject({
-      status: 'reject',
-      reason: { key: 'import.sidecarInvalidJson' },
+  it('accepts a sidecar without its format marker as one v0.1.0 exported', () => {
+    expect(classifyImport({ tapebox: { sourceUrl: 'http://x.test/v', mediaFilename: 'v.mp4' } })).toMatchObject({
+      status: 'accept',
+      mediaFilename: 'v.mp4',
     })
   })
 

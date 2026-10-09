@@ -111,7 +111,7 @@ port.on('message', (request: RecordWriteRequest) => {
     if (db) {
       const store = db
       try {
-        databaseTransaction(store, data.databasePath, FORMAT_VERSIONS.records, true, () => {
+        databaseTransaction(store, true, () => {
           const columns = ['session', ...Object.keys(row)]
           const sql = `INSERT INTO ${request.table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`
           let statement = statements.get(sql)

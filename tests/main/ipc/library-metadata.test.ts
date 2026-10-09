@@ -192,23 +192,6 @@ describe('accepting refreshed metadata', () => {
     await expect(invoke('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })).resolves.toMatchObject({ title: 'New title' })
   })
 
-  it.each([1, 2])('refuses a format %i sidecar changed during private staging and keeps its new opaque fields', async (formatVersion) => {
-    const sidecar = join(state.libraryDir, 'Take.json')
-    await writeFile(sidecar, JSON.stringify({ formatVersion: 1, title: 'Old title' }))
-    state.tapes = [makeTape({ id: 'Latestside', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
-    const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
-    const foreign = JSON.stringify({ formatVersion, title: 'Foreign title', opaque: { kept: true } })
-    vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
-      const file = await original.open(...args)
-      if (args[1] === 'wx') await writeFile(sidecar, foreign)
-      return file
-    })
-    await expect(invoke('library:applyMetadata', { tapeId: 'Latestside', metadata: ACCEPTED })).rejects.toMatchObject({ userMessage: { key: formatVersion === 2 ? 'errors.fileNewer' : 'refresh.applyStale' } })
-    expect(await readFile(sidecar, 'utf8')).toBe(foreign)
-    expect(state.tapes[0]?.title).toBe('Old title')
-    expect(persistNow).not.toHaveBeenCalled()
-  })
-
   it('saves the catalog fields and puts the same values in the sidecar', async () => {
     const sidecar = join(state.libraryDir, 'Take.json')
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', description: 'Old description', extra: 'kept' }), 'utf8')

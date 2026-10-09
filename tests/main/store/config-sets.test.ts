@@ -51,11 +51,11 @@ describe('settings by set', () => {
     expect(await savedSets()).toEqual({ playSound: false })
   })
 
-  it('drops version and unknown keys at the next write, preserving untouched sets', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, version: 20, future: 'x', playSound: false }))
+  it('keeps keys it does not know exactly as written through a save', async () => {
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, version: 20, future: { a: 1 }, playSound: false }))
     await loadSettings()
     await updateSettings({ autoplay: false })
-    expect(await savedSets()).toEqual({ playSound: false, autoplay: false })
+    expect(await savedSets()).toEqual({ version: 20, future: { a: 1 }, playSound: false, autoplay: false })
   })
 
   it('writes from the loaded settings, not from the file as it is now', async () => {
@@ -66,13 +66,30 @@ describe('settings by set', () => {
     expect(getSettings().playSound).toBe(true)
   })
 
-  it('reads a relative folder as its built-in and drops it at the next save', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, libraryDir: 'relative/library', defaultExportDir: 'exports', autoplay: false }))
-    await loadSettings()
+  it('uses the built-in for a relative export folder, keeps the saved one through other saves, and says so', async () => {
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, defaultExportDir: 'exports', autoplay: false }))
+    expect(await loadSettings()).toEqual({ status: 'loaded', settingsKept: true })
     expect(getSettings()).toEqual({ ...defaultSettings(), autoplay: false })
-    expect(log.warn.mock.calls.map(([, fields]) => fields)).toEqual([{ key: 'libraryDir' }, { key: 'defaultExportDir' }])
+    expect(log.warn.mock.calls.map(([, fields]) => fields)).toEqual([{ key: 'defaultExportDir' }])
     await updateSettings({ playSound: false })
-    expect(await savedSets()).toEqual({ autoplay: false, playSound: false })
+    expect(await savedSets()).toEqual({ defaultExportDir: 'exports', autoplay: false, playSound: false })
+    await updateSettings({ defaultExportDir: '/exports' })
+    expect(await savedSets(), 'the user saving the set replaces the kept copy').toEqual({ defaultExportDir: '/exports', autoplay: false, playSound: false })
+  })
+
+  it('stops for a library folder it cannot use, rather than look in the wrong place', async () => {
+    const text = JSON.stringify({ formatVersion: 1, libraryDir: 'relative/library' })
+    await writeFile(paths.config, text)
+    await expect(loadSettings()).rejects.toMatchObject({ name: 'LibraryFolderSettingError', path: paths.config })
+    expect(await readFile(paths.config, 'utf8')).toBe(text)
+  })
+
+  it('falls back quietly for a theme or language it cannot use, keeping the saved value', async () => {
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, theme: 'sepia', language: 'tlh' }))
+    expect(await loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
+    expect(getSettings()).toEqual(defaultSettings())
+    await updateSettings({ autoplay: false })
+    expect(await savedSets()).toEqual({ theme: 'sepia', language: 'tlh', autoplay: false })
   })
 
   it('refuses a relative folder on save and keeps the file as it is', async () => {
@@ -125,11 +142,12 @@ describe('settings by set', () => {
     expect(await readFile(paths.config, 'utf8')).toBe(JSON.stringify({ formatVersion: 1, autoplay: false }))
   })
 
-  it('heals the loaded file at a Save that changes no set', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, language: 'unsupported', future: 'x', playSound: true, autoplay: false }))
+  it('writes nothing at a Save that changes no set, keeping what it could not use', async () => {
+    const text = JSON.stringify({ formatVersion: 1, language: 'unsupported', future: 'x', playSound: true, autoplay: false })
+    await writeFile(paths.config, text)
     await loadSettings()
     await updateSettings({ autoplay: false })
-    expect(await savedSets()).toEqual({ autoplay: false })
+    expect(await readFile(paths.config, 'utf8')).toBe(text)
   })
 
   it('compares text after cleanup and a model id trimmed and case-insensitive', async () => {
@@ -205,13 +223,25 @@ describe('settings by set', () => {
     expect(getSettings()).toEqual({ ...defaultSettings(), autoplay: false })
   })
 
-  it('drops the old AI set and removes only the model saved back to its built-in', async () => {
+  it('removes only the model saved back to its built-in, keeping a key it does not know', async () => {
     await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ai: { baseUrl: 'https://old.example', model: 'old' }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
     await loadSettings()
     expect(getSettings()['openai.endpoint']).toBe('https://proxy.example/v1')
     await updateSettings({ 'openai.slug': defaultSettings()['openai.slug'] })
-    expect(await savedSets()).toEqual({ 'openai.endpoint': 'https://proxy.example/v1' })
+    expect(await savedSets()).toEqual({ 'openai.endpoint': 'https://proxy.example/v1', ai: { baseUrl: 'https://old.example', model: 'old' } })
     expect(getSettings()['openai.slug']).toBe(defaultSettings()['openai.slug'])
+  })
+
+  it('converts a v0.1.0 file: its AI set where the user changed it, dropping state and tool facts', async () => {
+    await writeFile(paths.config, JSON.stringify({
+      libraryDir: '', autoplay: false, volume: 0.4, binaries: { 'yt-dlp': {} },
+      ai: { baseUrl: 'https://api.openai.com/v1', model: 'my-model' }, prompts: { slug: 'my prompt' },
+    }))
+    expect(await loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
+    expect(getSettings()).toMatchObject({ autoplay: false, 'openai.slug': 'my-model', prompts: { slug: 'my prompt' } })
+    expect(getSettings()['openai.endpoint']).toBe(defaultSettings()['openai.endpoint'])
+    await updateSettings({ playSound: false })
+    expect(await savedSets()).toEqual({ autoplay: false, 'openai.slug': 'my-model', prompts: { slug: 'my prompt' }, playSound: false })
   })
 
   it('quarantines corrupt bytes without reseeding a config', async () => {

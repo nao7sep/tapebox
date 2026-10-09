@@ -32,10 +32,14 @@ import { DependenciesSchema, defaultDependencies, type Dependencies } from '@sha
 let cache: Dependencies | null = null
 /** True when dependencies.json is in a newer format, which this build never writes. */
 let newerOnDisk = false
+/** What dependencies.json last held as read or written, so an unchanged update
+ *  writes nothing (content-lifecycle conventions). */
+let lastWritten: string | null = null
 
 export async function loadDependencies(): Promise<void> {
   cache = defaultDependencies()
   newerOnDisk = false
+  lastWritten = null
   let text: string
   try {
     text = await readFile(paths.dependencies, 'utf8')
@@ -58,6 +62,7 @@ export async function loadDependencies(): Promise<void> {
   const parsed = found.status === 'read' ? DependenciesSchema.safeParse(found.value) : null
   if (parsed?.success) {
     cache = parsed.data
+    lastWritten = JSON.stringify(cache)
   } else {
     // Corrupt, not absent: the facts are re-derivable, so self-heal to defaults
     // (a re-check refills them) rather than quarantine-and-preserve as config does.
@@ -92,12 +97,13 @@ export function mutateDependencies(
     // not recorded: dependencies.json contains only re-derivable dependency and
     // update facts (last-known upstream versions and successful-check times), not
     // user-authored text. A refresh reconstructs everything in this store.
-    if (!newerOnDisk) {
+    const key = JSON.stringify(merged)
+    if (!newerOnDisk && key !== lastWritten) {
       await writeJsonAtomic(paths.dependencies, merged, {
         formatVersion: FORMAT_VERSIONS.dependencies,
         schema: DependenciesSchema,
-        discardUnreadable: true,
       })
+      lastWritten = key
     }
     log.info('dependencies updated', { keys: Object.keys(patch) })
     return merged

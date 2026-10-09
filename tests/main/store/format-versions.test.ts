@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -56,13 +56,32 @@ describe('catalog.json', () => {
   const session = () => import('@main/store/session')
   const path = () => join(root, 'catalog.json')
 
-  it('sets aside a file without its marker, as it does an unreadable one', async () => {
-    const text = JSON.stringify({ tapes: [], boxes: [BOX] })
+  it('reads a v0.1.0 file, which had no marker and no failure class, and marks it at the next save', async () => {
+    const tape = {
+      id: 'Tape123456', sourceUrl: 'https://example.test/watch', state: 'failed', addedAtUtc: '2026-07-08T00:00:00.000Z',
+      sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: 0,
+      probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
+      downloadStartedAtUtc: null, downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: null,
+      boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: '2026-07-08T00:00:01.000Z', lastError: 'gone',
+    }
+    await writeFile(path(), JSON.stringify({ tapes: [tape], boxes: [BOX] }))
+    const store = await session()
+    expect(await store.loadSession()).toMatchObject({ status: 'loaded', tapeCount: 1 })
+    expect(store.getTapes()[0]).toMatchObject({ id: 'Tape123456', failureCode: null })
+    expect(store.getBoxes()).toEqual([BOX])
+    store.upsertBox({ ...BOX, name: 'Renamed' })
+    expect(await store.persistNow()).toBe(true)
+    expect(await stored(path())).toMatchObject({ formatVersion: 1, tapes: [{ failureCode: null }] })
+  })
+
+  it('sets aside a file whose marker is not a version, as it does an unreadable one', async () => {
+    const text = JSON.stringify({ formatVersion: 'one', tapes: [], boxes: [BOX] })
     await writeFile(path(), text)
     const store = await session()
     expect(await store.loadSession()).toMatchObject({ status: 'recovered' })
     expect(store.getBoxes()).toEqual([])
     const [aside] = (await readdir(root)).filter((name) => name.endsWith('.invalid'))
+    expect(aside).toMatch(/^catalog-\d{8}-\d{6}-utc\.invalid$/)
     expect(await readFile(join(root, aside!), 'utf8')).toBe(text)
   })
 
@@ -93,12 +112,19 @@ describe('config.json', () => {
   const config = () => import('@main/store/config')
   const path = () => join(root, 'config.json')
 
-  it('sets aside a file without its marker, as it does an unreadable one', async () => {
+  it('reads a v0.1.0 file, which had no marker', async () => {
     await writeFile(path(), JSON.stringify({ autoplay: false }))
     const store = await config()
-    expect(await store.loadSettings()).toMatchObject({ status: 'recovered' })
-    expect(store.getSettings().autoplay).toBe(true)
-    expect((await readdir(root)).filter((name) => name.endsWith('.invalid'))).toHaveLength(1)
+    expect(await store.loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
+    expect(store.getSettings().autoplay).toBe(false)
+    expect(await readdir(root)).toEqual(['config.json'])
+  })
+
+  it('stops, naming the file and leaving it in place, when it cannot be opened', async () => {
+    await mkdir(path())
+    const store = await config()
+    await expect(store.loadSettings()).rejects.toMatchObject({ name: 'StoreAccessError', path: path() })
+    expect(await readdir(root)).toEqual(['config.json'])
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -108,7 +134,7 @@ describe('config.json', () => {
     expect(await stored(path())).toEqual({ formatVersion: 1, autoplay: false })
 
     const relaunched = await relaunch(config)
-    expect(await relaunched.loadSettings()).toEqual({ status: 'loaded' })
+    expect(await relaunched.loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
     expect(relaunched.getSettings().autoplay).toBe(false)
   })
 
@@ -128,11 +154,11 @@ describe('layout.json', () => {
   const layout = () => import('@main/store/layout')
   const path = () => join(root, 'layout.json')
 
-  it('uses the defaults for a file without its marker, as for an unreadable one', async () => {
+  it('reads a v0.1.0 file, which had no marker', async () => {
     await writeFile(path(), JSON.stringify({ leftPaneWidth: 400 }))
     const store = await layout()
     await store.loadLayout()
-    expect(store.getLayout()).toEqual(defaultLayout)
+    expect(store.getLayout()).toEqual({ ...defaultLayout, leftPaneWidth: 400 })
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -202,11 +228,11 @@ describe('api-keys.json', () => {
   const apiKeys = () => import('@main/services/api-keys')
   const path = () => join(root, 'api-keys.json')
 
-  it('sets aside a file without its marker and holds no key, as for an unreadable one', async () => {
+  it('reads a v0.1.0 file, which had no marker', async () => {
     await writeFile(path(), JSON.stringify({ keys: { openai: 'sk-plain' } }), { mode: 0o600 })
     const store = await apiKeys()
-    expect(await store.resolveApiKey('openai')).toBeNull()
-    expect((await readdir(root)).filter((name) => name.endsWith('.invalid'))).toHaveLength(1)
+    expect(await store.resolveApiKey('openai')).toBe('sk-plain')
+    expect(await readdir(root)).toEqual(['api-keys.json'])
   })
 
   it('writes format 1 first and reads it back', async () => {

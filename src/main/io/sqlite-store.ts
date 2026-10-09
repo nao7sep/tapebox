@@ -3,11 +3,10 @@ import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { assertDatabaseCurrent } from './format-version.ts'
 
-/** The marker and each operation belong to the same SQLite transaction. */
-export function databaseTransaction<T>(db: DatabaseSync, path: string, current: number, write: boolean, run: () => T): T {
+/** Run one operation in its own SQLite transaction. */
+export function databaseTransaction<T>(db: DatabaseSync, write: boolean, run: () => T): T {
   db.exec(write ? 'BEGIN IMMEDIATE' : 'BEGIN')
   try {
-    assertDatabaseCurrent(db, path, current)
     const result = run()
     db.exec('COMMIT')
     return result
@@ -17,8 +16,15 @@ export function databaseTransaction<T>(db: DatabaseSync, path: string, current: 
   }
 }
 
-/** Only a successful exclusive creation can initialize an unmarked database. */
-export function openWritableDatabase(path: string, current: number, schema: string): DatabaseSync {
+/** Only a successful exclusive creation can initialize an unmarked database,
+ * apart from one `adoptUnmarked` recognizes as an earlier unmarked form of it,
+ * which is marked current. */
+export function openWritableDatabase(
+  path: string,
+  current: number,
+  schema: string,
+  adoptUnmarked?: (db: DatabaseSync) => boolean,
+): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true })
   let created = false
   let db: DatabaseSync | undefined
@@ -38,9 +44,10 @@ export function openWritableDatabase(path: string, current: number, schema: stri
     if (created) db.exec('PRAGMA journal_mode = WAL')
     db.exec('BEGIN IMMEDIATE')
     try {
-      if (!created) assertDatabaseCurrent(db, path, current)
+      const adopted = !created && adoptUnmarked !== undefined && isUnmarkedWithTables(db) && adoptUnmarked(db)
+      if (!created && !adopted) assertDatabaseCurrent(db, path, current)
       db.exec(schema)
-      if (created) db.exec(`PRAGMA user_version = ${current}`)
+      if (created || adopted) db.exec(`PRAGMA user_version = ${current}`)
       db.exec('COMMIT')
     } catch (error) {
       try { db.exec('ROLLBACK') } catch (cleanupError) { console.error('tapebox: SQLite initialization rollback failed', cleanupError) }
@@ -58,4 +65,11 @@ export function openWritableDatabase(path: string, current: number, schema: stri
     }
     throw error
   }
+}
+
+function isUnmarkedWithTables(db: DatabaseSync): boolean {
+  const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number }
+  if (version !== 0) return false
+  const { tables } = db.prepare("SELECT count(*) AS tables FROM sqlite_schema WHERE type = 'table'").get() as { tables: number }
+  return tables > 0
 }

@@ -1,5 +1,5 @@
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,7 +22,6 @@ const state = vi.hoisted(() => ({
   calls: 0,
   failCall: 2 as number | null,
   failureMode: 'publication' as 'publication' | 'plain',
-  first: null as null | { path: string; identity: string },
   cleanupThrows: false,
 }))
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
@@ -32,24 +31,18 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
     copyFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.copyFileNoOverwrite>) => {
       state.calls += 1
       if (state.calls === state.failCall) {
-        if (state.failureMode === 'plain') throw new Error('thumbnail permission denied')
-        const winner = join(state.libraryDir, 'external-import-winner.tmp')
-        await writeFile(winner, 'external winner')
-        await rename(winner, state.first!.path)
-        throw new Error('sidecar publication failed')
+        throw new Error(state.failureMode === 'plain' ? 'thumbnail permission denied' : 'sidecar publication failed')
       }
-      const claim = await actual.copyFileNoOverwrite(...args)
-      state.first = claim
-      return claim
+      return actual.copyFileNoOverwrite(...args)
     }),
-    unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
+    unlinkFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkFiles>) => {
       if (state.cleanupThrows) {
         throw new AggregateError(
-          [new Error(`Recovery claim remains at ${join(state.libraryDir, 'import-recovery.tmp')}`)],
+          [new Error(`Could not remove ${join(state.libraryDir, 'clip.mp4')}`)],
           'cleanup permission denied',
         )
       }
-      return actual.unlinkClaimedFiles(...args)
+      return actual.unlinkFiles(...args)
     }),
   }
 })
@@ -85,7 +78,6 @@ beforeEach(async () => {
   state.calls = 0
   state.failCall = 2
   state.failureMode = 'publication'
-  state.first = null
   state.cleanupThrows = false
   mainLog.error.mockReset()
   root = await mkdtemp(join(tmpdir(), 'tapebox-import-rollback-'))
@@ -110,7 +102,7 @@ afterEach(async () => {
 })
 
 describe('library:import rollback ownership', () => {
-  it('preserves a replacement winner when a later bundle publication fails', async () => {
+  it('removes the files it copied when a later bundle publication fails', async () => {
     const result = await handlers.get('library:import')!({
       paths: [join(sourceDir, 'clip.json'), join(sourceDir, 'clip.mp4')],
     }) as {
@@ -121,12 +113,12 @@ describe('library:import rollback ownership', () => {
     expect(result.imported).toEqual([])
     expect(result.issues).toHaveLength(1)
     expect(inEnglish(result.issues[0]?.reason)).toBe(
-      'The tape files could not be copied completely. Check the library folder and the log before trying again.',
+      'The tape files could not be copied into the library. Check that the library folder is available and try again.',
     )
-    expect(await readFile(join(state.libraryDir, 'clip.mp4'), 'utf8')).toBe('external winner')
+    expect(await readdir(state.libraryDir)).toEqual([])
     expect(upsertTape).not.toHaveBeenCalled()
     expect(mainLog.error).toHaveBeenCalledWith(
-      'import bundle copy and rollback failed',
+      'import bundle copy failed',
       expect.objectContaining({ error: expect.objectContaining({ stack: expect.any(String) }) }),
     )
   })
@@ -142,7 +134,7 @@ describe('library:import rollback ownership', () => {
     expect(inEnglish(result.issues[0]?.reason)).toBe(
       'The tape files could not be copied completely. Check the library folder and the log before trying again.',
     )
-    expect(inEnglish(result.issues[0]?.reason)).not.toMatch(/sidecar|private|import-recovery/)
+    expect(inEnglish(result.issues[0]?.reason)).not.toMatch(/sidecar|clip\.mp4/)
     expect(mainLog.error).toHaveBeenCalledWith(
       'import bundle copy and rollback failed',
       expect.objectContaining({

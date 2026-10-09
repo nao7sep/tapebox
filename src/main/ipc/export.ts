@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { handle } from './handle'
-import { caseInsensitiveSiblingExists, removeTapes } from './library'
+import { removeTapes } from './library'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
 import { readSidecarFile, SIDECAR_JSON } from '@main/core/sidecar'
@@ -11,10 +11,10 @@ import { log } from '@main/io/logger'
 import {
   copyFileNoOverwrite,
   directorySupportsHardLinks,
-  unlinkClaimedFiles,
+  unlinkFiles,
   writeFileAtomicNoOverwriteVia,
-  type FileClaim,
 } from '@main/io/atomic-file'
+import { portableSiblingExists } from '@main/io/portable-directory'
 import { runCancellable } from '@main/work-registry'
 import { withLibraryWrite } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
@@ -73,7 +73,7 @@ async function exportTape(
   // silently clobber) is refused too, per storage-path-conventions' invariant.
   const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
   for (const dst of writtenPaths) {
-    if (await caseInsensitiveSiblingExists(dst)) {
+    if (await portableSiblingExists(dst)) {
       throw new UserFacingError('conflict', message('errors.exportDestinationExists', { path: dst }))
     }
   }
@@ -94,19 +94,22 @@ async function exportTape(
   // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
   // written to the user's chosen destination and then forgotten. They are OUTPUT,
   // and the sidecar is also colocated with binary media, so none enters backups.
-  const committed: FileClaim[] = []
+  const committed: string[] = []
   try {
     const hardLinks = await directorySupportsHardLinks(destinationDir)
-    committed.push(await copyFileNoOverwrite(join(libDir, tape.filename), mediaDst, { hardLinks, signal }))
+    await copyFileNoOverwrite(join(libDir, tape.filename), mediaDst, { hardLinks, signal })
+    committed.push(mediaDst)
     if (thumbDst && tape.thumbnailFilename) {
-      committed.push(await copyFileNoOverwrite(join(libDir, tape.thumbnailFilename), thumbDst, { hardLinks, signal }))
+      await copyFileNoOverwrite(join(libDir, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
+      committed.push(thumbDst)
     }
     signal.throwIfAborted()
     const sidecarBytes = Buffer.from(serializeStoreJson(sidecar, SIDECAR_JSON), 'utf8')
-    committed.push(await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes)))
+    await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes))
+    committed.push(sidecarDst)
   } catch (err) {
     try {
-      await unlinkClaimedFiles(committed)
+      await unlinkFiles(committed)
     } catch (cleanupError) {
       throw new AggregateError(
         [err, cleanupError],

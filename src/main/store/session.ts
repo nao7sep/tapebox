@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
-import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
+import { StoreAccessError } from '@main/io/store-access'
+import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson, V0_1_0_FORMAT } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
@@ -111,14 +112,16 @@ export async function loadSessionFile(
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return { result: { status: 'empty' }, session: emptySession() }
     }
-    // Unexpected read failure (permissions, I/O): propagate so the caller leaves
-    // the session unloaded and aborts, instead of silently starting empty.
-    throw err
+    // Unexpected read failure (permissions, I/O): the caller leaves the session
+    // unloaded and startup names the file, instead of silently starting empty.
+    throw new StoreAccessError(sessionPath, err)
   }
 
-  const found = parseStoreJson(text, FORMAT_VERSIONS.catalog)
+  const found = parseStoreJson(text, FORMAT_VERSIONS.catalog, true)
   if (found.status === 'newer') throw new NewerFormatError(sessionPath, found.version, FORMAT_VERSIONS.catalog)
-  const parsed = found.status === 'read' ? SessionSchema.safeParse(found.value) : null
+  const parsed = found.status === 'read'
+    ? SessionSchema.safeParse(found.version === V0_1_0_FORMAT ? catalogFromV010(found.value) : found.value)
+    : null
   if (parsed?.success) {
     return { result: { status: 'loaded', tapeCount: parsed.data.tapes.length }, session: parsed.data }
   }
@@ -134,6 +137,16 @@ export async function loadSessionFile(
     )
   }
   return { result: { status: 'recovered', quarantinePath }, session: emptySession() }
+}
+
+/** v0.1.0's catalog had no failure class on its tapes; every row reads as having none. */
+function catalogFromV010(value: Record<string, unknown>): Record<string, unknown> {
+  const tapes = Array.isArray(value['tapes'])
+    ? value['tapes'].map((tape: unknown) => tape !== null && typeof tape === 'object' && !Array.isArray(tape) && !('failureCode' in tape)
+      ? { ...tape, failureCode: null }
+      : tape)
+    : value['tapes']
+  return { ...value, tapes }
 }
 
 /**

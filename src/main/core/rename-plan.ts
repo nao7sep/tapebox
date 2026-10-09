@@ -1,5 +1,4 @@
 import { extname } from 'node:path'
-import { nanoid } from 'nanoid'
 
 import { portableFilenameIdentity, sanitizeFilename } from '@main/core/filename'
 import { message, type Message } from '@shared/i18n/translate'
@@ -16,8 +15,6 @@ export interface RenamePlanItem {
   old: string
   /** The filename it should carry after the rename. */
   fresh: string
-  /** The `<stem>-<nanoid>.tmp` staging filename it is built under before the atomic swap. */
-  stage: string
 }
 
 export type RenamePlan =
@@ -63,13 +60,7 @@ export function planRename(
     ...(tape.thumbnailFilename && newThumbName
       ? [{ artifact: 'thumbnail' as const, old: tape.thumbnailFilename, fresh: newThumbName }]
       : []),
-  ].map((it) => {
-    // <stem>-<nanoid>.tmp per the atomic-write-temp-files convention: the nanoid
-    // discriminator keeps the three artifacts' staging names distinct even when
-    // their `fresh` names share a stem (media/sidecar/thumbnail all named cleanName).
-    const stem = it.fresh.slice(0, -extname(it.fresh).length)
-    return { ...it, stage: `${stem}-${nanoid(10)}.tmp` }
-  })
+  ]
 
   // Collision guard: two of this tape's artifacts must not derive the same target
   // name (e.g. a media file and a thumbnail that share an extension both map to

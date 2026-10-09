@@ -68,9 +68,9 @@ export const SIDECAR_JSON = { formatVersion: FORMAT_VERSIONS.sidecar }
  * Write a sidecar in the library, stamped with its format version. Not recorded:
  * see {@link finalize}.
  */
-export async function writeSidecar(path: string, sidecar: Record<string, unknown>, validateCurrent?: () => Promise<void>): Promise<void> {
+export async function writeSidecar(path: string, sidecar: Record<string, unknown>): Promise<void> {
   try {
-    await writeJsonAtomic(path, sidecar, { ...SIDECAR_JSON, validateCurrent })
+    await writeJsonAtomic(path, sidecar, SIDECAR_JSON)
   } catch (error) {
     if (error instanceof NewerFormatError) {
       throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(path) }), { cause: error })
@@ -85,7 +85,7 @@ export async function writeSidecar(path: string, sidecar: Record<string, unknown
  * unparseable file throws.
  */
 export async function readSidecarFile(sidecarPath: string): Promise<Record<string, unknown>> {
-  const found = parseStoreJson(await readFile(sidecarPath, 'utf8'), FORMAT_VERSIONS.sidecar)
+  const found = parseStoreJson(await readFile(sidecarPath, 'utf8'), FORMAT_VERSIONS.sidecar, true)
   if (found.status === 'newer') {
     throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(sidecarPath) }))
   }

@@ -44,47 +44,41 @@ vi.mock('@main/io/logger', () => ({
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 const rollbackMutation = vi.hoisted(() => ({
-  mode: null as null | 'committed-winner' | 'final-cleanup',
+  mode: null as null | 'second-fails' | 'final-cleanup',
   durableFails: false,
   publishes: 0,
-  firstClaim: null as null | { path: string; identity: string },
   cleanupPath: '',
-  dir: '',
   order: [] as string[],
   sourcesVisibleAtCommit: false,
   destinationsVisibleAtCommit: false,
 }))
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
-  const tracked = async (publish: () => Promise<{ path: string; identity: string }>) => {
+  const tracked = async <T>(destination: string, publish: () => Promise<T>): Promise<T> => {
     rollbackMutation.publishes += 1
-    if (rollbackMutation.mode === 'committed-winner' && rollbackMutation.publishes === 2) {
-      const winner = join(rollbackMutation.dir, 'external-winner.tmp')
-      await writeFile(winner, 'external winner')
-      await rename(winner, rollbackMutation.firstClaim!.path)
+    if (rollbackMutation.mode === 'second-fails' && rollbackMutation.publishes === 2) {
       throw new Error('second publication failed')
     }
-    const claim = await publish()
-    rollbackMutation.firstClaim ??= claim
-    rollbackMutation.order.push(`publish:${basename(claim.path)}`)
-    return claim
+    const result = await publish()
+    rollbackMutation.order.push(`publish:${basename(destination)}`)
+    return result
   }
   return {
     ...actual,
-    publishFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.publishFileNoOverwrite>) =>
-      tracked(() => actual.publishFileNoOverwrite(...args))),
-    copyClaimedFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.copyClaimedFileNoOverwrite>) =>
-      tracked(async () => (await actual.copyClaimedFileNoOverwrite(...args))!.claim).then((claim) => ({ claim, crossDevice: false }))),
-    unlinkClaimedFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkClaimedFiles>) => {
+    writeFileAtomicNoOverwriteVia: vi.fn(async (...args: Parameters<typeof actual.writeFileAtomicNoOverwriteVia>) =>
+      tracked(args[0], () => actual.writeFileAtomicNoOverwriteVia(...args))),
+    linkOrCopyNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.linkOrCopyNoOverwrite>) =>
+      tracked(args[1], () => actual.linkOrCopyNoOverwrite(...args))),
+    unlinkFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkFiles>) => {
       rollbackMutation.order.push(state.tape?.name === 'renamed' ? 'cleanup:obsolete' : 'cleanup:rollback')
       if (rollbackMutation.mode === 'final-cleanup' && state.tape?.name === 'renamed') {
-        rollbackMutation.cleanupPath = args[0][0]!.path
+        rollbackMutation.cleanupPath = args[0][0]!
         throw new AggregateError(
-          [new Error(`Recovery claim remains at ${rollbackMutation.cleanupPath}`)],
-          'old-claim cleanup failed',
+          [new Error(`Could not remove ${rollbackMutation.cleanupPath}`)],
+          'old-file cleanup failed',
         )
       }
-      return actual.unlinkClaimedFiles(...args)
+      return actual.unlinkFiles(...args)
     }),
   }
 })
@@ -103,9 +97,7 @@ beforeEach(async () => {
   rollbackMutation.mode = null
   rollbackMutation.durableFails = false
   rollbackMutation.publishes = 0
-  rollbackMutation.firstClaim = null
   rollbackMutation.cleanupPath = ''
-  rollbackMutation.dir = dir
   rollbackMutation.order = []
   rollbackMutation.sourcesVisibleAtCommit = false
   rollbackMutation.destinationsVisibleAtCommit = false
@@ -206,14 +198,14 @@ describe('library:rename', () => {
     expect(rollbackMutation.publishes).toBe(0)
   })
 
-  it('preserves a replacement winner instead of deleting it during committed-member rollback', async () => {
-    rollbackMutation.mode = 'committed-winner'
+  it('removes what it published and keeps the old files when a later publication fails', async () => {
+    rollbackMutation.mode = 'second-fails'
     const invoke = handlers.get('library:rename')!
 
     await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow('The operation could not be completed.')
 
-    expect(await readFile(join(dir, 'renamed.mp4'), 'utf8')).toBe('external winner')
-    expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('video')
+    expect((await readdir(dir)).sort()).toEqual(['Take.jpg', 'Take.json', 'Take.mp4'])
+    expect(state.tape?.name).toBe('Take')
   })
 
   it('publishes all destinations while every old source is still visible, then commits before cleanup', async () => {

@@ -170,7 +170,7 @@ export function registerSettingsHandlers(): void {
   handle('settings:clearApiKey', async () => {
     await apiKeys.clearApiKey('openai')
   })
-  handle('settings:hasApiKey', async () => apiKeys.hasApiKey('openai'))
+  handle('settings:apiKeyState', async () => apiKeys.apiKeyState('openai'))
 }
 
 type SettingsUpdateResult = IpcCalls['settings:update']['res']

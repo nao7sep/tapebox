@@ -45,18 +45,15 @@ describe('SQLite store admission', () => {
     expect(console.error).toHaveBeenCalledWith('tapebox: SQLite failed initialization close failed', expect.objectContaining({ message: 'secondary close failure' }))
   })
 
-  it('checks a changed marker inside each transaction and recovers after a refused operation', () => {
+  it('adopts an unmarked database only when the owner recognizes its earlier form', () => {
     const file = join(root, 'store.sqlite3')
-    const db = openWritableDatabase(file, 1, schema)
+    const idempotent = 'CREATE TABLE IF NOT EXISTS entries (value TEXT NOT NULL)'
+    const earlier = new DatabaseSync(file)
+    try { earlier.exec(idempotent); earlier.exec("INSERT INTO entries VALUES ('kept')") } finally { earlier.close() }
+    expect(() => openWritableDatabase(file, 1, idempotent, () => false)).toThrow(/no format version/)
+    const db = openWritableDatabase(file, 1, idempotent, () => true)
     opened.push(db)
-    databaseTransaction(db, file, 1, true, () => db.exec("INSERT INTO entries VALUES ('first')"))
-    const other = new DatabaseSync(file)
-    try {
-      other.exec('PRAGMA user_version = 2')
-      expect(() => databaseTransaction(db, file, 1, true, () => db.exec("INSERT INTO entries VALUES ('refused')"))).toThrow(/format 2/)
-      expect(other.prepare('SELECT value FROM entries').all()).toEqual([{ value: 'first' }])
-      other.exec('PRAGMA user_version = 1')
-      expect(databaseTransaction(db, file, 1, false, () => db.prepare('SELECT value FROM entries').all())).toEqual([{ value: 'first' }])
-    } finally { other.close() }
+    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
+    expect(databaseTransaction(db, false, () => db.prepare('SELECT value FROM entries').all())).toEqual([{ value: 'kept' }])
   })
 })

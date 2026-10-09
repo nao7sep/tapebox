@@ -6,7 +6,7 @@ import { rowFor, thinkingFor, type SupportedModel } from '@shared/ai-models'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
-import type { IpcEvents } from '@shared/ipc-contract'
+import type { IpcCalls, IpcEvents } from '@shared/ipc-contract'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useToastStore } from '@renderer/store/toast'
@@ -53,7 +53,7 @@ export function SettingsModal({ onClose }: Props) {
   const [tab, setTab] = useState<Tab>('general')
   const [original, setOriginal] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Settings | null>(null)
-  const [hadApiKey, setHadApiKey] = useState(false)
+  const [keyState, setKeyState] = useState<IpcCalls['settings:apiKeyState']['res']>('absent')
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
@@ -74,12 +74,12 @@ export function SettingsModal({ onClose }: Props) {
     setLoadError(null)
     void Promise.all([
       ipcInvoke('settings:get'),
-      ipcInvoke('settings:hasApiKey'),
+      ipcInvoke('settings:apiKeyState'),
       ipcInvoke('settings:defaultLibraryDir'),
-    ]).then(([s, has, defaultLibDir]) => {
+    ]).then(([s, state, defaultLibDir]) => {
       setOriginal(s)
       setDraft(s)
-      setHadApiKey(has)
+      setKeyState(state)
       setDefaultLibraryDir(defaultLibDir)
     }, (error) => {
       setLoadError(presentFailure(
@@ -285,7 +285,7 @@ export function SettingsModal({ onClose }: Props) {
                 onPromptsPatch={patchPrompts}
                 onResetPrompts={() => patchDraft({ prompts: { slug: DEFAULT_SLUG_PROMPT } })}
                 busy={busy}
-                hadKey={hadApiKey}
+                keyState={keyState}
                 apiKeyDraft={apiKeyDraft}
                 wantsClearKey={wantsClearKey}
                 onApiKeyChange={(v) => {
@@ -656,7 +656,7 @@ function AiTab({
   onPromptsPatch,
   onResetPrompts,
   busy,
-  hadKey,
+  keyState,
   apiKeyDraft,
   wantsClearKey,
   onApiKeyChange,
@@ -673,13 +673,13 @@ function AiTab({
   onPromptsPatch: (p: Partial<Settings['prompts']>) => void
   onResetPrompts: () => void
   busy: boolean
-  hadKey: boolean
+  keyState: IpcCalls['settings:apiKeyState']['res']
   apiKeyDraft: string
   wantsClearKey: boolean
   onApiKeyChange: (v: string) => void
   onClearKey: () => void
 }) {
-  const keyIsSet = hadKey && !wantsClearKey && apiKeyDraft.length === 0
+  const keyIsSet = keyState === 'set' && !wantsClearKey && apiKeyDraft.length === 0
   const willClear = wantsClearKey && apiKeyDraft.length === 0
   const t = useI18n()
 
@@ -722,6 +722,12 @@ function AiTab({
         <p className="mt-1 text-xs text-fg-muted">{t.t('settings.apiKeyHint', { variable: 'OPENAI_API_KEY' })}</p>
         {willClear && (
           <p className="mt-1 text-xs text-warning-fg">{t.t('settings.apiKeyWillClear')}</p>
+        )}
+        {keyState === 'unreadable' && apiKeyDraft.length === 0 && (
+          <p className="mt-1 text-xs text-warning-fg">{t.t('settings.apiKeyUnreadable')}</p>
+        )}
+        {keyState === 'newer' && (
+          <p className="mt-1 text-xs text-warning-fg">{t.t('settings.apiKeyNewer')}</p>
         )}
       </div>
 

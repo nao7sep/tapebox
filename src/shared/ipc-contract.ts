@@ -104,7 +104,7 @@ export type IpcCalls = {
   'settings:defaultLibraryDir': { req: undefined;                    res: string }
   'settings:setApiKey':    { req: { apiKey: string };                res: void }
   'settings:clearApiKey':  { req: undefined;                         res: void }
-  'settings:hasApiKey':    { req: undefined;                         res: boolean }
+  'settings:apiKeyState':  { req: undefined;                         res: 'set' | 'absent' | 'unreadable' | 'newer' }
 
   // ── Layout (window/view geometry, separate from settings) ────────────────
   'layout:get':            { req: undefined;                         res: Layout }

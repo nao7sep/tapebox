@@ -8,6 +8,8 @@ import { describeError } from '../../shared/error.ts'
 export type BackupRequest = { id: number; absolutePath: string; bytes: Uint8Array }
 export type BackupResponse = { id: number; warning?: { message: string; fields: Record<string, unknown> }; disabled?: boolean }
 
+const COLUMNS = ['id', 'path', 'content', 'content_sha256', 'byte_size', 'written_at_utc']
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS backups (
   id             INTEGER PRIMARY KEY,
@@ -31,7 +33,7 @@ port.on('message', (request: BackupRequest) => {
   try {
     if (!initialized) {
       initialized = true
-      try { db = openWritableDatabase(databasePath, FORMAT_VERSIONS.backups, SCHEMA) }
+      try { db = openWritableDatabase(databasePath, FORMAT_VERSIONS.backups, SCHEMA, isV010BackupStore) }
       catch (error) {
         response.disabled = true
         response.warning = { message: 'backup store: could not open; recording disabled for this session', fields: { file: databasePath, error: describeError(error) } }
@@ -41,7 +43,7 @@ port.on('message', (request: BackupRequest) => {
       const store = db
       const bytes = Buffer.from(request.bytes)
       const hash = createHash('sha256').update(bytes).digest('hex')
-      databaseTransaction(store, databasePath, FORMAT_VERSIONS.backups, true, () => {
+      databaseTransaction(store, true, () => {
         const latest = store.prepare('SELECT content_sha256 AS h FROM backups WHERE path = ? ORDER BY id DESC LIMIT 1').get(request.absolutePath) as { h: string } | undefined
         if (latest?.h === hash) return
         store.prepare('INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)')
@@ -54,3 +56,11 @@ port.on('message', (request: BackupRequest) => {
     port.postMessage(response)
   }
 })
+
+/** TapeBox v0.1.0 created this same `backups` table without a format marker. */
+function isV010BackupStore(store: DatabaseSync): boolean {
+  const tables = store.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'").all() as { name: string }[]
+  if (tables.length !== 1 || tables[0]!.name !== 'backups') return false
+  const columns = (store.prepare('PRAGMA table_info(backups)').all() as { name: string }[]).map((column) => column.name)
+  return columns.length === COLUMNS.length && columns.every((name, index) => name === COLUMNS[index])
+}

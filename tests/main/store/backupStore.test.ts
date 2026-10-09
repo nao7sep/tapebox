@@ -292,11 +292,29 @@ describe('format version (store-recovery-conventions)', () => {
     }
   }
 
-  it('leaves an existing store without its marker byte-identical, warning once and recording nothing', async () => {
+  it('adopts the store v0.1.0 created without a marker, keeping its history', async () => {
+    const file = path.join(root, 'backups.sqlite3')
+    const v010 = new DatabaseSync(file)
+    v010.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
+      content_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL, written_at_utc TEXT NOT NULL)`)
+    v010.prepare('INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)')
+      .run(path.join(root, 'config.json'), Buffer.from('v0.1.0'), 'hash', 6, '2026-07-08T00:00:00.000Z')
+    v010.close()
+    const { record, flushBackupStore, closeBackupStore } = await import('@main/store/backupStore')
+
+    record(path.join(root, 'config.json'), Buffer.from('after the upgrade'))
+    await flushBackupStore()
+    await closeBackupStore()
+
+    expect(userVersion()).toBe(1)
+    expect(readRows(root).map((row) => Buffer.from(row.content).toString('utf8'))).toEqual(['v0.1.0', 'after the upgrade'])
+    expect(logCalls.warn).toHaveLength(0)
+  })
+
+  it('leaves an unmarked store it does not recognize byte-identical, warning once and recording nothing', async () => {
     const file = path.join(root, 'backups.sqlite3')
     const unmarked = new DatabaseSync(file)
-    unmarked.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
-      content_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL, written_at_utc TEXT NOT NULL)`)
+    unmarked.exec('CREATE TABLE something_else (id INTEGER PRIMARY KEY)')
     unmarked.close()
     const bytes = readFileSync(file)
     const { record, flushBackupStore, closeBackupStore } = await import('@main/store/backupStore')
@@ -344,19 +362,4 @@ describe('format version (store-recovery-conventions)', () => {
     expect(logCalls.warn[0]!.fields).toMatchObject({ error: expect.objectContaining({ name: 'NewerFormatError' }) })
   })
 
-  it('refuses a queued write when the cached database has acquired a newer marker', async () => {
-    const backup = await import('@main/store/backupStore')
-    const file = path.join(root, 'config.json')
-    backup.record(file, Buffer.from('kept'))
-    await backup.flushBackupStore()
-    const other = new DatabaseSync(path.join(root, 'backups.sqlite3'))
-    try {
-      other.exec('PRAGMA user_version = 2')
-      backup.record(file, Buffer.from('refused'))
-      await backup.flushBackupStore()
-      expect(other.prepare('SELECT content FROM backups').all()).toEqual([{ content: new Uint8Array(Buffer.from('kept')) }])
-      expect(logCalls.warn).toHaveLength(1)
-      expect(logCalls.warn[0]!.fields).toMatchObject({ error: expect.objectContaining({ name: 'NewerFormatError' }) })
-    } finally { other.close() }
-  })
 })

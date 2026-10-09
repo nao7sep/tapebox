@@ -19,10 +19,16 @@ afterEach(async () => {
 })
 
 describe('sidecar format version', () => {
-  it('reads a sidecar without its marker as unreadable', async () => {
+  it('reads a sidecar without its marker as one v0.1.0 wrote', async () => {
     const path = join(dir, 'Take.json')
     await writeFile(path, JSON.stringify({ id: 'source', tapebox: { name: 'Take' } }))
-    await expect(readSidecarFile(path)).rejects.toThrow(/formatVersion is missing/)
+    await expect(readSidecarFile(path)).resolves.toEqual({ id: 'source', tapebox: { name: 'Take' } })
+  })
+
+  it('reads a sidecar whose marker is not a version as unreadable', async () => {
+    const path = join(dir, 'Take.json')
+    await writeFile(path, JSON.stringify({ formatVersion: 'one', id: 'source' }))
+    await expect(readSidecarFile(path)).rejects.toThrow(/positive integer/)
     expect(await readSidecar(path)).toBeNull()
   })
 

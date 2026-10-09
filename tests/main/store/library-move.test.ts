@@ -23,7 +23,6 @@ vi.mock('node:fs/promises', async () => {
 const {
   completeLibraryRelocation,
   relocateLibrary,
-  rollbackLibraryRelocation,
 } = await import('@main/store/library-move')
 
 let root: string
@@ -203,19 +202,6 @@ describe('relocateLibrary', () => {
     expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('video-a')
     expect(mp4s(await names(toDir))).toEqual(['b.mp4'])
     expect(await readFile(join(toDir, 'b.mp4'), 'utf8')).toBe('late winner')
-  })
-
-  it('preserves a destination replacement winner during pre-config rollback', async () => {
-    await seed(fromDir, 'a.mp4', 'moved library file')
-    const result = await relocateLibrary(fromDir, toDir, ['a.mp4'])
-    if (!result.moved) throw new Error('fixture did not publish')
-    await writeFile(join(root, 'destination-winner.tmp'), 'destination winner')
-    await realFsPromises.rename(join(root, 'destination-winner.tmp'), join(toDir, 'a.mp4'))
-
-    await expect(rollbackLibraryRelocation(result.files)).rejects.toThrow(/could not be cleaned up/)
-
-    expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('moved library file')
-    expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('destination winner')
   })
 
   it('keeps every source readable at a partial-publication process boundary', async () => {

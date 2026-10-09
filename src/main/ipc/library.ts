@@ -1,4 +1,4 @@
-import { access, constants, readFile, readdir, stat, unlink } from 'node:fs/promises'
+import { access, constants, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
@@ -9,21 +9,18 @@ import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import {
-  claimFile,
-  copyClaimedFileNoOverwrite,
   copyFileNoOverwrite,
   directorySupportsHardLinks,
-  publishFileNoOverwrite,
-  unlinkClaimedFiles,
-  type FileClaim,
+  linkOrCopyNoOverwrite,
+  unlinkFiles,
+  writeFileAtomicNoOverwriteVia,
 } from '@main/io/atomic-file'
-import { keepOriginalMode } from '@main/io/file-metadata'
+import { serializeStoreJson } from '@main/io/atomic-json'
 import { openExternalPlayer } from '@main/io/external-player'
-import { assertJsonFileCurrent } from '@main/io/atomic-json'
-import { FORMAT_VERSIONS } from '@main/io/format-version'
-import { portableSiblingExists, type AllowedPortableDirectoryEntry } from '@main/io/portable-directory'
+import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
+import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
-import { readSidecarFile, writeSidecar } from '@main/core/sidecar'
+import { readSidecarFile, SIDECAR_JSON, writeSidecar } from '@main/core/sidecar'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
@@ -294,7 +291,6 @@ async function writeRefreshedSidecar(
   assertCurrent: () => Tape,
 ): Promise<void> {
   const sidecar = await readSidecarFile(path)
-  const original = JSON.stringify(sidecar)
   let changed = false
   const fields = { title: metadata.title, uploader: metadata.uploader, description: metadata.description }
   for (const [key, value] of Object.entries(fields)) {
@@ -308,16 +304,11 @@ async function writeRefreshedSidecar(
     changed = true
   }
   if (!changed) return
+  assertCurrent()
   // not recorded: the sidecar is library-directory content, colocated with binary
   // media, so it is excluded (data-backup conventions) and takes the raw
   // writeJsonAtomic, not the choke point.
-  await writeSidecar(path, sidecar, async () => {
-    assertCurrent()
-    if (JSON.stringify(await readSidecarFile(path)) !== original) {
-      throw new UserFacingError('refused', message('refresh.applyStale'))
-    }
-    assertCurrent()
-  })
+  await writeSidecar(path, sidecar)
 }
 
 /**
@@ -421,22 +412,24 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     }
     const targetMedia = join(libraryDir, mediaFilename)
     const targetSidecar = join(libraryDir, `${mediaStem}.json`)
-    const copied: FileClaim[] = []
+    const copied: string[] = []
     try {
       // not recorded: import copies a media bundle (binary plus its colocated,
       // source-derived sidecar) into the binary-bearing managed library. The
       // new catalog row records the user's durable library membership instead.
       if (srcMedia !== targetMedia) {
         await assertMissing(targetMedia)
-        copied.push(await copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal }))
+        await copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal })
+        copied.push(targetMedia)
       }
       if (sidecarPath !== targetSidecar) {
         await assertMissing(targetSidecar)
-        copied.push(await copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal }))
+        await copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal })
+        copied.push(targetSidecar)
       }
     } catch (err) {
       try {
-        await unlinkClaimedFiles(copied)
+        await unlinkFiles(copied)
         log.error('import bundle copy failed', {
           path: sidecarPath,
           error: describeError(err),
@@ -559,8 +552,8 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   const p = (rel: string) => join(libraryDir, rel)
   const nowUtc = nowUtcIso()
 
-  // Resolve the plan while retaining every old public claim until the durable
-  // catalog commits. A portable-equivalent spelling change keeps the existing
+  // Resolve the plan while keeping every old file until the durable catalog
+  // commits. A portable-equivalent spelling change keeps the existing
   // physical filename (the only crash-safe representation on case-insensitive
   // filesystems) while still applying the requested display name.
   const items = await Promise.all(plan.items.map(async (it) => {
@@ -571,17 +564,12 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
       finalName: equivalent ? it.old : it.fresh,
       old,
       fresh: p(it.fresh),
-      stage: p(it.stage),
       equivalent,
-      original: await claimFile(old),
     }
   }))
 
   const publishing = items.filter((item) => !item.equivalent)
-  for (const it of publishing) {
-    await assertMissing(it.fresh)
-    await assertMissing(it.stage)
-  }
+  for (const it of publishing) await assertMissing(it.fresh)
 
   const byArtifact = (artifact: (typeof items)[number]['artifact']) =>
     items.find((item) => item.artifact === artifact)
@@ -607,28 +595,17 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   }
 
   // Build and exclusively publish every genuinely new destination while the old
-  // public files remain intact. Until catalog.json commits, these destination
-  // claims are rollback-only and the persisted row still resolves every old file.
-  const done: FileClaim[] = []
+  // files remain intact. Until catalog.json commits, the new files are
+  // rollback-only and the persisted row still resolves every old file.
+  const done: string[] = []
   const rollbackBeforeCatalogCommit = async (initiatingError: unknown): Promise<never> => {
-    const rollbackErrors: unknown[] = []
     try {
-      await unlinkClaimedFiles(done)
+      await unlinkFiles(done)
     } catch (cleanupError) {
-      rollbackErrors.push(cleanupError)
-    }
-    for (const it of publishing) {
-      try {
-        await unlink(it.stage)
-      } catch (cleanupError) {
-        if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') rollbackErrors.push(cleanupError)
-      }
-    }
-    if (rollbackErrors.length > 0) {
       throw new AggregateError(
-        [initiatingError, ...rollbackErrors],
+        [initiatingError, cleanupError],
         `Rename failed before the catalog commit and destination rollback was incomplete. ` +
-          `Destination claims: ${done.map((claim) => claim.path).join(', ')}.`,
+          `Destinations: ${done.join(', ')}.`,
       )
     }
     throw initiatingError
@@ -641,16 +618,15 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
         // media and thumbnail — a binary-bearing directory whose contents ride along
         // into exclusion (data-backup conventions). It uses the raw writeJsonAtomic,
         // not the managed-text choke point; the tape's catalog row records instead.
-        await writeSidecar(it.stage, sidecar)
         // The renamed sidecar replaces the old one, so it keeps what a replace keeps.
-        await keepOriginalMode(it.old, it.stage)
-        done.push(await publishFileNoOverwrite(it.stage, it.fresh))
+        const bytes = serializeStoreJson(sidecar, SIDECAR_JSON)
+        await writeFileAtomicNoOverwriteVia(it.fresh, (temp) => writeFile(temp, bytes), (await stat(it.old)).mode & 0o777)
+        done.push(it.fresh)
       } else {
         // not recorded: the tape's existing media/thumbnail bytes gain a second
         // name inside the binary-bearing library; no backup-worthy text is created.
-        const published = await copyClaimedFileNoOverwrite(it.original, it.fresh, undefined, signal)
-        if (!published) throw new Error(`File changed before it could be renamed: ${it.old}`)
-        done.push(published.claim)
+        await linkOrCopyNoOverwrite(it.old, it.fresh, signal)
+        done.push(it.fresh)
       }
       signal.throwIfAborted()
     }
@@ -679,9 +655,9 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
       )
     }
   }
-  const obsoleteClaims = publishing.map((item) => item.original)
+  const obsolete = publishing.map((item) => item.old)
   try {
-    await unlinkClaimedFiles(obsoleteClaims)
+    await unlinkFiles(obsolete)
   } catch (cleanupError) {
     postCommitErrors.push(cleanupError)
   }
@@ -689,7 +665,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
     const diagnostic = new AggregateError(
       postCommitErrors,
       `Rename committed and the catalog points to the new bundle, but post-commit sidecar/source cleanup was incomplete. ` +
-        `Old/sidecar paths: ${[...obsoleteClaims.map((claim) => claim.path), sidecarItem.old].join(', ')}.`,
+        `Old/sidecar paths: ${[...obsolete, sidecarItem.old].join(', ')}.`,
     )
     throw new UserFacingError(
       'conflict',
@@ -748,9 +724,7 @@ async function removeTapesFrom(
 
       if (deleteFiles) {
         try {
-          if (tape.sidecarFilename) {
-            await assertJsonFileCurrent(join(libraryDir, tape.sidecarFilename), FORMAT_VERSIONS.sidecar)
-          }
+          if (tape.sidecarFilename) await refuseNewerSidecar(join(libraryDir, tape.sidecarFilename))
           const others = session.getTapes().filter((other) => other.id !== tape.id)
           await discardTapeFiles(libraryDir, tape, others, settings.trashOnRemove)
         } catch (err) {
@@ -776,6 +750,18 @@ async function removeTapesFrom(
   } finally {
     for (const release of releases.reverse()) release()
   }
+}
+
+/**
+ * A sidecar from a newer TapeBox may name files this version does not know, so
+ * its tape keeps its files. A damaged or missing sidecar does not stop the
+ * removal: the user asked for the files to go, and the Trash setting applies.
+ */
+async function refuseNewerSidecar(path: string): Promise<void> {
+  let text: string
+  try { text = await readFile(path, 'utf8') } catch { return }
+  const found = parseStoreJson(text, FORMAT_VERSIONS.sidecar, true)
+  if (found.status === 'newer') throw new NewerFormatError(path, found.version, FORMAT_VERSIONS.sidecar)
 }
 
 /**
@@ -822,22 +808,8 @@ async function discardFile(path: string, toTrash: boolean): Promise<void> {
   await shell.trashItem(path)
 }
 
-/**
- * True if `path`'s directory already holds a sibling with the same portable filename
- * identity: NFC-normalized and lowercased. These aliases collide on macOS/Windows
- * even when an exact `stat(path)` reports the requested spelling missing. Exact
- * physical claims may be allowed so a file is not its own collision during an
- * equivalent rename. A missing directory means no sibling.
- */
-export async function caseInsensitiveSiblingExists(
-  path: string,
-  allowedEntries: readonly AllowedPortableDirectoryEntry[] = [],
-): Promise<boolean> {
-  return portableSiblingExists(path, allowedEntries)
-}
-
-async function assertMissing(path: string, allowedEntries: readonly AllowedPortableDirectoryEntry[] = []): Promise<void> {
-  if (await caseInsensitiveSiblingExists(path, allowedEntries)) {
+async function assertMissing(path: string): Promise<void> {
+  if (await portableSiblingExists(path)) {
     throw new Error(`Target already exists (case-insensitive): ${path}`)
   }
 }

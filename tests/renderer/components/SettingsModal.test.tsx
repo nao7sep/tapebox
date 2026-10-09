@@ -19,10 +19,10 @@ let host: HTMLDivElement
 let saved: Settings
 const onClose = vi.fn()
 
-function stubMain(updateReply: (patch: SettingsSets) => unknown) {
+function stubMain(updateReply: (patch: SettingsSets) => unknown, keyState = 'absent') {
   ipcInvoke.mockImplementation((channel: string, req?: unknown) => {
     if (channel === 'settings:get') return Promise.resolve(saved)
-    if (channel === 'settings:hasApiKey') return Promise.resolve(false)
+    if (channel === 'settings:apiKeyState') return Promise.resolve(keyState)
     if (channel === 'settings:defaultLibraryDir') return Promise.resolve('/home/me/.tapebox/library')
     if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsSets))
     return Promise.resolve()
@@ -114,7 +114,18 @@ describe('SettingsModal', () => {
     expect(document.querySelector('h3')!.textContent).toBe('OpenAI')
     expect(document.body.textContent).toContain('OpenAI is the only provider supported.')
     expect(document.querySelectorAll('select')).toHaveLength(0)
-    expect(ipcInvoke.mock.calls.map(([channel]) => channel)).toEqual(['settings:get', 'settings:hasApiKey', 'settings:defaultLibraryDir'])
+    expect(ipcInvoke.mock.calls.map(([channel]) => channel)).toEqual(['settings:get', 'settings:apiKeyState', 'settings:defaultLibraryDir'])
+  })
+
+  it.each([
+    ['unreadable', 'The saved key file could not be read. Enter a new key and save to replace it.'],
+    ['newer', 'The saved key file is from a newer version of TapeBox and is left unchanged.'],
+  ])('says when the saved key file is %s', async (keyState, text) => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }), keyState)
+    await render()
+    await click('AI')
+    expect(document.body.textContent).toContain(text)
+    expect(document.body.textContent).not.toContain('Key is set')
   })
 
   it('warns under the model field only while the id has no row', async () => {

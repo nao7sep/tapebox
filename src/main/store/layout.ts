@@ -21,10 +21,14 @@ let saveTimer: NodeJS.Timeout | null = null
 let writeQueue: Promise<void> = Promise.resolve()
 /** True when layout.json is in a newer format, which this build never writes. */
 let newerOnDisk = false
+/** What layout.json last held as read or written, so an unchanged save writes
+ *  nothing and leaves its modified time alone (content-lifecycle conventions). */
+let lastWritten: string | null = null
 
 export async function loadLayout(): Promise<void> {
   cache = { ...defaultLayout }
   newerOnDisk = false
+  lastWritten = null
   let text: string
   try {
     text = await readFile(paths.layout, 'utf8')
@@ -34,7 +38,7 @@ export async function loadLayout(): Promise<void> {
     }
     return
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.layout)
+  const found = parseStoreJson(text, FORMAT_VERSIONS.layout, true)
   if (found.status === 'newer') {
     // Intact, from a newer build: used as defaults and never written this session.
     newerOnDisk = true
@@ -47,6 +51,7 @@ export async function loadLayout(): Promise<void> {
   const parsed = found.status === 'read' ? LayoutSchema.safeParse(found.value) : null
   if (parsed?.success) {
     cache = parsed.data
+    if (found.status === 'read' && found.version === FORMAT_VERSIONS.layout) lastWritten = JSON.stringify(cache)
   } else {
     const error = found.status === 'unreadable' ? found.error : parsed?.error
     log.warn('layout invalid; using defaults', { error: describeError(error) })
@@ -79,9 +84,12 @@ export async function persistNow(): Promise<void> {
     // Snapshot inside the serialized turn so a newer cache always wins after an
     // older in-flight write. Overlapping renderer updates must not race.
     const snapshot = structuredClone(cache)
+    const key = JSON.stringify(snapshot)
+    if (key === lastWritten) return
     // layout.json is volatile state only (pane sizes, volume): the raw atomic
     // writer saves it without recording to the backup history.
-    await writeJsonAtomic(paths.layout, snapshot, { formatVersion: FORMAT_VERSIONS.layout, schema: LayoutSchema, discardUnreadable: true })
+    await writeJsonAtomic(paths.layout, snapshot, { formatVersion: FORMAT_VERSIONS.layout, schema: LayoutSchema })
+    lastWritten = key
   })
   writeQueue = write.catch(() => {})
   try { await write } catch (err) {

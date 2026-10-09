@@ -1,10 +1,10 @@
-import { open, readFile, rename, stat } from 'node:fs/promises'
+import { open, rename, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
-import { NewerFormatError, parseStoreJson, withFormatVersion } from './format-version'
+import { withFormatVersion } from './format-version'
 import { record } from '@main/store/backupStore'
-import { utcTimestampForFilenameMs } from '@shared/utc'
+import { utcTimestampForFilename } from '@shared/utc'
 import { log } from './logger'
 import { describeError } from '@shared/error'
 
@@ -34,33 +34,16 @@ import { describeError } from '@shared/error'
  */
 
 /** How a store's JSON is written: its format version, and the shape it is
- *  validated against first when given. */
+ *  validated against first when given. Whether a file already on disk may be
+ *  replaced is decided where the store is loaded, which refuses a newer or
+ *  unreadable store; one TapeBox runs per data root, so nothing changes it
+ *  between that load and a save (store-recovery-conventions). */
 export type StoreJsonOptions<S extends z.ZodType> = {
   formatVersion: number
   schema?: S
-  /** Only disposable state and re-derived caches may replace unreadable bytes. */
-  discardUnreadable?: boolean
-  /** Recheck the caller's live mutation basis at the final publication boundary. */
-  validateCurrent?: () => Promise<void>
 }
 
-/** Admit the current governing file; absence permits creating a new store. */
-export async function assertJsonFileCurrent(path: string, current: number, discardUnreadable = false): Promise<void> {
-  let text: string
-  try {
-    text = await readFile(path, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-    throw error
-  }
-  const found = parseStoreJson(text, current)
-  if (found.status === 'newer') throw new NewerFormatError(path, found.version, current)
-  if (found.status === 'unreadable' && !discardUnreadable) {
-    throw new Error(`${path} is unreadable and was left in place`, { cause: found.error })
-  }
-}
-
-async function publishJson(path: string, bytes: string | Buffer, options: { mode?: number; admit: () => Promise<void> }): Promise<void> {
+async function publishJson(path: string, bytes: string | Buffer, mode?: number): Promise<void> {
   await writeFileAtomicVia(path, async (tempPath) => {
     const file = await open(tempPath, 'r+')
     try {
@@ -72,7 +55,7 @@ async function publishJson(path: string, bytes: string | Buffer, options: { mode
       throw error
     }
     await file.close()
-  }, undefined, undefined, options.mode, options.admit)
+  }, undefined, undefined, mode)
 }
 
 /** Serialize a store's value to the canonical on-disk JSON form (2-space indent,
@@ -90,7 +73,7 @@ export function serializeStoreJson<S extends z.ZodType>(
 
 /**
  * Raw atomic JSON write, NOT recorded to the data-backup store. A file that
- * already holds the same bytes is left as it is. For JSON that is
+ * For JSON that is
  * excluded from the backup by design-time, per-write-site decision: the binary-
  * bearing library/export sidecars, the secret api-keys.json, re-derivable
  * dependency/update facts, and the volatile-state layout.json (see the module
@@ -106,30 +89,7 @@ export async function writeJsonAtomic<S extends z.ZodType>(
     mode?: number
   },
 ): Promise<void> {
-  const { mode } = options
-  const text = serializeStoreJson(data, options)
-  const admit = async () => {
-    await assertJsonFileCurrent(path, options.formatVersion, options.discardUnreadable)
-    await options.validateCurrent?.()
-  }
-  await admit()
-  if (await holdsAlready(path, text, mode)) return
-  await publishJson(path, text, { mode, admit })
-}
-
-/** Whether `path` already holds exactly `text` (and `mode`, when one is asked for),
- * so writing it again would change nothing but the file's modified time
- * (content-lifecycle conventions). */
-async function holdsAlready(path: string, text: string, mode: number | undefined): Promise<boolean> {
-  let current: Buffer
-  try {
-    current = await readFile(path)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw err
-  }
-  if (!current.equals(Buffer.from(text, 'utf8'))) return false
-  return mode === undefined || ((await stat(path)).mode & 0o777) === mode
+  await publishJson(path, serializeStoreJson(data, options), options.mode)
 }
 
 /**
@@ -155,15 +115,8 @@ export async function writeManagedJson<S extends z.ZodType>(
   data: z.input<S> | z.infer<S>,
   options: StoreJsonOptions<S>,
 ): Promise<void> {
-  const text = serializeStoreJson(data, options)
-  const bytes = Buffer.from(text, 'utf8')
-  const admit = async () => {
-    await assertJsonFileCurrent(path, options.formatVersion, options.discardUnreadable)
-    await options.validateCurrent?.()
-  }
-  await admit()
-  if (await holdsAlready(path, text, undefined)) return
-  await publishJson(path, bytes, { admit })
+  const bytes = Buffer.from(serializeStoreJson(data, options), 'utf8')
+  await publishJson(path, bytes)
   // After the rename: the file is exactly where it belongs, so record the bytes we
   // just wrote. Best-effort — record() never throws — so a backup problem can never
   // break the save that already succeeded above.
@@ -171,16 +124,22 @@ export async function writeManagedJson<S extends z.ZodType>(
 }
 
 /**
- * Move a corrupt managed file aside to its timestamped `<stem>-<stamp>.invalid`
+ * Move a malformed managed file aside to its timestamped `<stem>-<stamp>.invalid`
  * sibling, preserving its bytes, and return the quarantine path. The rename
- * either lands or its failure propagates — the caller decides whether that is
- * fatal (session), required before recovery (config), or degradable (api-keys).
- * The one home of the quarantine naming grammar, so the three stores cannot
- * drift apart on it.
+ * either lands or its failure propagates, and an earlier copy under the same
+ * name is never replaced; the caller then stops rather than start fresh. Seconds
+ * name it: a store is set aside at most once per launch. The one home of the
+ * quarantine naming grammar, so the catalog and config cannot drift apart on it.
  */
 export async function quarantineFile(filePath: string): Promise<string> {
   const stem = basename(filePath, extname(filePath))
-  const quarantinePath = join(dirname(filePath), `${stem}-${utcTimestampForFilenameMs()}.invalid`)
+  const quarantinePath = join(dirname(filePath), `${stem}-${utcTimestampForFilename()}.invalid`)
+  try {
+    await stat(quarantinePath)
+    throw Object.assign(new Error(`${quarantinePath} already exists`), { code: 'EEXIST' })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
   await rename(filePath, quarantinePath)
   return quarantinePath
 }

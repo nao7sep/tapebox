@@ -10,6 +10,6 @@ import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
  */
 export function readSavedLanguagePreference(configText: string | null): LanguagePreference {
   if (configText === null) return 'system'
-  const found = parseStoreJson(configText, FORMAT_VERSIONS.config)
+  const found = parseStoreJson(configText, FORMAT_VERSIONS.config, true)
   return found.status === 'read' ? normalizeLanguagePreference(found.value['language']) : 'system'
 }

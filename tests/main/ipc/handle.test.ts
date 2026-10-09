@@ -57,9 +57,9 @@ describe('IPC failure boundary', () => {
   })
 
   it('wraps a successful result as its value', async () => {
-    handle('settings:hasApiKey', async () => true)
+    handle('settings:apiKeyState', async () => 'set' as const)
     const reply = await registered()({}, undefined)
-    expect(unwrapIpcReply('settings:hasApiKey', reply)).toBe(true)
+    expect(unwrapIpcReply('settings:apiKeyState', reply)).toBe('set')
   })
 
   it('replies internal for a request that fails its schema', async () => {

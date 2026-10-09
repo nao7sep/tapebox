@@ -1,8 +1,8 @@
 import { app, BrowserWindow, powerMonitor, shell } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ensureDirs, sweepAbandonedStaging } from './paths.js'
-import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from './startup-dialog.js'
+import { ensureDirs, paths, sweepAbandonedStaging } from './paths.js'
+import { notifyCorruptConfig, notifyCorruptSession, notifySettingsKept, notifyStartupFailure } from './startup-dialog.js'
 import { initLogger, isDebugEnabled, log } from './io/logger.js'
 import { closeRecords, flushRecordsBeforeExit, onRecordStored, openRecords } from './io/records.js'
 import { closeRecordsReader } from './io/records-read.js'
@@ -175,6 +175,8 @@ async function startup(): Promise<void> {
   }
   if (configResult.status === 'recovered') {
     await notifyCorruptConfig(configResult.quarantinePath, initialWindow)
+  } else if (configResult.status === 'loaded' && configResult.settingsKept) {
+    await notifySettingsKept(paths.config, initialWindow)
   }
 }
 

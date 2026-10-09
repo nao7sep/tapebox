@@ -1,6 +1,7 @@
 import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { mainTranslator } from './i18n.js'
 import { NewerFormatError } from './io/format-version.js'
+import { LibraryFolderSettingError, StoreAccessError } from './io/store-access.js'
 import type { MessageValues } from '@shared/i18n/translate'
 import type { BrowserWindow } from 'electron'
 
@@ -12,7 +13,9 @@ import type { BrowserWindow } from 'electron'
  * in the saved language.
  */
 
-type Notice = 'settingsUnreadable' | 'libraryUnreadable' | 'failed' | 'storeNewer'
+type Notice =
+  | 'settingsUnreadable' | 'libraryUnreadable' | 'settingsKept'
+  | 'failed' | 'storeNewer' | 'storeInaccessible' | 'libraryFolderUnreadable'
 
 async function showNotice(notice: Notice, owner?: BrowserWindow, values?: MessageValues): Promise<void> {
   const t = mainTranslator()
@@ -36,9 +39,18 @@ export async function notifyCorruptSession(quarantinePath: string, owner?: Brows
   await showNotice('libraryUnreadable', owner, { path: quarantinePath })
 }
 
-/** Startup stopped. A store in a newer format is named with its path, and was
- *  left as it is (store-recovery-conventions). */
+/** Settings that failed their check stay in the file while the built-ins stand
+ *  in for them (config-sets-conventions, Loading and fallback). */
+export async function notifySettingsKept(configPath: string, owner?: BrowserWindow): Promise<void> {
+  await showNotice('settingsKept', owner, { path: configPath })
+}
+
+/** Startup stopped. A store in a newer format, one that could not be opened, and
+ *  a library folder setting that could not be read are each named with their
+ *  path, and were left as they are (store-recovery-conventions). */
 export async function notifyStartupFailure(error: unknown): Promise<void> {
   if (error instanceof NewerFormatError) await showNotice('storeNewer', undefined, { path: error.path })
+  else if (error instanceof StoreAccessError) await showNotice('storeInaccessible', undefined, { path: error.path })
+  else if (error instanceof LibraryFolderSettingError) await showNotice('libraryFolderUnreadable', undefined, { path: error.path })
   else await showNotice('failed')
 }

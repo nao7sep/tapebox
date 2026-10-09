@@ -1,6 +1,5 @@
 import { mkdtempSync, statSync } from 'node:fs'
 import { chmod, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
-import * as atomicJson from '@main/io/atomic-json'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -55,13 +54,25 @@ describe('api-keys storage', () => {
     expect(statSync(apiKeysPath).mode).toBe(before.mode)
   })
 
-  it('resolves absent but refuses writes if an unreadable file cannot be quarantined', async () => {
+  it('leaves an unreadable key file in place as no key, and a newly entered key replaces it', async () => {
     await writeFile(apiKeysPath, '{"formatVersion":1,"keys":[]}', 'utf8')
-    const failure = new Error('quarantine unavailable')
-    vi.spyOn(atomicJson, 'quarantineFile').mockRejectedValue(failure)
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
-    await expect(apiKeys.writeApiKey('openai', 'replacement')).rejects.toMatchObject({ cause: failure })
+    await expect(apiKeys.apiKeyState('openai')).resolves.toBe('unreadable')
     expect(await readFile(apiKeysPath, 'utf8')).toBe('{"formatVersion":1,"keys":[]}')
+    await apiKeys.writeApiKey('openai', 'replacement')
+    await expect(apiKeys.resolveApiKey('openai')).resolves.toBe('replacement')
+  })
+
+  it('replaces an unreadable key file when the key is cleared', async () => {
+    await writeFile(apiKeysPath, 'not json at all', 'utf8')
+    await apiKeys.clearApiKey('openai')
+    await expect(apiKeys.apiKeyState('openai')).resolves.toBe('absent')
+    expect(JSON.parse(await readFile(apiKeysPath, 'utf8'))).toEqual({ formatVersion: 1, keys: {} })
+  })
+
+  it('reads a v0.1.0 key file, which had no format marker', async () => {
+    await writeFile(apiKeysPath, JSON.stringify({ keys: { openai: 'sk-plain' } }), 'utf8')
+    await expect(apiKeys.resolveApiKey('openai')).resolves.toBe('sk-plain')
   })
   it('derives the conventional environment variable from the id', () => {
     expect(OPENAI).toBe('OPENAI_API_KEY')
@@ -69,7 +80,7 @@ describe('api-keys storage', () => {
 
   it('round-trips a stored key', async () => {
     await apiKeys.writeApiKey('openai', 'sk-stored-123')
-    expect(await apiKeys.hasApiKey('openai')).toBe(true)
+    expect(await apiKeys.apiKeyState('openai')).toBe('set')
     expect(await apiKeys.resolveApiKey('openai')).toBe('sk-stored-123')
   })
 
@@ -93,7 +104,7 @@ describe('api-keys storage', () => {
   it('clears the stored key', async () => {
     await apiKeys.writeApiKey('openai', 'sk-stored-123')
     await apiKeys.clearApiKey('openai')
-    expect(await apiKeys.hasApiKey('openai')).toBe(false)
+    expect(await apiKeys.apiKeyState('openai')).toBe('absent')
     expect(await apiKeys.resolveApiKey('openai')).toBeNull()
   })
 
@@ -101,12 +112,12 @@ describe('api-keys storage', () => {
     await apiKeys.writeApiKey('openai', 'sk-stored-123')
     process.env[OPENAI] = '  sk-from-env  '
     expect(await apiKeys.resolveApiKey('openai')).toBe('sk-from-env')
-    expect(await apiKeys.hasApiKey('openai')).toBe(true)
+    expect(await apiKeys.apiKeyState('openai')).toBe('set')
   })
 
   it('reports a key present from the environment even with nothing stored', async () => {
     process.env[OPENAI] = 'sk-from-env-only'
-    expect(await apiKeys.hasApiKey('openai')).toBe(true)
+    expect(await apiKeys.apiKeyState('openai')).toBe('set')
     expect(await apiKeys.resolveApiKey('openai')).toBe('sk-from-env-only')
   })
 
@@ -158,13 +169,13 @@ describe('api-keys storage', () => {
     expect(mode).toBe(0o600)
   })
 
-  it('moves a corrupt key file aside and resolves to no key instead of throwing', async () => {
+  it('leaves a corrupt key file where it is and resolves to no key instead of throwing', async () => {
     await writeFile(apiKeysPath, 'not json at all', 'utf8')
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
 
     const entries = await readdir(root)
-    expect(entries.some((e) => e.startsWith('api-keys-') && e.endsWith('.invalid'))).toBe(true)
-    expect(entries).not.toContain('api-keys.json')
+    expect(entries.some((e) => e.endsWith('.invalid'))).toBe(false)
+    expect(await readFile(apiKeysPath, 'utf8')).toBe('not json at all')
   })
 
   it('treats a malformed obf: value as absent and warns naming the key id, rather than leniently decoding garbage', async () => {
@@ -174,7 +185,7 @@ describe('api-keys storage', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
-    await expect(apiKeys.hasApiKey('openai')).resolves.toBe(false)
+    await expect(apiKeys.apiKeyState('openai')).resolves.toBe('unreadable')
 
     const warned = vi
       .mocked(console.warn)

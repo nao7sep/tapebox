@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Dependencies } from '@shared/dependencies'
@@ -67,7 +67,6 @@ vi.mock('@main/binaries/registry', async (importOriginal) => {
 // spawn against whatever happens to sit in the real ~/.tapebox/bin. Stubbed so this
 // test stays about the fact fold and never touches the developer's own install.
 vi.mock('@main/binaries/installed-version', () => ({
-  admitVersionSidecar: vi.fn(async () => undefined),
   readInstalledVersion: vi.fn(async () => null),
   forgetInstalledVersion: vi.fn(),
   writeVersionSidecar: vi.fn(async () => undefined),
@@ -85,7 +84,7 @@ import { binaryNames, binarySpecs } from '@main/binaries/registry'
 import { mutateDependencies } from '@main/store/dependencies'
 import { freshBinaryEntry } from '@shared/dependencies'
 import { UnsafeUrlError } from '@main/io/network'
-import { admitVersionSidecar, forgetInstalledVersion, writeVersionSidecar } from '@main/binaries/installed-version'
+import { forgetInstalledVersion, writeVersionSidecar } from '@main/binaries/installed-version'
 import { log } from '@main/io/logger'
 
 afterEach(async () => {
@@ -96,7 +95,6 @@ afterEach(async () => {
   execCapture.mockReset()
   assertArm64Slice.mockReset()
   extractFileFromZip.mockReset()
-  vi.mocked(admitVersionSidecar).mockReset().mockResolvedValue(undefined)
   vi.mocked(writeVersionSidecar).mockReset().mockResolvedValue(undefined)
   vi.restoreAllMocks()
   await rm(testRoot, { recursive: true, force: true })
@@ -260,23 +258,6 @@ describe('install terminal facts', () => {
     })
     expect(await readdir(join(testRoot, 'bin'))).toEqual(['yt-dlp.exe'])
     expect(log.warn).toHaveBeenCalledWith('installed binary upstream facts could not be recorded', expect.objectContaining({ error: expect.objectContaining({ message: 'facts save failed', stack: expect.stringContaining('facts save failed') }) }))
-  })
-
-  it.each([1, 2])('preserves the existing binary when sidecar admission %i refuses', async (admission) => {
-    seed()
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    await mkdir(join(testRoot, 'bin'), { recursive: true })
-    await writeFile(join(testRoot, 'bin', 'ffmpeg.exe'), 'previous binary')
-    vi.mocked(binarySpecs.ffmpeg.resolveLatest).mockResolvedValue(resolved('autobuild-2026-08-19-19-21'))
-    downloadWithProgress.mockImplementation(async ({ destPath }: { destPath: string }) => {
-      await writeFile(destPath, 'verified binary bytes')
-    })
-    verifyBinaryIntegrity.mockResolvedValue({ verified: true, method: 'sha256' })
-    if (admission === 2) vi.mocked(admitVersionSidecar).mockResolvedValueOnce(undefined)
-    vi.mocked(admitVersionSidecar).mockRejectedValueOnce(new Error('newer sidecar was retained'))
-    await expect(installOrUpdate('ffmpeg', `op-admission-${admission}`)).resolves.toMatchObject({ outcome: 'failed' })
-    expect(await readFile(join(testRoot, 'bin', 'ffmpeg.exe'), 'utf8')).toBe('previous binary')
-    expect(await readdir(join(testRoot, 'bin'))).toEqual(['ffmpeg.exe'])
   })
 
   it('keeps a committed install successful when its sidecar cannot be saved', async () => {

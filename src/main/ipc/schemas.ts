@@ -101,7 +101,7 @@ export const ipcRequestSchemas = {
   'settings:cancelLibraryMove': z.undefined(),
   'settings:setApiKey':    z.object({ apiKey: z.string() }),
   'settings:clearApiKey':  z.undefined(),
-  'settings:hasApiKey':    z.undefined(),
+  'settings:apiKeyState':  z.undefined(),
 
   // ── Layout ──────────────────────────────────────────────────────────────
   'layout:get':            z.undefined(),

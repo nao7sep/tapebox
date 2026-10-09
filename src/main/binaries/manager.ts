@@ -27,7 +27,6 @@ import type {
 } from '@shared/ipc-contract'
 import { binaryNames, binarySpecs } from './registry'
 import {
-  admitVersionSidecar,
   forgetInstalledVersion,
   readInstalledVersion,
   writeVersionSidecar,
@@ -283,7 +282,6 @@ async function performInstall(
   emit('binaries:progress', { name, operationId, percent: 0, phase: 'download' })
 
   const spec = binarySpecs[name]
-  if (spec.installedVersion.kind === 'sidecar') await admitVersionSidecar(name)
   const resolved = await spec.resolveLatest(signal)
   signal.throwIfAborted()
   log.info('binary resolved', { name, version: resolved.version, url: resolved.downloadUrl })
@@ -383,7 +381,6 @@ async function performInstall(
       signal,
       // Executable, whatever the binary it replaces was.
       process.platform === 'win32' ? undefined : 0o755,
-      spec.installedVersion.kind === 'sidecar' ? () => admitVersionSidecar(name) : undefined,
     )
   } finally {
     if (downloadReady) await unlink(downloadTemp).catch((error: unknown) => {

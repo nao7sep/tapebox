@@ -6,7 +6,13 @@ import { parseStoreJson, withFormatVersion } from '@main/io/format-version'
 
 describe('parseStoreJson', () => {
   it('reads 1 as this build\'s own', () => {
-    expect(parseStoreJson('{"formatVersion":1,"a":1}', 1)).toEqual({ status: 'read', value: { formatVersion: 1, a: 1 } })
+    expect(parseStoreJson('{"formatVersion":1,"a":1}', 1)).toEqual({ status: 'read', value: { formatVersion: 1, a: 1 }, version: 1 })
+  })
+
+  it('reads a missing marker as v0.1.0\'s format only for a store that existed then', () => {
+    expect(parseStoreJson('{"a":1}', 1, true)).toEqual({ status: 'read', value: { a: 1 }, version: 0 })
+    expect(parseStoreJson('{"a":1}', 1).status).toBe('unreadable')
+    expect(parseStoreJson('{"formatVersion":0}', 1, true).status, 'an explicit 0 is not v0.1.0').toBe('unreadable')
   })
 
   it('reports a newer marker with its version', () => {

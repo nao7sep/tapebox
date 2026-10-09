@@ -240,15 +240,23 @@ describe('removing tapes from the library', () => {
     expect(state.tapes).toEqual([])
   })
 
-  it.each(['{"formatVersion":2}', 'unreadable'])('keeps every bundle file when its governing sidecar is %s', async (sidecar) => {
+  it('keeps every bundle file when its sidecar is from a newer TapeBox', async () => {
     const tape = await stageFiles('Protected1')
     state.tapes = [tape]
-    await writeFile(join(state.libraryDir, 'Protected1.json'), sidecar)
+    await writeFile(join(state.libraryDir, 'Protected1.json'), '{"formatVersion":2}')
     await expect(invoke('library:remove', { tapeIds: ['Protected1'], deleteFiles: true })).rejects.toThrow('could not be removed')
     expect(state.tapes).toEqual([tape])
     expect((await readdir(state.libraryDir)).sort()).toEqual(['Protected1.jpg', 'Protected1.json', 'Protected1.mp4'])
     expect(shell.trashItem).not.toHaveBeenCalled()
     expect(emitted('tapes:removed')).toEqual([])
+  })
+
+  it('removes a tape and its files when its sidecar is damaged', async () => {
+    state.tapes = [await stageFiles('Damaged001')]
+    await writeFile(join(state.libraryDir, 'Damaged001.json'), 'unreadable')
+    await invoke('library:remove', { tapeIds: ['Damaged001'], deleteFiles: true })
+    expect(state.tapes).toEqual([])
+    expect(await readdir(state.libraryDir)).toEqual([])
   })
 
   it('sends the files to the Trash instead when the user asked for that, and skips ones already gone', async () => {

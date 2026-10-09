@@ -48,8 +48,15 @@ export class NewerFormatError extends Error {
   }
 }
 
+/**
+ * TapeBox v0.1.0, a public release, wrote every JSON store without a marker. A
+ * store that existed then reads an unmarked file as this format, which its owner
+ * converts on read; saves then write the current marker.
+ */
+export const V0_1_0_FORMAT = 0
+
 export type StoreJson =
-  | { status: 'read'; value: Record<string, unknown> }
+  | { status: 'read'; value: Record<string, unknown>; version: number }
   | { status: 'newer'; version: number }
   | { status: 'unreadable'; error: Error }
 
@@ -58,7 +65,7 @@ export type StoreJson =
  * not an object is unreadable. The returned value still holds the marker; each
  * store's own shape ignores it.
  */
-export function parseStoreJson(text: string, current: number): StoreJson {
+export function parseStoreJson(text: string, current: number, readsV010 = false): StoreJson {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -68,22 +75,24 @@ export function parseStoreJson(text: string, current: number): StoreJson {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return { status: 'unreadable', error: new Error('the root is not a JSON object') }
   }
-  return checkFormatVersion(raw as Record<string, unknown>, current)
+  return checkFormatVersion(raw as Record<string, unknown>, current, readsV010)
 }
 
 /**
- * Read a parsed JSON store's marker against `current`. A missing marker, or one
- * that is not a positive integer, makes the store unreadable.
+ * Read a parsed JSON store's marker against `current`. A missing marker is the
+ * v0.1.0 format for a store that existed then (`readsV010`), and unreadable
+ * otherwise; a marker that is not a positive integer is unreadable.
  */
-export function checkFormatVersion(value: Record<string, unknown>, current: number): StoreJson {
+export function checkFormatVersion(value: Record<string, unknown>, current: number, readsV010 = false): StoreJson {
   const marker = value[FORMAT_VERSION_KEY]
   if (marker === undefined) {
+    if (readsV010) return { status: 'read', value, version: V0_1_0_FORMAT }
     return { status: 'unreadable', error: new Error(`${FORMAT_VERSION_KEY} is missing`) }
   }
   if (typeof marker !== 'number' || !Number.isSafeInteger(marker) || marker < 1) {
     return { status: 'unreadable', error: new Error(`${FORMAT_VERSION_KEY} is not a positive integer`) }
   }
-  return marker > current ? { status: 'newer', version: marker } : { status: 'read', value }
+  return marker > current ? { status: 'newer', version: marker } : { status: 'read', value, version: marker }
 }
 
 /** `data` with `formatVersion` as its first key, replacing any marker it held. */
@@ -107,8 +116,9 @@ export function databaseFormatVersion(db: DatabaseSync, path: string): number | 
 }
 
 /**
- * Admit an existing SQLite store before using it in the current transaction.
- * Unmarked and invalid markers are unreadable; newer markers are protected.
+ * Admit an existing SQLite store when it is opened. Unmarked and invalid markers
+ * are unreadable; newer markers are protected. One TapeBox runs per data root, so
+ * the format cannot change while a store is open.
  */
 export function assertDatabaseCurrent(db: DatabaseSync, path: string, current: number): void {
   const version = databaseFormatVersion(db, path)

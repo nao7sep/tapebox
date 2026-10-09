@@ -2,11 +2,10 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { binaryPath, paths } from '@main/paths'
 import { execCapture } from '@main/io/spawn'
-import { assertJsonFileCurrent, writeJsonAtomic } from '@main/io/atomic-json'
+import { writeJsonAtomic } from '@main/io/atomic-json'
 import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { nowUtcIso } from '@shared/utc'
 import type { BinaryName } from '@shared/ipc-contract'
 import { binarySpecs } from './registry'
 import { sha256OfFile } from './integrity'
@@ -48,7 +47,9 @@ import { sha256OfFile } from './integrity'
 // seconds in OS validation before it prints its version. Keep the probe bounded,
 // but leave enough room for that supported artifact to start on a fast local disk.
 const PROBE_IDLE_TIMEOUT_MS = 30_000
-const SIDECAR_HASH_TIMEOUT_MS = 10_000
+// Hashing a large binary under antivirus scanning can be slow; a read that runs
+// out of time is retried at the next read rather than kept for the session.
+const SIDECAR_HASH_TIMEOUT_MS = 30_000
 
 /**
  * `bin/<name>.json` — the version sidecar beside `bin/<name>[.exe]`. Stem plus the
@@ -59,11 +60,7 @@ export function versionSidecarPath(name: BinaryName): string {
   return join(paths.bin, `${name}.json`)
 }
 
-type VersionSidecar = { version: string; installedAt: string; binarySha256: string }
-
-export function admitVersionSidecar(name: BinaryName): Promise<void> {
-  return assertJsonFileCurrent(versionSidecarPath(name), FORMAT_VERSIONS.binaryVersion, true)
-}
+type VersionSidecar = { version: string; binarySha256: string }
 
 function hashBinary(name: BinaryName, signal?: AbortSignal): Promise<string> {
   const timeout = AbortSignal.timeout(SIDECAR_HASH_TIMEOUT_MS)
@@ -81,13 +78,14 @@ function hashBinary(name: BinaryName, signal?: AbortSignal): Promise<string> {
 export async function writeVersionSidecar(name: BinaryName, version: string, signal?: AbortSignal): Promise<void> {
   const binarySha256 = await hashBinary(name, signal)
   signal?.throwIfAborted()
-  const sidecar: VersionSidecar = { version, installedAt: nowUtcIso(), binarySha256 }
+  const sidecar: VersionSidecar = { version, binarySha256 }
   // not recorded: a sidecar colocated in the binary-bearing bin/ directory, describing
   // the re-fetchable binary it sits beside — meaningless without that binary (itself
   // excluded as a re-fetchable binary) and rewritten by the next install, so it rides
   // along into exclusion rather than being recorded orphaned (data-backup conventions).
-  // Unreadable facts are replaceable after a fresh install; newer formats are not.
-  await writeJsonAtomic(versionSidecarPath(name), sidecar, { formatVersion: FORMAT_VERSIONS.binaryVersion, discardUnreadable: true })
+  // Any earlier sidecar is replaced, one from a newer TapeBox too: reinstalling is
+  // how its facts are rebuilt, so refusing it would make every install fail.
+  await writeJsonAtomic(versionSidecarPath(name), sidecar, { formatVersion: FORMAT_VERSIONS.binaryVersion })
 }
 
 const cache = new Map<BinaryName, Promise<string | null>>()
@@ -112,15 +110,21 @@ export function readInstalledVersion(name: BinaryName): Promise<string | null> {
   const cached = cache.get(name)
   if (cached) return cached
   // resolveInstalledVersion never rejects, so a rejected promise can never be
-  // cached and re-thrown at every later reader.
-  const pending = resolveInstalledVersion(name)
+  // cached and re-thrown at every later reader. A read that ran out of time is
+  // dropped once settled, so the next reader tries again.
+  const pending: Promise<string | null> = resolveInstalledVersion(name).then((read) => {
+    if (read.retry && cache.get(name) === pending) cache.delete(name)
+    return read.version
+  })
   cache.set(name, pending)
   return pending
 }
 
-async function resolveInstalledVersion(name: BinaryName): Promise<string | null> {
+async function resolveInstalledVersion(name: BinaryName): Promise<{ version: string | null; retry: boolean }> {
   const source = binarySpecs[name].installedVersion
-  return source.kind === 'probe' ? probe(name, source.args, source.parse) : readSidecar(name, source.parse)
+  return source.kind === 'probe'
+    ? { version: await probe(name, source.args, source.parse), retry: false }
+    : readSidecar(name, source.parse)
 }
 
 async function probe(
@@ -155,8 +159,18 @@ async function probe(
   }
 }
 
-async function readSidecar(name: BinaryName, parse: (stored: string) => string | null): Promise<string | null> {
+async function readSidecar(name: BinaryName, parse: (stored: string) => string | null): Promise<{ version: string | null; retry: boolean }> {
   const path = versionSidecarPath(name)
+  try {
+    return { version: await readSidecarVersion(name, path, parse), retry: false }
+  } catch (err) {
+    // Only the hash's time bound reaches here: every other failure reads as unknown.
+    log.warn('version sidecar check ran out of time; it is tried again at the next read', { name, path, error: describeError(err) })
+    return { version: null, retry: true }
+  }
+}
+
+async function readSidecarVersion(name: BinaryName, path: string, parse: (stored: string) => string | null): Promise<string | null> {
   try {
     const found = parseStoreJson(await readFile(path, 'utf8'), FORMAT_VERSIONS.binaryVersion)
     if (found.status === 'newer') {
@@ -179,6 +193,8 @@ async function readSidecar(name: BinaryName, parse: (stored: string) => string |
     if (version === null) log.warn('version sidecar holds an unrecognized version', { name, path, stored })
     return version
   } catch (err) {
+    // A read has no other signal than the hash's time bound, so an abort is it.
+    if (['TimeoutError', 'AbortError'].includes((err as Error | null)?.name ?? '')) throw err
     // Absent (a binary placed by hand, or installed before this sidecar existed) or
     // unreadable — either way the version is unknown, never assumed current.
     log.warn('version sidecar unreadable', { name, path, error: describeError(err) })

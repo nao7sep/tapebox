@@ -43,7 +43,7 @@ export function classifyImport(sidecar: unknown): ImportClassification {
     return { status: 'reject', reason: message('import.notSidecarRoot') }
   }
   // One in a newer format is reported and left as it is (store-recovery-conventions).
-  const version = checkFormatVersion(sidecar as Record<string, unknown>, FORMAT_VERSIONS.sidecar)
+  const version = checkFormatVersion(sidecar as Record<string, unknown>, FORMAT_VERSIONS.sidecar, true)
   if (version.status === 'newer') return { status: 'reject', reason: message('import.sidecarNewer') }
   if (version.status === 'unreadable') return { status: 'reject', reason: message('import.sidecarInvalidJson') }
   const tb = (sidecar as Record<string, unknown>)['tapebox']
