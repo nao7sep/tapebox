@@ -126,3 +126,14 @@ describe('TopBar Add URL result ownership', () => {
     await act(async () => finish())
   })
 })
+
+describe('TopBar without its tools', () => {
+  it('says in the URL field why Add is off', async () => {
+    await act(async () => useBinariesStore.setState({ statuses: [{ ...ready('yt-dlp'), present: false }, ready('ffmpeg')] }))
+    const input = host.querySelector<HTMLInputElement>('input')!
+    expect(input.placeholder).toBe('Install yt-dlp and ffmpeg to add videos')
+    expect(host.querySelector<HTMLButtonElement>('button')!.disabled).toBe(true)
+    await act(async () => useBinariesStore.setState({ statuses: [ready('yt-dlp'), ready('ffmpeg')] }))
+    expect(input.placeholder).toBe('Paste a URL')
+  })
+})

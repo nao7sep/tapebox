@@ -24,8 +24,8 @@ import { describeError } from '@shared/error'
  *     it is what config.json / catalog.json save through. A managed-text write
  *     that bypasses it is a silent backup gap (data-backup conventions).
  *   - {@link writeJsonAtomic} is the raw atomic-write primitive for JSON that must
- *     NOT be recorded — the binary-bearing library sidecars, the exported bundle's
- *     sidecar, the secret api-keys.json, re-derivable dependencies.json facts, and
+ *     NOT be recorded — the library's sidecars (transient app-owned content until
+ *     exported), the exported bundle's sidecar (output), the secret api-keys.json, re-derivable dependencies.json facts, and
  *     the volatile-state layout.json. It never touches the backup store.
  *
  * Generic shape: <S extends z.ZodType> captures the actual schema so that

@@ -51,12 +51,10 @@ export async function finalize(opts: {
   }
 
   data.tapebox = opts.tapeboxAdditions
-  // not recorded: a tape's sidecar (yt-dlp info.json + the tapebox namespace) lives
-  // in the library directory beside the downloaded media and thumbnail — a binary-
-  // bearing directory. Everything colocated with binaries rides along into exclusion
-  // (data-backup conventions): the sidecar is meaningless without its media, and is
-  // regenerable from the source. So it takes the raw writeJsonAtomic, not the choke
-  // point. The tape's durable text (its catalog row) is what records, via catalog.json.
+  // not recorded: a tape's sidecar (yt-dlp info.json + the tapebox namespace) is
+  // library content, transient and app-owned until exported (developer
+  // classification), so it takes the raw writeJsonAtomic, not the choke point. The
+  // tape's catalog row is what records, via catalog.json.
   await writeSidecar(opts.sidecarPath, data)
   await unlink(opts.infoJsonPath).catch(() => {})
 }

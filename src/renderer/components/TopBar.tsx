@@ -64,7 +64,9 @@ export function TopBar({ clipboardEnabled }: Props) {
           onCompositionStart={composing.onCompositionStart}
           onCompositionEnd={composing.onCompositionEnd}
           onKeyDown={(e) => { if (e.key === 'Enter' && !isComposingKeyboardEvent(composingRef, e)) void add(url) }}
-          placeholder={t.t('topBar.placeholder')}
+          // Add is off until the tools are installed; the field says why, in place,
+          // without the layout shift a banner would bring.
+          placeholder={t.t(toolsReady ? 'topBar.placeholder' : 'topBar.placeholderNeedsTools')}
           spellCheck={false}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? errorId : undefined}

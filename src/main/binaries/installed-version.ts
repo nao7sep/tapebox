@@ -79,10 +79,8 @@ export async function writeVersionSidecar(name: BinaryName, version: string, sig
   const binarySha256 = await hashBinary(name, signal)
   signal?.throwIfAborted()
   const sidecar: VersionSidecar = { version, binarySha256 }
-  // not recorded: a sidecar colocated in the binary-bearing bin/ directory, describing
-  // the re-fetchable binary it sits beside — meaningless without that binary (itself
-  // excluded as a re-fetchable binary) and rewritten by the next install, so it rides
-  // along into exclusion rather than being recorded orphaned (data-backup conventions).
+  // not recorded: derived facts about a re-fetchable binary, rebuilt by the next
+  // install (data-backup conventions protect only what the user creates or adds).
   // Any earlier sidecar is replaced, one from a newer TapeBox too: reinstalling is
   // how its facts are rebuilt, so refusing it would make every install fail.
   await writeJsonAtomic(versionSidecarPath(name), sidecar, { formatVersion: FORMAT_VERSIONS.binaryVersion })

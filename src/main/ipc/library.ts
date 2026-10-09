@@ -414,9 +414,9 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     const targetSidecar = join(libraryDir, `${mediaStem}.json`)
     const copied: string[] = []
     try {
-      // not recorded: import copies a media bundle (binary plus its colocated,
-      // source-derived sidecar) into the binary-bearing managed library. The
-      // new catalog row records the user's durable library membership instead.
+      // not recorded: import copies a bundle into the library, transient app-owned
+      // content until exported (developer classification). The new catalog row,
+      // the user's library membership, is what is backed up.
       if (srcMedia !== targetMedia) {
         await assertMissing(targetMedia)
         await copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal })
@@ -471,8 +471,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       const srcThumb = join(dir, tbThumb)
       const dstThumb = join(libraryDir, tbThumb)
       try {
-        // not recorded: the imported thumbnail is binary image data colocated
-        // with the tape's media and sidecar in the binary-bearing library.
+        // not recorded: the imported poster is library content, like its media.
         if (srcThumb !== dstThumb) {
           await assertMissing(dstThumb)
           await copyFileNoOverwrite(srcThumb, dstThumb, { hardLinks, signal })
@@ -614,17 +613,15 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   try {
     for (const it of publishing) {
       if (it.artifact === 'sidecar') {
-        // not recorded: this sidecar lives in the library directory beside the tape's
-        // media and thumbnail — a binary-bearing directory whose contents ride along
-        // into exclusion (data-backup conventions). It uses the raw writeJsonAtomic,
-        // not the managed-text choke point; the tape's catalog row records instead.
+        // not recorded: the sidecar is library content, transient app-owned until
+        // exported (developer classification); the tape's catalog row records instead.
         // The renamed sidecar replaces the old one, so it keeps what a replace keeps.
         const bytes = serializeStoreJson(sidecar, SIDECAR_JSON)
         await writeFileAtomicNoOverwriteVia(it.fresh, (temp) => writeFile(temp, bytes), (await stat(it.old)).mode & 0o777)
         done.push(it.fresh)
       } else {
-        // not recorded: the tape's existing media/thumbnail bytes gain a second
-        // name inside the binary-bearing library; no backup-worthy text is created.
+        // not recorded: the tape's media and poster gain a second name inside the
+        // library; nothing the user authored is created.
         await linkOrCopyNoOverwrite(it.old, it.fresh, signal)
         done.push(it.fresh)
       }
