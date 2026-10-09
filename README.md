@@ -19,7 +19,7 @@ Download videos from the web into a private library, sort them into boxes, and w
 
 - macOS 13 or later on Apple silicon, or 64-bit Windows (64-bit Linux runs from source)
 - On Linux, install `ffmpeg` yourself at `~/.tapebox/bin/ffmpeg` (auto-install is macOS/Windows only)
-- Node.js 22.5+ and npm — only to build or run from source
+- Node.js 22.22.2+, 24.15+ or 26+ and npm — only to build or run from source
 
 ## Download
 
