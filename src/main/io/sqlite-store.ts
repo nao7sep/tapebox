@@ -1,7 +1,7 @@
 import { closeSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { assertDatabaseCurrent } from './format-version.ts'
+import { assertDatabaseCurrent, databaseFormatVersion } from './format-version.ts'
 
 /** Run one operation in its own SQLite transaction. */
 export function databaseTransaction<T>(db: DatabaseSync, write: boolean, run: () => T): T {
@@ -16,14 +16,18 @@ export function databaseTransaction<T>(db: DatabaseSync, write: boolean, run: ()
   }
 }
 
-/** Only a successful exclusive creation can initialize an unmarked database,
- * apart from one `adoptUnmarked` recognizes as an earlier unmarked form of it,
- * which is marked current. */
+/**
+ * Open a writable store at format `current`. Only a successful exclusive creation
+ * can initialize an unmarked database, apart from one `adoptUnmarked` recognizes
+ * as an earlier unmarked form of it, returning the format that form is. A store
+ * in an older format is brought up to `current` by `upgrade`, in the same
+ * transaction as its new marker, keeping its rows; a newer one is refused.
+ */
 export function openWritableDatabase(
   path: string,
   current: number,
   schema: string,
-  adoptUnmarked?: (db: DatabaseSync) => boolean,
+  options: { adoptUnmarked?: (db: DatabaseSync) => number | null; upgrade?: (db: DatabaseSync, from: number) => void } = {},
 ): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true })
   let created = false
@@ -44,10 +48,23 @@ export function openWritableDatabase(
     if (created) db.exec('PRAGMA journal_mode = WAL')
     db.exec('BEGIN IMMEDIATE')
     try {
-      const adopted = !created && adoptUnmarked !== undefined && isUnmarkedWithTables(db) && adoptUnmarked(db)
-      if (!created && !adopted) assertDatabaseCurrent(db, path, current)
+      let from: number | null = null
+      let adopted = false
+      if (!created) {
+        const adoptedAs = options.adoptUnmarked && isUnmarkedWithTables(db) ? options.adoptUnmarked(db) : null
+        adopted = adoptedAs !== null
+        if (adoptedAs !== null) from = adoptedAs
+        else {
+          assertDatabaseCurrent(db, path, current)
+          from = databaseFormatVersion(db, path)
+        }
+      }
+      if (from !== null && from < current) {
+        if (!options.upgrade) throw new Error(`${path} is format ${from}; this build has no upgrade from it`)
+        options.upgrade(db, from)
+      }
       db.exec(schema)
-      if (created || adopted) db.exec(`PRAGMA user_version = ${current}`)
+      if (created || adopted || (from !== null && from !== current)) db.exec(`PRAGMA user_version = ${current}`)
       db.exec('COMMIT')
     } catch (error) {
       try { db.exec('ROLLBACK') } catch (cleanupError) { console.error('tapebox: SQLite initialization rollback failed', cleanupError) }

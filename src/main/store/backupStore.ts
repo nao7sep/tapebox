@@ -1,8 +1,13 @@
 import { Worker } from 'node:worker_threads'
 import { paths } from '@main/paths'
 import { log } from '@main/io/logger'
+import { currentSession } from '@main/io/records'
 import { describeError } from '@shared/error'
-import type { BackupRequest, BackupResponse } from './backup-worker'
+import type { BackupRequest, BackupResponse, BackupWorkerData } from './backup-worker'
+
+/** This launch, the key of each file's one row per launch: the records' session,
+ *  so the two can be matched, or failing that the time the first backup ran. */
+let launch: string | null = null
 
 /** Best-effort backup hashing and SQLite work run on their own bounded thread.
  * Completed managed writes hand off their exact bytes; failures never undo them. */
@@ -44,7 +49,9 @@ function abandon(current: Worker, error: unknown): void {
 function ensureWorker(): Worker {
   if (worker) return worker
   const module = import.meta.url.endsWith('.ts') ? './backup-worker.ts' : './backup-worker.js'
-  const created = new Worker(new URL(module, import.meta.url), { workerData: { databasePath: paths.backupsDb } })
+  const created = new Worker(new URL(module, import.meta.url), {
+    workerData: { databasePath: paths.backupsDb, session: launch ??= currentSession() ?? new Date().toISOString() } satisfies BackupWorkerData,
+  })
   created.on('message', (response: BackupResponse) => {
     const entry = pending.get(response.id)
     if (!entry || entry.worker !== created) return

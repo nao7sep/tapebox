@@ -36,6 +36,10 @@ const logCalls = vi.hoisted(() => ({
   error: [] as { message: string; fields?: Record<string, unknown> }[],
 }))
 
+// The launch each backup row belongs to, as the records' session would give it.
+const launch = vi.hoisted(() => ({ id: 'first-launch' }))
+vi.mock('@main/io/records', () => ({ currentSession: () => launch.id }))
+
 vi.mock('@main/io/logger', () => ({
   log: {
     debug() {},
@@ -47,6 +51,7 @@ vi.mock('@main/io/logger', () => ({
 
 interface Row {
   id: number
+  session_id: string | null
   path: string
   content: Uint8Array
   content_sha256: string
@@ -72,6 +77,7 @@ beforeEach(() => {
   process.env.TAPEBOX_DATA_DIR = root
   logCalls.warn.length = 0
   logCalls.error.length = 0
+  launch.id = 'first-launch'
 })
 
 afterEach(async () => {
@@ -128,52 +134,50 @@ describe('record: BLOB fidelity, hash, size, path, and timestamp shape', () => {
   })
 })
 
-describe('dedup by content hash, per path', () => {
-  it('skips an unchanged re-save (no new row) but records a genuinely changed save', async () => {
+describe('one row per file per launch', () => {
+  it('keeps the newest save of a launch in that launch\'s one row', async () => {
     const { record, flushBackupStore } = await import('@main/store/backupStore')
     const file = path.join(root, 'catalog.json')
-    const v1 = Buffer.from('alpha', 'utf8')
-    const v2 = Buffer.from('beta', 'utf8')
-
-    record(file, v1)
-    record(file, v1) // identical — deduped, no new row
+    record(file, Buffer.from('alpha', 'utf8'))
+    record(file, Buffer.from('alpha', 'utf8'))
+    record(file, Buffer.from('beta', 'utf8'))
     await flushBackupStore()
+    const rows = readRows(root)
+    expect(rows).toHaveLength(1)
+    expect(Buffer.from(rows[0]!.content).toString('utf8')).toBe('beta')
+    expect(rows[0]!.session_id).toBe(launch.id)
+  })
+
+  it('adds a row in a later launch unless its first save repeats the newest one kept', async () => {
+    const file = path.join(root, 'catalog.json')
+    const first = await import('@main/store/backupStore')
+    first.record(file, Buffer.from('A', 'utf8'))
+    await first.flushBackupStore()
+    await first.closeBackupStore()
+
+    vi.resetModules()
+    launch.id = 'second-launch'
+    const second = await import('@main/store/backupStore')
+    second.record(file, Buffer.from('A', 'utf8')) // repeats what was kept: no row
+    await second.flushBackupStore()
     expect(readRows(root)).toHaveLength(1)
-
-    record(file, v2) // changed — recorded
-    await flushBackupStore()
-    const rows = readRows(root)
-    expect(rows).toHaveLength(2)
-    expect(Buffer.from(rows[1]!.content).toString('utf8')).toBe('beta')
+    second.record(file, Buffer.from('B', 'utf8'))
+    second.record(file, Buffer.from('A', 'utf8')) // a revert within the launch: its row takes it
+    await second.flushBackupStore()
+    expect(readRows(root).map((row) => [row.session_id, Buffer.from(row.content).toString('utf8')])).toEqual([
+      ['first-launch', 'A'], ['second-launch', 'A'],
+    ])
   })
 
-  it('records a revert to earlier content as a new row (differs from the immediately-preceding row)', async () => {
-    const { record, flushBackupStore } = await import('@main/store/backupStore')
-    const file = path.join(root, 'catalog.json')
-    const a = Buffer.from('A', 'utf8')
-    const b = Buffer.from('B', 'utf8')
-
-    record(file, a) // row 1: A
-    record(file, b) // row 2: B
-    record(file, a) // row 3: A again — a revert, differs from the preceding row (B), so it IS recorded
-    await flushBackupStore()
-
-    const rows = readRows(root)
-    expect(rows).toHaveLength(3)
-    expect(rows.map((r) => Buffer.from(r.content).toString('utf8'))).toEqual(['A', 'B', 'A'])
-  })
-
-  it('dedups per path, so two different paths never collide', async () => {
+  it('keeps each path\'s rows apart', async () => {
     const { record, flushBackupStore } = await import('@main/store/backupStore')
     const same = Buffer.from('shared', 'utf8')
     const p1 = path.join(root, 'config.json')
     const p2 = path.join(root, 'catalog.json')
-
     record(p1, same)
-    record(p2, same) // same content, DIFFERENT path — recorded (dedup is per path)
-    record(p1, same) // same content, same path as row 1 — deduped
+    record(p2, same)
+    record(p1, same)
     await flushBackupStore()
-
     const rows = readRows(root)
     expect(rows).toHaveLength(2)
     expect(rows.map((r) => r.path).sort()).toEqual([p1, p2].sort())
@@ -197,9 +201,10 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
       refusing.exec("CREATE TRIGGER refuse_insert BEFORE INSERT ON backups BEGIN SELECT RAISE(FAIL, 'disk full: simulated insert failure'); END")
     } finally { refusing.close() }
     vi.resetModules()
+    launch.id = 'second-launch'
 
     const { record, flushBackupStore } = await import('@main/store/backupStore')
-    // A DIFFERENT content so dedup does not short-circuit before the insert is attempted.
+    // A later launch and DIFFERENT content, so the save needs a new row and the insert is attempted.
     expect(() => record(path.join(root, 'catalog.json'), Buffer.from('changed', 'utf8'))).not.toThrow()
     await flushBackupStore()
 
@@ -262,22 +267,20 @@ describe('write-through: a real managed save records the exact bytes after the r
     expect(logCalls.warn).toHaveLength(0) // silent on success
   })
 
-  it('a changed save records a second row; an identical re-save is deduped', async () => {
+  it('keeps the launch\'s newest config.json in its one row', async () => {
     const { loadSettings, updateSettings } = await import('@main/store/config')
 
     await loadSettings()
-    await updateSettings({ maxConcurrentDownloads: 3 }) // row 1: first user copy
-    await updateSettings({ maxConcurrentDownloads: 5 }) // row 2: changed
-    await updateSettings({ maxConcurrentDownloads: 5 }) // identical serialized bytes -> deduped, no row
+    await updateSettings({ maxConcurrentDownloads: 3 })
+    await updateSettings({ maxConcurrentDownloads: 5 })
+    await updateSettings({ maxConcurrentDownloads: 5 })
     const { flushBackupStore } = await import('@main/store/backupStore')
     await flushBackupStore()
 
     const rows = readRows(root)
-    expect(rows).toHaveLength(2)
-    // Both rows are config.json; the second carries the changed value.
-    const file = path.join(root, 'config.json')
-    expect(rows.every((r) => r.path === file)).toBe(true)
-    expect(JSON.parse(Buffer.from(rows[1]!.content).toString('utf8')).maxConcurrentDownloads).toBe(5)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.path).toBe(path.join(root, 'config.json'))
+    expect(JSON.parse(Buffer.from(rows[0]!.content).toString('utf8')).maxConcurrentDownloads).toBe(5)
     expect(logCalls.warn).toHaveLength(0)
   })
 })
@@ -306,8 +309,10 @@ describe('format version (store-recovery-conventions)', () => {
     await flushBackupStore()
     await closeBackupStore()
 
-    expect(userVersion()).toBe(1)
-    expect(readRows(root).map((row) => Buffer.from(row.content).toString('utf8'))).toEqual(['v0.1.0', 'after the upgrade'])
+    expect(userVersion()).toBe(2)
+    expect(readRows(root).map((row) => [row.session_id, Buffer.from(row.content).toString('utf8')])).toEqual([
+      [null, 'v0.1.0'], ['first-launch', 'after the upgrade'],
+    ])
     expect(logCalls.warn).toHaveLength(0)
   })
 
@@ -329,14 +334,15 @@ describe('format version (store-recovery-conventions)', () => {
     expect(userVersion()).toBe(0)
   })
 
-  it('stamps format 1 on a store it creates, and records into it again after a relaunch', async () => {
+  it('stamps format 2 on a store it creates, and records into it again after a relaunch', async () => {
     const first = await import('@main/store/backupStore')
     first.record(path.join(root, 'config.json'), Buffer.from('one'))
     await first.flushBackupStore()
     await first.closeBackupStore()
-    expect(userVersion()).toBe(1)
+    expect(userVersion()).toBe(2)
 
     vi.resetModules()
+    launch.id = 'second-launch'
     const relaunched = await import('@main/store/backupStore')
     relaunched.record(path.join(root, 'config.json'), Buffer.from('two'))
     await relaunched.flushBackupStore()
@@ -347,7 +353,7 @@ describe('format version (store-recovery-conventions)', () => {
     const file = path.join(root, 'backups.sqlite3')
     const newer = new DatabaseSync(file)
     newer.exec('CREATE TABLE future (id INTEGER PRIMARY KEY)')
-    newer.exec('PRAGMA user_version = 2')
+    newer.exec('PRAGMA user_version = 3')
     newer.close()
     const bytes = readFileSync(file)
     const { record, flushBackupStore, closeBackupStore } = await import('@main/store/backupStore')
