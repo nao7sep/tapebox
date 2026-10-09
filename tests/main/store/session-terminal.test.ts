@@ -6,7 +6,6 @@ import type { Box, Tape } from '@shared/domain'
 const testRoot = vi.hoisted(
   () => `${process.env.TEMP ?? process.env.TMPDIR ?? '/tmp'}/tapebox-session-terminal-${process.pid}`,
 )
-const recordBeforeExit = vi.hoisted(() => vi.fn())
 const record = vi.hoisted(() => vi.fn())
 const catalogMutation = vi.hoisted(() => ({
   failRenamedOnce: false,
@@ -16,7 +15,7 @@ const catalogMutation = vi.hoisted(() => ({
 }))
 
 vi.mock('@main/paths', () => ({ paths: { catalog: join(testRoot, 'catalog.json') } }))
-vi.mock('@main/store/backupStore', () => ({ record, recordBeforeExit }))
+vi.mock('@main/store/backupStore', () => ({ record }))
 vi.mock('@main/io/logger', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
@@ -53,7 +52,6 @@ import {
   getBoxes,
   getTape,
   persistNow,
-  persistNowSync,
   upsertBox,
   upsertTape,
   renameTapeDurably,
@@ -74,7 +72,6 @@ function tape(id = 'abc1234567', order = 0): Tape {
 }
 
 beforeEach(async () => {
-  recordBeforeExit.mockReset()
   record.mockReset()
   catalogMutation.failRenamedOnce = false
   catalogMutation.failReorderOnce = false
@@ -87,7 +84,7 @@ afterEach(async () => {
   await rm(testRoot, { recursive: true, force: true })
 })
 
-describe('terminal catalog persistence', () => {
+describe('catalog persistence', () => {
   it('does not publish an in-memory rename until catalog.json names it', async () => {
     await loadSession()
     const original = tape()
@@ -177,19 +174,6 @@ describe('terminal catalog persistence', () => {
     ])
   })
 
-  it('hands the exact published bytes to the fatal/exit recorder before returning', async () => {
-    await loadSession()
-    upsertBox({ id: 'box1234567', name: 'Keepers', order: 0 })
-
-    persistNowSync()
-
-    const catalogPath = join(testRoot, 'catalog.json')
-    const published = await readFile(catalogPath)
-    expect(recordBeforeExit).toHaveBeenCalledOnce()
-    expect(recordBeforeExit).toHaveBeenCalledWith(catalogPath, expect.any(Buffer))
-    expect(Buffer.from(recordBeforeExit.mock.calls[0]![1]).equals(published)).toBe(true)
-  })
-
   it('writes a download in flight as its queued self, so queue steps add no catalog versions', async () => {
     await loadSession()
     const queued: Tape = {
@@ -214,9 +198,7 @@ describe('terminal catalog persistence', () => {
 
     upsertTape({ ...probed, state: 'downloading', downloadStartedAtUtc: '2026-01-02T00:00:01.000Z' })
     await persistNow()
-    persistNowSync()
     expect(writes()).toBe(2)
-    expect(recordBeforeExit).not.toHaveBeenCalled()
 
     const onDisk = JSON.parse(await readFile(catalogPath, 'utf8')) as { tapes: Tape[] }
     expect(onDisk.tapes[0]).toMatchObject({ state: 'queued', title: 'Probed', downloadStartedAtUtc: null })
@@ -239,13 +221,28 @@ describe('terminal catalog persistence', () => {
     expect(failures).toHaveBeenCalledOnce()
     expect(getTape(finished.id)).toEqual(finished)
 
-    // A retry stays pending after the failure, so even the terminal flush writes it.
-    persistNowSync()
+    await expect(persistNow()).resolves.toBe(true)
     const onDisk = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8')) as { tapes: Tape[] }
     expect(onDisk.tapes).toEqual([finished])
-
-    await expect(persistNow()).resolves.toBe(true)
     onCatalogSaveFailure(() => {})
+  })
+
+  it('retries a failed save on its own schedule, apart from the operation that made the change', async () => {
+    await loadSession()
+    onCatalogSaveFailure(() => {})
+    const finished = tape('ret1234567')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      upsertTape(finished)
+      catalogMutation.failOrdinaryWrites = 1
+      // The caller's own wait ends with the failure; nothing it later cancels reaches the retry.
+      await expect(persistNow()).resolves.toBe(false)
+      await vi.advanceTimersByTimeAsync(30_000)
+    } finally { vi.useRealTimers() }
+    await vi.waitFor(async () => {
+      const onDisk = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8')) as { tapes: Tape[] }
+      expect(onDisk.tapes).toEqual([finished])
+    })
   })
 
   it('leaves a quit-time save failure to the quit to tell, and does not report it again afterwards', async () => {

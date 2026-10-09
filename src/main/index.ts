@@ -10,7 +10,7 @@ import { notifyRecordsChanged } from './records-window.js'
 import { describeError } from '@shared/error'
 import { getSettings, loadSettings } from './store/config.js'
 import { loadDependencies } from './store/dependencies.js'
-import { loadSession, persistNow, persistNowSync } from './store/session.js'
+import { loadSession, persistNow } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import { resumeBinaryOperations, shutdownBinaryOperations } from './ipc/binaries.js'
@@ -216,7 +216,6 @@ const quit = createQuit({
   },
   endNow: () => {
     log.info('shutdown', { reason: 'session-end' })
-    persistNowSync()
     void closeRecordsReader()
     flushRecordsBeforeExit()
     void closeRecords()
@@ -247,14 +246,13 @@ async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoic
 }
 
 // Global last-resort hooks. An uncaught exception is fatal: log it with full
-// fidelity, close the records database, then exit. An unhandled rejection is
-// logged but not fatal — a stray fire-and-forget should not take a desktop app
-// down, and a logged error at `error` level is a record, not a silent swallow.
-// `exit` is a final synchronous flush for any path that bypasses the clean
-// shutdown.
+// fidelity, close the records database, then exit. The catalog keeps its last
+// committed state (store/session.ts). An unhandled rejection is logged but not
+// fatal — a stray fire-and-forget should not take a desktop app down, and a
+// logged error at `error` level is a record, not a silent swallow. `exit` is a
+// final synchronous records flush for any path that bypasses the clean shutdown.
 process.on('uncaughtException', (err) => {
   log.error('uncaught exception', { error: describeError(err) })
-  persistNowSync()
   flushRecordsBeforeExit()
   void closeRecords()
   forceExitProcess()
@@ -263,7 +261,6 @@ process.on('unhandledRejection', (reason) => {
   log.error('unhandled rejection', { error: describeError(reason) })
 })
 process.on('exit', () => {
-  persistNowSync()
   flushRecordsBeforeExit()
   void closeRecords()
 })

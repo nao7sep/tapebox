@@ -234,7 +234,7 @@ describe('quit', () => {
     expect(steps.exit).toHaveBeenCalledWith(true)
   })
 
-  it('saves and exits synchronously on a Windows session end, before the handler returns', () => {
+  it('closes and exits synchronously on a Windows session end, before the handler returns', () => {
     const { steps, order } = makeSteps()
     const quit = createQuit(steps)
     quit.endSessionNow()
@@ -243,11 +243,11 @@ describe('quit', () => {
     expect(steps.ask).not.toHaveBeenCalled()
   })
 
-  it('still exits on a Windows session end whose save throws, and logs it', () => {
+  it('still exits on a Windows session end whose close throws, and logs it', () => {
     const { steps } = makeSteps({ endNow: vi.fn(() => { throw new Error('EROFS') }) })
     const quit = createQuit(steps)
     quit.endSessionNow()
-    expect(steps.warn).toHaveBeenCalledWith('the session-end save failed', expect.any(Object))
+    expect(steps.warn).toHaveBeenCalledWith('the session-end close failed', expect.any(Object))
     expect(steps.exit).toHaveBeenCalledOnce()
   })
 

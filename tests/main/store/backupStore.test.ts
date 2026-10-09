@@ -128,38 +128,6 @@ describe('record: BLOB fidelity, hash, size, path, and timestamp shape', () => {
   })
 })
 
-describe('terminal recording', () => {
-  it('records fatal-path bytes synchronously before the event loop can stop', async () => {
-    const { recordBeforeExit } = await import('@main/store/backupStore')
-    const file = path.join(root, 'catalog.json')
-    const bytes = Buffer.from('fatal catalog', 'utf8')
-
-    recordBeforeExit(file, bytes)
-
-    const rows = readRows(root)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]!.path).toBe(file)
-    expect(Buffer.from(rows[0]!.content)).toEqual(bytes)
-  })
-
-  it('drains ordinary work, then permits only the terminal record after queue closure', async () => {
-    const { record, recordBeforeExit, closeBackupStore } = await import('@main/store/backupStore')
-    const layout = path.join(root, 'layout.json')
-    const ignored = path.join(root, 'config.json')
-    const catalog = path.join(root, 'catalog.json')
-
-    record(layout, Buffer.from('queued layout', 'utf8'))
-    await closeBackupStore()
-    record(ignored, Buffer.from('too late for the ordinary queue', 'utf8'))
-    recordBeforeExit(catalog, Buffer.from('final exit catalog', 'utf8'))
-
-    const rows = readRows(root)
-    expect(rows.map((row) => row.path)).toEqual([layout, catalog])
-    expect(Buffer.from(rows[0]!.content).toString('utf8')).toBe('queued layout')
-    expect(Buffer.from(rows[1]!.content).toString('utf8')).toBe('final exit catalog')
-  })
-})
-
 describe('dedup by content hash, per path', () => {
   it('skips an unchanged re-save (no new row) but records a genuinely changed save', async () => {
     const { record, flushBackupStore } = await import('@main/store/backupStore')

@@ -4,8 +4,8 @@
  * all arrive as before-quit and are the user's. An OS logout, restart or
  * shutdown is a session end: macOS and Linux mark it with powerMonitor's
  * 'shutdown' before their quit arrives, and Windows raises the main window's
- * 'session-end' and never a quit event, so that handler saves and exits before
- * it returns.
+ * 'session-end' and never a quit event, so that handler closes the records and
+ * exits before it returns; the catalog keeps its last committed state.
  *
  * The library catalog is the user's own work. A user's quit saves it before
  * anything is stopped, so a failed save can cancel the quit with the app still
@@ -56,8 +56,9 @@ export interface QuitSteps {
   saveLayout(): Promise<void>
   /** Stops the media server and closes the backup history and records. */
   close(): Promise<void>
-  /** Writes a pending catalog save and closes the records synchronously, for a
-   * Windows session end, after which the process may be ended at any time. */
+  /** Closes the records synchronously, for a Windows session end, after which
+   * the process may be ended at any time. The catalog keeps its last committed
+   * state; nothing writes it synchronously. */
   endNow(): void
   warn(message: string, details: Record<string, unknown>): void
   exit(forced?: boolean): void
@@ -89,7 +90,7 @@ export interface Quit {
   /** powerMonitor 'shutdown': the session is ending, so nothing asks again and
    * a running quit closes its question and ends within the limit. */
   markSessionEnd(): void
-  /** The Windows main window's 'session-end': save, close and exit before returning. */
+  /** The Windows main window's 'session-end': close the records and exit before returning. */
   endSessionNow(): void
 }
 
@@ -211,7 +212,7 @@ export function createQuit(steps: QuitSteps): Quit {
       try {
         steps.endNow()
       } catch (error) {
-        steps.warn('the session-end save failed', { error: describeError(error) })
+        steps.warn('the session-end close failed', { error: describeError(error) })
       }
       exit(true)
     },

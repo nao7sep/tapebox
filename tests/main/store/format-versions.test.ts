@@ -11,7 +11,7 @@ import { defaultLayout } from '@shared/layout'
 // a newer file is refused and left byte-identical, with nothing written over it.
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
-vi.mock('@main/store/backupStore', () => ({ record: vi.fn(), recordBeforeExit: vi.fn() }))
+vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 
 const prevRoot = process.env.TAPEBOX_DATA_DIR
 const prevKey = process.env.OPENAI_API_KEY
@@ -84,7 +84,6 @@ describe('catalog.json', () => {
     const store = await session()
     await expect(store.loadSession()).rejects.toMatchObject({ ...NEWER, path: path() })
     expect(await store.persistNow()).toBe(true)
-    store.persistNowSync()
     expect(await readFile(path(), 'utf8')).toBe(text)
     expect(await readdir(root)).toEqual(['catalog.json'])
   })

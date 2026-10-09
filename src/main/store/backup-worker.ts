@@ -5,7 +5,7 @@ import { databaseTransaction, openWritableDatabase } from '../io/sqlite-store.ts
 import { FORMAT_VERSIONS } from '../io/format-version.ts'
 import { describeError } from '../../shared/error.ts'
 
-export type BackupRequest = { id: number; absolutePath: string; bytes: Uint8Array; completion?: SharedArrayBuffer }
+export type BackupRequest = { id: number; absolutePath: string; bytes: Uint8Array }
 export type BackupResponse = { id: number; warning?: { message: string; fields: Record<string, unknown> }; disabled?: boolean }
 
 const SCHEMA = `
@@ -51,13 +51,6 @@ port.on('message', (request: BackupRequest) => {
   } catch (error) {
     response.warning = { message: 'backup store: failed to record a managed write', fields: { file: request.absolutePath, error: describeError(error) } }
   } finally {
-    // Terminal callers can wait for this actual attempt without running SQLite
-    // on the main thread or depending on another main-loop turn.
-    if (request.completion) {
-      const completion = new Int32Array(request.completion)
-      Atomics.store(completion, 0, 1)
-      Atomics.notify(completion, 0)
-    }
     port.postMessage(response)
   }
 })

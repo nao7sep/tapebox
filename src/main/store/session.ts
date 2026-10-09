@@ -1,12 +1,7 @@
 import { readFile } from 'node:fs/promises'
-import { renameSync, writeFileSync } from 'node:fs'
-import { extname } from 'node:path'
-import { nanoid } from 'nanoid'
 import { paths } from '@main/paths'
-import { quarantineFile, serializeStoreJson, writeManagedJson } from '@main/io/atomic-json'
-import { keepOriginalModeSync } from '@main/io/file-metadata'
+import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
-import { recordBeforeExit } from '@main/store/backupStore'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
@@ -20,6 +15,14 @@ import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain
  * flight is written as the queued tape it will be again after any restart, so the
  * transient probing/ready/downloading steps never reach the file or its backup
  * history, and a write whose durable content is unchanged is skipped.
+ *
+ * Nothing writes the catalog synchronously at exit. A crash, forced exit or OS
+ * session end keeps the last committed catalog: what can be lost is the debounce
+ * window of minor state (probe metadata, state transitions, box edits). Changes
+ * that must survive — finished downloads, renames, reorders, Apply and removal —
+ * await their commit, and an ordinary quit saves with Retry, Quit anyway and
+ * Cancel. A terminal writer would duplicate this publication with weaker
+ * guarantees on the main thread.
  */
 
 const SAVE_DEBOUNCE_MS = 500
@@ -36,7 +39,7 @@ let lastWritten: string | null = null
 let saveFailing = false
 let saveFailureListener: (() => void) | null = null
 
-/** How catalog.json is written, by the async save and the terminal one alike. */
+/** How catalog.json is written. */
 const CATALOG_JSON = { formatVersion: FORMAT_VERSIONS.catalog, schema: SessionSchema }
 
 const IN_FLIGHT_STATES: ReadonlySet<Tape['state']> = new Set(['probing', 'ready', 'downloading'])
@@ -395,36 +398,4 @@ function enqueueCatalogWrite(write: () => Promise<void>): Promise<void> {
   const run = persistChain.then(write)
   persistChain = run.catch(() => {})
   return run
-}
-
-/**
- * Synchronous best-effort flush for terminal paths (uncaughtException, process
- * 'exit') where the async persistNow cannot run. Only writes when a save is
- * actually pending, so a clean shutdown that already flushed is a no-op.
- */
-export function persistNowSync(): void {
-  if (!loaded || !saveTimer) return
-  clearTimeout(saveTimer)
-  saveTimer = null
-  try {
-    const durable = durableSession(cache)
-    const key = JSON.stringify(durable)
-    if (key === lastWritten) return
-    const text = serializeStoreJson(durable, CATALOG_JSON)
-    const bytes = Buffer.from(text, 'utf8')
-    const stem = paths.catalog.slice(0, -extname(paths.catalog).length)
-    const tmp = `${stem}-${nanoid(10)}.tmp`
-    writeFileSync(tmp, bytes)
-    keepOriginalModeSync(paths.catalog, tmp)
-    renameSync(tmp, paths.catalog)
-    // This is a managed-text save on a terminal path (uncaughtException / process
-    // 'exit'), where the async writeManagedJson choke point cannot run — so it
-    // records here directly, STRICTLY AFTER the sync rename lands, reusing the
-    // in-hand bytes. This terminal-only path makes its bounded SQLite attempt now;
-    // there is no event-loop turn left for the ordinary queue.
-    recordBeforeExit(paths.catalog, bytes)
-    lastWritten = key
-  } catch (err) {
-    log.error('session sync persist failed', { error: describeError(err) })
-  }
 }

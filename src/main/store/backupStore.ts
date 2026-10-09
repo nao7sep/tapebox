@@ -8,7 +8,6 @@ import type { BackupRequest, BackupResponse } from './backup-worker'
  * Completed managed writes hand off their exact bytes; failures never undo them. */
 export const BACKUP_RECORD_TIMEOUT_MS = 10_000
 const CLOSE_DRAIN_TIMEOUT_MS = 1_000
-const TERMINAL_RECORD_TIMEOUT_MS = 500
 
 type Pending = { worker: Worker; settled: Promise<void>; resolve: () => void; timer: NodeJS.Timeout }
 let worker: Worker | null = null
@@ -64,7 +63,7 @@ function ensureWorker(): Worker {
   return created
 }
 
-function enqueue(absolutePath: string, bytes: Buffer, completion?: SharedArrayBuffer): void {
+function enqueue(absolutePath: string, bytes: Buffer): void {
   if (disabled) return
   let current: Worker
   try { current = ensureWorker() } catch (error) {
@@ -77,24 +76,12 @@ function enqueue(absolutePath: string, bytes: Buffer, completion?: SharedArrayBu
   const settled = new Promise<void>((done) => { resolve = done })
   const timer = setTimeout(() => abandon(current, new Error(`Backup record did not finish within ${BACKUP_RECORD_TIMEOUT_MS} ms.`)), BACKUP_RECORD_TIMEOUT_MS)
   pending.set(id, { worker: current, settled, resolve, timer })
-  try { current.postMessage({ id, absolutePath, bytes, completion } satisfies BackupRequest) }
+  try { current.postMessage({ id, absolutePath, bytes } satisfies BackupRequest) }
   catch (error) { abandon(current, error) }
 }
 
 export function record(absolutePath: string, bytes: Buffer): void {
   if (accepting) enqueue(absolutePath, bytes)
-}
-
-/** Fatal-path best effort: wait only for the off-thread attempt's completion.
- * On timeout its physical outcome is unknown; no history promise delays exit. */
-export function recordBeforeExit(absolutePath: string, bytes: Buffer): void {
-  // A fatal caller may arrive after ordinary shutdown drained the store.
-  if (!worker && closing) closing = null
-  const completion = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
-  enqueue(absolutePath, bytes, completion)
-  if (!disabled && Atomics.wait(new Int32Array(completion), 0, 0, TERMINAL_RECORD_TIMEOUT_MS) === 'timed-out') {
-    console.warn('tapebox: terminal backup outcome is unknown; its wait expired')
-  }
 }
 
 export function flushBackupStore(): Promise<void> {

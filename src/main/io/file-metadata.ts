@@ -1,5 +1,5 @@
 import { chmod, stat } from 'node:fs/promises'
-import { chmodSync, statSync, type BigIntStats } from 'node:fs'
+import type { BigIntStats } from 'node:fs'
 
 // Ordinary file permissions and copy times (content-lifecycle conventions, Files).
 
@@ -73,15 +73,4 @@ export async function keepOriginalMode(
     if (!refusesMetadata(err)) throw err
   }
   return true
-}
-
-/** Synchronous ordinary-mode counterpart for existing synchronous writers. */
-export function keepOriginalModeSync(originalPath: string, replacementPath: string): void {
-  const original = statSync(originalPath, { throwIfNoEntry: false })
-  if (!original) return
-  try {
-    chmodSync(replacementPath, original.mode & 0o777)
-  } catch (err) {
-    if (!refusesMetadata(err)) throw err
-  }
 }
