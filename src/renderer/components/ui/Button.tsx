@@ -44,14 +44,14 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary:
     'bg-inverse text-on-inverse font-medium hover:bg-inverse-hover active:bg-inverse-active disabled:opacity-50',
   secondary:
-    'border border-line text-fg hover:bg-raised active:bg-raised-hover disabled:opacity-50',
+    'border border-control-line text-fg hover:bg-raised active:bg-raised-hover disabled:opacity-50',
   ghost:
-    'border border-line text-fg hover:border-line-strong hover:text-fg-strong active:border-line-hover disabled:opacity-50',
+    'border border-control-line text-fg hover:border-line-strong hover:text-fg-strong active:border-line-hover disabled:opacity-50',
   // Its pressed tint is the danger banner's fill, which is already the next step
   // down from the hover tint in both themes; a second token of the same value
   // would say nothing more.
   dangerOutline:
-    'border border-danger-line text-danger-fg hover:border-danger-line-strong hover:bg-danger-tint active:border-danger-line-hover active:bg-danger-banner disabled:opacity-50',
+    'border border-danger-control-line text-danger-fg hover:border-danger-line-strong hover:bg-danger-tint active:border-danger-line-hover active:bg-danger-banner disabled:opacity-50',
   danger:
     'bg-danger-fill text-on-danger font-medium hover:bg-danger-fill-hover active:bg-danger-fill-active disabled:opacity-50',
   warm:

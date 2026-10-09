@@ -54,7 +54,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
         <button
           {...props}
           ref={ref}
-          className="rounded border border-line px-3 py-1.5 text-xs text-fg-emphasis transition hover:border-line-hover hover:bg-hover"
+          className="rounded border border-control-line px-3 py-1.5 text-xs text-fg-emphasis transition hover:border-line-hover hover:bg-hover"
         >
           {t.t('boxes.moveToBox')}
         </button>

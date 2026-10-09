@@ -171,7 +171,7 @@ function BinaryRow({
   const t = useI18n()
 
   return (
-    <tr className="border-t border-line">
+    <tr className="border-t border-line-subtle">
       <td className="py-3 font-medium">{status.name}</td>
       <td className={`py-3 ${installedClass(d)}`}>{installedText(status, d, t)}</td>
       <td className="py-3 text-fg">{latestText(status, checking, t)}</td>

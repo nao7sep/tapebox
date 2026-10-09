@@ -771,8 +771,8 @@ function ActionButton({
       className={
         'rounded border px-3 py-1.5 text-xs transition disabled:opacity-50 ' +
         (danger
-          ? 'border-danger-line text-danger-fg hover:border-danger-line-strong hover:bg-danger-tint'
-          : 'border-line text-fg-emphasis hover:border-line-hover hover:bg-hover') +
+          ? 'border-danger-control-line text-danger-fg hover:border-danger-line-strong hover:bg-danger-tint'
+          : 'border-control-line text-fg-emphasis hover:border-line-hover hover:bg-hover') +
         (className ? ` ${className}` : '')
       }
     >

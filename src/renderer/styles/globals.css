@@ -83,11 +83,15 @@ button:disabled {
   --color-fg: #3f3f46;
   --color-fg-muted: #52525b;
   --color-fg-subtle: #66666f;
-  /* Borders. */
+  /* Borders. Line kinds and their contrast targets (interface-styling-conventions):
+     --color-line-subtle draws row separators, --color-line section dividers and
+     band edges, --color-control-line the edge of a bordered button. Fields,
+     dialog bands, cards and notices keep their own tokens. */
   --color-line: #d4d4d8;
   --color-line-strong: #a1a1aa;
   --color-line-subtle: #e4e4e7;
   --color-line-hover: #71717a;
+  --color-control-line: #a8a8ae;
   /* A dialog's header/footer band line (modal-dialog-conventions): never fainter
      than the app's own control borders, so it is the field outline's value, not
      the quieter --color-line used for plain panel/list dividers. */
@@ -107,6 +111,8 @@ button:disabled {
   --color-danger-line: #fecaca;
   --color-danger-line-strong: #ef4444;
   --color-danger-line-hover: #dc2626;
+  /* The outline of a button that opens a destructive path, at control-edge strength. */
+  --color-danger-control-line: #ee8f8f;
   --color-danger-tint: #fef2f2;
   --color-danger-banner: #fee2e2;
   --color-danger-row: #fef2f2;
@@ -185,10 +191,11 @@ button:disabled {
       --color-fg: #d4d4d8;
       --color-fg-muted: #a1a1aa;
       --color-fg-subtle: #909099;
-      --color-line: #3f3f46;
+      --color-line: #36363c;
       --color-line-strong: #52525b;
       --color-line-subtle: #27272a;
       --color-line-hover: #71717a;
+      --color-control-line: #4d4d55;
       --color-separator: #71717a;
       --color-selected: #f4f4f5;
       --color-field-line: #71717a;
@@ -201,6 +208,7 @@ button:disabled {
       --color-danger-line: #7f1d1d;
       --color-danger-line-strong: #dc2626b3;
       --color-danger-line-hover: #ef4444;
+      --color-danger-control-line: #8a3232;
       --color-danger-tint: #450a0a66;
       --color-danger-banner: #450a0acc;
       --color-danger-row: #7f1d1d4d;
