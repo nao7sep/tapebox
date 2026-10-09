@@ -7,6 +7,7 @@ import { moveTape } from '@main/core/tape-state'
 import { nowUtcIso } from '@shared/utc'
 import { Job } from './job'
 import { selectTapesToStart } from './schedule'
+import { maskUrlCredentials } from '@main/io/mask'
 
 /**
  * Download queue.
@@ -48,7 +49,7 @@ export function tick(): void {
     if (!release) return
     const job = new Job(tape)
     active.set(tape.id, job)
-    log.info('job start', { tapeId: tape.id, url: tape.sourceUrl })
+    log.info('job start', { tapeId: tape.id, url: maskUrlCredentials(tape.sourceUrl) })
     void job
       .run()
       .finally(() => {

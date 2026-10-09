@@ -34,4 +34,23 @@ describe('collectRun', () => {
     })
     expect(JSON.parse(row.args)).toEqual(args)
   })
+
+  it('masks credentials from the arguments wherever the run echoes them, and drops progress echoes', async () => {
+    writeRecord.mockClear()
+    const script = `process.stdout.write('tapebox-progress:50.0%|1|2\\n[download] got it\\n'); process.stderr.write('ERROR: login hunter22 rejected'); process.exit(1)`
+    const args = ['-e', script, '--password', 'hunter22', '--add-header', 'Cookie: sid=abc123']
+    const child = spawnStreaming(process.execPath, ['-e', script])
+    const run = collectRun(child, { kind: 'download', tapeId: 't1', scanId: null, url: 'https://me:pw@example.com/v', args })
+    await waitForExit(child, { reject: false })
+    expect(run.stderr(), 'what an error or a log line would carry').toBe('ERROR: login [REDACTED] rejected')
+    expect(run.mask('echo sid=abc123')).toBe('echo [REDACTED]')
+    run.record()
+
+    const [, row] = writeRecord.mock.calls[0]!
+    expect(row.url).toBe('https://[REDACTED]@example.com/v')
+    expect(JSON.parse(row.args).slice(2)).toEqual(['--password', '[REDACTED]', '--add-header', 'Cookie: [REDACTED]'])
+    expect(row.stderr).toBe('ERROR: login [REDACTED] rejected')
+    expect(row.stdout).toBe('[download] got it\n')
+    expect(JSON.stringify(row)).not.toMatch(/hunter22|abc123|me:pw/)
+  })
 })

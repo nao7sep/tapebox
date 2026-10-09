@@ -319,8 +319,8 @@ export function defaultSettings(): Settings {
 
 /**
  * The effective settings for the startup record the logging conventions mandate
- * ("the key effective configuration"), every value as it is, per the
- * data-lifecycle conventions' *Nothing is cut*.
+ * ("the key effective configuration"), every value as it is; the caller masks
+ * any credential in it before logging (main's store/config.ts).
  *
  * Returns a plain object (no logging-layer import) so the domain stays unaware of
  * who consumes it; the caller hands it to the logger as a field.

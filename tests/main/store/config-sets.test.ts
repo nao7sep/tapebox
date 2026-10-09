@@ -244,6 +244,18 @@ describe('settings by set', () => {
     expect(await savedSets()).toEqual({ autoplay: false, 'openai.slug': 'my-model', prompts: { slug: 'my prompt' }, playSound: false })
   })
 
+  it('masks credentials in the yt-dlp arguments it logs at startup', async () => {
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ytdlpArgs: '--password hunter22 -f best', siteProfiles: [
+      { id: 'abcdefgh', name: 'Site', urlPattern: 'site.test', isRegex: false, args: '--add-header "Authorization: Bearer tok3n"', comment: '' },
+    ] }))
+    log.info.mockClear()
+    await loadSettings()
+    const logged = JSON.stringify(log.info.mock.calls)
+    expect(logged).not.toMatch(/hunter22|tok3n/)
+    expect(logged).toContain('--password [REDACTED] -f best')
+    expect(getSettings().ytdlpArgs, 'the setting itself is unchanged').toBe('--password hunter22 -f best')
+  })
+
   it('quarantines corrupt bytes without reseeding a config', async () => {
     await writeFile(paths.config, '{broken')
     const result = await loadSettings()

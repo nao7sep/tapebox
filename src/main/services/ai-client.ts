@@ -12,6 +12,7 @@ import { describeError } from '@shared/error'
 import { rowFor, thinkingFor } from '@shared/ai-models'
 import { message } from '@shared/i18n/translate'
 import { nowUtcIso } from '@shared/utc'
+import { maskCredentials } from '@main/io/mask'
 
 /**
  * Slug generation against the OpenAI endpoint configured in
@@ -49,7 +50,7 @@ export async function generateSlug(
     .replace(/\{description\}/g, opts.description ?? '')
 
   const request = buildSlugRequest(model, thinking, userPrompt)
-  const call: AiCall = { tapeId: opts.tapeId, endpoint: settings['openai.endpoint'], model, built: request, sent: null }
+  const call: AiCall = { tapeId: opts.tapeId, endpoint: settings['openai.endpoint'], model, apiKey, built: request, sent: null }
   const client = new OpenAI({
     apiKey,
     baseURL: settings['openai.endpoint'],
@@ -82,7 +83,7 @@ export async function generateSlug(
 
 type SentRequest = { method: string; url: string; headers: Record<string, string>; body: unknown }
 /** `built` is the parameters as the app built them, before the SDK adds headers. */
-type AiCall = { tapeId: string; endpoint: string; model: string; built: object; sent: SentRequest | null }
+type AiCall = { tapeId: string; endpoint: string; model: string; apiKey: string; built: object; sent: SentRequest | null }
 
 /** The request as it goes to `fetch`: method, URL, every header and the body. */
 function sentRequest(input: string | URL | Request, init: RequestInit | undefined): SentRequest {
@@ -131,7 +132,10 @@ function recordAiCall(
   response: object | null,
   error: unknown,
 ): void {
-  const row = {
+  // The record never holds the key: the Authorization header keeps its scheme and
+  // the key becomes [REDACTED], wherever the request, response or error echoes it
+  // (io/mask.ts). The live request was sent as built.
+  const row = maskCredentials({
     tape_id: call.tapeId,
     started_at_utc: startedAtUtc,
     ended_at_utc: nowUtcIso(),
@@ -141,7 +145,7 @@ function recordAiCall(
     status,
     response: response === null ? null : toJson(response),
     error: error === null ? null : toJson(describeError(error)),
-  }
+  }, [call.apiKey])
   writeRecord('ai_calls', row, () => toJson({ record: 'ai call', ...row }))
 }
 

@@ -78,7 +78,7 @@ describe('slug request routing', () => {
     expect((await outcome).message).toContain('busy')
   })
 
-  it('records each attempt whole, the request as sent with its headers and the provider\'s error body', async () => {
+  it('records each attempt whole, the request as sent with its headers masked and the provider\'s error body', async () => {
     state.overHttp = true
     const answer = { choices: [{ finish_reason: 'stop', message: { content: '{"slug":"a-name"}' } }], usage: { total_tokens: 9 } }
     const json = (body: object, status: number) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -100,8 +100,11 @@ describe('slug request routing', () => {
     const [url, init] = fetch.mock.calls[1]!
     const sent = JSON.parse(rows[1]!.row.request)
     expect(sent).toMatchObject({ method: 'POST', url: String(url), body: JSON.parse(init.body) })
-    expect(sent.headers).toEqual(Object.fromEntries(new Headers(init.headers)))
-    expect(sent.headers.authorization).toBe('Bearer mock-key')
+    // Every header is kept by name; the key itself never reaches the record.
+    expect(Object.keys(sent.headers).sort()).toEqual(Object.keys(Object.fromEntries(new Headers(init.headers))).sort())
+    expect(sent.headers.authorization).toBe('Bearer [REDACTED]')
+    expect(new Headers(init.headers).get('authorization'), 'the request itself was sent as built').toBe('Bearer mock-key')
+    for (const { row } of rows) expect(JSON.stringify(row)).not.toContain('mock-key')
     expect(sent.body).toMatchObject({ model: 'gpt-6-luna', messages: [expect.objectContaining({ role: 'user' })] })
     expect(JSON.parse(rows[1]!.row.response)).toEqual(answer)
     expect(rows[1]!.row).toMatchObject({ status: null, error: null })

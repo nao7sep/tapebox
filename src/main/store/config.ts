@@ -4,6 +4,8 @@ import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { FORMAT_VERSION_KEY, FORMAT_VERSIONS, NewerFormatError, parseStoreJson, V0_1_0_FORMAT } from '@main/io/format-version'
 import { LibraryFolderSettingError, StoreAccessError } from '@main/io/store-access'
+import { maskCredentials, maskYtdlpArgs } from '@main/io/mask'
+import { tokenizeArgs } from '@main/services/ytdlp-args'
 import { describeError } from '@shared/error'
 import {
   cleanSettingsSets, defaultSettings, effectiveSettings, storedSets, summarizeSettings, type Settings,
@@ -36,18 +38,26 @@ export async function loadSettings(): Promise<ConfigLoadResult> {
     cache = effectiveSettings(found.sets)
     kept = found.kept
     const material = found.rejected.filter((key) => !QUIET_SETS.has(key))
-    log.info('settings loaded', { config: summarizeSettings(cache), kept: Object.keys(kept) })
+    log.info('settings loaded', { config: loggedSettings(cache), kept: Object.keys(kept) })
     return { status: 'loaded', settingsKept: material.length > 0 }
   }
   kept = {}
   const defaults = defaultSettings()
   cache = defaults
   if (found === null) {
-    log.info('settings missing; using built-ins', { config: summarizeSettings(defaults) })
+    log.info('settings missing; using built-ins', { config: loggedSettings(defaults) })
     return { status: 'missing' }
   }
   log.info('settings quarantined; using built-ins', { quarantinePath: found.quarantinePath })
   return { status: 'recovered', quarantinePath: found.quarantinePath }
+}
+
+/** The effective settings for the startup record, with any credential the yt-dlp
+ *  arguments or the endpoint carry masked (io/mask.ts). */
+function loggedSettings(settings: Settings): Record<string, unknown> {
+  const credentials = [settings.ytdlpArgs, ...settings.siteProfiles.map((profile) => profile.args)]
+    .flatMap((line) => maskYtdlpArgs(tokenizeArgs(line)).credentials)
+  return maskCredentials(summarizeSettings(settings), credentials)
 }
 
 /** What loadSettings did, so the app edge can report a quarantine, or settings it

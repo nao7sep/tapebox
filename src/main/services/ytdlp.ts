@@ -6,6 +6,7 @@ import { watchForStall } from './download-stall'
 import { YTDLP_PROBE_IDLE_TIMEOUT_MS } from '@main/io/network'
 import { toJson } from '@main/io/log-format'
 import { writeRecord } from '@main/io/records'
+import { maskCredentials, maskYtdlpArgs } from '@main/io/mask'
 import { nowUtcIso } from '@shared/utc'
 import {
   collectOutput,
@@ -43,30 +44,38 @@ export type YtdlpRun = {
  * Collect everything a yt-dlp run writes, both streams whole, and record it as a
  * `ytdlp_runs` row once the run has ended (data-lifecycle conventions).
  * Attach it right after the spawn, before any output can arrive.
+ *
+ * The record, and the stderr callers put in errors and logs, hold the run with
+ * its credentials masked: the user's arguments can carry a password, a cookie or
+ * an Authorization header, and yt-dlp can echo them (io/mask.ts). `stdout()`
+ * stays as yt-dlp wrote it, for parsing.
  */
 export function collectRun(
   child: Parameters<typeof collectOutput>[0],
   run: YtdlpRun,
-): { stdout: () => string; stderr: () => string; record: () => void } {
+): { stdout: () => string; stderr: () => string; mask: (text: string) => string; record: () => void } {
   const output = collectOutput(child)
+  const { args, credentials } = maskYtdlpArgs(run.args)
+  const mask = (text: string): string => maskCredentials(text, credentials)
   return {
     stdout: output.stdout,
-    stderr: output.stderr,
+    stderr: () => mask(output.stderr()),
+    mask,
     record: () => {
       const exit = output.exit()
       const row = {
         tape_id: run.tapeId,
         scan_id: run.scanId,
         kind: run.kind,
-        url: run.url,
-        args: toJson(run.args),
+        url: mask(run.url),
+        args: toJson(args.map(mask)),
         started_at_utc: output.startedAtUtc,
         ended_at_utc: nowUtcIso(),
         exit_code: exit.code,
         signal: exit.signal,
         stop_reason: output.stop(),
-        stdout: output.stdout(),
-        stderr: output.stderr(),
+        stdout: mask(withoutProgressLines(output.stdout())),
+        stderr: mask(output.stderr()),
       }
       writeRecord('ytdlp_runs', row, () => toJson({ record: 'yt-dlp run', ...row }))
     },
@@ -199,6 +208,12 @@ const FINAL_PATH_MARKER = 'tapebox-final-filepath:'
  */
 const PROGRESS_MARKER = 'tapebox-progress:'
 
+/** A download's stored output without our own progress-template lines: they are
+ *  TapeBox's echo of the transfer, one per tick, not yt-dlp's evidence. */
+function withoutProgressLines(text: string): string {
+  return text.split('\n').filter((line) => !line.startsWith(PROGRESS_MARKER)).join('\n')
+}
+
 /** Parse a --progress-template number; its 'NA' placeholder becomes undefined. */
 function finiteOrUndefined(raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined
@@ -259,8 +274,8 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     opts.url,
   ]
   // not recorded: yt-dlp writes media, a raw thumbnail, and info JSON into the
-  // binary-bearing library directory (including a user-selected external library).
-  // The bundle is source-regenerable; its durable catalog row records separately.
+  // library (including a user-selected external one): transient app-owned content
+  // until exported (developer classification). Its catalog row is what is backed up.
   const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(), signal: opts.signal, idleTimeoutMs })
   const run = collectRun(child, { kind: 'download', tapeId: opts.tapeId, scanId: null, url: opts.url, args })
 
@@ -289,7 +304,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     }
     // Streamed live so the UI can show what yt-dlp says as it happens. Markers and
     // progress lines already returned above.
-    opts.onLog?.(line)
+    opts.onLog?.(run.mask(line))
   })
 
   child.stdout.on('data', lineBuffer.feed)
@@ -383,9 +398,8 @@ export async function downloadThumbnail(
   stem: string,
   signal: AbortSignal,
 ): Promise<string | null> {
-  // not recorded: this yt-dlp subprocess writes a source-regenerable binary image
-  // into the binary-bearing library directory; saveThumbnailJpeg replaces it with
-  // the canonical JPEG through the same deliberate binary exclusion.
+  // not recorded: this yt-dlp subprocess writes a poster into the library, transient
+  // app-owned content; saveThumbnailJpeg replaces it with the canonical JPEG.
   await runToEnd('thumbnail', tapeId, url, [
     ...resolveYtdlpArgs(url),
     '--skip-download',
