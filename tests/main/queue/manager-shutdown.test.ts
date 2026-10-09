@@ -71,6 +71,26 @@ describe('queue and library moves', () => {
   })
 })
 
+describe('tapes held out of scheduling', () => {
+  it('starts no job for a held tape, and catches up when the hold is released', async () => {
+    vi.resetModules()
+    const queue = await import('@main/queue/manager')
+    tapes.push(queued('held'), queued('free'))
+    const release = queue.holdFromScheduling(['held'])
+    queue.tick()
+    expect(jobs.started).toEqual(['free'])
+    release()
+    expect(jobs.started).toEqual(['free', 'held'])
+    release()
+    expect(jobs.started, 'a release ticks once').toEqual(['free', 'held'])
+    await queue.shutdown()
+    tapes.length = 0
+    jobs.started.length = 0
+    jobs.stopped.length = 0
+    jobs.settled.length = 0
+  })
+})
+
 describe('library move while a download runs', () => {
   it('is refused until the running job has settled', async () => {
     vi.resetModules()

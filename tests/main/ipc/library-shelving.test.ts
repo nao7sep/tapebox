@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
+import { cancelAllWork, resumeWork } from '@main/work-registry'
 
 // Moving tapes between the inbox and the archive, and taking them out of the
 // library altogether. The library directory is real — a removal that claims to
@@ -27,8 +28,8 @@ vi.mock('electron', () => ({
 const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[], trashOnRemove: false }))
 const emit = vi.hoisted(() => vi.fn())
 const reorderTapesDurably = vi.hoisted(() => vi.fn())
-const queueManager = vi.hoisted(() => ({ isActive: vi.fn(() => false), cancel: vi.fn(async () => {}) }))
-const clearPartials = vi.hoisted(() => vi.fn(async () => {}))
+const releaseHold = vi.hoisted(() => vi.fn())
+const queueManager = vi.hoisted(() => ({ isActive: vi.fn((_id: string) => false), cancel: vi.fn(async (_id: string) => {}), holdFromScheduling: vi.fn((_ids: Iterable<string>) => releaseHold) }))
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
 const persistNow = vi.hoisted(() => vi.fn(async () => {}))
@@ -51,7 +52,7 @@ vi.mock('@main/store/config', () => ({
   getSettings: () => ({ trashOnRemove: state.trashOnRemove, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => queueManager)
-vi.mock('@main/services/ytdlp', () => ({ clearPartials, downloadThumbnail: vi.fn(), probe: vi.fn() }))
+vi.mock('@main/services/ytdlp', () => ({ downloadThumbnail: vi.fn(), probe: vi.fn() }))
 vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log }))
 vi.mock('@main/ipc/events', () => ({ emit }))
@@ -94,6 +95,8 @@ beforeEach(async () => {
   handlers.clear()
   vi.clearAllMocks()
   queueManager.isActive.mockReturnValue(false)
+  queueManager.cancel.mockImplementation(async () => {})
+  persistNow.mockImplementation(async () => {})
   state.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-library-shelving-'))
   state.trashOnRemove = false
   state.tapes = []
@@ -101,6 +104,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  // A test that quits closes the work registry; reopen it for the next one.
+  resumeWork()
   await rm(state.libraryDir, { recursive: true, force: true })
 })
 
@@ -195,17 +200,44 @@ describe('removing tapes from the library', () => {
       emit.mock.invocationCallOrder[emit.mock.calls.findIndex((call) => call[0] === 'tapes:removed')]!,
     )
     expect((await readdir(state.libraryDir)).sort()).toEqual(['Keepfiles1.jpg', 'Keepfiles1.json', 'Keepfiles1.mp4'])
-    expect(clearPartials).not.toHaveBeenCalled()
   })
 
-  it('deletes the media, sidecar, poster and any half-finished fragments', async () => {
+  it('deletes the media, sidecar, poster and everything a download left under the tape\'s stem', async () => {
     state.tapes = [await stageFiles('Deletethem')]
+    for (const name of ['Deletethem.f137.mp4.part', 'Deletethem.mp4.ytdl', 'Deletethem.f140.m4a.frag3', 'Deletethem.info.json', 'Deletethem.webp']) {
+      await writeFile(join(state.libraryDir, name), 'leftover', 'utf8')
+    }
+    await writeFile(join(state.libraryDir, 'Other00001.mp4'), 'another tape', 'utf8')
 
     await invoke('library:remove', { tapeIds: ['Deletethem'], deleteFiles: true })
 
-    expect(await readdir(state.libraryDir)).toEqual([])
-    expect(clearPartials).toHaveBeenCalledExactlyOnceWith(state.libraryDir, 'Deletethem')
+    expect(await readdir(state.libraryDir)).toEqual(['Other00001.mp4'])
     expect(shell.trashItem).not.toHaveBeenCalled()
+  })
+
+  it('never touches a stem file another tape tracks', async () => {
+    state.tapes = [await stageFiles('Removeme01'), makeTape({ id: 'Renamed001', filename: 'Removeme01.mkv' })]
+    await writeFile(join(state.libraryDir, 'Removeme01.mkv'), 'another tape\'s renamed media', 'utf8')
+
+    await invoke('library:remove', { tapeIds: ['Removeme01'], deleteFiles: true })
+
+    expect(await readdir(state.libraryDir)).toEqual(['Removeme01.mkv'])
+  })
+
+  it('trashes a finished bundle the catalog never named, and deletes fragments outright', async () => {
+    state.trashOnRemove = true
+    state.tapes = [makeTape({ id: 'Uncommit01', state: 'queued', filename: null, downloadedAtUtc: null })]
+    for (const name of ['Uncommit01.mp4', 'Uncommit01.json', 'Uncommit01.jpg', 'Uncommit01.f137.mp4.part']) {
+      await writeFile(join(state.libraryDir, name), 'content', 'utf8')
+    }
+
+    await invoke('library:remove', { tapeIds: ['Uncommit01'], deleteFiles: true })
+
+    expect(shell.trashItem.mock.calls.map((call) => call[0]).sort()).toEqual(
+      ['Uncommit01.jpg', 'Uncommit01.json', 'Uncommit01.mp4'].map((name) => join(state.libraryDir, name)),
+    )
+    expect(await readdir(state.libraryDir), 'the fragment is gone; the trashed files are the fake Trash\'s').not.toContain('Uncommit01.f137.mp4.part')
+    expect(state.tapes).toEqual([])
   })
 
   it.each(['{"formatVersion":2}', 'unreadable'])('keeps every bundle file when its governing sidecar is %s', async (sidecar) => {
@@ -215,7 +247,6 @@ describe('removing tapes from the library', () => {
     await expect(invoke('library:remove', { tapeIds: ['Protected1'], deleteFiles: true })).rejects.toThrow('could not be removed')
     expect(state.tapes).toEqual([tape])
     expect((await readdir(state.libraryDir)).sort()).toEqual(['Protected1.jpg', 'Protected1.json', 'Protected1.mp4'])
-    expect(clearPartials).not.toHaveBeenCalled()
     expect(shell.trashItem).not.toHaveBeenCalled()
     expect(emitted('tapes:removed')).toEqual([])
   })
@@ -235,13 +266,72 @@ describe('removing tapes from the library', () => {
     expect(state.tapes).toEqual([])
   })
 
-  it('stops a running download before the tape goes', async () => {
-    state.tapes = [makeTape({ id: 'Downloading' })]
-    queueManager.isActive.mockReturnValue(true)
+  it('stops a running download before the tape goes, with the batch held out of scheduling', async () => {
+    state.tapes = [makeTape({ id: 'Downloading' }), makeTape({ id: 'Queuednext', state: 'queued' })]
+    queueManager.isActive.mockImplementation((id: string) => id === 'Downloading')
 
-    await invoke('library:remove', { tapeIds: ['Downloading'], deleteFiles: true })
+    await invoke('library:remove', { tapeIds: ['Downloading', 'Queuednext'], deleteFiles: true })
 
     expect(queueManager.cancel).toHaveBeenCalledExactlyOnceWith('Downloading')
+    expect([...queueManager.holdFromScheduling.mock.calls[0]![0]]).toEqual(['Downloading', 'Queuednext'])
+    expect(queueManager.holdFromScheduling.mock.invocationCallOrder[0]!).toBeLessThan(queueManager.cancel.mock.invocationCallOrder[0]!)
+    // Released only once the rows are gone, so a tick then cannot start them.
+    expect(releaseHold).toHaveBeenCalledOnce()
+    expect(releaseHold.mock.invocationCallOrder[0]!).toBeGreaterThan(persistNow.mock.invocationCallOrder[0]!)
+    expect(state.tapes).toEqual([])
+  })
+
+  it('discards a download that finalized and committed while it was being cancelled', async () => {
+    state.tapes = [makeTape({ id: 'Latefinish', state: 'downloading', filename: null, downloadedAtUtc: null })]
+    queueManager.isActive.mockReturnValue(true)
+    queueManager.cancel.mockImplementation(async (id: string) => {
+      for (const name of [`${id}.mp4`, `${id}.json`, `${id}.jpg`]) await writeFile(join(state.libraryDir, name), name.endsWith('.json') ? '{"formatVersion":1}' : 'finished', 'utf8')
+      state.tapes = state.tapes.map((tape) => tape.id === id
+        ? { ...tape, state: 'downloaded', filename: `${id}.mp4`, sidecarFilename: `${id}.json`, thumbnailFilename: `${id}.jpg` }
+        : tape)
+    })
+
+    await invoke('library:remove', { tapeIds: ['Latefinish'], deleteFiles: true })
+
+    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(state.tapes).toEqual([])
+  })
+
+  it('holds a quit until the removal and its catalog commit have settled', async () => {
+    state.tapes = [await stageFiles('Quitwaits1')]
+    let commit!: () => void
+    persistNow.mockImplementation(() => new Promise<void>((resolve) => { commit = resolve }))
+
+    const removal = invoke('library:remove', { tapeIds: ['Quitwaits1'], deleteFiles: true })
+    await vi.waitFor(() => expect(persistNow).toHaveBeenCalledOnce())
+    let quitDone = false
+    const quit = cancelAllWork().then(() => { quitDone = true })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(quitDone, 'the quit waits for the removal').toBe(false)
+
+    commit()
+    await removal
+    await quit
+    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(emitted('tapes:removed')).toEqual([[{ tapeIds: ['Quitwaits1'] }]])
+  })
+
+  it('reports a busy tape as busy, and as kept files only when files were to go', async () => {
+    state.tapes = [makeTape({ id: 'Busytape01', state: 'downloading' })]
+    queueManager.isActive.mockReturnValue(true)
+    let settle!: () => void
+    queueManager.cancel.mockImplementation(() => new Promise<void>((resolve) => { settle = resolve }))
+    const first = invoke('library:remove', { tapeIds: ['Busytape01'], deleteFiles: false })
+    await vi.waitFor(() => expect(queueManager.cancel).toHaveBeenCalledOnce())
+
+    await expect(invoke('library:remove', { tapeIds: ['Busytape01'], deleteFiles: false })).rejects.toThrow(
+      'This tape is being changed. Wait for the current operation to finish.',
+    )
+    await expect(invoke('library:remove', { tapeIds: ['Busytape01'], deleteFiles: true })).rejects.toThrow(
+      'The files for 1 tape could not be removed. The library entries were kept.',
+    )
+    settle()
+    await first
     expect(state.tapes).toEqual([])
   })
 

@@ -31,7 +31,7 @@ import * as queue from '@main/queue/manager'
 import { runCancellable } from '@main/work-registry'
 import { withLibraryWrite } from '@main/library-writes'
 import { librarySourceIndex } from '@shared/source-identity'
-import { clearPartials, downloadThumbnail, probe } from '@main/services/ytdlp'
+import { downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
@@ -106,15 +106,20 @@ export function registerLibraryHandlers(): void {
     if (changed.length > 0) emit('tapes:updatedMany', changed)
   })
 
-  handle('library:remove', async ({ tapeIds, deleteFiles }) => {
-    const { failed } = await removeTapes(tapeIds, deleteFiles)
+  // Registered as work so a quit waits for it, files and catalog commit alike,
+  // before its final catalog save. Removal is not abandoned midway: it settles.
+  handle('library:remove', ({ tapeIds, deleteFiles }) => runCancellable(async () => {
+    const { failed, busy } = await removeTapes(tapeIds, deleteFiles)
     // Tapes whose files couldn't be discarded are KEPT (not removed from the list);
     // surface the failure so the user is never told a removal succeeded while the
-    // files (and the catalog entry) actually remain.
-    if (failed.length > 0) {
-      throw new UserFacingError('conflict', message('errors.removeFilesKept', { count: failed.length }))
+    // files (and the catalog entry) actually remain. A busy tape kept its files too,
+    // but when no files were to go, it is only busy.
+    const kept = failed.length + (deleteFiles ? busy.length : 0)
+    if (kept > 0) {
+      throw new UserFacingError('conflict', message('errors.removeFilesKept', { count: kept }))
     }
-  })
+    if (busy.length > 0) throw new UserFacingError('refused', message('errors.tapeBusy'))
+  }))
 
   handle('library:getSidecar', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
@@ -697,18 +702,19 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
 }
 
 /**
- * Remove tapes from the library. With deleteFiles, each tape's media, sidecar, and
- * thumbnail are trashed (or deleted, per the Trash setting) and any leftover
- * download fragments swept; otherwise only the library entries go. An in-flight
- * download is stopped first so we never race yt-dlp's writes.
+ * Remove tapes from the library. With deleteFiles, each tape's files are trashed
+ * (or deleted, per the Trash setting) and its download leftovers swept; otherwise
+ * only the library entries go. An in-flight download is stopped first so we never
+ * race yt-dlp's writes, and no download starts for a tape being removed.
  *
  * Shared by library:remove and Export's "delete from app" (export copies the
- * files out, then calls this to take the tape out of the library).
+ * files out, then calls this to take the tape out of the library). A tape another
+ * operation is changing is reported busy and kept.
  */
 export function removeTapes(
   tapeIds: string[],
   deleteFiles: boolean,
-): Promise<{ removed: string[]; failed: string[] }> {
+): Promise<{ removed: string[]; failed: string[]; busy: string[] }> {
   return withLibraryWrite((libraryDir) => removeTapesFrom(libraryDir, tapeIds, deleteFiles))
 }
 
@@ -716,42 +722,37 @@ async function removeTapesFrom(
   libraryDir: string,
   tapeIds: string[],
   deleteFiles: boolean,
-): Promise<{ removed: string[]; failed: string[] }> {
+): Promise<{ removed: string[]; failed: string[]; busy: string[] }> {
   const settings = getSettings()
   const removed: string[] = []
   const failed: string[] = []
-  const releases: Array<() => void> = []
+  const busy: string[] = []
+  const ids = new Set(tapeIds)
+  // Before anything is cancelled, so a finishing job cannot start another of these.
+  const releases: Array<() => void> = [queue.holdFromScheduling(ids)]
 
   try {
-    for (const id of new Set(tapeIds)) {
-      const tape = session.getTape(id)
-      if (!tape) continue
+    for (const id of ids) {
+      if (!session.getTape(id)) continue
       const release = claimTapeWrite(id)
-      if (!release) { failed.push(id); continue }
+      if (!release) { busy.push(id); continue }
       releases.push(release)
 
       if (queue.isActive(id)) {
         await queue.cancel(id)
       }
+      // Reread once the job has settled: a download can finalize and commit while
+      // it is being cancelled, naming files the earlier row did not.
+      const tape = session.getTape(id)
+      if (!tape) continue
 
       if (deleteFiles) {
         try {
           if (tape.sidecarFilename) {
             await assertJsonFileCurrent(join(libraryDir, tape.sidecarFilename), FORMAT_VERSIONS.sidecar)
           }
-          if (tape.filename) {
-            await discardFile(join(libraryDir, tape.filename), settings.trashOnRemove)
-          }
-          if (tape.sidecarFilename) {
-            await discardFile(join(libraryDir, tape.sidecarFilename), settings.trashOnRemove)
-          }
-          if (tape.thumbnailFilename) {
-            await discardFile(join(libraryDir, tape.thumbnailFilename), settings.trashOnRemove)
-          }
-          // Sweep any .part / .ytdl fragments yt-dlp left mid-download — incomplete
-          // junk, always deleted outright (never trashed). They're named by the
-          // on-disk stem, which is the tape id.
-          await clearPartials(libraryDir, tape.id)
+          const others = session.getTapes().filter((other) => other.id !== tape.id)
+          await discardTapeFiles(libraryDir, tape, others, settings.trashOnRemove)
         } catch (err) {
           // The files couldn't be discarded — keep the catalog entry so the tape never
           // vanishes from the list while its files are left orphaned on disk.
@@ -771,9 +772,33 @@ async function removeTapesFrom(
       await session.persistNow()
       emit('tapes:removed', { tapeIds: removed })
     }
-    return { removed, failed }
+    return { removed, failed, busy }
   } finally {
-    for (const release of releases) release()
+    for (const release of releases.reverse()) release()
+  }
+}
+
+/**
+ * Discard a tape's files: the ones its row names, then everything else under its
+ * id stem — what a download left before its commit, including a finished bundle
+ * the catalog never named. yt-dlp's in-progress fragments are incomplete junk and
+ * are deleted outright; every other file follows the Trash setting. A name
+ * another tape tracks is never touched.
+ */
+async function discardTapeFiles(libraryDir: string, tape: Tape, others: readonly Tape[], toTrash: boolean): Promise<void> {
+  for (const field of TRACKED_FILENAME_FIELDS) {
+    const name = tape[field]
+    if (name !== null) await discardFile(join(libraryDir, name), toTrash)
+  }
+  // The tape's own names are already discarded above.
+  const taken = trackedFilenameIdentities([...others, tape])
+  for (const name of await readdir(libraryDir)) {
+    if (!name.startsWith(`${tape.id}.`) || taken.has(portableFilenameIdentity(name))) continue
+    if (name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag\d*$/.test(name)) {
+      await unlink(join(libraryDir, name)).catch(() => {})
+    } else {
+      await discardFile(join(libraryDir, name), toTrash)
+    }
   }
 }
 

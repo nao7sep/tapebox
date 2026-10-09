@@ -28,6 +28,8 @@ import { selectTapesToStart } from './schedule'
 const active = new Map<string, Job>()
 let stopped = false
 const stoppedTapeIds = new Set<string>()
+/** Tapes an owner is about to remove; no job starts for them meanwhile. */
+const held = new Set<string>()
 
 /**
  * Start what the concurrency cap allows. Each job holds a library write claim for
@@ -38,7 +40,8 @@ const stoppedTapeIds = new Set<string>()
 export function tick(): void {
   if (stopped || isLibraryMoving()) return
   const max = getSettings().maxConcurrentDownloads
-  const toStart = selectTapesToStart(session.getTapes(), new Set(active.keys()), max)
+  const candidates = held.size === 0 ? session.getTapes() : session.getTapes().filter((tape) => !held.has(tape.id))
+  const toStart = selectTapesToStart(candidates, new Set(active.keys()), max)
 
   for (const tape of toStart) {
     const release = tryClaimLibraryWrite()
@@ -71,6 +74,23 @@ export function resumePaused(): void {
     emit('tapes:updated', next)
   }
   tick()
+}
+
+/**
+ * Keep `tapeIds` out of scheduling until the returned release is called, so a
+ * removal's cancel-then-discard cannot race a job that starts for one of its
+ * tapes. Releasing ticks, so the tapes that remain can start again.
+ */
+export function holdFromScheduling(tapeIds: Iterable<string>): () => void {
+  const ids = [...tapeIds].filter((id) => !held.has(id))
+  for (const id of ids) held.add(id)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    for (const id of ids) held.delete(id)
+    tick()
+  }
 }
 
 /**

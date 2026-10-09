@@ -325,27 +325,6 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
 }
 
 /**
- * Remove yt-dlp's in-progress artifacts (.part / .ytdl / .frag) for a video id.
- * Resuming a stale or oversized .part is what triggers HTTP 416 ("range not
- * satisfiable") on a retry, so a failed tape's partials are cleared before it
- * runs again. Completed per-format streams are left for yt-dlp to reuse.
- */
-export async function clearPartials(libraryDir: string, outputId: string): Promise<void> {
-  let entries: string[]
-  try {
-    entries = await readdir(libraryDir)
-  } catch {
-    return
-  }
-  for (const name of entries) {
-    if (!name.startsWith(`${outputId}.`)) continue
-    if (name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag\d*$/.test(name)) {
-      await unlink(join(libraryDir, name)).catch(() => {})
-    }
-  }
-}
-
-/**
  * Remove every file for a stem — the whole {stem}.* namespace. Used to give a
  * fresh download attempt a clean slate (see download()); the stem is the tape's
  * id, so this can only touch that one tape's files.
