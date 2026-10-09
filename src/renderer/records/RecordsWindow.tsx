@@ -448,8 +448,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
                         <span className={`font-medium ${LEVEL_CLASSES[record.level]}`}>{t.t(LEVEL_LABELS[record.level])}</span>
                         {record.kind !== 'log' && <span>{t.t(KIND_LABELS[record.kind])}</span>}
                       </div>
-                      <div className="mt-0.5 text-sm text-fg-strong wrap-anywhere" data-record-title>{record.title}</div>
-                      {record.text && <div className="line-clamp-2 text-xs text-fg wrap-anywhere">{record.text}</div>}
+                      <div className="mt-0.5 text-sm text-fg-strong wrap-anywhere" data-record-title data-literal>{record.title}</div>
+                      {record.text && <div className="line-clamp-2 text-xs text-fg wrap-anywhere" data-literal>{record.text}</div>}
                     </div>
                   )
                 })}
@@ -469,6 +469,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
             max={LIST_WIDTH.max}
             onResize={setDragWidth}
             onCommit={commitListWidth}
+            keyboardLabel={t.t('records.listWidth')}
           />
         </section>
         <section
@@ -562,7 +563,7 @@ function RecordDetailView({
   const add = (label: string, value: ReactNode | null): void => {
     if (value !== null) fields.push({ label, value })
   }
-  const code = (value: string | null): ReactNode | null => (value === null ? null : <code className="font-mono text-xs">{value}</code>)
+  const code = (value: string | null): ReactNode | null => (value === null ? null : <code className="font-mono text-xs" data-literal>{value}</code>)
   if (record.kind === 'log') {
     add(t.t('records.time'), time(record.time))
   } else {
@@ -586,7 +587,7 @@ function RecordDetailView({
     t.t('records.tape'),
     record.tapeId === null ? null : (
       <span className="grid gap-0.5">
-        {tapeName !== null && <span>{tapeName}</span>}
+        {tapeName !== null && <span data-literal>{tapeName}</span>}
         {code(record.tapeId)}
       </span>
     ),
@@ -636,7 +637,7 @@ function RecordDetailView({
         {blocks.map((block) => (
           <section key={block.label} className="min-w-0" data-records-block>
             <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-muted">{block.label}</h3>
-            <pre className="whitespace-pre-wrap rounded border border-line bg-panel px-3 py-2 font-mono text-xs text-fg wrap-anywhere">
+            <pre className="whitespace-pre-wrap rounded border border-line bg-panel px-3 py-2 font-mono text-xs text-fg wrap-anywhere" data-literal>
               {block.text}
             </pre>
           </section>

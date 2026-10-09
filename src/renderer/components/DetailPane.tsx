@@ -390,7 +390,7 @@ export function DetailPane({
                   <span className="h-7 w-5 shrink-0" aria-hidden="true" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <h2 className="select-text break-words text-lg font-medium leading-7">
+                  <h2 className="select-text break-words text-lg font-medium leading-7" data-literal>
                     {tape.title ?? tape.sourceUrl}
                   </h2>
                   {/* Always visible: the media line for a downloaded tape (its "status"
@@ -409,14 +409,15 @@ export function DetailPane({
                       type="button"
                       onClick={() => void openSourceUrl()}
                       className="block w-full select-text break-all bg-transparent p-0 text-left hover:text-fg-strong"
+                      data-literal
                     >
                       {tape.sourceUrl}
                     </button>
                   )}
-                  {tape.filename && <div className="select-text break-all">{tape.filename}</div>}
+                  {tape.filename && <div className="select-text break-all" data-literal>{tape.filename}</div>}
                   {tape.uploader && (
                     <div className="select-text break-words">
-                      {tape.uploader}
+                      <span data-literal>{tape.uploader}</span>
                       {chapterLabel && <span className="text-fg-subtle"> · {t.text(chapterLabel)}</span>}
                     </div>
                   )}
@@ -425,7 +426,7 @@ export function DetailPane({
                 <dl className="mt-2 space-y-1 pl-6 text-xs text-fg">
                   {tape.uploader && (
                     <DetailRow label={t.t('detail.uploader')}>
-                      {tape.uploader}
+                      <span data-literal>{tape.uploader}</span>
                       {chapterLabel && <span className="text-fg-subtle"> · {t.text(chapterLabel)}</span>}
                     </DetailRow>
                   )}
@@ -440,6 +441,7 @@ export function DetailPane({
                         type="button"
                         onClick={() => void openSourceUrl()}
                         className="select-text break-all bg-transparent p-0 text-left hover:text-fg-strong"
+                        data-literal
                       >
                         {tape.sourceUrl}
                       </button>
@@ -447,7 +449,7 @@ export function DetailPane({
                   )}
                   {tape.name && (
                     <DetailRow label={t.t('detail.name')}>
-                      <span className="select-text">{tape.name}</span>
+                      <span className="select-text" data-literal>{tape.name}</span>
                     </DetailRow>
                   )}
                 </dl>

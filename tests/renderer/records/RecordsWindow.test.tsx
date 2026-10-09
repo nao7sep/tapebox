@@ -329,11 +329,11 @@ describe('RecordsWindow', () => {
     expect(lastQuery().search).toBe('quota')
   })
 
-  it('offers Needs attention first among the levels', async () => {
+  it('offers Warnings and errors first among the levels', async () => {
     await mount()
     const level = document.querySelectorAll('select')[3]!
     expect(Array.from(level.options).map((option) => option.textContent)).toEqual([
-      'All levels', 'Needs attention', 'Error', 'Warning', 'Info', 'Debug',
+      'All levels', 'Warnings and errors', 'Error', 'Warning', 'Info', 'Debug',
     ])
   })
 

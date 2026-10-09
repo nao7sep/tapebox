@@ -47,7 +47,7 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
       }
     >
       <div className="flex items-baseline justify-between gap-2">
-        <div className="min-w-0 flex-1 truncate text-sm">
+        <div className="min-w-0 flex-1 truncate text-sm" data-literal>
           {tape.title ?? tape.sourceUrl}
         </div>
         {tape.durationSeconds != null && (

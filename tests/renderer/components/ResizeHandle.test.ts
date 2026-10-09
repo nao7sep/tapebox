@@ -119,3 +119,57 @@ describe('ResizeHandle intent drag', () => {
     expect(onCommit).toHaveBeenLastCalledWith(start + 40)
   })
 })
+
+describe('ResizeHandle by keyboard', () => {
+  function keyed(edge: 'left' | 'right', size = 300) {
+    const onResize = vi.fn()
+    const onCommit = vi.fn()
+    root = createRoot(container)
+    act(() => {
+      root!.render(React.createElement(ResizeHandle, { edge, size, min: 200, max: 400, onResize, onCommit, keyboardLabel: 'List width' }))
+    })
+    const handle = container.querySelector('[role="separator"]') as HTMLElement
+    return { handle, onResize, onCommit }
+  }
+  const key = (handle: HTMLElement, type: 'keydown' | 'keyup', name: string) =>
+    act(() => { handle.dispatchEvent(new KeyboardEvent(type, { key: name, bubbles: true })) })
+
+  it('moves 16 px per arrow toward the growing edge, and commits once on release', () => {
+    const { handle, onResize, onCommit } = keyed('right')
+    expect(handle.tabIndex).toBe(0)
+    expect(handle.getAttribute('aria-label')).toBe('List width')
+    key(handle, 'keydown', 'ArrowRight')
+    key(handle, 'keydown', 'ArrowRight')
+    expect(onResize.mock.calls.map(([size]) => size)).toEqual([316, 332])
+    expect(onCommit).not.toHaveBeenCalled()
+    key(handle, 'keyup', 'ArrowRight')
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(332)
+    key(handle, 'keyup', 'ArrowRight')
+    expect(onCommit, 'nothing pending, nothing saved').toHaveBeenCalledOnce()
+  })
+
+  it('reverses for a left edge, stops at the bounds, and jumps with Home and End', () => {
+    const { handle, onResize } = keyed('left', 210)
+    key(handle, 'keydown', 'ArrowRight')
+    key(handle, 'keydown', 'End')
+    key(handle, 'keydown', 'Home')
+    key(handle, 'keydown', 'ArrowLeft')
+    expect(onResize.mock.calls.map(([size]) => size)).toEqual([200, 400, 200, 216])
+  })
+
+  it('commits a pending move when focus leaves', () => {
+    const { handle, onCommit } = keyed('right')
+    act(() => handle.focus())
+    key(handle, 'keydown', 'ArrowLeft')
+    act(() => handle.blur())
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(284)
+  })
+
+  it('stays mouse-only without a label', () => {
+    root = createRoot(container)
+    act(() => {
+      root!.render(React.createElement(ResizeHandle, { edge: 'right', size: 300, min: 200, max: 400, onResize: vi.fn(), onCommit: vi.fn() }))
+    })
+    expect((container.querySelector('[role="separator"]') as HTMLElement).hasAttribute('tabindex')).toBe(false)
+  })
+})

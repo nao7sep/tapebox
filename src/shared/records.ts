@@ -15,7 +15,8 @@ export type RecordLevel = (typeof RECORD_LEVELS)[number]
 
 /**
  * What the level filter offers: a record's own level, or `attention`, every
- * record at `warn` or `error`. Only a log line has a level of its own; an AI call
+ * record at `warn` or `error`, labelled "Warnings and errors": a recovered
+ * problem need not mean outstanding work (logging-conventions). Only a log line has a level of its own; an AI call
  * reads as `error` when it failed. A yt-dlp or ffmpeg run reads as `warn` when the
  * user cancelled it or TapeBox quit during it, `info` when it exited 0, and
  * `error` otherwise, including a run a signal ended for any other reason.

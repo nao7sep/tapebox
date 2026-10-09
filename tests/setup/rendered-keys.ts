@@ -1,50 +1,30 @@
 import { afterEach, beforeEach, expect } from 'vitest'
-import { loadedCatalogue } from '@shared/i18n/catalogues'
+import { isLiteral, keysIn, keysRenderedIn, READ_ATTRIBUTES } from '../helpers/rendered-keys'
 
 /**
  * The rendered-key gate (localization-conventions): every test that mounts the
  * interface fails if a catalogue key reaches the screen, as a text node or in an
  * attribute a person reads or hears. A key is a string, so neither the type
- * checker nor the source scan sees one rendered without the translator.
+ * checker nor the source scan sees one rendered without the translator. Literal
+ * content is marked `data-literal` and exempt (tests/helpers/rendered-keys.ts).
  *
  * It watches the document for the whole test rather than reading it at the end,
  * because each test file's own cleanup empties the body before this hook runs.
  */
 
-const KEYS = new Set(Object.keys(loadedCatalogue('en')))
-const READ_ATTRIBUTES = ['title', 'aria-label', 'aria-description', 'placeholder', 'alt', 'label']
-const KEY_LIKE = /[A-Za-z]\w*(?:\.\w+)+/g
-
 let found = new Set<string>()
 let observer: MutationObserver | null = null
 
-function check(text: string | null | undefined): void {
-  for (const token of text?.match(KEY_LIKE) ?? []) {
-    if (KEYS.has(token)) found.add(token)
-  }
-}
-
-function scan(node: Node): void {
-  if (node.nodeType === 3 /* TEXT_NODE */) {
-    check(node.nodeValue)
-    return
-  }
-  if (node.nodeType !== 1 /* ELEMENT_NODE */) return
-  const element = node as Element
-  for (const name of READ_ATTRIBUTES) check(element.getAttribute(name))
-  const walker = element.ownerDocument.createTreeWalker(element, 1 | 4 /* ELEMENT | TEXT */)
-  for (let next = walker.nextNode(); next; next = walker.nextNode()) {
-    if (next.nodeType === 3) check(next.nodeValue)
-    else for (const name of READ_ATTRIBUTES) check((next as Element).getAttribute(name))
-  }
+function add(keys: string[]): void {
+  for (const key of keys) found.add(key)
 }
 
 function record(records: MutationRecord[]): void {
   for (const change of records) {
-    if (change.type === 'childList') change.addedNodes.forEach(scan)
-    else if (change.type === 'characterData') check(change.target.nodeValue)
+    if (change.type === 'childList') change.addedNodes.forEach((node) => add(keysRenderedIn(node)))
+    else if (change.type === 'characterData') { if (!isLiteral(change.target)) add(keysIn(change.target.nodeValue)) }
     else if (change.type === 'attributes' && change.attributeName) {
-      check((change.target as Element).getAttribute(change.attributeName))
+      add(keysIn((change.target as Element).getAttribute(change.attributeName)))
     }
   }
 }
@@ -67,6 +47,6 @@ afterEach(() => {
   record(observer.takeRecords())
   observer.disconnect()
   observer = null
-  if (document.body) scan(document.body)
+  if (document.body) add(keysRenderedIn(document.body))
   expect([...found], 'catalogue keys rendered as text').toEqual([])
 })
