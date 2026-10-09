@@ -890,3 +890,73 @@ it('opens an exclusive real copy privately before its first bytes and restores t
     if (process.platform !== 'win32') expect((await stat(dest)).mode & 0o777).toBe(sourceMode)
   } finally { opened.mockRestore() }
 })
+
+describe('after the commit', () => {
+  /** Opening the destination directory for its sync yields a handle whose sync
+   * and close both fail, as on a volume that rejects directory handles late. */
+  async function failDirectorySync(directory: string) {
+    const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    return vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
+      if (String(args[0]) !== directory || args[1] !== 'r') return real.open(...args)
+      const failure = Object.assign(new Error('directory sync failed'), { code: 'EIO' })
+      return {
+        sync: async () => { throw failure },
+        close: async () => { throw failure },
+      } as unknown as Awaited<ReturnType<typeof real.open>>
+    })
+  }
+
+  it('reports a committed replacement as written when the directory sync and its close fail', async () => {
+    const dest = join(dir, 'catalog.json')
+    await writeFile(dest, 'old')
+    const opened = await failDirectorySync(dir)
+    try {
+      await writeFileAtomicVia(dest, async (tmp) => { await writeFile(tmp, 'new') })
+      expect(opened).toHaveBeenCalledWith(dir, 'r')
+    } finally { opened.mockRestore() }
+    expect(await readFile(dest, 'utf8')).toBe('new')
+    expect(await readdir(dir)).toEqual(['catalog.json'])
+  })
+
+  it('keeps the no-overwrite claim when the directory sync and its close fail', async () => {
+    const stage = join(dir, 'stage.tmp')
+    const dest = join(dir, 'published')
+    await writeFile(stage, 'bytes')
+    const opened = await failDirectorySync(dir)
+    let claim: Awaited<ReturnType<typeof publishFileNoOverwrite>>
+    try {
+      claim = await publishFileNoOverwrite(stage, dest)
+      expect(opened).toHaveBeenCalledWith(dir, 'r')
+    } finally { opened.mockRestore() }
+    expect(claim).toEqual(await claimFile(dest))
+    expect(await readFile(dest, 'utf8')).toBe('bytes')
+    expect(await exists(stage)).toBe(false)
+  })
+})
+
+describe('volumes that cannot hold permission bits', () => {
+  const refusal = () => Object.assign(new Error('operation not supported'), { code: 'ENOTSUP' })
+
+  it('publishes with the volume\'s own mode when chmod is unsupported', async () => {
+    const chmodded = vi.spyOn(fileIo, 'chmod').mockImplementation(async () => { throw refusal() })
+    try {
+      await writeFileAtomicVia(join(dir, 'ordinary'), async (tmp) => { await writeFile(tmp, 'ordinary') })
+      await writeFileAtomicVia(join(dir, 'secret'), async (tmp) => { await writeFile(tmp, 'secret') }, undefined, undefined, 0o600)
+      await writeFileAtomicNoOverwriteVia(join(dir, 'export'), async (tmp) => { await writeFile(tmp, 'export') })
+      expect(chmodded).toHaveBeenCalledTimes(3)
+    } finally { chmodded.mockRestore() }
+    expect(await readFile(join(dir, 'ordinary'), 'utf8')).toBe('ordinary')
+    expect(await readFile(join(dir, 'secret'), 'utf8')).toBe('secret')
+    expect(await readFile(join(dir, 'export'), 'utf8')).toBe('export')
+    expect((await readdir(dir)).sort()).toEqual(['export', 'ordinary', 'secret'])
+  })
+
+  it('still fails, and cleans its stage, on a chmod error that is not a refusal', async () => {
+    const failure = Object.assign(new Error('i/o error'), { code: 'EIO' })
+    const chmodded = vi.spyOn(fileIo, 'chmod').mockImplementation(async () => { throw failure })
+    try {
+      await expect(writeFileAtomicVia(join(dir, 'target'), async (tmp) => { await writeFile(tmp, 'x') })).rejects.toBe(failure)
+    } finally { chmodded.mockRestore() }
+    expect(await readdir(dir)).toEqual([])
+  })
+})

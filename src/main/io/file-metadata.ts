@@ -23,6 +23,16 @@ function refusesMetadata(err: unknown): boolean {
   return CANNOT_HOLD.has((err as NodeJS.ErrnoException).code ?? '')
 }
 
+/** Set ordinary permission bits by path, where the volume can hold them. A volume
+ * that cannot keeps its own ordinary mode, as a copy's stamp does. */
+export async function chmodWhereHeld(path: string, mode: number): Promise<void> {
+  try {
+    await chmod(path, mode)
+  } catch (err) {
+    if (!refusesMetadata(err)) throw err
+  }
+}
+
 export function fileStampOf(stats: BigIntStats): FileStamp {
   const seconds = (ns: bigint) => Number(ns) / 1e9
   return {

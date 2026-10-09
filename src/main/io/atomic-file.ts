@@ -1,9 +1,9 @@
-import { chmod, link, lstat, open, rename, unlink, writeFile } from 'node:fs/promises'
+import { link, lstat, open, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { nanoid } from 'nanoid'
 import { log } from './logger'
 import { describeError } from '../../shared/error'
-import { applyFileStamp, fileStampOf, keepOriginalMode, type FileStamp } from './file-metadata'
+import { applyFileStamp, chmodWhereHeld, fileStampOf, keepOriginalMode, type FileStamp } from './file-metadata'
 
 /**
  * Atomically publish a file. Runs `produce(tempPath)` to write the complete,
@@ -55,9 +55,9 @@ export async function writeFileAtomicVia(
     signal?.throwIfAborted()
     const keptMode = await keepOriginalMode(destPath, tempPath)
     // chmod (not the open mode) is what guarantees the exact bits regardless of
-    // the process umask.
-    if (mode !== undefined) await chmod(tempPath, mode)
-    else if (!keptMode) await chmod(tempPath, 0o666 & ~process.umask())
+    // the process umask, on a volume that can hold them.
+    if (mode !== undefined) await chmodWhereHeld(tempPath, mode)
+    else if (!keptMode) await chmodWhereHeld(tempPath, 0o666 & ~process.umask())
     await fsyncFile(tempPath)
     // fsync can block long enough for a user cancellation to arrive. This is the
     // final safe boundary: the staged file is durable but has not replaced the
@@ -66,13 +66,14 @@ export async function writeFileAtomicVia(
     await beforePublish?.()
     signal?.throwIfAborted()
     await rename(tempPath, destPath)
-    await fsyncDirBestEffort(dirname(destPath))
   } catch (err) {
     if (stageCreated) await unlink(tempPath).catch((cleanupError: unknown) => {
       if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('atomic stage cleanup failed', { path: tempPath, error: describeError(cleanupError) })
     })
     throw err
   }
+  // The rename is the commit; the directory sync after it cannot undo it.
+  await fsyncDirBestEffort(dirname(destPath))
 }
 
 const LINK_UNSUPPORTED = new Set(['EACCES', 'EMLINK', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV'])
@@ -306,7 +307,7 @@ export async function writeFileAtomicNoOverwriteVia(
     stageCreated = true
     await stage.close()
     await produce(tempPath)
-    await chmod(tempPath, 0o666 & ~process.umask())
+    await chmodWhereHeld(tempPath, 0o666 & ~process.umask())
     return await publishFileNoOverwrite(tempPath, destPath)
   } catch (err) {
     if (stageCreated) await unlink(tempPath).catch((cleanupError: unknown) => {
@@ -611,7 +612,9 @@ async function fsyncFile(path: string): Promise<void> {
  * fsync a directory so the rename's new entry is itself durable. Best-effort:
  * Windows can't open a directory as a file handle and macOS treats it as a no-op,
  * so a failure there is expected and ignored — it hardens Linux and is harmless
- * elsewhere.
+ * elsewhere. It runs after a publication has committed, so it never throws: a
+ * failed sync or close must not report a committed file as failed or drop its
+ * no-overwrite claim. A hung volume is outside support.
  */
 async function fsyncDirBestEffort(path: string): Promise<void> {
   const handle = await open(path, 'r').catch(() => null)
@@ -621,6 +624,6 @@ async function fsyncDirBestEffort(path: string): Promise<void> {
   } catch {
     // directory fsync unsupported on this platform
   } finally {
-    await handle.close()
+    await handle.close().catch(() => {})
   }
 }
