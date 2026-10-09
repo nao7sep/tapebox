@@ -13,6 +13,7 @@ import type { Tape } from '@shared/domain'
 import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { librarySourceIndex } from '@shared/source-identity'
 import { StopRequest, type StopCause } from '@main/stop-request'
+import { findFinishedBundle } from '@main/queue/finished-bundle'
 
 const DOWNLOAD_FAILURE_MESSAGE =
   'The download could not be completed. Check the source and your connection, then try again.'
@@ -35,6 +36,7 @@ export interface JobDeps {
     saveThumbnailJpeg: typeof ffmpeg.saveThumbnailJpeg
   }
   sidecar: { finalize: typeof sidecar.finalize }
+  findFinishedBundle: typeof findFinishedBundle
   session: {
     getTape: typeof session.getTape
     getTapes: typeof session.getTapes
@@ -51,6 +53,7 @@ export const defaultJobDeps: JobDeps = {
   ytdlp: { probe: ytdlp.probe, download: ytdlp.download, findThumbnail: ytdlp.findThumbnail },
   ffmpeg: { probeMedia: ffmpeg.probeMedia, saveThumbnailJpeg: ffmpeg.saveThumbnailJpeg },
   sidecar: { finalize: sidecar.finalize },
+  findFinishedBundle,
   session: {
     getTape: session.getTape,
     getTapes: session.getTapes,
@@ -120,6 +123,7 @@ export class Job {
     // Fresh attempt: clear any log buffered from a prior (failed) run.
     this.d.emit('tapes:logReset', { tapeId: this.tapeId })
     try {
+      if (await this.adoptFinishedDownload()) return
       const isVideo = await this.probe()
       if (!isVideo || this.cancelled) return
       await this.download()
@@ -156,6 +160,37 @@ export class Job {
     const next = moveTape(cur, move, at)
     this.d.session.upsertTape(next)
     return next
+  }
+
+  /**
+   * Adopt a download that finished on disk before its catalog commit landed,
+   * instead of probing and downloading again over it (queue/finished-bundle.ts).
+   * Returns true once the job is settled: adopted, or failed with the files kept.
+   */
+  private async adoptFinishedDownload(): Promise<boolean> {
+    const cur = this.current()
+    if (!cur) return false
+    const found = await this.d.findFinishedBundle(this.d.getLibraryDir(), cur, this.d.now())
+    if (found.status === 'none') return false
+    if (found.status === 'unusable') {
+      // Clearing the stem for a new attempt could delete a finished download, so
+      // the files stay and the tape fails; removing it is the user's call.
+      this.d.log.error('job stopped: a finished download for this tape could not be adopted', { tapeId: this.tapeId, reason: found.reason })
+      this.update({ state: 'failed', failureCode: 'download', lastError: DOWNLOAD_FAILURE_MESSAGE })
+      this.d.emit('tapes:failed', { tapeId: this.tapeId, code: 'download' })
+      return true
+    }
+    this.controller.signal.throwIfAborted()
+    const adopted = this.move(found.move)
+    const committed = await this.d.session.persistNow()
+    this.d.log.info('job adopted a finished download', { tapeId: this.tapeId, filename: adopted?.filename ?? null, committed })
+    try {
+      if (adopted) this.d.emit('tapes:updated', adopted)
+      this.d.emit('tapes:completed', { tapeId: this.tapeId })
+    } catch (err) {
+      this.d.log.error('download completion could not be sent to the window', { tapeId: this.tapeId, error: describeError(err) })
+    }
+    return true
   }
 
   /** Returns true if a downloadable video; false if the URL is a page of videos. */

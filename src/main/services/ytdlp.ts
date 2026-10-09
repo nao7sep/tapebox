@@ -220,6 +220,8 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
   // yt-dlp skip the download entirely, which leaves us with no final path. We
   // deliberately don't try to resume across attempts; yt-dlp resumes fragments
   // within an attempt, and a user-triggered retry starting fresh is predictable.
+  // A finished bundle — one whose sidecar was written — never reaches here: the
+  // job adopts it first (queue/finished-bundle.ts).
   await clearStem(opts.libraryDir, opts.outputId)
   // Never auto-retried: re-running hammers the site and risks a block. yt-dlp
   // runs its own internal --retries for transient blips within the attempt. No

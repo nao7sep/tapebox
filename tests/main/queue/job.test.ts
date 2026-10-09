@@ -58,6 +58,7 @@ function makeDeps(opts: {
   probe?: JobDeps['ytdlp']['probe']
   download?: JobDeps['ytdlp']['download']
   persistSucceeds?: boolean
+  finished?: JobDeps['findFinishedBundle']
 }): { deps: JobDeps; tapes: Map<string, Tape>; emits: string[]; payloads: unknown[]; errors: unknown[] } {
   const tapes = new Map<string, Tape>((opts.initial ?? []).map((t) => [t.id, t]))
   const emits: string[] = []
@@ -85,6 +86,7 @@ function makeDeps(opts: {
       saveThumbnailJpeg: async () => 't1.jpg',
     },
     sidecar: { finalize: async () => {} },
+    findFinishedBundle: opts.finished ?? (async () => ({ status: 'none' })),
     session: {
       getTape: (id) => tapes.get(id),
       getTapes: () => [...tapes.values()],
@@ -162,6 +164,43 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(emits, 'the downloaded row was committed before the send').toContain('persist:downloaded')
     expect(emits).not.toContain('tapes:failed')
     expect(errors).toEqual([expect.objectContaining({ tapeId: 't1', error: expect.objectContaining({ message: 'window gone' }) })])
+  })
+
+  it('adopts a download that finished before its catalog commit, without probing or downloading', async () => {
+    const t = tape({ id: 't1', sourceId: 'vid1', extractor: 'youtube', title: 'A Video' })
+    let probed = false
+    let downloaded = false
+    const { deps, tapes, emits } = makeDeps({
+      initial: [t],
+      probe: async () => { probed = true; return video },
+      download: async () => { downloaded = true; throw new Error('a new attempt would clear the stem') },
+      finished: async () => ({
+        status: 'found',
+        move: { state: 'downloaded', failureCode: null, filename: 't1.mp4', sidecarFilename: 't1.json', thumbnailFilename: 't1.jpg', downloadedAtUtc: T0 },
+      }),
+    })
+    await new Job(t, deps).run()
+    expect(probed).toBe(false)
+    expect(downloaded).toBe(false)
+    expect(tapes.get('t1')).toMatchObject({ state: 'downloaded', filename: 't1.mp4', downloadedAtUtc: T0, title: 'A Video' })
+    expect(emits.indexOf('persist:downloaded')).toBeGreaterThanOrEqual(0)
+    expect(emits.indexOf('persist:downloaded')).toBeLessThan(emits.indexOf('tapes:completed'))
+  })
+
+  it('fails without downloading over a finished bundle it cannot adopt', async () => {
+    const t = tape({ id: 't1' })
+    let downloaded = false
+    const { deps, tapes, emits, errors } = makeDeps({
+      initial: [t],
+      probe: async () => video,
+      download: async () => { downloaded = true; throw new Error('a new attempt would clear the stem') },
+      finished: async () => ({ status: 'unusable', reason: 'import.sidecarNewer' }),
+    })
+    await new Job(t, deps).run()
+    expect(downloaded).toBe(false)
+    expect(tapes.get('t1')).toMatchObject({ state: 'failed', failureCode: 'download' })
+    expect(emits).toContain('tapes:failed')
+    expect(errors).toEqual([expect.objectContaining({ tapeId: 't1', reason: 'import.sidecarNewer' })])
   })
 
   it('rejects a probe whose (extractor, id) duplicates an existing tape', async () => {
