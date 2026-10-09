@@ -23,4 +23,19 @@ describe('terminal startup settlement', () => {
     }))
     expect(exit).toHaveBeenCalledWith(1)
   })
+
+  it('exits only after the notice has settled', async () => {
+    const order: string[] = []
+    let dismiss!: () => void
+    const settled = settleTerminalStartupFailure(new Error('startup'), {
+      log: { error: vi.fn() },
+      notify: () => new Promise<void>((resolve) => { dismiss = () => { order.push('notice'); resolve() } }),
+      exit: () => { order.push('exit') },
+    })
+    await Promise.resolve()
+    expect(order).toEqual([])
+    dismiss()
+    await settled
+    expect(order).toEqual(['notice', 'exit'])
+  })
 })

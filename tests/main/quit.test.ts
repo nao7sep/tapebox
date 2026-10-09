@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createQuit, QUIT_BOUNDS_MS, SESSION_END_LIMIT_MS, type QuitChoice, type QuitSteps } from '@main/quit'
+import { createQuit, QUIT_BOUNDS_MS, SESSION_END_LIMIT_MS, SESSION_END_MARK_MS, type QuitChoice, type QuitSteps } from '@main/quit'
+import { TREE_STOP_BOUND_MS } from '@main/io/spawn'
 
 function quitEvent() {
   return { preventDefault: vi.fn() }
@@ -170,6 +171,53 @@ describe('quit', () => {
     quit.beforeQuit(quitEvent())
     await vi.runAllTimersAsync()
     expect(steps.exit).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('exits normally once a retried library save succeeds after one timed out', async () => {
+    const saveLibrary = vi.fn().mockImplementationOnce(() => never<boolean>()).mockResolvedValue(true)
+    const { steps, questions } = makeSteps({ saveLibrary })
+    const quit = createQuit(steps)
+    quit.beforeQuit(quitEvent())
+    await vi.advanceTimersByTimeAsync(QUIT_BOUNDS_MS.user.save)
+    questions[0]!.answer('retry')
+    await vi.runAllTimersAsync()
+    expect(steps.exit).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('still forces the exit when work outlived its stop bound, though every save succeeded', async () => {
+    const { steps } = makeSteps({ stopWork: vi.fn(() => never<void>()) })
+    const quit = createQuit(steps)
+    quit.beforeQuit(quitEvent())
+    await vi.runAllTimersAsync()
+    expect(steps.exit).toHaveBeenCalledExactlyOnceWith(true)
+  })
+
+  it('fits stopping a download tool\'s process tree inside the stop step', () => {
+    // POSIX stops work at a session end too; Windows stops it only in a user's quit.
+    expect(TREE_STOP_BOUND_MS.posix).toBeLessThan(QUIT_BOUNDS_MS['session-end'].stop)
+    expect(TREE_STOP_BOUND_MS.windows).toBeLessThan(QUIT_BOUNDS_MS.user.stop)
+  })
+
+  it('forgets a shutdown signal that no quit followed, so a later quit asks on a failed save', async () => {
+    const { steps } = makeSteps({ saveLibrary: vi.fn(async () => false) })
+    const quit = createQuit(steps)
+    quit.markSessionEnd()
+    await vi.advanceTimersByTimeAsync(SESSION_END_MARK_MS)
+    quit.beforeQuit(quitEvent())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(steps.ask).toHaveBeenCalledOnce()
+    expect(steps.exit).not.toHaveBeenCalled()
+  })
+
+  it('keeps a quit soon after a shutdown signal a session end, even past the window', async () => {
+    const { steps } = makeSteps({ saveLibrary: vi.fn(async () => false), stopWork: vi.fn(() => never<void>()) })
+    const quit = createQuit(steps)
+    quit.markSessionEnd()
+    await vi.advanceTimersByTimeAsync(SESSION_END_MARK_MS - 1)
+    quit.beforeQuit(quitEvent())
+    await vi.advanceTimersByTimeAsync(SESSION_END_LIMIT_MS)
+    expect(steps.ask).not.toHaveBeenCalled()
+    expect(steps.exit).toHaveBeenCalledExactlyOnceWith(true)
   })
 
   it('ends a user quit whose every later step stalls within the sum of its bounds', async () => {

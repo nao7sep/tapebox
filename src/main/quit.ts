@@ -42,6 +42,14 @@ export const QUIT_BOUNDS_MS: Record<QuitOrigin, QuitBounds> = {
  * reached it, whatever step it is in. */
 export const SESSION_END_LIMIT_MS = 4_000
 
+/** How long powerMonitor's 'shutdown' marks the session as ending when no quit
+ * follows it. Electron reports no cancelled logout (another app can veto it), so
+ * after this window a quit is the user's again and asks about a failed save. Too
+ * short a window could put that question in front of a real logout and block it;
+ * too long only skips the question for a quit soon after a cancelled logout.
+ * Shared with BigMouth and ZipKit. */
+export const SESSION_END_MARK_MS = 60_000
+
 export interface QuitSteps {
   /** Saves the library catalog; resolves true once it is on disk. */
   saveLibrary(): Promise<boolean>
@@ -88,7 +96,9 @@ export interface Quit {
    * only the exit after the steps settle ends it. */
   beforeQuit(event: { preventDefault: () => void }): void
   /** powerMonitor 'shutdown': the session is ending, so nothing asks again and
-   * a running quit closes its question and ends within the limit. */
+   * a running quit closes its question and ends within the limit. With no quit
+   * running, the mark applies to a quit that arrives within
+   * {@link SESSION_END_MARK_MS}. */
   markSessionEnd(): void
   /** The Windows main window's 'session-end': close the records and exit before returning. */
   endSessionNow(): void
@@ -99,15 +109,25 @@ export function createQuit(steps: QuitSteps): Quit {
   let sessionEnding = false
   let exited = false
   let allowUnsaved = false
+  /** A stop, layout or close step outlived its bound and may still be running. */
   let forced = false
+  /** The last library save outlived its bound. A later successful save clears it:
+   * catalog writes run in order, so that one settled first. */
+  let librarySaveUnsettled = false
   let limitTimer: ReturnType<typeof setTimeout> | null = null
+  let markTimer: ReturnType<typeof setTimeout> | null = null
   let question: AbortController | null = null
 
-  const exit = (force = forced): void => {
+  const exit = (force = forced || librarySaveUnsettled): void => {
     if (exited) return
     exited = true
     if (limitTimer) clearTimeout(limitTimer)
+    if (markTimer) clearTimeout(markTimer)
     steps.exit(force)
+  }
+
+  const clearMarkTimer = (): void => {
+    if (markTimer) { clearTimeout(markTimer); markTimer = null }
   }
 
   const bounds = (): QuitBounds => QUIT_BOUNDS_MS[sessionEnding ? 'session-end' : 'user']
@@ -121,8 +141,13 @@ export function createQuit(steps: QuitSteps): Quit {
   }
 
   function warnUnsettled(step: string, settled: Settled<unknown>, boundMs: number): void {
-    if (settled.outcome === 'timeout') { forced = true; steps.warn(`${step} did not finish within the quit bound`, { boundMs }) }
+    if (settled.outcome === 'timeout') steps.warn(`${step} did not finish within the quit bound`, { boundMs })
     else if (settled.outcome === 'failed') steps.warn(`${step} failed at quit`, { error: describeError(settled.error) })
+  }
+
+  function warnStepUnsettled(step: string, settled: Settled<unknown>, boundMs: number): void {
+    if (settled.outcome === 'timeout') forced = true
+    warnUnsettled(step, settled, boundMs)
   }
 
   /** Saves the library until it is saved, the user decides, or the session ends.
@@ -131,6 +156,7 @@ export function createQuit(steps: QuitSteps): Quit {
     for (;;) {
       const boundMs = bounds().save
       const saved = await within(steps.saveLibrary(), boundMs)
+      librarySaveUnsettled = saved.outcome === 'timeout'
       if (saved.outcome === 'done' && saved.value) return true
       warnUnsettled('the library save', saved, boundMs)
       if (sessionEnding) {
@@ -167,7 +193,7 @@ export function createQuit(steps: QuitSteps): Quit {
       return
     }
     let b = bounds()
-    warnUnsettled('stopping work in flight', await within(steps.stopWork(), b.stop), b.stop)
+    warnStepUnsettled('stopping work in flight', await within(steps.stopWork(), b.stop), b.stop)
     // Finalized downloads may have changed the catalog while work stopped.
     b = bounds()
     const library = saveOrAsk()
@@ -178,9 +204,9 @@ export function createQuit(steps: QuitSteps): Quit {
       return
     }
     b = bounds()
-    warnUnsettled('the layout save', await layout, b.save)
+    warnStepUnsettled('the layout save', await layout, b.save)
     b = bounds()
-    warnUnsettled('closing the stores', await within(steps.close(), b.close), b.close)
+    warnStepUnsettled('closing the stores', await within(steps.close(), b.close), b.close)
     exit()
   }
 
@@ -191,6 +217,9 @@ export function createQuit(steps: QuitSteps): Quit {
       running = true
       allowUnsaved = false
       forced = false
+      librarySaveUnsettled = false
+      // The session end this quit belongs to no longer expires.
+      clearMarkTimer()
       if (sessionEnding) startLimit()
       // A step that throws past its bound still exits: quit must never hang.
       void run().catch((error: unknown) => {
@@ -199,9 +228,18 @@ export function createQuit(steps: QuitSteps): Quit {
       })
     },
     markSessionEnd() {
+      if (!running) {
+        // Mark the session as ending for a quit that follows within the window.
+        sessionEnding = true
+        clearMarkTimer()
+        markTimer = setTimeout(() => {
+          markTimer = null
+          if (!running) sessionEnding = false
+        }, SESSION_END_MARK_MS)
+        return
+      }
       if (sessionEnding) return
       sessionEnding = true
-      if (!running) return
       startLimit()
       question?.abort()
     },

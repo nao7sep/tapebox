@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectOutput, spawnStreaming, waitForExit } from '@main/io/spawn'
+import { collectOutput, killOwnedProcessesNow, spawnStreaming, waitForExit } from '@main/io/spawn'
 import { StopRequest } from '@main/stop-request'
 
 function readReadyPid(child: ReturnType<typeof spawnStreaming>): Promise<number> {
@@ -61,6 +61,45 @@ describe('owned subprocess cancellation', () => {
     },
     30_000,
   )
+})
+
+describe('a forced exit', () => {
+  /** Whether `pid` is gone, waiting for the OS to reap it. */
+  async function goneSoon(pid: number): Promise<boolean> {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try { process.kill(pid, 0) } catch { return true }
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    return false
+  }
+
+  it.runIf(process.platform !== 'win32')('kills every owned POSIX process group at once, without a grace', async () => {
+    const descendant = `process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)`
+    const parent =
+      `process.on('SIGTERM', () => {}); ` +
+      `const descendant = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); ` +
+      `process.stdout.write('ready:' + descendant.pid + '\\n'); setInterval(() => {}, 1000)`
+    const child = spawnStreaming(process.execPath, ['-e', parent])
+    const exited = waitForExit(child, { reject: false })
+    const descendantPid = await readReadyPid(child)
+
+    killOwnedProcessesNow()
+
+    await exited
+    expect(await goneSoon(descendantPid), 'the descendant died with its group').toBe(true)
+    expect(() => process.kill(-child.pid!, 0)).toThrow()
+  })
+
+  it.runIf(process.platform === 'win32')('kills the owned direct children', async () => {
+    const child = spawnStreaming(process.execPath, ['-e', `process.stdout.write('ready:' + process.pid + '\\n'); setInterval(() => {}, 1000)`])
+    const exited = waitForExit(child, { reject: false })
+    const pid = await readReadyPid(child)
+
+    killOwnedProcessesNow()
+
+    await exited
+    expect(await goneSoon(pid)).toBe(true)
+  })
 })
 
 describe('why a collected run ended early', () => {

@@ -86,9 +86,53 @@ type StreamingChild = ChildProcessByStdio<null, Readable, Readable> & {
   termination?: Promise<void>
 }
 
-const WINDOWS_TREE_KILL_TIMEOUT_MS = 5_000
-const POSIX_TERM_GRACE_MS = 1_000
-const POSIX_KILL_SETTLE_MS = 1_000
+// Stopping a tree fits inside the quit's stop step (quit.ts QUIT_BOUNDS_MS): on
+// POSIX within a session end's 1 s, on Windows, where only a user's quit stops
+// work, within its 4.5 s. A download needs no graceful exit — its leftovers are
+// swept — so the SIGTERM grace is short.
+const WINDOWS_TREE_KILL_TIMEOUT_MS = 4_000
+const POSIX_TERM_GRACE_MS = 500
+const POSIX_KILL_SETTLE_MS = 300
+
+/** The longest stopping an owned tree takes to settle, per platform family. */
+export const TREE_STOP_BOUND_MS = {
+  posix: POSIX_TERM_GRACE_MS + POSIX_KILL_SETTLE_MS,
+  windows: WINDOWS_TREE_KILL_TIMEOUT_MS,
+} as const
+
+/** Every process this app started whose tree may still be alive. */
+const owned = new Set<StreamingChild>()
+
+/** Track `child` until it has closed and any termination of its tree settled. */
+function own(child: StreamingChild): StreamingChild {
+  owned.add(child)
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    void Promise.resolve(child.termination).then(() => { owned.delete(child) })
+  }
+  child.once('close', release)
+  child.once('error', release)
+  return child
+}
+
+/**
+ * Kill every owned process tree at once, synchronously, for a forced exit that
+ * will not wait for any termination to settle: the process groups on macOS and
+ * Linux, the direct children on Windows (a forced exit adds no taskkill). A
+ * download tool must not outlive the app that owned it.
+ */
+export function killOwnedProcessesNow(): void {
+  for (const child of owned) {
+    const pid = child.pid
+    if (pid === undefined) continue
+    if (process.platform !== 'win32') {
+      try { process.kill(-pid, 'SIGKILL') } catch { /* the group is gone */ }
+    }
+    try { child.kill('SIGKILL') } catch { /* already exited */ }
+  }
+}
 
 /** Terminate the process we started and every descendant it owns. yt-dlp starts
  * ffmpeg and Deno; killing only yt-dlp lets those children keep mutating files
@@ -245,12 +289,12 @@ export async function execCapture(
   opts: CaptureOptions = {},
 ): Promise<CaptureResult> {
   opts.signal?.throwIfAborted()
-  const child = spawn(command, args as string[], {
+  const child = own(spawn(command, args as string[], {
     env: opts.env,
     cwd: opts.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
-  }) as StreamingChild
+  }) as StreamingChild)
 
   let stdout = ''
   let stderr = ''
@@ -296,12 +340,12 @@ export function spawnStreaming(
   opts: SpawnOptions = {},
 ): StreamingChild {
   opts.signal?.throwIfAborted()
-  const child = spawn(command, args as string[], {
+  const child = own(spawn(command, args as string[], {
     env: opts.env,
     cwd: opts.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
-  }) as StreamingChild
+  }) as StreamingChild)
 
   if (opts.idleTimeoutMs != null) {
     const idle = startIdleWatch(child, opts.idleTimeoutMs, () => {

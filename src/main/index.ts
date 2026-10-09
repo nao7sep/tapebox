@@ -29,6 +29,7 @@ import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
 import { createQuit, type QuitChoice } from './quit.js'
 import { forceExitProcess } from './force-exit.js'
+import { killOwnedProcessesNow } from './io/spawn.js'
 import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 import {
@@ -177,13 +178,22 @@ async function startup(): Promise<void> {
   }
 }
 
+/** Every forced exit: the download tools TapeBox owns end with it, then the
+ * process ends without entering cleanup a worker stuck in native I/O can stall. */
+function exitNow(): void {
+  killOwnedProcessesNow()
+  forceExitProcess()
+}
+
 async function handleTerminalStartupFailure(error: unknown): Promise<void> {
   if (terminalStartupFailure) return
   terminalStartupFailure = true
+  // Once the notice has been shown, nothing is left to save: the records worker
+  // may be stuck in native I/O, so the exit is forced.
   await settleTerminalStartupFailure(error, {
     log,
     notify: notifyStartupFailure,
-    exit: (code) => app.exit(code),
+    exit: () => exitNow(),
   })
 }
 
@@ -222,7 +232,7 @@ const quit = createQuit({
   },
   warn: (message, details) => log.warn(message, details),
   exit: (forced) => {
-    if (forced) { forceExitProcess(); return }
+    if (forced) { exitNow(); return }
     app.exit(0)
   },
 })
@@ -255,7 +265,7 @@ process.on('uncaughtException', (err) => {
   log.error('uncaught exception', { error: describeError(err) })
   flushRecordsBeforeExit()
   void closeRecords()
-  forceExitProcess()
+  exitNow()
 })
 process.on('unhandledRejection', (reason) => {
   log.error('unhandled rejection', { error: describeError(reason) })
