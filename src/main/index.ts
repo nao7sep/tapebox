@@ -237,6 +237,9 @@ const quit = createQuit({
   warn: (message, details) => log.warn(message, details),
   exit: (forced) => {
     if (forced) { exitNow(); return }
+    // Standalone version probes have no feature operation to stop them. Sweep
+    // every remaining owned process after normal teardown, before terminal exit.
+    killOwnedProcessesNow()
     app.exit(0)
   },
 })

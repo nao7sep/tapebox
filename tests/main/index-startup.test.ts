@@ -1,15 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { app } from 'electron'
+import { forgetAllInstalledVersions, readInstalledVersion } from '@main/binaries/installed-version'
+import { openExternalPlayer } from '@main/io/external-player'
+import { killOwnedProcessesNow } from '@main/io/spawn'
 
 // The Electron entry's wiring, with every store, service and window substituted:
 // a second launch or Dock activation that arrives while the language is still
 // loading must not create a window before the stores, IPC and media server are
-// ready, and startup then creates the one owner window. Forced exits end the
-// download tools first.
+// ready, and startup then creates the one owner window. Every terminal exit ends
+// owned subprocesses, including standalone version reads outside operation
+// shutdown, while an independently launched player keeps running.
 
 const appHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
 const windows = vi.hoisted(() => [] as Array<{ focus: ReturnType<typeof vi.fn> }>)
 const order = vi.hoisted(() => [] as string[])
 const language = vi.hoisted(() => ({ release: (() => {}) as () => void }))
+const versionFixture = vi.hoisted(() => ({ script: '' }))
 
 vi.mock('electron', () => {
   class BrowserWindow {
@@ -35,7 +44,7 @@ vi.mock('electron', () => {
       on: (event: string, handler: (...args: unknown[]) => unknown) => { appHandlers.set(event, handler) },
       whenReady: () => Promise.resolve(),
       quit: vi.fn(),
-      exit: vi.fn(),
+      exit: vi.fn(() => { order.push('app-exit') }),
       isPackaged: false,
     },
     BrowserWindow,
@@ -45,7 +54,10 @@ vi.mock('electron', () => {
 })
 
 const step = (name: string) => vi.fn(async () => { order.push(name) })
-vi.mock('@main/paths', () => ({ ensureDirs: vi.fn(async () => {}), sweepAbandonedStaging: vi.fn(async () => {}) }))
+vi.mock('@main/paths', () => ({
+  ensureDirs: vi.fn(async () => {}), sweepAbandonedStaging: vi.fn(async () => {}),
+  binaryPath: () => process.execPath,
+}))
 vi.mock('@main/startup-dialog', () => ({ notifyCorruptConfig: vi.fn(), notifyCorruptSession: vi.fn(), notifyStartupFailure: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ initLogger: vi.fn(), isDebugEnabled: () => false, log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/io/records', () => ({ closeRecords: vi.fn(async () => {}), flushRecordsBeforeExit: vi.fn(() => { order.push('records-drain') }), onRecordStored: vi.fn(), openRecords: () => 'session' }))
@@ -71,7 +83,32 @@ vi.mock('@main/window-close', () => ({ configureWindowClose: vi.fn() }))
 vi.mock('@main/store/backupStore', () => ({ closeBackupStore: vi.fn(async () => {}) }))
 vi.mock('@main/plain-message-dialog', () => ({ showPlainMessageDialog: vi.fn() }))
 vi.mock('@main/force-exit', () => ({ forceExitProcess: vi.fn(() => { order.push('force-exit') }) }))
-vi.mock('@main/io/spawn', () => ({ killOwnedProcessesNow: vi.fn(() => { order.push('kill-tools') }) }))
+vi.mock('@main/io/spawn', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/io/spawn')>()
+  return {
+    ...actual,
+    killOwnedProcessesNow: vi.fn(() => { order.push('kill-tools'); actual.killOwnedProcessesNow() }),
+  }
+})
+vi.mock('@main/binaries/registry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/binaries/registry')>()
+  return {
+    ...actual,
+    binarySpecs: {
+      ...actual.binarySpecs,
+      'yt-dlp': {
+        ...actual.binarySpecs['yt-dlp'],
+        // Only the executable and its arguments are fixtures. The version read,
+        // capture, ownership set, process kill and quit wiring stay real.
+        installedVersion: {
+          kind: 'probe',
+          get args() { return [versionFixture.script] },
+          parse: actual.parseYtDlpVersion,
+        },
+      },
+    },
+  }
+})
 vi.mock('@main/i18n', () => ({
   applyLanguagePreference: vi.fn(async () => {}),
   registerLanguageHandlers: vi.fn(),
@@ -97,6 +134,22 @@ afterAll(() => {
   processHandlers = []
 })
 
+function waitingFixture(directory: string, name: string) {
+  const script = join(directory, `${name}.cjs`)
+  const ready = join(directory, `${name}-ready.txt`)
+  const release = join(directory, `${name}-release.txt`)
+  const pulse = join(directory, `${name}-pulse.txt`)
+  writeFileSync(script,
+    `const fs = require('node:fs');\n` +
+    `fs.writeFileSync(${JSON.stringify(ready)}, String(process.pid));\n` +
+    `let pulse = 0; setInterval(() => {\n` +
+    `  if (fs.existsSync(${JSON.stringify(release)})) process.exit(0);\n` +
+    `  fs.writeFileSync(${JSON.stringify(pulse)}, String(++pulse));\n` +
+    `}, 25);\n`,
+  )
+  return { script, ready, release, pulse }
+}
+
 describe('the Electron entry', () => {
   it('creates no window for a second launch or activation during the language load, then exactly one', async () => {
     await vi.waitFor(() => expect(appHandlers.has('activate')).toBe(true))
@@ -111,6 +164,62 @@ describe('the Electron entry', () => {
     appHandlers.get('second-instance')!()
     expect(windows).toHaveLength(1)
     expect(windows[0]!.focus).toHaveBeenCalledOnce()
+  })
+
+  it('ends a standalone version probe on ordinary quit while the independent player keeps running', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tapebox-quit-processes-'))
+    const version = waitingFixture(directory, 'version')
+    const player = waitingFixture(directory, 'player')
+    let readingVersion: Promise<string | null> | null = null
+    let playerStarted = false
+    let versionPid = 0
+    let playerPid = 0
+    try {
+      forgetAllInstalledVersions()
+      versionFixture.script = version.script
+      readingVersion = readInstalledVersion('yt-dlp')
+      await vi.waitFor(() => { versionPid = Number(readFileSync(version.ready, 'utf8')); expect(versionPid).toBeGreaterThan(0) })
+
+      // Exercise the actual direct-executable handoff on every host. No OS
+      // browser, native application or media file is needed for this control.
+      playerStarted = true
+      await openExternalPlayer(process.execPath, player.script, 'linux')
+      await vi.waitFor(() => { playerPid = Number(readFileSync(player.ready, 'utf8')); expect(playerPid).toBeGreaterThan(0) })
+      expect(() => process.kill(versionPid, 0)).not.toThrow()
+      expect(() => process.kill(playerPid, 0)).not.toThrow()
+      order.length = 0
+
+      const event = { preventDefault: vi.fn() }
+      appHandlers.get('before-quit')!(event)
+      expect(event.preventDefault).toHaveBeenCalledOnce()
+      await vi.waitFor(() => expect(app.exit).toHaveBeenCalledExactlyOnceWith(0))
+      // Observe the real process, not just an invocation of the sweep. The
+      // ordinary exit previously left this signal-less probe running for 30 s.
+      await vi.waitFor(() => expect(() => process.kill(versionPid, 0)).toThrow())
+      expect(await readingVersion).toBeNull()
+      expect(order.slice(-2)).toEqual(['kill-tools', 'app-exit'])
+
+      const before = Number(readFileSync(player.pulse, 'utf8'))
+      await vi.waitFor(() => expect(Number(readFileSync(player.pulse, 'utf8'))).toBeGreaterThan(before))
+      expect(() => process.kill(playerPid, 0)).not.toThrow()
+    } finally {
+      // The release marker also handles failure before the player reports its
+      // PID: whenever its script starts, it exits without relying on the test
+      // having captured the handoff's unreferenced ChildProcess.
+      if (playerStarted) writeFileSync(player.release, '')
+      killOwnedProcessesNow()
+      try {
+        await readingVersion
+        if (playerStarted) await vi.waitFor(() => {
+          const pid = playerPid || Number(readFileSync(player.ready, 'utf8'))
+          expect(() => process.kill(pid, 0)).toThrow()
+        })
+      } finally {
+        forgetAllInstalledVersions()
+        versionFixture.script = ''
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
   })
 
   it('lands the fatal record, then kills the download tools before a forced exit', () => {
