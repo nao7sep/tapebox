@@ -4,6 +4,8 @@ import type { Tape } from '@shared/domain'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { readSidecarFile } from '@main/core/sidecar'
 import type { TapeMove } from '@main/core/tape-state'
+import { catalogFilenameOwner, nameInStem } from '@main/core/managed-files'
+import { SourceIndex, tapeSourceRef } from '@shared/source-identity'
 
 /**
  * A download can finish on disk without its catalog commit landing: a crash, a
@@ -24,7 +26,7 @@ export type FinishedBundle =
   | { status: 'found'; move: TapeMove }
   | { status: 'unusable'; reason: string }
 
-export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc: string): Promise<FinishedBundle> {
+export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc: string, tapes: readonly Tape[] = [tape]): Promise<FinishedBundle> {
   const stem = tape.id
   const sidecarFilename = `${stem}.json`
   let sidecar: Record<string, unknown>
@@ -37,7 +39,18 @@ export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc:
 
   const bundle = classifyImport(sidecar)
   if (bundle.status === 'reject') return { status: 'unusable', reason: bundle.reason.key }
-  if (!bundle.mediaFilename.startsWith(`${stem}.`)) return { status: 'unusable', reason: 'the sidecar names another stem' }
+  const source = new SourceIndex()
+  source.add(tapeSourceRef(tape), tape.id)
+  if (!source.has({
+    url: bundle.sourceUrl,
+    extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
+    sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
+  })) return { status: 'unusable', reason: 'the sidecar belongs to another source' }
+  if (!nameInStem(bundle.mediaFilename, stem)) return { status: 'unusable', reason: 'the sidecar names another stem' }
+  const names = [sidecarFilename, bundle.mediaFilename, ...(bundle.thumbnailFilename ? [bundle.thumbnailFilename] : [])]
+  if (names.some((name) => catalogFilenameOwner(tapes, name, tape.id))) {
+    return { status: 'unusable', reason: 'another tape owns a finished filename' }
+  }
   if (!(await isFile(join(libraryDir, bundle.mediaFilename)))) return { status: 'none' }
   const thumbnailFilename = bundle.thumbnailFilename !== null && await isFile(join(libraryDir, bundle.thumbnailFilename))
     ? bundle.thumbnailFilename

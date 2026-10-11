@@ -147,4 +147,48 @@ describe('findFinishedBundle', () => {
       status: 'found', move: { filename: 'Noposter01.mp4', thumbnailFilename: null, downloadedAtUtc: FINISHED },
     })
   })
+
+  it('refuses a finished sidecar from a different source even under the right tape stem', async () => {
+    const id = 'Foreign001'
+    await writeFile(join(dir, `${id}.json`), sidecar(id, { sourceUrl: 'https://example.test/another' }))
+    await writeFile(join(dir, `${id}.mp4`), 'foreign media')
+    expect(await findFinishedBundle(dir, queued(id), LATER)).toMatchObject({ status: 'unusable' })
+    expect(await readFile(join(dir, `${id}.mp4`), 'utf8')).toBe('foreign media')
+  })
+
+  it('uses canonical source URL identity when recovering a finished sidecar', async () => {
+    const id = 'Canonical1'
+    const tape = { ...queued(id), sourceUrl: 'https://www.youtube.com/watch?v=sourceA' }
+    await writeFile(join(dir, `${id}.json`), sidecar(id, { sourceUrl: `${tape.sourceUrl}&si=share` }))
+    await writeFile(join(dir, `${id}.mp4`), 'own media')
+    expect(await findFinishedBundle(dir, tape, LATER)).toMatchObject({ status: 'found' })
+  })
+
+  it('uses a valid extractor and source ID pair when recovery URLs differ', async () => {
+    const id = 'Sourcepair'
+    const tape = { ...queued(id), sourceId: 'vid1', extractor: 'example' }
+    const raw = JSON.parse(sidecar(id, { sourceUrl: 'https://example.test/canonical' }))
+    raw.extractor = 'Example'
+    await writeFile(join(dir, `${id}.json`), JSON.stringify(raw))
+    await writeFile(join(dir, `${id}.mp4`), 'own media')
+    expect(await findFinishedBundle(dir, tape, LATER)).toMatchObject({ status: 'found' })
+  })
+
+  it('does not use a bare provider ID as recovery source identity', async () => {
+    const id = 'BareId0001'
+    const tape = { ...queued(id), sourceId: 'vid1', extractor: 'example' }
+    await writeFile(join(dir, `${id}.json`), sidecar(id, { sourceUrl: 'https://example.test/another' }))
+    await writeFile(join(dir, `${id}.mp4`), 'foreign media')
+    expect(await findFinishedBundle(dir, tape, LATER)).toMatchObject({ status: 'unusable' })
+  })
+
+  it('refuses legacy catalog ownership of any recovered filename', async () => {
+    const id = 'Otherowner'
+    const tape = queued(id)
+    await writeFile(join(dir, `${id}.json`), sidecar(id))
+    await writeFile(join(dir, `${id}.mp4`), 'other row media')
+    const owner: Tape = { ...queued('Owner00001'), state: 'downloaded', filename: `${id}.mp4`, sidecarFilename: 'Owner.json', downloadedAtUtc: FINISHED }
+    expect(await findFinishedBundle(dir, tape, LATER, [tape, owner])).toMatchObject({ status: 'unusable' })
+    expect(await readFile(join(dir, `${id}.mp4`), 'utf8')).toBe('other row media')
+  })
 })

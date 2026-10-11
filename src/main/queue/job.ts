@@ -14,6 +14,7 @@ import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { librarySourceIndex } from '@shared/source-identity'
 import { StopRequest, type StopCause } from '@main/stop-request'
 import { findFinishedBundle } from '@main/queue/finished-bundle'
+import { catalogFilenameOwner, catalogStemOwner, nameInStem, tryClaimManagedFiles } from '@main/core/managed-files'
 
 const DOWNLOAD_FAILURE_MESSAGE =
   'The download could not be completed. Check the source and your connection, then try again.'
@@ -122,7 +123,15 @@ export class Job {
   private async runInner(): Promise<void> {
     // Fresh attempt: clear any log buffered from a prior (failed) run.
     this.d.emit('tapes:logReset', { tapeId: this.tapeId })
+    const libraryDir = this.d.getLibraryDir()
+    let release: (() => void) | null = null
     try {
+      // Recovery and a new attempt both own <id>.*, including provider cleanup
+      // and raw/JPEG postprocessing. Legacy foreign owners stop the attempt
+      // before it can adopt their files or clear the namespace.
+      if (catalogStemOwner(this.d.session.getTapes(), this.tapeId, this.tapeId)) throw new Error('Another tape owns this download namespace')
+      release = tryClaimManagedFiles(libraryDir, { stems: [this.tapeId] })
+      if (!release) throw new Error('This download namespace is still being changed')
       if (await this.adoptFinishedDownload()) return
       const isVideo = await this.probe()
       if (!isVideo || this.cancelled) return
@@ -140,7 +149,7 @@ export class Job {
         lastError: DOWNLOAD_FAILURE_MESSAGE,
       })
       this.d.emit('tapes:failed', { tapeId: this.tapeId, code: 'download' })
-    }
+    } finally { release?.() }
   }
 
   private current(): Tape | undefined {
@@ -170,7 +179,7 @@ export class Job {
   private async adoptFinishedDownload(): Promise<boolean> {
     const cur = this.current()
     if (!cur) return false
-    const found = await this.d.findFinishedBundle(this.d.getLibraryDir(), cur, this.d.now())
+    const found = await this.d.findFinishedBundle(this.d.getLibraryDir(), cur, this.d.now(), this.d.session.getTapes())
     if (found.status === 'none') return false
     if (found.status === 'unusable') {
       // Clearing the stem for a new attempt could delete a finished download, so
@@ -181,17 +190,31 @@ export class Job {
       return true
     }
     this.controller.signal.throwIfAborted()
-    this.move(found.move)
-    const committed = await this.d.session.persistNow()
-    const adopted = this.current()
-    this.d.log.info('job adopted a finished download', { tapeId: this.tapeId, filename: adopted?.filename ?? null, committed })
-    try {
-      if (adopted) this.d.emit('tapes:updated', adopted)
-      this.d.emit('tapes:completed', { tapeId: this.tapeId })
-    } catch (err) {
-      this.d.log.error('download completion could not be sent to the window', { tapeId: this.tapeId, error: describeError(err) })
+    const names = [found.move.filename, found.move.sidecarFilename, found.move.thumbnailFilename].filter((name): name is string => typeof name === 'string')
+    if (catalogStemOwner(this.d.session.getTapes(), this.tapeId, this.tapeId) ||
+      names.some((name) => catalogFilenameOwner(this.d.session.getTapes(), name, this.tapeId))) {
+      throw new Error('Another tape acquired a finished filename during recovery')
     }
-    return true
+    // A valid older sidecar can name an untracked poster outside the ID stem.
+    // Admit and own that extra filename too before publishing it in the catalog.
+    const extraNames = names.filter((name) => !nameInStem(name, this.tapeId))
+    const releaseExtras = extraNames.length > 0
+      ? tryClaimManagedFiles(this.d.getLibraryDir(), { names: extraNames })
+      : () => {}
+    if (!releaseExtras) throw new Error('A finished filename is still being changed')
+    try {
+      this.move(found.move)
+      const committed = await this.d.session.persistNow()
+      const adopted = this.current()
+      this.d.log.info('job adopted a finished download', { tapeId: this.tapeId, filename: adopted?.filename ?? null, committed })
+      try {
+        if (adopted) this.d.emit('tapes:updated', adopted)
+        this.d.emit('tapes:completed', { tapeId: this.tapeId })
+      } catch (err) {
+        this.d.log.error('download completion could not be sent to the window', { tapeId: this.tapeId, error: describeError(err) })
+      }
+      return true
+    } finally { releaseExtras() }
   }
 
   /** Returns true if a downloadable video; false if the URL is a page of videos. */
@@ -245,6 +268,7 @@ export class Job {
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
     const libraryDir = this.d.getLibraryDir()
+    if (catalogStemOwner(this.d.session.getTapes(), cur.id, cur.id)) throw new Error('Another tape owns this download namespace')
 
     this.update({ state: 'downloading', downloadStartedAtUtc: this.d.now() })
 

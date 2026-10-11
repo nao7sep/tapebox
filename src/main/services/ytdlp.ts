@@ -1,5 +1,6 @@
 import { dirname, extname, join } from 'node:path'
 import { readdir, unlink } from 'node:fs/promises'
+import { nanoid } from 'nanoid'
 import { binaryPath, paths } from '@main/paths'
 import { resolveYtdlpArgs } from './ytdlp-args'
 import { watchForStall } from './download-stall'
@@ -24,11 +25,19 @@ import {
  * player JS / solve challenges on sites that need it).
  */
 
-export function ytdlpEnv(): NodeJS.ProcessEnv {
+const MANAGED_LIBRARY_ENV = 'TAPEBOX_MANAGED_LIBRARY'
+const MANAGED_LIBRARY_ARG = 'home:${' + MANAGED_LIBRARY_ENV + '}'
+
+export function ytdlpEnv(libraryDir?: string): NodeJS.ProcessEnv {
   const sep = process.platform === 'win32' ? ';' : ':'
   return {
     ...process.env,
     PATH: `${paths.bin}${sep}${process.env['PATH'] ?? ''}`,
+    // yt-dlp strips its --paths argument, then expands user/env expressions once.
+    // Insert the literal directory through that final expansion so its spaces,
+    // dollars, percents and tildes never become another expression. Keep cwd and
+    // the rest of the environment for intentionally authored user options.
+    ...(libraryDir === undefined ? {} : { [MANAGED_LIBRARY_ENV]: libraryDir }),
   }
 }
 
@@ -158,8 +167,9 @@ async function runToEnd(
   url: string,
   args: readonly string[],
   signal: AbortSignal,
+  libraryDir?: string,
 ): Promise<string> {
-  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS })
+  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(libraryDir), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS })
   const run = collectRun(child, { kind, tapeId, scanId: null, url, args })
   try {
     await waitForExit(child, { command: `yt-dlp ${kind}` })
@@ -252,7 +262,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
 
   const args = [
     ...resolveYtdlpArgs(opts.url),
-    '--paths', `home:${opts.libraryDir}`,
+    '--paths', MANAGED_LIBRARY_ARG,
     '--write-info-json',
     // Write the source thumbnail beside the media as {outputId}.{ext}. We do NOT
     // ask yt-dlp to convert it — every image goes through our own gate
@@ -276,7 +286,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
   // not recorded: yt-dlp writes media, a raw thumbnail, and info JSON into the
   // library (including a user-selected external one): transient app-owned content
   // until exported (developer classification). Its catalog row is what is backed up.
-  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(), signal: opts.signal, idleTimeoutMs })
+  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(opts.libraryDir), signal: opts.signal, idleTimeoutMs })
   const run = collectRun(child, { kind: 'download', tapeId: opts.tapeId, scanId: null, url: opts.url, args })
 
   const stall = watchForStall((stalled) => opts.onStall?.(stalled))
@@ -391,29 +401,41 @@ export async function findThumbnail(libraryDir: string, stem: string): Promise<s
 }
 
 /**
- * Fetch only the thumbnail for a URL (no media), writing the raw image as
- * {stem}.{ext} in libraryDir and returning its path, or null if the source has
- * none. Used to backfill a local poster for a tape downloaded before thumbnails
- * were saved; the caller passes the result through the image gate.
+ * Fetch an optional raw poster into a per-call scratch name in the tape's own
+ * ID namespace. Media names may contain yt-dlp output-template syntax, so only
+ * the caller's image gate uses the literal media stem for final publication.
+ * On return the caller owns the raw path through conversion/cleanup settlement;
+ * a failure or cancellation cleans only this call's scratch after the child ends.
  */
 export async function downloadThumbnail(
   tapeId: string,
   url: string,
   libraryDir: string,
-  stem: string,
   signal: AbortSignal,
 ): Promise<string | null> {
-  // not recorded: this yt-dlp subprocess writes a poster into the library, transient
-  // app-owned content; saveThumbnailJpeg replaces it with the canonical JPEG.
-  await runToEnd('thumbnail', tapeId, url, [
-    ...resolveYtdlpArgs(url),
-    '--skip-download',
-    '--write-thumbnail',
-    '--no-playlist',
-    '--no-warnings',
-    '--paths', `home:${libraryDir}`,
-    '--output', `${stem}.%(ext)s`,
-    url,
-  ], signal)
-  return findThumbnail(libraryDir, stem)
+  // Tape IDs and nanoids use the catalog's controlled alphabet. The reserved
+  // `${tapeId}.*` namespace keeps this scratch away from ordinary user files;
+  // the random suffix separates repeated calls without borrowing the media name.
+  const scratchStem = `${tapeId}.poster-${nanoid(10)}`
+  let raw: string | null = null
+  try {
+    // not recorded: regenerable raw image bytes; the image gate publishes JPEG.
+    await runToEnd('thumbnail', tapeId, url, [
+      ...resolveYtdlpArgs(url),
+      '--skip-download',
+      '--write-thumbnail',
+      '--no-playlist',
+      '--no-warnings',
+      '--paths', MANAGED_LIBRARY_ARG,
+      '--output', `${scratchStem}.%(ext)s`,
+      url,
+    ], signal, libraryDir)
+    signal.throwIfAborted()
+    raw = await findThumbnail(libraryDir, scratchStem)
+    return raw
+  } finally {
+    // runToEnd owns the child through close, so cleanup cannot race its writer.
+    // A returned raw image is now owned by the caller's image gate.
+    if (raw === null) await clearStem(libraryDir, scratchStem)
+  }
 }

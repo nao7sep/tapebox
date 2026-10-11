@@ -257,7 +257,8 @@ describe('accepting refreshed metadata', () => {
 
   it('backfills a poster for a downloaded tape that has none', async () => {
     state.tapes = [makeTape({ id: 'Noposteryt', filename: 'Holiday.mp4' })]
-    downloadThumbnail.mockResolvedValue(join(state.libraryDir, 'Holiday.webp'))
+    const raw = join(state.libraryDir, 'Noposteryt.poster-raw.webp')
+    downloadThumbnail.mockImplementation(async () => { await writeFile(raw, 'raw poster'); return raw })
     saveThumbnailJpeg.mockResolvedValue('Holiday.jpg')
 
     const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Noposteryt', metadata: ACCEPTED })
@@ -266,17 +267,17 @@ describe('accepting refreshed metadata', () => {
       'Noposteryt',
       'https://example.test/watch',
       state.libraryDir,
-      'Holiday',
       expect.anything(),
     )
     expect(saveThumbnailJpeg).toHaveBeenCalledExactlyOnceWith(
       'Noposteryt',
-      join(state.libraryDir, 'Holiday.webp'),
+      raw,
       state.libraryDir,
       'Holiday',
       expect.any(AbortSignal),
     )
     expect(updated.thumbnailFilename).toBe('Holiday.jpg')
+    await expect(readFile(raw)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('names a backfilled poster in the sidecar too, so sidecar and catalog agree', async () => {
@@ -291,7 +292,8 @@ describe('accepting refreshed metadata', () => {
       },
     }), 'utf8')
     state.tapes = [makeTape({ id: 'Posterside', filename: 'Holiday.mp4', sidecarFilename: 'Holiday.json' })]
-    downloadThumbnail.mockResolvedValue(join(state.libraryDir, 'Holiday.webp'))
+    const raw = join(state.libraryDir, 'Posterside.poster-raw.webp')
+    downloadThumbnail.mockImplementation(async () => { await writeFile(raw, 'raw poster'); return raw })
     saveThumbnailJpeg.mockResolvedValue('Holiday.jpg')
 
     const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Posterside', metadata: ACCEPTED })
@@ -364,7 +366,7 @@ describe('accepting refreshed metadata', () => {
 
   it('owns the entire Apply until quit cancellation has joined its poster work', async () => {
     state.tapes = [makeTape({ id: 'Quitapply1' })]
-    downloadThumbnail.mockImplementationOnce((_id, _url, _dir, _stem, signal: AbortSignal) => new Promise((_resolve, reject) => {
+    downloadThumbnail.mockImplementationOnce((_id, _url, _dir, signal: AbortSignal) => new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => reject(signal.reason), { once: true })
     }))
     const apply = invoke('library:applyMetadata', { tapeId: 'Quitapply1', metadata: ACCEPTED }).catch((error: unknown) => error)
