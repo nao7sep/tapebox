@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { Worker } from 'node:worker_threads'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RecordsQuery } from '@shared/records'
 
@@ -41,7 +42,7 @@ function logRow(records: Records, time: string, level: string, message: string, 
   records.writeRecord('logs', { time, level, message, tape_id: tapeId, fields }, () => message)
 }
 
-function seed(records: Records): void {
+async function seed(records: Records): Promise<void> {
   logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'job start', 't1', JSON.stringify({ tapeId: 't1', url: 'https://example.com/v' }))
   logRow(records, '2026-10-04T10:00:02.000Z', 'warn', 'download stalled', 't1')
   records.writeRecord('ai_calls', {
@@ -59,13 +60,101 @@ function seed(records: Records): void {
     started_at_utc: '2026-10-04T10:00:07.000Z', ended_at_utc: '2026-10-04T10:00:07.500Z', exit_code: 1, signal: null,
     stdout: '', stderr: 'Invalid data found',
   }, () => 'ffmpeg run')
+  // The fixture needs committed rows. Ordinary reads do not drain future or
+  // unrelated submitted diagnostics; production change notices follow ACKs.
+  await records.flushRecords()
 }
 
 describe('records reads', () => {
+  it('reads committed WAL page, detail and sources while an unrelated admitted write stays held', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    const session = records.openRecords()
+    logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'committed seed', 'SeedTape01')
+    await records.flushRecords()
+    const listed = await reader.readRecords({ op: 'page', query: query() })
+    const seedId = listed.records[0]!.id
+    const check = new DatabaseSync(paths.records, { readOnly: true })
+    try { expect(check.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' }) }
+    finally { check.close() }
+
+    const postMessage = Worker.prototype.postMessage
+    const releases: Array<() => void> = []
+    const dispatched: string[] = []
+    const heldWrite = vi.spyOn(Worker.prototype, 'postMessage').mockImplementation(function (this: Worker, value, transferList) {
+      if (value.read) dispatched.push(value.read.op)
+      if (value.table === 'logs' && value.row?.message === 'held unrelated insert') {
+        releases.push(() => postMessage.call(this, value, transferList))
+        return
+      }
+      postMessage.call(this, value, transferList)
+    })
+    records.writeRecord('logs', { time: '2026-10-04T10:00:02.000Z', level: 'info', message: 'held unrelated insert', tape_id: null, fields: '{}' }, () => 'held unrelated insert')
+    expect(releases).toHaveLength(1)
+    const page = reader.readRecords({ op: 'page', query: query() })
+    const detail = reader.readRecords({ op: 'detail', kind: 'log', id: seedId })
+    const sources = reader.readRecords({ op: 'sources' })
+    let drained = false
+    const drain = records.flushRecords().then(() => { drained = true })
+    try {
+      // Observe actual reader dispatch while the unrelated writer request has
+      // not crossed its boundary, rather than asserting a wall-clock bound.
+      await Promise.resolve()
+      expect(dispatched).toEqual(['page', 'detail', 'sources'])
+      expect((await page).records.map((record) => record.title)).toEqual(['committed seed'])
+      expect(await detail).toMatchObject({ id: seedId, message: 'committed seed', tapeId: 'SeedTape01' })
+      expect(await sources).toEqual({ sessions: [session], tapeIds: ['SeedTape01'] })
+      expect(drained).toBe(false)
+      expect(releases).toHaveLength(1)
+    } finally {
+      for (const release of releases.splice(0)) release()
+      await Promise.allSettled([page, detail, sources])
+      await drain
+      heldWrite.mockRestore()
+    }
+  })
+
+  it('waits for the initial schema request before dispatching the first read', async () => {
+    const { records, reader } = await freshApp()
+    const postMessage = Worker.prototype.postMessage
+    const releases: Array<() => void> = []
+    const dispatched: string[] = []
+    const gate = vi.spyOn(Worker.prototype, 'postMessage').mockImplementation(function (this: Worker, value, transferList) {
+      if (value.read) dispatched.push(value.read.op)
+      if (!value.read && !value.table) {
+        releases.push(() => postMessage.call(this, value, transferList))
+        return
+      }
+      postMessage.call(this, value, transferList)
+    })
+    records.openRecords()
+    const read = reader.readRecords({ op: 'sources' })
+    try {
+      await Promise.resolve()
+      expect(releases).toHaveLength(1)
+      expect(dispatched).toEqual([])
+      for (const release of releases.splice(0)) release()
+      expect(await read).toEqual({ sessions: [], tapeIds: [] })
+      expect(dispatched).toEqual(['sources'])
+    } finally {
+      for (const release of releases.splice(0)) release()
+      await Promise.allSettled([read])
+      gate.mockRestore()
+    }
+  })
+
+  it('lets the reader report cold database initialization failure instead of claiming ready storage', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    mkdirSync(paths.records)
+    records.openRecords()
+    await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow()
+  })
+
   it('pages every kind newest first, a failed call or run reading as an error', async () => {
     const { records, reader } = await freshApp()
     const session = records.openRecords()
-    seed(records)
+    await seed(records)
 
     const page = await reader.readRecords({ op: 'page', query: query() })
     expect(page.more).toBe(false)
@@ -82,7 +171,7 @@ describe('records reads', () => {
   it('filters by kind, level, tape and launch, and searches every stored field literally', async () => {
     const { records, reader } = await freshApp()
     const session = records.openRecords()
-    seed(records)
+    await seed(records)
     const titles = async (overrides: Partial<RecordsQuery>) =>
       (await reader.readRecords({ op: 'page', query: query(overrides) })).records.map((record) => record.title)
 
@@ -119,6 +208,7 @@ describe('records reads', () => {
       tape_id: 't1', kind: 'thumbnail', args: '[]', started_at_utc: '2026-10-04T10:00:07.000Z',
       ended_at_utc: '2026-10-04T10:00:07.500Z', exit_code: null, signal: 'SIGTERM', stop_reason: 'cancel', stdout: '', stderr: '',
     }, () => 'ffmpeg run')
+    await records.flushRecords()
 
     const page = await reader.readRecords({ op: 'page', query: query() })
     expect(page.records.map((record) => [record.title, record.level])).toEqual([
@@ -214,6 +304,7 @@ describe('records reads', () => {
       // Two lines share each instant, so the cursor's tie-break is exercised.
       logRow(records, `2026-10-04T10:00:${String(Math.floor(index / 2)).padStart(2, '0')}.000Z`, 'info', `line ${index}`)
     }
+    await records.flushRecords()
 
     const first = await reader.readRecords({ op: 'page', query: query() })
     expect(first.records).toHaveLength(100)
@@ -233,7 +324,7 @@ describe('records reads', () => {
   it('reads each kind whole, every field as stored', async () => {
     const { records, reader } = await freshApp()
     const session = records.openRecords()
-    seed(records)
+    await seed(records)
     const page = await reader.readRecords({ op: 'page', query: query() })
     const idOf = (kind: string) => page.records.find((record) => record.kind === kind)!.id
 
@@ -261,7 +352,7 @@ describe('records reads', () => {
   it('lists every launch and every tape that has records, latest first', async () => {
     const { records, reader } = await freshApp()
     const session = records.openRecords()
-    seed(records)
+    await seed(records)
 
     expect(await reader.readRecords({ op: 'sources' })).toEqual({ sessions: [session], tapeIds: ['t2', 't1'] })
   })
@@ -272,14 +363,14 @@ describe('records reads', () => {
     await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow()
 
     const session = records.openRecords()
-    seed(records)
+    await seed(records)
     expect((await reader.readRecords({ op: 'sources' })).sessions).toEqual([session])
   })
 
   it('gives up on a read that does not answer in time, and starts a fresh reader for the next', async () => {
     const { records, reader } = await freshApp()
     records.openRecords()
-    seed(records)
+    await seed(records)
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
     const stuck = reader.readRecords({ op: 'sources' })

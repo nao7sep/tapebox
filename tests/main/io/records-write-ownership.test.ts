@@ -55,17 +55,20 @@ afterEach(async () => {
 
 it('bounds a held writer, retains unknown outcome diagnostics and joins its actual retirement', async () => {
   records.openRecords()
+  const initialization = records.waitForRecordsInitialization()
   records.writeRecord('logs', { time: 'now', level: 'info', message: 'record', tape_id: null, fields: '{}' }, () => 'record fallback')
   const worker = state.workers[0]!
   const flushed = records.flushRecords()
   await vi.advanceTimersByTimeAsync(records.RECORD_WRITE_TIMEOUT_MS)
   await flushed
+  await initialization
   expect(worker.terminate).toHaveBeenCalledOnce()
   expect(console.error).toHaveBeenCalledWith(expect.stringContaining('unfinished write outcomes are unknown'))
   expect(console.log).toHaveBeenCalledWith('record fallback')
   // Later records still reach the launch's text file through one replacement writer.
   expect(state.workers.map((created) => created.textOnly)).toEqual([false, true])
   const replacement = state.workers[1]!
+  expect(records.waitForRecordsInitialization()).toBe(initialization)
   records.writeRecord('logs', { message: 'after the stall' }, () => 'after the stall')
   expect(replacement.requests.map((request) => request.text ?? null)).toEqual([null, 'after the stall'])
   for (const request of replacement.requests) replacement.emit('message', { id: request.id, stored: false, diagnostics: [] })
@@ -90,6 +93,37 @@ it('sends a record to the console rather than queue it without bound behind a sl
   expect(records.writeRecord('logs', { message: 'over' }, () => 'over the limit')).toBe(true)
   expect(console.log).toHaveBeenCalledWith('over the limit')
   expect(worker.requests).toHaveLength(records.RECORD_PENDING_LIMIT)
+})
+
+it('captures only the first initialization settlement per open and ignores a previous launch acknowledgement', async () => {
+  await records.waitForRecordsInitialization() // Before open, the reader owns any missing-file failure.
+  records.openRecords()
+  const old = state.workers[0]!
+  const firstInitialization = records.waitForRecordsInitialization()
+  old.emit('message', { id: old.requests[0]!.id, stored: false, diagnostics: [] })
+  await firstInitialization
+  const closed = records.closeRecords()
+  old.release()
+  await closed
+
+  records.openRecords()
+  const current = state.workers[1]!
+  const nextInitialization = records.waitForRecordsInitialization()
+  expect(nextInitialization).not.toBe(firstInitialization)
+  let initialized = false
+  void nextInitialization.then(() => { initialized = true })
+  old.emit('message', { id: old.requests[0]!.id, stored: false, diagnostics: [] })
+  await Promise.resolve()
+  expect(initialized).toBe(false)
+
+  records.writeRecord('logs', { message: 'later pending write' }, () => 'later pending write')
+  current.emit('message', { id: current.requests[0]!.id, stored: false, diagnostics: [] })
+  await nextInitialization
+  expect(initialized).toBe(true)
+  expect(records.waitForRecordsInitialization()).toBe(nextInitialization)
+  expect(vi.getTimerCount()).toBe(1) // The later write is still admitted and held.
+  current.emit('message', { id: current.requests[1]!.id, stored: true, diagnostics: [] })
+  await records.flushRecords()
 })
 
 it('seals writes at close while draining stored acknowledgements exactly once', async () => {

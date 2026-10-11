@@ -26,6 +26,7 @@ let closed = false
 let nextId = 1
 let closing: Promise<void> | null = null
 let terminalFlushed = false
+let initialization: Promise<void> = Promise.resolve()
 const responsePorts = new Map<Worker, MessagePort>()
 let storedListener: (() => void) | null = null
 type Pending = { worker: Worker; settled: Promise<void>; resolve: () => void; timer: NodeJS.Timeout; text: string; level: LogLevel; mirrored: boolean }
@@ -91,11 +92,11 @@ export function openRecords(): string {
   closing = null
   terminalFlushed = false
   replaced = false
-  startWriter(false)
+  initialization = startWriter(false)
   return session
 }
 
-function startWriter(textOnly: boolean): void {
+function startWriter(textOnly: boolean): Promise<void> {
   const { port1, port2 } = new MessageChannel()
   try {
     const module = import.meta.url.endsWith('.ts') ? './records-write-worker.ts' : './records-write-worker.js'
@@ -110,16 +111,22 @@ function startWriter(textOnly: boolean): void {
     created.on('exit', (code) => { if (worker === created) abandon(created, new Error(`Records writer exited with code ${code}.`)) })
     created.unref()
     worker = created
-    enqueue({}, '', 'error', false)
+    return enqueue({}, '', 'error', false)
   } catch (error) { port1.close(); port2.close(); toConsole('error', note('records writer could not start; using the console', error)) }
+  return Promise.resolve()
 }
 
 export function currentSession(): string | null { return session }
 export function onRecordStored(listener: (() => void) | null): void { storedListener = listener }
 
-function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: LogLevel, mirrored: boolean): void {
+/** Wait only for this launch's first schema attempt to settle. It may select the
+ * fallback, so the reader still owns opening and validating the database. Later
+ * writes and a replacement fallback writer never replace this barrier. */
+export function waitForRecordsInitialization(): Promise<void> { return initialization }
+
+function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: LogLevel, mirrored: boolean): Promise<void> {
   const current = worker
-  if (!current) return
+  if (!current) return Promise.resolve()
   const id = nextId++
   let resolve!: () => void
   const settled = new Promise<void>((done) => { resolve = done })
@@ -127,6 +134,7 @@ function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: L
   pending.set(id, { worker: current, settled, resolve, timer, text, level, mirrored })
   try { current.postMessage({ ...request, id } satisfies RecordWriteRequest) }
   catch (error) { abandon(current, error) }
+  return settled
 }
 
 /** Whether this call already printed its fallback to the console. */
