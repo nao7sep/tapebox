@@ -53,25 +53,46 @@ export function applyInitialSyncState(state: InitialSyncState): void {
   useSettingsStore.getState().setHydratedSettings(state.settings)
 }
 
-/**
- * Wire renderer stores to main's IPC.
- * Live updates only. Required initial snapshots are pulled and committed as one
- * hydration unit by pullInitialSyncState/applyInitialSyncState above.
- * Returns a cleanup function for the caller's useEffect.
- */
-export function startIpcSync(): () => void {
+export type HydrationAttempt = {
+  commit: (state: InitialSyncState) => boolean
+  cancel: () => void
+}
+
+export type IpcSync = {
+  beginHydration: () => HydrationAttempt
+  stop: () => void
+}
+
+/** Own subscriptions and the snapshot-to-live handoff for one mounted App. */
+export function startIpcSync(): IpcSync {
+  type Changes = { tapes: Map<string, Tape | null>; boxes: Box[] | null }
+  let pending: Changes | null = null
+  let stopped = false
+
+  // A slow required pull must not roll the catalog back over events received
+  // meanwhile. Keep only the latest mutation per tape and one box snapshot,
+  // rather than a growing history of repeated progress or catalog events.
+  function upsert(tapes: Tape[]): void {
+    for (const tape of tapes) pending?.tapes.set(tape.id, tape)
+    useTapesStore.getState().upsertMany(tapes)
+  }
+
   const offs = [
-    ipcOn('tapes:added',       (tapes) => useTapesStore.getState().upsertMany(tapes)),
-    ipcOn('tapes:updated',     (tape)  => useTapesStore.getState().upsert(tape)),
-    ipcOn('tapes:updatedMany', (tapes) => useTapesStore.getState().upsertMany(tapes)),
+    ipcOn('tapes:added',       upsert),
+    ipcOn('tapes:updated',     (tape) => upsert([tape])),
+    ipcOn('tapes:updatedMany', upsert),
     ipcOn('tapes:removed',     ({ tapeIds }) => {
+      for (const id of tapeIds) pending?.tapes.set(id, null)
       useTapesStore.getState().removeMany(tapeIds)
       tapeIds.forEach((id) => {
         useDownloadLogStore.getState().reset(id)
         useTapeActionResultsStore.getState().clearTape(id)
       })
     }),
-    ipcOn('boxes:changed',    (boxes) => useBoxesStore.getState().setBoxes(boxes)),
+    ipcOn('boxes:changed',    (boxes) => {
+      if (pending) pending.boxes = boxes
+      useBoxesStore.getState().setBoxes(boxes)
+    }),
     ipcOn('library:saveFailed', () => useToastStore.getState().notify(LIBRARY_SAVE_FAILED_MESSAGE, 'error')),
     ipcOn('tapes:progress',  ({ tapeId, phase, percent, speedBps, etaSec }) =>
       useTapesStore.getState().setProgress(tapeId, { phase, percent, speedBps, etaSec }),
@@ -96,5 +117,33 @@ export function startIpcSync(): () => void {
       useBinariesStore.getState().setProgress(name, operationId, percent, phase),
     ),
   ]
-  return () => offs.forEach((off) => off())
+  return {
+    beginHydration() {
+      const changes: Changes = { tapes: new Map(), boxes: null }
+      pending = stopped ? null : changes
+      return {
+        commit(state) {
+          if (stopped || pending !== changes) return false
+          // Merge before publishing, so even a synchronous store observer sees
+          // the current catalog rather than the stale intermediate snapshot.
+          const tapes = new Map(state.tapes.map((tape) => [tape.id, tape]))
+          for (const [id, tape] of changes.tapes) {
+            if (tape === null) tapes.delete(id)
+            else tapes.set(id, tape)
+          }
+          pending = null
+          applyInitialSyncState({ ...state, tapes: [...tapes.values()], boxes: changes.boxes ?? state.boxes })
+          return true
+        },
+        cancel() {
+          if (pending === changes) pending = null
+        },
+      }
+    },
+    stop() {
+      stopped = true
+      pending = null
+      offs.forEach((off) => off())
+    },
+  }
 }

@@ -82,11 +82,11 @@ describe('live sync', () => {
       listeners.set(channel, listener)
       return () => {}
     })
-    const stop = startIpcSync()
+    const sync = startIpcSync()
     listeners.get('library:saveFailed')!(null)
     expect(useToastStore.getState().toasts).toEqual([
       expect.objectContaining({ text: LIBRARY_SAVE_FAILED_MESSAGE, kind: 'error' }),
     ])
-    stop()
+    sync.stop()
   })
 })

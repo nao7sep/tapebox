@@ -6,7 +6,7 @@ import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
 import { LAYOUT_BOUNDS, detailPaneWidth, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT, CONTENT_MIN_HEIGHT } from '@shared/layout'
-import { applyInitialSyncState, pullInitialSyncState, startIpcSync } from '@renderer/ipc/sync'
+import { pullInitialSyncState, startIpcSync, type IpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
@@ -48,18 +48,22 @@ export default function App() {
   const [loadError, setLoadError] = useState<Message | null>(null)
   const [ready, setReady] = useState(false)
   const hydrationGeneration = useRef(0)
+  const ipcSync = useRef<IpcSync | null>(null)
   const loading = !ready && !loadError
 
   function hydrate() {
+    const sync = ipcSync.current
+    if (!sync) return
     const generation = ++hydrationGeneration.current
+    const attempt = sync.beginHydration()
     setLoadError(null)
     void pullInitialSyncState().then(
       (state) => {
         if (hydrationGeneration.current !== generation) return
-        applyInitialSyncState(state)
-        setReady(true)
+        if (attempt.commit(state)) setReady(true)
       },
       (error) => {
+        attempt.cancel()
         if (hydrationGeneration.current !== generation) return
         setLoadError(presentFailure(
           error,
@@ -71,11 +75,13 @@ export default function App() {
   }
 
   useEffect(() => {
-    const stop = startIpcSync()
+    const sync = startIpcSync()
+    ipcSync.current = sync
     hydrate()
     return () => {
       hydrationGeneration.current += 1
-      stop()
+      ipcSync.current = null
+      sync.stop()
     }
   }, [])
 

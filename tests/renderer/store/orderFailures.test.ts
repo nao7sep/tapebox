@@ -7,7 +7,7 @@ import type { Message } from '@shared/i18n/translate'
 const note = (name: string) => ({ key: name }) as unknown as Message
 
 beforeEach(() => {
-  useOrderFailuresStore.setState({ inbox: null, boxes: null, archiveTapes: {} })
+  useOrderFailuresStore.setState({ inbox: null, boxes: null, archiveTapes: {}, attempts: {} })
 })
 
 describe('order failure ownership', () => {
@@ -37,5 +37,24 @@ describe('order failure ownership', () => {
     expect(useOrderFailuresStore.getState().archiveTapes).toEqual({
       'box:b': note('Box B tapes failed'),
     })
+  })
+
+  it('supersedes only a later attempt for the same list without clearing retained results', () => {
+    const state = useOrderFailuresStore.getState()
+    state.setInbox(note('Inbox failed'))
+    const inbox = state.beginAttempt('inbox')
+    const boxes = state.beginAttempt('boxes')
+    const unboxed = state.beginAttempt('archive:unboxed')
+    const boxA = state.beginAttempt('archive:box:a')
+    const boxB = state.beginAttempt('archive:box:b')
+    const newerBoxA = state.beginAttempt('archive:box:a')
+
+    expect(state.isCurrentAttempt('inbox', inbox)).toBe(true)
+    expect(state.isCurrentAttempt('boxes', boxes)).toBe(true)
+    expect(state.isCurrentAttempt('archive:unboxed', unboxed)).toBe(true)
+    expect(state.isCurrentAttempt('archive:box:a', boxA)).toBe(false)
+    expect(state.isCurrentAttempt('archive:box:a', newerBoxA)).toBe(true)
+    expect(state.isCurrentAttempt('archive:box:b', boxB)).toBe(true)
+    expect(useOrderFailuresStore.getState().inbox).toEqual(note('Inbox failed'))
   })
 })

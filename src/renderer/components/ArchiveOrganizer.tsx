@@ -13,7 +13,7 @@ import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { ListboxDragProvider, planArchiveDrop } from '@renderer/lib/dnd'
-import { moveArrayItem, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
+import { isInSameTapeList, moveArrayItem, rollbackOptimisticOrder, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
@@ -106,16 +106,14 @@ export function ArchiveOrganizer() {
     const next = moveArrayItem(ids, from, to)
     const orderById = new Map(next.map((id, i) => [id, i]))
     const optimistic = boxes.map((box) => ({ ...box, order: orderById.get(box.id) ?? box.order }))
+    const attempt = useOrderFailuresStore.getState().beginAttempt('boxes')
     useBoxesStore.getState().setBoxes(optimistic)
     settleOptimisticOrder(
       ipcInvoke('boxes:reorder', { orderedIds: next }),
-      () => {
-        const current = useBoxesStore.getState().boxes
-        return optimistic.every((candidate) =>
-          current.some((box) => box.id === candidate.id && box.order === candidate.order),
-        )
-      },
-      () => useBoxesStore.getState().setBoxes(boxes),
+      () => useOrderFailuresStore.getState().isCurrentAttempt('boxes', attempt),
+      () => useBoxesStore.setState((state) => ({
+        boxes: rollbackOptimisticOrder(state.boxes, boxes, optimistic),
+      })),
       () => setBoxOrderError(null),
       (error) => setBoxOrderError(presentFailure(error, message('archive.boxOrderSaveFailed'), 'box order save failed')),
     )
@@ -126,16 +124,15 @@ export function ArchiveOrganizer() {
     if (from < 0 || to < 0 || to >= tapes.length || from === to) return
     const reordered = moveArrayItem(tapes, from, to)
     const optimistic = reordered.map((tape, i) => ({ ...tape, order: i }))
+    const list = `archive:${tapeListKey}` as const
+    const attempt = useOrderFailuresStore.getState().beginAttempt(list)
     useTapesStore.getState().upsertMany(optimistic)
     settleOptimisticOrder(
       ipcInvoke('tapes:reorder', { orderedIds: reordered.map((tape) => tape.id) }),
-      () => {
-        const current = useTapesStore.getState().tapes
-        return optimistic.every((candidate) =>
-          current.some((tape) => tape.id === candidate.id && tape.order === candidate.order),
-        )
-      },
-      () => useTapesStore.getState().upsertMany(tapes),
+      () => useOrderFailuresStore.getState().isCurrentAttempt(list, attempt),
+      () => useTapesStore.setState((state) => ({
+        tapes: rollbackOptimisticOrder(state.tapes, tapes, optimistic, isInSameTapeList),
+      })),
       () => setTapeOrderError(tapeListKey, null),
       (error) => setTapeOrderError(tapeListKey, presentFailure(error, message('tapes.orderSaveFailed'), 'archive tape order save failed')),
     )

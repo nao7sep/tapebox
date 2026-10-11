@@ -9,6 +9,7 @@ import { useArchiveStore } from '@renderer/store/archive'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { runTapeAction } from '@renderer/lib/runTapeAction'
+import { rollbackOptimisticFields } from '@renderer/lib/optimisticFields'
 import type { TapeAction } from '@renderer/store/tapeActionResults'
 import { message, type Message } from '@shared/i18n/translate'
 
@@ -100,7 +101,7 @@ function frontOrderFor(dest: { archived: boolean; boxId: string | null }, exclud
  *  then apply the chosen selection policy. */
 function relocate(
   tape: Tape,
-  patch: Partial<Tape>,
+  patch: Partial<Pick<Tape, 'archivedAtUtc' | 'boxId'>>,
   dest: { archived: boolean; boxId: string | null },
   keep: Keep,
   action: TapeAction,
@@ -111,7 +112,8 @@ function relocate(
   const advance = keep === 'list' ? advanceSelection(tape) : null
   // Place it at the front of the destination optimistically so it doesn't flash at
   // its old order before boxes:place / library:archive re-emit the authoritative one.
-  const optimistic = { ...tape, ...patch, order: frontOrderFor(dest, tape.id) }
+  const optimisticPatch = { ...patch, order: frontOrderFor(dest, tape.id) }
+  const optimistic = { ...tape, ...optimisticPatch }
   useTapesStore.getState().upsert(optimistic)
   if (advance) advance()
   else revealTape(tape.id, dest)
@@ -121,7 +123,10 @@ function relocate(
     const current = useTapesStore.getState().tapes.find((candidate) => candidate.id === tape.id)
     if (!current) return
     if (current.archivedAtUtc !== optimistic.archivedAtUtc || current.boxId !== optimistic.boxId) return
-    useTapesStore.getState().upsert(tape)
+    // Membership is one destination invariant. Once it has changed, a newer
+    // relocation owns it; otherwise restore only this submitted patch, keeping
+    // live metadata and an order changed after this move.
+    useTapesStore.getState().upsert(rollbackOptimisticFields(current, tape, optimisticPatch))
     // Back where it was, but only while it is still the tape the user is on.
     if (keep === 'tape' && useSelectionStore.getState().selectedId === tape.id) {
       revealTape(tape.id, { archived: !!tape.archivedAtUtc, boxId: tape.boxId })

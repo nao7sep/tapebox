@@ -7,7 +7,7 @@ import { useFilterStore } from '@renderer/store/filter'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
 import { ListboxDragProvider, planTapeListDrop } from '@renderer/lib/dnd'
-import { moveArrayItem, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
+import { isInSameTapeList, moveArrayItem, rollbackOptimisticOrder, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
 import { selectTape } from '@renderer/lib/selectTape'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
@@ -68,16 +68,14 @@ export function TapeList() {
     const reordered = moveArrayItem(visible, from, to)
     // Pointer and keyboard reorder share this one optimistic + durable operation.
     const optimistic = reordered.map((t, i) => ({ ...t, order: i }))
+    const attempt = useOrderFailuresStore.getState().beginAttempt('inbox')
     useTapesStore.getState().upsertMany(optimistic)
     settleOptimisticOrder(
       ipcInvoke('tapes:reorder', { orderedIds: reordered.map((t) => t.id) }),
-      () => {
-        const current = useTapesStore.getState().tapes
-        return optimistic.every((candidate) =>
-          current.some((tape) => tape.id === candidate.id && tape.order === candidate.order),
-        )
-      },
-      () => useTapesStore.getState().upsertMany(visible),
+      () => useOrderFailuresStore.getState().isCurrentAttempt('inbox', attempt),
+      () => useTapesStore.setState((state) => ({
+        tapes: rollbackOptimisticOrder(state.tapes, visible, optimistic, isInSameTapeList),
+      })),
       () => setOrderError(null),
       (error) => setOrderError(presentFailure(error, message('tapes.orderSaveFailed'), 'tape order save failed')),
     )

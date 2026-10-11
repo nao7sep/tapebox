@@ -5,7 +5,7 @@ const { ipcInvoke, logError } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), logError
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
-import { advanceSelection, archiveTape, moveTapeToBox } from '@renderer/lib/tapeActions'
+import { advanceSelection, archiveTape, unarchiveTape, moveTapeToBox } from '@renderer/lib/tapeActions'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -86,6 +86,124 @@ describe('archive and placement settlement', () => {
       reveal: 'This tape could not be shown in its folder. The tape is unchanged; try again.',
       placement: 'This tape could not be moved to that box. Its previous location remains in use; try again.',
     })
+  })
+})
+
+describe.each([
+  { action: 'archive' as const, original: () => tape({ order: 10 }), invoke: (original: Tape) => archiveTape(original, 'tape') },
+  { action: 'unarchive' as const, original: () => tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z', boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => unarchiveTape(original, 'tape') },
+  { action: 'placement' as const, original: () => tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z', boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => moveTapeToBox(original, 'BoxTarget1', 'tape') },
+])('$action rollback owns only its organization fields', ({ action, original: makeOriginal, invoke }) => {
+  it('preserves metadata and renamed files received while persistence was pending', async () => {
+    const original = makeOriginal()
+    useTapesStore.getState().setAll([original])
+    useSelectionStore.getState().select(original.id)
+    let reject!: (reason: Error) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    invoke(original)
+
+    const updated = {
+      ...useTapesStore.getState().tapes[0]!,
+      title: 'Updated title',
+      name: 'new-name',
+      filename: 'new-name.mp4',
+      sidecarFilename: 'new-name.json',
+      renamedAtUtc: '2026-09-03T00:00:01.000Z',
+      durationSeconds: 123,
+    }
+    useTapesStore.getState().upsert(updated)
+    reject(new Error('organization write rejected'))
+
+    await vi.waitFor(() => expect(useTapesStore.getState().tapes[0]).toEqual({
+      ...updated,
+      archivedAtUtc: original.archivedAtUtc,
+      boxId: original.boxId,
+      order: original.order,
+    }))
+    expect(useTapeActionResultsStore.getState().byTape[original.id]?.[action]).toBeDefined()
+    expect(useSelectionStore.getState().selectedId).toBe(original.id)
+    expect(useFilterStore.getState().filter).toBe(original.archivedAtUtc ? 'archived' : 'inbox')
+    if (original.archivedAtUtc) expect(useArchiveStore.getState().selectedBoxId).toBe(original.boxId)
+  })
+
+  it('preserves a newer order while restoring the failed location', async () => {
+    const original = makeOriginal()
+    useTapesStore.getState().setAll([original])
+    let reject!: (reason: Error) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    invoke(original)
+    useTapesStore.getState().upsert({ ...useTapesStore.getState().tapes[0]!, order: 77 })
+    reject(new Error('organization write rejected'))
+
+    await vi.waitFor(() => expect(useTapesStore.getState().tapes[0]).toEqual({ ...original, order: 77 }))
+    expect(useTapeActionResultsStore.getState().byTape[original.id]?.[action]).toBeDefined()
+  })
+})
+
+describe('relocation supersession and authoritative updates', () => {
+  it('keeps the destination and its order together after a newer location arrives', async () => {
+    const original = tape()
+    useTapesStore.getState().setAll([original])
+    useSelectionStore.getState().select(original.id)
+    let reject!: (reason: Error) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    archiveTape(original, 'tape')
+    const placed = { ...useTapesStore.getState().tapes[0]!, boxId: 'BoxTarget1', order: -10 }
+    useTapesStore.getState().upsert(placed)
+    reject(new Error('earlier archive rejected'))
+
+    await vi.waitFor(() => expect(useTapeActionResultsStore.getState().byTape[original.id]?.archive).toBeDefined())
+    expect(useTapesStore.getState().tapes[0]).toEqual(placed)
+    expect(useFilterStore.getState().filter).toBe('archived')
+  })
+
+  it('does not resurrect a tape removed while its placement was pending', async () => {
+    const original = tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z' })
+    useTapesStore.getState().setAll([original])
+    let reject!: (reason: Error) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    moveTapeToBox(original, 'BoxTarget1', 'list')
+    useTapesStore.getState().removeMany([original.id])
+    reject(new Error('placement rejected'))
+
+    await vi.waitFor(() => expect(useTapeActionResultsStore.getState().byTape[original.id]?.placement).toBeDefined())
+    expect(useTapesStore.getState().tapes).toEqual([])
+  })
+
+  it('leaves the main update in place after placement succeeds', async () => {
+    const original = tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z' })
+    useTapesStore.getState().setAll([original])
+    let resolve!: () => void
+    ipcInvoke.mockImplementationOnce(() => new Promise<void>((succeed) => { resolve = succeed }))
+    moveTapeToBox(original, 'BoxTarget1', 'list')
+    const confirmed = { ...useTapesStore.getState().tapes[0]!, title: 'Main title', order: -5 }
+    useTapesStore.getState().upsert(confirmed)
+    resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useTapesStore.getState().tapes[0]).toEqual(confirmed)
+    expect(useTapeActionResultsStore.getState().byTape[original.id]?.placement).toBeUndefined()
+  })
+
+  it('ignores an older rejected placement after a newer placement was submitted', async () => {
+    const original = tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z' })
+    useTapesStore.getState().setAll([original])
+    let rejectOlder!: (reason: Error) => void
+    let resolveNewer!: () => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { rejectOlder = fail }))
+    moveTapeToBox(original, 'BoxTarget1', 'list')
+    ipcInvoke.mockImplementationOnce(() => new Promise<void>((succeed) => { resolveNewer = succeed }))
+    moveTapeToBox(useTapesStore.getState().tapes[0]!, 'BoxTarget2', 'list')
+    const latest = useTapesStore.getState().tapes[0]
+    rejectOlder(new Error('older placement rejected'))
+    await vi.waitFor(() => expect(logError).toHaveBeenCalled())
+
+    expect(useTapesStore.getState().tapes[0]).toEqual(latest)
+    expect(useTapeActionResultsStore.getState().byTape[original.id]?.placement).toBeUndefined()
+    resolveNewer()
+    await Promise.resolve()
+    await Promise.resolve()
   })
 })
 
