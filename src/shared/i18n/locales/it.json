@@ -388,6 +388,8 @@
   "common.folderPickerFailed": "Impossibile aprire la selezione delle cartelle. Riprova.",
   "confirm.title": "Conferma",
   "refresh.title": "Aggiorna metadati",
+  "refresh.loadFailed": "Non è stato possibile caricare la descrizione salvata. Nulla è cambiato; riprova prima di applicare.",
+  "refresh.retryLoad": "Riprova",
   "refresh.checkFailed": "Impossibile controllare i metadati della sorgente. I metadati salvati sono invariati; riprova più tardi.",
   "refresh.applyFailed": "Non è stato possibile salvare i metadati aggiornati. Riprova.",
   "refresh.applyPartial": "I metadati aggiornati sono stati applicati, ma non è stato possibile salvare il catalogo della libreria. Lascia TapeBox aperto e riprova.",

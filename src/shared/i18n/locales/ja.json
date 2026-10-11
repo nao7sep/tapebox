@@ -350,6 +350,8 @@
   "common.folderPickerFailed": "フォルダ選択画面を開けませんでした。もう一度お試しください。",
   "confirm.title": "確認",
   "refresh.title": "メタデータを更新",
+  "refresh.loadFailed": "保存済みの説明を読み込めませんでした。何も変更されていません。適用する前に、もう一度お試しください。",
+  "refresh.retryLoad": "再試行",
   "refresh.checkFailed": "ソースのメタデータを確認できませんでした。保存済みのメタデータは変わっていません。しばらくしてからもう一度お試しください。",
   "refresh.applyFailed": "更新したメタデータを保存できませんでした。もう一度お試しください。",
   "refresh.applyPartial": "更新したメタデータは適用されましたが、ライブラリの一覧を保存できませんでした。TapeBoxを開いたまま、もう一度お試しください。",

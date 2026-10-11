@@ -388,6 +388,8 @@
   "common.folderPickerFailed": "Não foi possível abrir a seleção de pastas. Tente novamente.",
   "confirm.title": "Confirmar",
   "refresh.title": "Atualizar metadados",
+  "refresh.loadFailed": "Não foi possível carregar a descrição salva. Nada mudou; tente novamente antes de aplicar.",
+  "refresh.retryLoad": "Tentar novamente",
   "refresh.checkFailed": "Não foi possível verificar os metadados da origem. Os metadados salvos não mudaram; tente novamente mais tarde.",
   "refresh.applyFailed": "Não foi possível salvar os metadados atualizados. Tente novamente.",
   "refresh.applyPartial": "Os metadados atualizados foram aplicados, mas não foi possível salvar o catálogo da biblioteca. Mantenha o TapeBox aberto e tente novamente.",

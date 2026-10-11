@@ -8,10 +8,28 @@ import type { ScanResult } from '@shared/ipc-contract'
 // and the bulk-add then made to fail/succeed deterministically. ipcOn listeners
 // are captured per channel in a Set, and off() removes only the specific listener
 // — mirroring ipcRenderer.on so the mock can't paper over a subscribe/cleanup bug.
-const { ipcInvoke, listeners } = vi.hoisted(() => ({
+const { ipcInvoke, listeners, stateWrites } = vi.hoisted(() => ({
   ipcInvoke: vi.fn(),
   listeners: new Map<string, Set<(payload: unknown) => void>>(),
+  stateWrites: vi.fn(),
 }))
+
+// React silently ignores updates after unmount. Observe dispatches as well as the
+// visible result so a late callback cannot pass merely because its owner is gone.
+vi.mock('react', async (importOriginal) => {
+  const react = await importOriginal<typeof import('react')>()
+  return {
+    ...react,
+    useState: <T,>(initial: T | (() => T)) => {
+      const [value, setValue] = react.useState(initial)
+      const dispatch: React.Dispatch<React.SetStateAction<T>> = (next) => {
+        stateWrites()
+        setValue(next)
+      }
+      return [value, dispatch]
+    },
+  }
+})
 
 function emitEvent(channel: string, payload: unknown): void {
   for (const fn of listeners.get(channel) ?? []) fn(payload)
@@ -44,6 +62,7 @@ beforeEach(() => {
   document.body.append(container)
   listeners.clear()
   ipcInvoke.mockReset()
+  stateWrites.mockClear()
   // Default: any call without an explicit per-call result resolves, so the
   // unmount-time scan:cancel has a real promise to .catch on.
   ipcInvoke.mockResolvedValue(undefined)
@@ -224,6 +243,120 @@ describe('ScanPageModal streaming', () => {
 })
 
 describe('ScanPageModal stop', () => {
+  it.each(['dismiss', 'Stop then dismiss'] as const)('cancels the exact late start reply after %s without updating state', async (action) => {
+    let finishStart!: (reply: { sessionId: string }) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((resolve) => { finishStart = resolve }))
+    await mount(vi.fn())
+    await act(async () => { buttonByText('Scan').click() })
+    if (action === 'Stop then dismiss') await act(async () => { buttonByText('Stop').click() })
+    await act(async () => root!.unmount())
+    root = null
+    stateWrites.mockClear()
+
+    await act(async () => { finishStart({ sessionId: 'late-unmounted-session' }) })
+
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'scan:cancel')).toEqual([
+      ['scan:cancel', { sessionId: 'late-unmounted-session' }],
+    ])
+    expect(stateWrites).not.toHaveBeenCalled()
+    expect([...listeners.values()].every((set) => set.size === 0)).toBe(true)
+  })
+
+  it('remembers Stop before the start reply and cancels it once even when unmounted', async () => {
+    let finishStart!: (reply: { sessionId: string }) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((resolve) => { finishStart = resolve }))
+    await mount(vi.fn())
+    await act(async () => { buttonByText('Scan').click() })
+    await act(async () => { buttonByText('Stop').click() })
+    await act(async () => { buttonByText('Stop').click() })
+
+    await act(async () => { finishStart({ sessionId: 'late-stopped-session' }) })
+    expect(buttonByText('Scan')).toBeTruthy()
+    await act(async () => root!.unmount())
+    root = null
+
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'scan:cancel')).toEqual([
+      ['scan:cancel', { sessionId: 'late-stopped-session' }],
+    ])
+  })
+
+  it('keeps a failed pending Stop retryable instead of treating it as stopped', async () => {
+    let finishStart!: (reply: { sessionId: string }) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((resolve) => { finishStart = resolve }))
+    await mount(vi.fn())
+    await act(async () => { buttonByText('Scan').click() })
+    await act(async () => { buttonByText('Stop').click() })
+    ipcInvoke.mockRejectedValueOnce(new Error('EIO /private/tmp/TAPEBOX_STOP_SENTINEL'))
+    await act(async () => { finishStart({ sessionId: 'stop-retry-session' }) })
+
+    const alert = document.querySelector('[role="dialog"] [role="alert"]')
+    expect(alert?.textContent).toContain('The scan could not be stopped yet. It may still be running; try again.')
+    expect(alert?.textContent).not.toMatch(/EIO|private\/tmp|TAPEBOX_STOP_SENTINEL/)
+    await act(async () => { buttonByText('Stop').click() })
+    expect(buttonByText('Scan')).toBeTruthy()
+    expect(document.querySelector('[role="dialog"] [role="alert"]')).toBeNull()
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'scan:cancel')).toEqual([
+      ['scan:cancel', { sessionId: 'stop-retry-session' }],
+      ['scan:cancel', { sessionId: 'stop-retry-session' }],
+    ])
+  })
+
+  it('does not update a retired modal when a pending Stop request settles', async () => {
+    await mount(vi.fn())
+    await scanOneEntry()
+    let finishCancel!: () => void
+    ipcInvoke.mockImplementationOnce(() => new Promise<void>((resolve) => { finishCancel = resolve }))
+    await act(async () => { buttonByText('Stop').click() })
+    await act(async () => root!.unmount())
+    root = null
+    stateWrites.mockClear()
+
+    await act(async () => { finishCancel() })
+
+    expect.soft(stateWrites).not.toHaveBeenCalled()
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'scan:cancel')).toEqual([
+      ['scan:cancel', { sessionId: 'S1' }],
+    ])
+  })
+
+  it('commits buffered entries at Stop and cancels their pending frame', async () => {
+    const frames = heldFrames()
+    try {
+      await mount(vi.fn())
+      ipcInvoke.mockResolvedValueOnce({ sessionId: 'S1' })
+      await act(async () => { buttonByText('Scan').click() })
+      await act(async () => { emitEvent('scan:entry', { sessionId: 'S1', entry: ENTRY }) })
+      expect(frames.pending()).toBe(1)
+
+      await act(async () => { buttonByText('Stop').click() })
+
+      expect(buttonByText('Add 1 tape')).toBeTruthy()
+      expect(frames.pending()).toBe(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('leaves a newer scan running when an older cancellation settles', async () => {
+    await mount(vi.fn())
+    await scanOneEntry()
+    let finishCancel!: () => void
+    ipcInvoke.mockImplementationOnce(() => new Promise<void>((resolve) => { finishCancel = resolve }))
+    await act(async () => { buttonByText('Stop').click() })
+    await act(async () => { emitEvent('scan:done', { sessionId: 'S1', totalCount: 1 }) })
+    ipcInvoke.mockResolvedValueOnce({ sessionId: 'S2' })
+    await act(async () => { buttonByText('Scan').click() })
+    stateWrites.mockClear()
+
+    await act(async () => { finishCancel() })
+
+    expect(buttonByText('Stop')).toBeTruthy()
+    expect(stateWrites).not.toHaveBeenCalled()
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'scan:cancel')).toEqual([
+      ['scan:cancel', { sessionId: 'S1' }],
+    ])
+  })
+
   it('shows no scan failure when the stopped scan settles afterwards', async () => {
     await mount(vi.fn())
     await scanOneEntry()

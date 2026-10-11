@@ -16,6 +16,15 @@ import { message, type Message } from '@shared/i18n/translate'
 
 type Props = { onClose: () => void; initialUrl?: string }
 
+type ScanSubmission = {
+  sessionId: string | null
+  retired: boolean
+  running: boolean
+  stopRequested: boolean
+  stopFailure: Message | null
+  cancellation: Promise<void> | null
+}
+
 /** Fixed row height (px) of the results list, which renders only visible rows. */
 const ROW_HEIGHT = 32
 
@@ -44,7 +53,8 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const [search, setSearch] = useState('')
   const [adding, setAdding] = useState(false)
 
-  const sessionIdRef = useRef<string | null>(null)
+  const liveRef = useRef(true)
+  const scanRef = useRef<ScanSubmission | null>(null)
   // Arrivals not yet committed to state, the sourceUrls already seen this scan,
   // and the pending frame that will commit them.
   const pendingRef = useRef<ScanResult[]>([])
@@ -56,6 +66,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
 
   function flushPending() {
     frameRef.current = null
+    if (!liveRef.current) return
     const batch = pendingRef.current
     if (batch.length === 0) return
     pendingRef.current = []
@@ -77,10 +88,58 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     seenRef.current = new Set()
   }
 
+  function ownsSubmission(submission: ScanSubmission): boolean {
+    return liveRef.current && !submission.retired && scanRef.current === submission
+  }
+
+  function cancelSubmission(submission: ScanSubmission): Promise<void> {
+    // Stop and dismissal can overlap. One request owns cancellation of this exact
+    // session until the bridge settles; main owns the process through its exit.
+    if (submission.cancellation) return submission.cancellation
+    const sessionId = submission.sessionId
+    if (!sessionId) return Promise.resolve()
+    const cancellation = ipcInvoke('scan:cancel', { sessionId })
+      .then(() => {
+        submission.sessionId = null
+        submission.running = false
+        if (!ownsSubmission(submission)) return
+        if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+        flushPending()
+        const previousFailure = submission.stopFailure
+        submission.stopFailure = null
+        if (previousFailure) setError((current) => current === previousFailure ? null : current)
+        setScanning(false)
+        setScanned(true)
+      })
+      .catch((err) => {
+        if (ownsSubmission(submission)) {
+          submission.stopRequested = false
+          submission.stopFailure = presentFailure(err, message('scan.stopFailed'), 'page scan cancellation failed')
+          setError(submission.stopFailure)
+        } else {
+          log.warn('page scan cancellation failed after dismissal', { sessionId, error: describeError(err) })
+        }
+      })
+      .finally(() => { submission.cancellation = null })
+    submission.cancellation = cancellation
+    return cancellation
+  }
+
+  function retireSubmission() {
+    const submission = scanRef.current
+    scanRef.current = null
+    if (!submission) return
+    submission.retired = true
+    if (submission.sessionId) void cancelSubmission(submission)
+    // A pending start still owns its reply. Its continuation cancels the returned
+    // ID instead of installing an orphan session into a retired modal.
+  }
+
   useEffect(() => {
+    liveRef.current = true
     const offs = [
       ipcOn('scan:entry', (e) => {
-        if (e.sessionId !== sessionIdRef.current) return
+        if (e.sessionId !== scanRef.current?.sessionId) return
         // The same video can surface twice on a listing page; dedup by sourceUrl so the
         // list keys and the (sourceUrl-keyed) selection stay unambiguous.
         if (seenRef.current.has(e.entry.sourceUrl)) return
@@ -89,10 +148,17 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
         frameRef.current ??= requestAnimationFrame(flushPending)
       }),
       ipcOn('scan:done', (e) => {
-        if (e.sessionId === sessionIdRef.current) { setScanning(false); setScanned(true) }
+        const submission = scanRef.current
+        if (submission && e.sessionId === submission.sessionId) {
+          submission.running = false
+          setScanning(false)
+          setScanned(true)
+        }
       }),
       ipcOn('scan:error', (e) => {
-        if (e.sessionId === sessionIdRef.current) {
+        const submission = scanRef.current
+        if (submission && e.sessionId === submission.sessionId) {
+          submission.running = false
           setScanning(false)
           setScanned(true)
           setError(message('scan.failed'))
@@ -100,19 +166,21 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
       }),
     ]
     return () => {
+      liveRef.current = false
       offs.forEach((off) => off())
       resetPending()
-      const sid = sessionIdRef.current
-      if (sid) void ipcInvoke('scan:cancel', { sessionId: sid }).catch((err) => log.debug('scan cancel failed', { error: describeError(err) }))
+      retireSubmission()
     }
   }, [])
 
   function scan() {
     const v = url.trim()
-    if (!v || scanning) return
-    const prev = sessionIdRef.current
-    if (prev) void ipcInvoke('scan:cancel', { sessionId: prev }).catch((err) => log.debug('scan cancel failed', { error: describeError(err) }))
-    sessionIdRef.current = null
+    if (!v || scanRef.current?.running) return
+    retireSubmission()
+    const submission: ScanSubmission = {
+      sessionId: null, retired: false, running: true, stopRequested: false, stopFailure: null, cancellation: null,
+    }
+    scanRef.current = submission
     resetPending()
     setEntries([])
     setSelected(new Set())
@@ -121,26 +189,29 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     setScanned(false)
     setScanning(true)
     void ipcInvoke('scan:start', { url: v })
-      .then((r) => { sessionIdRef.current = r.sessionId })
-      .catch((err) => { setError(presentFailure(err, message('scan.failed'), 'page scan start failed')); setScanning(false); setScanned(true) })
+      .then((r) => {
+        submission.sessionId = r.sessionId
+        if (submission.retired || submission.stopRequested) void cancelSubmission(submission)
+      })
+      .catch((err) => {
+        submission.running = false
+        if (!ownsSubmission(submission)) {
+          log.warn('page scan start failed after dismissal', { error: describeError(err) })
+          return
+        }
+        setError(presentFailure(err, message('scan.failed'), 'page scan start failed'))
+        setScanning(false)
+        setScanned(true)
+      })
   }
 
   async function stopScan() {
-    const sid = sessionIdRef.current
-    if (!sid) return
-    try {
-      await ipcInvoke('scan:cancel', { sessionId: sid })
-      // The stopped session is over: a late event from its exiting process is ignored.
-      if (sessionIdRef.current === sid) sessionIdRef.current = null
-      setScanning(false)
-      setScanned(true)
-    } catch (err) {
-      setError(presentFailure(
-        err,
-        message('scan.stopFailed'),
-        'page scan cancellation failed',
-      ))
-    }
+    const submission = scanRef.current
+    if (!submission) return
+    // The user can press Stop before start returns an ID. Keep that intent with
+    // the submission so the reply cannot turn it into a running scan later.
+    submission.stopRequested = true
+    if (submission.sessionId) await cancelSubmission(submission)
   }
 
   const filtered = useMemo(() => {
@@ -186,11 +257,12 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     setError(null)
     try {
       await ipcInvoke('downloads:addBulk', { urls })
-      onClose()
+      if (liveRef.current) onClose()
     } catch (err) {
-      setError(presentFailure(err, message('scan.addFailed'), 'bulk tape add failed'))
+      const failure = presentFailure(err, message('scan.addFailed'), 'bulk tape add failed')
+      if (liveRef.current) setError(failure)
     } finally {
-      setAdding(false)
+      if (liveRef.current) setAdding(false)
     }
   }
 

@@ -388,6 +388,8 @@
   "common.folderPickerFailed": "Impossible d’ouvrir le sélecteur de dossiers. Réessayez.",
   "confirm.title": "Confirmer",
   "refresh.title": "Actualiser les métadonnées",
+  "refresh.loadFailed": "La description enregistrée n’a pas pu être chargée. Rien n’a changé. Réessayez avant d’appliquer.",
+  "refresh.retryLoad": "Réessayer",
   "refresh.checkFailed": "Impossible de vérifier les métadonnées de la source. Les métadonnées enregistrées sont inchangées\u00a0; réessayez plus tard.",
   "refresh.applyFailed": "Les métadonnées actualisées n’ont pas pu être enregistrées. Réessayez.",
   "refresh.applyPartial": "Les métadonnées actualisées ont été appliquées, mais le catalogue de la bibliothèque n’a pas pu être enregistré. Gardez TapeBox ouvert et réessayez.",

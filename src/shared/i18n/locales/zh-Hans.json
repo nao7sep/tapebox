@@ -350,6 +350,8 @@
   "common.folderPickerFailed": "无法打开文件夹选择器。请重试。",
   "confirm.title": "确认",
   "refresh.title": "刷新元数据",
+  "refresh.loadFailed": "无法加载已保存的简介。任何内容都未更改；请在应用前重试。",
+  "refresh.retryLoad": "重试",
   "refresh.checkFailed": "无法检查来源的元数据。已保存的元数据保持不变；请稍后重试。",
   "refresh.applyFailed": "无法保存更新后的元数据。请重试。",
   "refresh.applyPartial": "更新后的元数据已应用，但无法保存媒体库目录。请保持 TapeBox 打开并重试。",

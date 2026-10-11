@@ -369,6 +369,8 @@
   "common.folderPickerFailed": "Die Ordnerauswahl konnte nicht geöffnet werden. Versuchen Sie es erneut.",
   "confirm.title": "Bestätigen",
   "refresh.title": "Metadaten aktualisieren",
+  "refresh.loadFailed": "Die gespeicherte Beschreibung konnte nicht geladen werden. Es wurde nichts geändert. Versuchen Sie es erneut, bevor Sie Änderungen übernehmen.",
+  "refresh.retryLoad": "Erneut versuchen",
   "refresh.checkFailed": "Die Metadaten der Quelle konnten nicht geprüft werden. Die gespeicherten Metadaten sind unverändert; versuchen Sie es später erneut.",
   "refresh.applyFailed": "Die aktualisierten Metadaten konnten nicht gespeichert werden. Versuchen Sie es erneut.",
   "refresh.applyPartial": "Die aktualisierten Metadaten wurden angewendet, aber der Bibliothekskatalog konnte nicht gespeichert werden. Lassen Sie TapeBox geöffnet und versuchen Sie es erneut.",

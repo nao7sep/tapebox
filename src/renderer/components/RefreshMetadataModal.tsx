@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import type { Tape } from '@shared/domain'
 import type { RefreshedMetadata } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
-import { log } from '@renderer/ipc/log'
-import { describeError } from '@shared/error'
 import { Modal } from './Modal'
 import { Button, InlineError, Spinner } from './ui'
 import { CheckIcon } from './Icon'
@@ -11,6 +9,12 @@ import { PassiveScrollRegion } from './PassiveScrollRegion'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
+
+type DescriptionLoad = { tapeId: string } & (
+  | { status: 'loading' }
+  | { status: 'loaded'; description: string | null }
+  | { status: 'failed'; error: Message }
+)
 
 /**
  * Review-then-apply metadata refresh, and a rarely-needed one: saved metadata is
@@ -27,27 +31,37 @@ import { message, type Message } from '@shared/i18n/translate'
  */
 export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: () => void }) {
   const [candidate, setCandidate] = useState<RefreshedMetadata | null>(null)
-  const [currentDescription, setCurrentDescription] = useState<string | null>(null)
+  const [descriptionLoad, setDescriptionLoad] = useState<DescriptionLoad>({ tapeId: tape.id, status: 'loading' })
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [error, setError] = useState<Message | null>(null)
   const [probing, setProbing] = useState(false)
   const t = useI18n()
   const [applying, setApplying] = useState(false)
 
   const probed = candidate !== null
+  const currentLoad: DescriptionLoad = descriptionLoad.tapeId === tape.id
+    ? descriptionLoad
+    : { tapeId: tape.id, status: 'loading' }
+  const descriptionKnown = currentLoad.status === 'loaded'
+  const currentDescription = currentLoad.status === 'loaded' ? currentLoad.description : null
 
   // The current description lives in the sidecar, not on the tape — load it so the
   // "Current" column can show it (and decide whether the row appears at all).
   useEffect(() => {
     let cancelled = false
+    setDescriptionLoad({ tapeId: tape.id, status: 'loading' })
     ipcInvoke('library:getSidecar', { tapeId: tape.id })
       .then((s) => {
         if (cancelled) return
         const d = (s as Record<string, unknown>)['description']
-        setCurrentDescription(typeof d === 'string' && d.trim() ? d : null)
+        setDescriptionLoad({ tapeId: tape.id, status: 'loaded', description: typeof d === 'string' ? nv(d) : null })
       })
-      .catch((err) => log.debug('sidecar load failed', { tapeId: tape.id, error: describeError(err) }))
+      .catch((err) => {
+        const failure = presentFailure(err, message('refresh.loadFailed'), 'saved metadata description load failed')
+        if (!cancelled) setDescriptionLoad({ tapeId: tape.id, status: 'failed', error: failure })
+      })
     return () => { cancelled = true }
-  }, [tape.id])
+  }, [tape.id, loadAttempt])
 
   async function checkSource() {
     setProbing(true)
@@ -62,7 +76,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   }
 
   async function apply() {
-    if (!candidate) return
+    if (!candidate || !descriptionKnown) return
     setApplying(true)
     setError(null)
     try {
@@ -75,8 +89,9 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   }
 
   const newDescription = probed ? nv(candidate?.description ?? null) : null
-  // The description row only appears when one side has something worth comparing.
-  const showDescription = !!nv(currentDescription) || !!newDescription
+  // Unknown is not empty: keep the row while loading or recovering, and require
+  // the saved value before allowing Apply to replace it with the source's value.
+  const showDescription = !descriptionKnown || !!nv(currentDescription) || !!newDescription
 
   // After a check, compare the source field by field against what's saved. When
   // they match there's nothing to apply, so Apply is disabled and the note says
@@ -84,6 +99,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   const same = (a: string | null, b: string | null) => (a ?? '') === (b ?? '')
   const dirty =
     probed &&
+    descriptionKnown &&
     !(
       same(nv(tape.title), nv(candidate?.title ?? null)) &&
       same(nv(tape.uploader), nv(candidate?.uploader ?? null)) &&
@@ -103,7 +119,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
         </Button>
       )}
       {probed ? (
-        <Button variant="primary" onClick={() => void apply()} loading={applying} disabled={!dirty || probing}>
+        <Button variant="primary" onClick={() => void apply()} loading={applying} disabled={!dirty || probing || !descriptionKnown}>
           {t.t(applying ? 'refresh.applying' : 'refresh.apply')}
         </Button>
       ) : (
@@ -117,7 +133,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   return (
     <Modal title={t.t('refresh.title')} onClose={onClose} size="4xl" footer={footer} closeDisabled={applying}>
       <div className="space-y-3">
-        {probed && !dirty ? (
+        {probed && descriptionKnown && !dirty ? (
           // A successful check that found nothing new. Said warmly, with a check
           // mark, so it reads as "all good" rather than a broken Apply button — and
           // it spells out that this is exactly why there's nothing to apply.
@@ -141,7 +157,14 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
           <FieldDiff label={t.t('refresh.titleField')} probed={probed} probing={probing} current={nv(tape.title)} next={nv(candidate?.title ?? null)} />
           <FieldDiff label={t.t('detail.uploader')} probed={probed} probing={probing} current={nv(tape.uploader)} next={nv(candidate?.uploader ?? null)} />
           {showDescription && (
-            <DescriptionDiff probed={probed} probing={probing} current={nv(currentDescription)} next={newDescription} />
+            <DescriptionDiff
+              probed={probed}
+              probing={probing}
+              currentLoad={currentLoad}
+              next={newDescription}
+              onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
+              retryDisabled={applying}
+            />
           )}
         </div>
       </div>
@@ -192,22 +215,36 @@ function FieldDiff({
  * here; this is just enough to judge whether the source's version is better.
  */
 function DescriptionDiff({
-  current,
+  currentLoad,
   next,
   probed,
   probing,
+  onRetry,
+  retryDisabled,
 }: {
-  current: string | null
+  currentLoad: DescriptionLoad
   next: string | null
   probed: boolean
   probing: boolean
+  onRetry: () => void
+  retryDisabled: boolean
 }) {
+  const current = currentLoad.status === 'loaded' ? currentLoad.description : null
   const losing = probed && current !== null && next === null
   const t = useI18n()
   return (
     <>
       <div className="whitespace-nowrap text-fg-subtle">{t.t('refresh.description')}</div>
-      <DescBox text={current} />
+      {currentLoad.status === 'failed' ? (
+        <div className="min-w-0 space-y-2">
+          <InlineError>{t.text(currentLoad.error)}</InlineError>
+          <Button variant="secondary" size="sm" onClick={onRetry} disabled={retryDisabled}>
+            {t.t('refresh.retryLoad')}
+          </Button>
+        </div>
+      ) : (
+        <DescBox text={current} probing={currentLoad.status === 'loading'} />
+      )}
       <DescBox text={next} losing={losing} probing={probing} />
     </>
   )

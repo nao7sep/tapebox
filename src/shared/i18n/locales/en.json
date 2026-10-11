@@ -369,6 +369,8 @@
   "common.folderPickerFailed": "The folder picker could not be opened. Try again.",
   "confirm.title": "Confirm",
   "refresh.title": "Refresh metadata",
+  "refresh.loadFailed": "The saved description could not be loaded. Nothing has changed; try again before applying.",
+  "refresh.retryLoad": "Retry",
   "refresh.checkFailed": "The source metadata could not be checked. Saved metadata is unchanged; try again later.",
   "refresh.applyFailed": "The refreshed metadata could not be saved. Try again.",
   "refresh.applyPartial": "The refreshed metadata was applied, but the library catalog could not be saved. Keep TapeBox open and retry.",
