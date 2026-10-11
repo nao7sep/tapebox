@@ -1,3 +1,4 @@
+import { useWindowCloseGuard } from '@renderer/lib/windowClose'
 import { useState } from 'react'
 import type { Tape } from '@shared/domain'
 import { Modal } from '@renderer/components/Modal'
@@ -30,6 +31,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
   const [applying, setApplying] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  useWindowCloseGuard(() => ({ dirty: name !== (tape.name ?? ''), busy: applying }))
 
   function requestClose() {
     if (applying) return

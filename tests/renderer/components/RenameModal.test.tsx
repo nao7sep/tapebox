@@ -9,6 +9,7 @@ vi.mock('@renderer/ipc/client', () => ({ ipcInvoke }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
 
 import { RenameModal } from '@renderer/components/RenameModal'
+import { windowCloseState } from '@renderer/lib/windowClose'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -55,7 +56,9 @@ describe('RenameModal', () => {
   })
 
   it('asks before dropping a typed name, keeping it on Keep editing', async () => {
+    expect(windowCloseState().dirty).toBe(false)
     await type('Another name')
+    expect(windowCloseState().dirty).toBe(true)
     await act(async () => button('Cancel').click())
     expect(onClose).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain('You have unsaved changes. Discard them and close?')

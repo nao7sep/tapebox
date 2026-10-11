@@ -49,9 +49,10 @@ export function BinariesModal() {
   const t = useI18n()
 
   const checkUpdatesAtLaunch = settings?.checkUpdatesAtLaunch ?? true
+  const missingRequired = statuses.filter((status) => status.name !== 'deno' && !status.present)
 
   // Persist the one gate: whether to check for tool updates at launch. Nothing
-  // auto-downloads — every install/update is the per-row action below.
+  // auto-downloads — every install/update needs an explicit action below.
   async function saveGate(check: boolean) {
     setSettingsError(null)
     try {
@@ -87,6 +88,20 @@ export function BinariesModal() {
       <p className="text-sm text-fg">
         {t.t('tools.intro')}
       </p>
+      <p className="mt-2 text-sm text-fg">{t.t('tools.requiredHint')}</p>
+      {missingRequired.length > 0 && (
+        <div className="mt-3">
+          <Button
+            variant="primary"
+            disabled={missingRequired.every((status) => active[status.name] !== undefined)}
+            onClick={() => {
+              for (const status of missingRequired) void install(status.name)
+            }}
+          >
+            {t.t('tools.installRequired')}
+          </Button>
+        </div>
+      )}
 
       <div className="mt-5">
         <Toggle

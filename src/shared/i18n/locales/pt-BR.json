@@ -480,6 +480,8 @@
   "tools.gateSaveFailed": "O ajuste de verificação de atualizações não foi salvo. O ajuste anterior continua valendo; tente novamente.",
   "tools.toolReason": "{tool}: {reason}",
   "tools.intro": "O yt-dlp baixa a mídia e o ffmpeg a processa; o Deno é o ambiente de execução JavaScript que o yt-dlp usa nos sites que precisam dele.",
+  "tools.requiredHint": "Os downloads precisam do yt-dlp e do ffmpeg. O Deno é opcional.",
+  "tools.installRequired": "Instalar yt-dlp e ffmpeg",
   "tools.checkOnLaunch": "Procurar atualizações das ferramentas ao iniciar",
   "tools.checkOnLaunchHint": "Procura versões mais novas do yt-dlp, ffmpeg e Deno uma vez, quando o TapeBox é iniciado.",
   "tools.cancelling": "Cancelando…",

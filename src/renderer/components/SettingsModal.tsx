@@ -1,3 +1,4 @@
+import { useWindowCloseGuard } from '@renderer/lib/windowClose'
 import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { Settings, SettingsSets, SiteProfile, ThemePreference } from '@shared/settings'
@@ -139,6 +140,7 @@ export function SettingsModal({ onClose }: Props) {
     !!original && !!draft && JSON.stringify(pickEditable(original)) !== JSON.stringify(pickEditable(draft))
   const apiKeyDirty = apiKeyDraft.length > 0 || wantsClearKey
   const dirty = settingsDirty || apiKeyDirty
+  useWindowCloseGuard(() => ({ dirty, busy }))
 
   // How many existing tapes have files on disk that a library move would relocate.
   // Used only to decide whether to prompt before Save and to phrase the prompt;

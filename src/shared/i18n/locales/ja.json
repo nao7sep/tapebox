@@ -430,6 +430,8 @@
   "tools.gateSaveFailed": "アップデート確認の設定は保存されませんでした。以前の設定のままです。もう一度お試しください。",
   "tools.toolReason": "{tool}: {reason}",
   "tools.intro": "yt-dlp はメディアをダウンロードし、ffmpeg はそれを処理します。Deno は、必要なサイトで yt-dlp が使う JavaScript ランタイムです。",
+  "tools.requiredHint": "ダウンロードには yt-dlp と ffmpeg が必要です。Deno は任意です。",
+  "tools.installRequired": "yt-dlp と ffmpeg をインストール",
   "tools.checkOnLaunch": "起動時にツールのアップデートを確認",
   "tools.checkOnLaunchHint": "TapeBox の起動時に一度、yt-dlp、ffmpeg、Deno の新しいリリースを探します。",
   "tools.cancelling": "キャンセル中…",

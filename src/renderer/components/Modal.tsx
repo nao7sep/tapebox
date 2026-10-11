@@ -5,6 +5,7 @@ import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposi
 import { CloseIcon } from './Icon'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
 import { useI18n } from '@renderer/i18n/I18nContext'
+import { useWindowCloseGuard } from '@renderer/lib/windowClose'
 
 /**
  * Four tiers, by content:
@@ -66,6 +67,7 @@ export function Modal({ title,
   const panelRef = useRef<HTMLDivElement | null>(null)
   const titleId = useId()
   const t = useI18n()
+  useWindowCloseGuard(() => ({ dirty: false, busy: closeDisabled }))
 
   // Focus containment + scroll lock for the modal's lifetime. Mount-only: the
   // open-time focus capture and the restore on close must each happen exactly

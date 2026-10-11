@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import type { IpcCalls } from '@shared/ipc-contract'
 import type { IpcReply } from '@shared/ipc-reply'
@@ -22,7 +22,7 @@ import { ipcRequestSchemas } from './schemas'
  */
 export function handle<K extends keyof IpcCalls>(
   channel: K,
-  handler: (req: IpcCalls[K]['req']) => IpcCalls[K]['res'] | Promise<IpcCalls[K]['res']>,
+  handler: (req: IpcCalls[K]['req'], event: IpcMainInvokeEvent) => IpcCalls[K]['res'] | Promise<IpcCalls[K]['res']>,
 ): void {
   // Indexed by a generic K, the map's value widens to a union; the cast re-pins it
   // to this channel's schema, which the `satisfies` clause in schemas.ts guarantees
@@ -37,7 +37,7 @@ export function handle<K extends keyof IpcCalls>(
       return { ok: false, failure: { code: 'internal', userMessage: null } }
     }
     try {
-      return { ok: true, value: await handler(req) }
+      return { ok: true, value: await handler(req, _event) }
     } catch (err) {
       if (err instanceof UserFacingError) {
         log.warn('ipc handler refused', { channel, error: describeError(err) })

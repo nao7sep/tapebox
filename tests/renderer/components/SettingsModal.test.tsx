@@ -9,6 +9,7 @@ vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
 
 import { SettingsModal } from '@renderer/components/SettingsModal'
+import { windowCloseState } from '@renderer/lib/windowClose'
 import { AI_ROLES, SUPPORTED_MODELS } from '@shared/ai-models'
 import { useToastStore } from '@renderer/store/toast'
 
@@ -283,11 +284,13 @@ describe('SettingsModal', () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
     await click('AI')
+    expect(windowCloseState().dirty).toBe(false)
     const input = document.querySelector('input[type="password"]') as HTMLInputElement
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'test-key')
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
+    expect(windowCloseState().dirty).toBe(true)
     await click('Save')
     expect(ipcInvoke).toHaveBeenCalledWith('settings:setApiKey', { apiKey: 'test-key' })
     expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'settings:update')).toBe(false)

@@ -430,6 +430,8 @@
   "tools.gateSaveFailed": "更新检查设置未保存。仍在使用之前的设置；请重试。",
   "tools.toolReason": "{tool}：{reason}",
   "tools.intro": "yt-dlp 负责下载媒体，ffmpeg 负责处理；Deno 是 yt-dlp 在需要它的网站上使用的 JavaScript 运行时。",
+  "tools.requiredHint": "下载需要 yt-dlp 和 ffmpeg。Deno 为可选工具。",
+  "tools.installRequired": "安装 yt-dlp 和 ffmpeg",
   "tools.checkOnLaunch": "启动时检查工具更新",
   "tools.checkOnLaunchHint": "TapeBox 启动时检查一次 yt-dlp、ffmpeg 和 Deno 是否有新版本。",
   "tools.cancelling": "正在取消…",

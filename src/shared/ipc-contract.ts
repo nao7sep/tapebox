@@ -137,6 +137,7 @@ export type IpcCalls = {
   // ── Runtime info ─────────────────────────────────────────────────────────
   // Read-only facts about the current process.
   'app:runtimeInfo':       { req: undefined;                         res: RuntimeInfo }
+  'app:closeWindow':       { req: undefined;                         res: void }
   'app:openExternal':      { req: { url: string };                   res: void }
   // Report whether a tape is currently playing, so main can hold or release an OS
   // wake lock that keeps the machine (and display) awake during playback. Gated
@@ -263,6 +264,7 @@ export type ScanResult = {
  * Renderer subscribes through preload's contextBridge wrapper.
  */
 export type IpcEvents = {
+  'app:windowCloseRequested': null
   'tapes:added':       Tape[]
   'tapes:updated':     Tape
   'tapes:progress':    {

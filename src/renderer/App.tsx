@@ -41,6 +41,7 @@ import { Toaster } from '@renderer/components/Toaster'
 import { TapeImportReceiver } from '@renderer/components/TapeImportReceiver'
 import { InlineError, Spinner } from '@renderer/components/ui'
 import { LayoutWriteResult } from '@renderer/components/LayoutWriteResult'
+import { WindowCloseGuard } from '@renderer/components/WindowCloseGuard'
 
 export default function App() {
   const t = useI18n()
@@ -81,6 +82,7 @@ export default function App() {
   if (!ready) {
     return (
       <main className="flex h-screen flex-col">
+        <WindowCloseGuard />
         <header className="shrink-0 border-b border-line px-4 py-3">
           <h1 className="text-xl font-medium tracking-tight">TapeBox</h1>
         </header>
@@ -324,6 +326,7 @@ function HydratedApp() {
 
         <StatusBar />
         <Toaster />
+        <WindowCloseGuard />
     </main>
     </div>
   )

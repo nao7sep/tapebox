@@ -22,6 +22,7 @@ import { useBoxActionResultsStore, type BoxAction } from '@renderer/store/boxAct
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
 import type { MessageKey } from '@shared/i18n/catalogues'
+import { isWindowClosePending, useWindowCloseGuard } from '@renderer/lib/windowClose'
 
 const CLOSE_ACTION_LABEL: Record<BoxAction, MessageKey> = {
   create: 'boxes.closeCreateResult',
@@ -53,12 +54,25 @@ export function BoxList({
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
   const selectBox = useArchiveStore((s) => s.selectBox)
 
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [draftName, setDraftName] = useState('')
+  const [editingId, updateEditingId] = useState<string | null>(null)
+  const [draftName, updateDraftName] = useState('')
   // Read by a rename that fails after its editor closed: it reopens with the name
   // the user typed only while no other edit has started.
   const editingRef = useRef(editingId)
-  editingRef.current = editingId
+  const draftRef = useRef(draftName)
+  const pendingRenames = useRef(0)
+  function setEditingId(id: string | null) {
+    editingRef.current = id
+    updateEditingId(id)
+  }
+  function setDraftName(name: string) {
+    draftRef.current = name
+    updateDraftName(name)
+  }
+  useWindowCloseGuard(() => ({
+    dirty: editingRef.current !== null && draftRef.current !== boxes.find((box) => box.id === editingRef.current)?.name,
+    busy: pendingRenames.current > 0,
+  }))
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const actionErrors = useBoxActionResultsStore((state) => state.results)
   const setActionResult = useBoxActionResultsStore((state) => state.setResult)
@@ -110,6 +124,7 @@ export function BoxList({
     if (boxNameError(name, otherNames(id))) return
     setEditingId(null)
     clearActionError('rename')
+    pendingRenames.current += 1
     try {
       await ipcInvoke('boxes:rename', { boxId: id, name })
     } catch (error) {
@@ -118,13 +133,17 @@ export function BoxList({
         setDraftName(name)
         setEditingId(id)
       }
+    } finally {
+      pendingRenames.current -= 1
     }
   }
 
-  // Blur: a focus loss can't keep editing, so commit only when valid, else discard.
-  function commitOrDiscard(id: string) {
+  // Window departure and the window's discard question are not submissions.
+  // Invalid input stays editable; a blur must never silently erase a draft.
+  function commitOnBlur(id: string) {
+    if (!document.hasFocus() || isWindowClosePending()) return
     const name = draftName.trim()
-    if (!name || boxNameError(name, otherNames(id))) { setEditingId(null); return }
+    if (!name || boxNameError(name, otherNames(id))) return
     void commitRename(id)
   }
 
@@ -190,7 +209,7 @@ export function BoxList({
                 value={draftName}
                 onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => setDraftName(e.target.value)}
-                onBlur={() => commitOrDiscard(g.id)}
+                onBlur={() => commitOnBlur(g.id)}
                 onCompositionStart={composing.onCompositionStart}
                 onCompositionEnd={composing.onCompositionEnd}
                 onKeyDown={(e) => {

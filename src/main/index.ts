@@ -27,6 +27,7 @@ import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
+import { configureWindowClose } from './window-close.js'
 import { createQuit, type QuitChoice } from './quit.js'
 import { forceExitProcess } from './force-exit.js'
 import { killOwnedProcessesNow } from './io/spawn.js'
@@ -69,6 +70,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const options = windowOptions(join(__dirname, '../preload/index.cjs'), windowBackground())
   const win = createWindowWithUsablePersistedBounds('main', () => new BrowserWindow(options))
   mainWindow = win
+  configureWindowClose(win)
   configureWindowActivity(app, win)
   configureWindowMinimum(win, () => ({ width: WINDOW_MIN_WIDTH, height: WINDOW_MIN_HEIGHT }),
     (error) => log.warn('window minimum could not be updated', { error: describeError(error) }))

@@ -455,6 +455,8 @@
   "tools.gateSaveFailed": "The update-check setting was not saved. The previous setting remains in use; try again.",
   "tools.toolReason": "{tool}: {reason}",
   "tools.intro": "yt-dlp downloads media and ffmpeg processes it; Deno is the JavaScript runtime yt-dlp uses for sites that need it.",
+  "tools.requiredHint": "Downloads require yt-dlp and ffmpeg. Deno is optional.",
+  "tools.installRequired": "Install yt-dlp and ffmpeg",
   "tools.checkOnLaunch": "Check for tool updates on launch",
   "tools.checkOnLaunchHint": "Look for newer yt-dlp, ffmpeg, and Deno releases once when TapeBox launches.",
   "tools.cancelling": "Cancelling…",

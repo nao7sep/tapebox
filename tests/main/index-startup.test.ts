@@ -67,6 +67,7 @@ vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn(), followOsThemeChan
 vi.mock('@main/window-state-recovery', () => ({ createWindowWithUsablePersistedBounds: (_key: string, make: () => unknown) => make() }))
 vi.mock('@main/window-minimum', () => ({ configureWindowMinimum: vi.fn() }))
 vi.mock('@main/window-activity', () => ({ configureWindowActivity: vi.fn() }))
+vi.mock('@main/window-close', () => ({ configureWindowClose: vi.fn() }))
 vi.mock('@main/store/backupStore', () => ({ closeBackupStore: vi.fn(async () => {}) }))
 vi.mock('@main/plain-message-dialog', () => ({ showPlainMessageDialog: vi.fn() }))
 vi.mock('@main/force-exit', () => ({ forceExitProcess: vi.fn(() => { order.push('force-exit') }) }))

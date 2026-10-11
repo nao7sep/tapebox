@@ -128,6 +128,7 @@ export const ipcRequestSchemas = {
 
   // ── Runtime info ──────────────────────────────────────────────────────────
   'app:runtimeInfo':       z.undefined(),
+  'app:closeWindow':       z.undefined(),
   'app:openExternal':      z.object({ url: z.url() }),
   'app:setVideoPlaying':   z.object({ playing: z.boolean() }),
 

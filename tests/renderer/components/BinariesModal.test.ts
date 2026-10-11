@@ -68,6 +68,41 @@ function button(text: string): HTMLButtonElement {
 }
 
 describe('BinariesModal check and acquisition outcomes', () => {
+  it('installs the missing required pair only after a click, with no duplicate attempts', async () => {
+    useBinariesStore.setState({ statuses: [status(), status({ name: 'ffmpeg' }), status({ name: 'deno' })] })
+    ipcInvoke.mockImplementation(() => new Promise(() => {}))
+    await mount()
+    expect(document.body.textContent).toContain('Downloads require yt-dlp and ffmpeg. Deno is optional.')
+    expect(ipcInvoke).not.toHaveBeenCalled()
+    await act(async () => button('Install yt-dlp and ffmpeg').click())
+    expect(ipcInvoke.mock.calls.map((call) => call[1].name)).toEqual(['yt-dlp', 'ffmpeg'])
+    expect(button('Install yt-dlp and ffmpeg').disabled).toBe(true)
+    await act(async () => button('Install yt-dlp and ffmpeg').click())
+    expect(ipcInvoke).toHaveBeenCalledTimes(2)
+    expect(button('Install').disabled, 'Deno keeps its individual action').toBe(false)
+  })
+
+  it('keeps installed tools and retries only the missing tool after partial failure', async () => {
+    useBinariesStore.setState({ statuses: [status(), status({ name: 'ffmpeg' }), status({ name: 'deno' })] })
+    ipcInvoke.mockImplementation((_channel, request: { name: string; operationId: string }) => {
+      if (request.name === 'ffmpeg') return Promise.reject(new Error('download failed'))
+      return Promise.resolve({ outcome: 'installed', operationId: request.operationId, status: status({ present: true, installedVersion: '1' }) })
+    })
+    await mount()
+    await act(async () => button('Install yt-dlp and ffmpeg').click())
+    expect(document.body.textContent).toContain('ffmpeg could not be installed or updated.')
+    ipcInvoke.mockClear()
+    await act(async () => button('Install yt-dlp and ffmpeg').click())
+    expect(ipcInvoke.mock.calls.map((call) => call[1].name)).toEqual(['ffmpeg'])
+  })
+
+  it('hides the combined action once both required tools are present', async () => {
+    useBinariesStore.setState({ statuses: [status({ present: true }), status({ name: 'ffmpeg', present: true }), status({ name: 'deno' })] })
+    await mount()
+    expect(document.body.textContent).not.toContain('Install yt-dlp and ffmpeg')
+    expect(button('Install').disabled).toBe(false)
+  })
+
   it('immediately replaces Install from the authoritative terminal row', async () => {
     ipcInvoke.mockImplementationOnce((_channel, request: { operationId: string }) =>
       Promise.resolve({

@@ -430,6 +430,8 @@
   "tools.gateSaveFailed": "업데이트 확인 설정을 저장하지 못했습니다. 이전 설정이 유지됩니다. 다시 시도하십시오.",
   "tools.toolReason": "{tool}: {reason}",
   "tools.intro": "yt-dlp는 미디어를 다운로드하고 ffmpeg는 이를 처리합니다. Deno는 필요한 사이트에서 yt-dlp가 사용하는 JavaScript 런타임입니다.",
+  "tools.requiredHint": "다운로드에는 yt-dlp와 ffmpeg가 필요합니다. Deno는 선택 사항입니다.",
+  "tools.installRequired": "yt-dlp 및 ffmpeg 설치",
   "tools.checkOnLaunch": "시작할 때 도구 업데이트 확인",
   "tools.checkOnLaunchHint": "TapeBox를 시작할 때 한 번 yt-dlp, ffmpeg, Deno의 새 릴리스를 찾습니다.",
   "tools.cancelling": "취소하는 중…",

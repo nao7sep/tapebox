@@ -1,3 +1,4 @@
+import { useWindowCloseGuard } from '@renderer/lib/windowClose'
 import { useState, type RefObject } from 'react'
 import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -37,10 +38,11 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   const [error, setError] = useState<Message | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const t = useI18n()
+  const edited = name !== currentName || dir !== defaultDir || deleteFromApp !== (settings?.deleteAfterExport ?? true)
+  useWindowCloseGuard(() => ({ dirty: edited, busy: exporting }))
 
   function requestClose() {
     if (exporting) return
-    const edited = name !== currentName || dir !== defaultDir || deleteFromApp !== (settings?.deleteAfterExport ?? true)
     if (edited) setConfirmDiscard(true)
     else onClose()
   }
