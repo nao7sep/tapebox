@@ -39,11 +39,18 @@ describe('optimistic field ownership', () => {
 })
 
 describe('settleOptimisticOrder', () => {
+  it.each([true, false])('retires physical success and failure even when result ownership is current: %s', async (current) => {
+    const finished = vi.fn()
+    settleOptimisticOrder(Promise.resolve(), () => current, vi.fn(), vi.fn(), vi.fn(), finished)
+    settleOptimisticOrder(Promise.reject(new Error('save failed')), () => current, vi.fn(), vi.fn(), vi.fn(), finished)
+    await Promise.resolve()
+    expect(finished).toHaveBeenCalledTimes(2)
+  })
   it('rolls back and reports when the failed projection is still current', async () => {
     const rollback = vi.fn()
     const succeed = vi.fn()
     const report = vi.fn()
-    settleOptimisticOrder(Promise.reject(new Error('disk full')), () => true, rollback, succeed, report)
+    settleOptimisticOrder(Promise.reject(new Error('disk full')), () => true, rollback, succeed, report, vi.fn())
 
     await Promise.resolve()
     expect(rollback).toHaveBeenCalledOnce()
@@ -55,7 +62,7 @@ describe('settleOptimisticOrder', () => {
     const rollback = vi.fn()
     const succeed = vi.fn()
     const report = vi.fn()
-    settleOptimisticOrder(Promise.reject(new Error('older failed')), () => false, rollback, succeed, report)
+    settleOptimisticOrder(Promise.reject(new Error('older failed')), () => false, rollback, succeed, report, vi.fn())
 
     await Promise.resolve()
     expect(rollback).not.toHaveBeenCalled()
@@ -67,7 +74,7 @@ describe('settleOptimisticOrder', () => {
     const rollback = vi.fn()
     const succeed = vi.fn()
     const report = vi.fn()
-    settleOptimisticOrder(Promise.resolve(), () => true, rollback, succeed, report)
+    settleOptimisticOrder(Promise.resolve(), () => true, rollback, succeed, report, vi.fn())
 
     await Promise.resolve()
     expect(succeed).toHaveBeenCalledOnce()

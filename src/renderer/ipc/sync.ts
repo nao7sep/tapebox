@@ -14,6 +14,7 @@ import type { Layout } from '@shared/layout'
 import type { Settings } from '@shared/settings'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
 import { useToastStore } from '@renderer/store/toast'
+import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { message } from '@shared/i18n/translate'
 
 /** Shown when main reports that library changes are not reaching disk. */
@@ -44,6 +45,7 @@ export async function pullInitialSyncState(): Promise<InitialSyncState> {
 }
 
 export function applyInitialSyncState(state: InitialSyncState): void {
+  useOrderFailuresStore.getState().confirmCatalog(state.tapes, state.boxes)
   useTapesStore.getState().setAll(state.tapes)
   useBoxesStore.getState().setBoxes(state.boxes)
   useBinariesStore.getState().setStatuses(state.binaries)
@@ -74,6 +76,7 @@ export function startIpcSync(): IpcSync {
   // rather than a growing history of repeated progress or catalog events.
   function upsert(tapes: Tape[]): void {
     for (const tape of tapes) pending?.tapes.set(tape.id, tape)
+    useOrderFailuresStore.getState().confirmTapes(tapes)
     useTapesStore.getState().upsertMany(tapes)
   }
 
@@ -83,6 +86,7 @@ export function startIpcSync(): IpcSync {
     ipcOn('tapes:updatedMany', upsert),
     ipcOn('tapes:removed',     ({ tapeIds }) => {
       for (const id of tapeIds) pending?.tapes.set(id, null)
+      useOrderFailuresStore.getState().confirmTapeRemoval(tapeIds)
       useTapesStore.getState().removeMany(tapeIds)
       tapeIds.forEach((id) => {
         useDownloadLogStore.getState().reset(id)
@@ -91,6 +95,7 @@ export function startIpcSync(): IpcSync {
     }),
     ipcOn('boxes:changed',    (boxes) => {
       if (pending) pending.boxes = boxes
+      useOrderFailuresStore.getState().confirmBoxes(boxes)
       useBoxesStore.getState().setBoxes(boxes)
     }),
     ipcOn('library:saveFailed', () => useToastStore.getState().notify(LIBRARY_SAVE_FAILED_MESSAGE, 'error')),

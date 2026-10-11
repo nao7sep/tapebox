@@ -68,16 +68,17 @@ export function TapeList() {
     const reordered = moveArrayItem(visible, from, to)
     // Pointer and keyboard reorder share this one optimistic + durable operation.
     const optimistic = reordered.map((t, i) => ({ ...t, order: i }))
-    const attempt = useOrderFailuresStore.getState().beginAttempt('inbox')
+    const attempt = useOrderFailuresStore.getState().beginAttempt('inbox', visible)
     useTapesStore.getState().upsertMany(optimistic)
     settleOptimisticOrder(
       ipcInvoke('tapes:reorder', { orderedIds: reordered.map((t) => t.id) }),
       () => useOrderFailuresStore.getState().isCurrentAttempt('inbox', attempt),
       () => useTapesStore.setState((state) => ({
-        tapes: rollbackOptimisticOrder(state.tapes, visible, optimistic, isInSameTapeList),
+        tapes: rollbackOptimisticOrder(state.tapes, useOrderFailuresStore.getState().confirmedOrder('inbox'), optimistic, isInSameTapeList),
       })),
       () => setOrderError(null),
       (error) => setOrderError(presentFailure(error, message('tapes.orderSaveFailed'), 'tape order save failed')),
+      () => useOrderFailuresStore.getState().finishAttempt('inbox', attempt),
     )
   }
 

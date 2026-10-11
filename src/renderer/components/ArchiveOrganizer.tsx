@@ -106,16 +106,17 @@ export function ArchiveOrganizer() {
     const next = moveArrayItem(ids, from, to)
     const orderById = new Map(next.map((id, i) => [id, i]))
     const optimistic = boxes.map((box) => ({ ...box, order: orderById.get(box.id) ?? box.order }))
-    const attempt = useOrderFailuresStore.getState().beginAttempt('boxes')
+    const attempt = useOrderFailuresStore.getState().beginAttempt('boxes', boxes)
     useBoxesStore.getState().setBoxes(optimistic)
     settleOptimisticOrder(
       ipcInvoke('boxes:reorder', { orderedIds: next }),
       () => useOrderFailuresStore.getState().isCurrentAttempt('boxes', attempt),
       () => useBoxesStore.setState((state) => ({
-        boxes: rollbackOptimisticOrder(state.boxes, boxes, optimistic),
+        boxes: rollbackOptimisticOrder(state.boxes, useOrderFailuresStore.getState().confirmedOrder('boxes'), optimistic),
       })),
       () => setBoxOrderError(null),
       (error) => setBoxOrderError(presentFailure(error, message('archive.boxOrderSaveFailed'), 'box order save failed')),
+      () => useOrderFailuresStore.getState().finishAttempt('boxes', attempt),
     )
   }
 
@@ -125,16 +126,17 @@ export function ArchiveOrganizer() {
     const reordered = moveArrayItem(tapes, from, to)
     const optimistic = reordered.map((tape, i) => ({ ...tape, order: i }))
     const list = `archive:${tapeListKey}` as const
-    const attempt = useOrderFailuresStore.getState().beginAttempt(list)
+    const attempt = useOrderFailuresStore.getState().beginAttempt(list, tapes)
     useTapesStore.getState().upsertMany(optimistic)
     settleOptimisticOrder(
       ipcInvoke('tapes:reorder', { orderedIds: reordered.map((tape) => tape.id) }),
       () => useOrderFailuresStore.getState().isCurrentAttempt(list, attempt),
       () => useTapesStore.setState((state) => ({
-        tapes: rollbackOptimisticOrder(state.tapes, tapes, optimistic, isInSameTapeList),
+        tapes: rollbackOptimisticOrder(state.tapes, useOrderFailuresStore.getState().confirmedOrder(list), optimistic, isInSameTapeList),
       })),
       () => setTapeOrderError(tapeListKey, null),
       (error) => setTapeOrderError(tapeListKey, presentFailure(error, message('tapes.orderSaveFailed'), 'archive tape order save failed')),
+      () => useOrderFailuresStore.getState().finishAttempt(list, attempt),
     )
   }
 

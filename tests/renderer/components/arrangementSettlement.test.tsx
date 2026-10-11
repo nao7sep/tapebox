@@ -110,7 +110,7 @@ beforeEach(() => {
   useSelectionStore.setState({ selectedId: null })
   useArchiveStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
   useLayoutStore.getState().setHydratedLayout(defaultLayout)
-  useOrderFailuresStore.setState({ inbox: null, boxes: null, archiveTapes: {}, attempts: {} })
+  useOrderFailuresStore.setState({ inbox: null, boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
   useTapeActionResultsStore.setState({ byTape: {} })
   useBoxActionResultsStore.setState({ results: {} })
   const host = document.createElement('div')
@@ -258,10 +258,14 @@ describe.each([
     const latest = useTapesStore.getState().tapes
     await act(async () => older.reject(new Error('superseded remount order rejected')))
 
+    const list = archived ? 'archive:unboxed' : 'inbox'
+    expect(useOrderFailuresStore.getState().pending[list]?.active.size).toBe(1)
+
     expect(useTapesStore.getState().tapes).toBe(latest)
     const result = archived ? useOrderFailuresStore.getState().archiveTapes.unboxed : useOrderFailuresStore.getState().inbox
     expect(result ?? null).toBeNull()
     await act(async () => newer.resolve())
+    expect(useOrderFailuresStore.getState().pending).toEqual({})
   })
 
   it('keeps a newer reorder and its retained result when the older request rejects', async () => {
@@ -376,8 +380,11 @@ describe('box reorder settlement through ArchiveOrganizer', () => {
     const latest = useBoxesStore.getState().boxes
     await act(async () => older.reject(new Error('superseded remount box order rejected')))
 
+    expect(useOrderFailuresStore.getState().pending.boxes?.active.size).toBe(1)
+
     expect(useBoxesStore.getState().boxes).toBe(latest)
     expect(useOrderFailuresStore.getState().boxes).toBeNull()
     await act(async () => newer.resolve())
+    expect(useOrderFailuresStore.getState().pending).toEqual({})
   })
 })

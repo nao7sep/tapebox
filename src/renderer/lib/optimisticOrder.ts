@@ -1,5 +1,4 @@
 import type { Tape } from '@shared/domain'
-import { rollbackOptimisticFields } from '@renderer/lib/optimisticFields'
 
 /** Return one collection item moved between valid indices. */
 export function moveArrayItem<T>(items: readonly T[], from: number, to: number): T[] {
@@ -9,7 +8,7 @@ export function moveArrayItem<T>(items: readonly T[], from: number, to: number):
   return next
 }
 
-type OrderedItem = { id: string; order: number }
+export type OrderedItem = { id: string; order: number }
 
 /** A tape's order belongs to its current Inbox, Unboxed, or box tape list. */
 export function isInSameTapeList(
@@ -23,7 +22,7 @@ export function isInSameTapeList(
 /** Roll back order on current members, preserving additions, removals and metadata. */
 export function rollbackOptimisticOrder<T extends OrderedItem>(
   current: readonly T[],
-  before: readonly T[],
+  before: readonly OrderedItem[],
   optimistic: readonly T[],
   eligible?: (current: T, submitted: T) => boolean,
 ): T[] {
@@ -33,7 +32,7 @@ export function rollbackOptimisticOrder<T extends OrderedItem>(
     const previous = beforeById.get(item.id)
     const submitted = optimisticById.get(item.id)
     if (!previous || !submitted || (eligible && !eligible(item, submitted))) return item
-    return rollbackOptimisticFields(item, previous, { order: submitted.order })
+    return item.order === submitted.order && item.order !== previous.order ? { ...item, order: previous.order } : item
   })
 }
 
@@ -48,17 +47,22 @@ export function settleOptimisticOrder(
   rollback: () => void,
   succeed: () => void,
   fail: (error: unknown) => void,
+  finish: () => void,
 ): void {
   void persistence.then(
     () => {
-      if (isStillCurrent()) succeed()
+      try {
+        if (isStillCurrent()) succeed()
+      } finally { finish() }
     },
     (error) => {
       // A later reorder of this list owns its outcome, including across view
       // remounts. Main has already logged a superseded write failure.
-      if (!isStillCurrent()) return
-      rollback()
-      fail(error)
+      try {
+        if (!isStillCurrent()) return
+        rollback()
+        fail(error)
+      } finally { finish() }
     },
   )
 }
