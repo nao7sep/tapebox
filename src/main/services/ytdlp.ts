@@ -280,7 +280,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
   const run = collectRun(child, { kind: 'download', tapeId: opts.tapeId, scanId: null, url: opts.url, args })
 
   const stall = watchForStall((stalled) => opts.onStall?.(stalled))
-  const lineBuffer = makeLineBuffer((line) => {
+  const onLine = (line: string) => {
     if (!line) return
     stall.line(line)
     if (line.startsWith(FINAL_PATH_MARKER)) {
@@ -305,10 +305,14 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     // Streamed live so the UI can show what yt-dlp says as it happens. Markers and
     // progress lines already returned above.
     opts.onLog?.(run.mask(line))
-  })
+  }
+  // Chunks from the two pipes can interleave mid-line. Each pipe owns its
+  // remainder; only completed lines share the marker/progress/log handler.
+  const stdoutLines = makeLineBuffer(onLine)
+  const stderrLines = makeLineBuffer(onLine)
 
-  child.stdout.on('data', lineBuffer.feed)
-  child.stderr.on('data', lineBuffer.feed)
+  child.stdout.on('data', stdoutLines.feed)
+  child.stderr.on('data', stderrLines.feed)
 
   try {
     await waitForExit(child, { command: 'yt-dlp download' })
@@ -321,7 +325,8 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     }
     throw err
   } finally {
-    lineBuffer.flush()
+    stdoutLines.flush()
+    stderrLines.flush()
     stall.stop()
     run.record()
   }
