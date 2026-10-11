@@ -155,5 +155,34 @@ describe('queue shutdown', () => {
     await new Promise((resolve) => setTimeout(resolve, 10))
     queue.tick()
     expect(jobs.started).toEqual(['a', 'b'])
+    tapes.length = 0
+    jobs.started.length = 0
+    jobs.stopped.length = 0
+    jobs.settled.length = 0
+  })
+})
+
+
+describe('queue diagnostic credentials', () => {
+  it('masks signed source URLs in the job-start log without changing the job input', async () => {
+    vi.resetModules()
+    const queue = await import('@main/queue/manager')
+    const { log } = await import('@main/io/logger')
+    const tape = queued('signed')
+    tape.sourceUrl = 'https://user:password@example.com/video?id=42&sig=secret&pot=proof'
+    tapes.push(tape)
+    try {
+      queue.tick()
+      expect(log.info).toHaveBeenCalledWith('job start', {
+        tapeId: 'signed', url: 'https://[REDACTED]@example.com/video?id=42&sig=[REDACTED]&pot=[REDACTED]',
+      })
+      expect(tape.sourceUrl).toContain('sig=secret&pot=proof')
+    } finally {
+      await queue.shutdown()
+      tapes.length = 0
+      jobs.started.length = 0
+      jobs.stopped.length = 0
+      jobs.settled.length = 0
+    }
   })
 })

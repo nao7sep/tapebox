@@ -71,14 +71,18 @@ export async function generateSlug(
       { signal, isRetryable: isRetryableAiError, retryAfterMs: aiRetryAfterMs },
     )
   } catch (err) {
-    // A Stop is the user's own choice; it stays a plain abort.
-    if (signal.aborted) throw err
-    throw aiRequestFailure(err)
+    // Retry classification has finished. Keep cancellation as cancellation, but
+    // mask every diagnostic/presentation copy before it leaves the key owner.
+    throw maskCredentials(signal.aborted ? err : aiRequestFailure(err), [apiKey])
   }
   // Result line for the external boundary (the request was logged above): the
   // finish_reason distinguishes a normal stop from a length/content-filter cutoff.
   log.info('ai: generateSlug response', { tapeId: opts.tapeId, model, finishReason: res.choices[0]?.finish_reason })
-  return completionSlug(res.choices[0])
+  try {
+    return completionSlug(res.choices[0])
+  } catch (err) {
+    throw maskCredentials(err, [apiKey])
+  }
 }
 
 type SentRequest = { method: string; url: string; headers: Record<string, string>; body: unknown }

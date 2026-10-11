@@ -20,6 +20,13 @@ describe('maskYtdlpOutput', () => {
     expect(info.formats[0]!.cookies).toContain('browser-secret')
   })
 
+  it('masks a cookie value cut at every point, including halfway through an escape', () => {
+    const value = JSON.stringify('sid=secret"quoted\\tail').slice(1, -1)
+    for (let end = 0; end <= value.length; end++) {
+      expect(maskYtdlpOutput('{"cookies":"' + value.slice(0, end))).toBe('{"cookies":"' + REDACTED)
+    }
+  })
+
   it('masks an interrupted JSON string and signed URLs in non-JSON error output', () => {
     expect(maskYtdlpOutput('{"cookies":"session=unfinished')).toBe(`{"cookies":"${REDACTED}`)
     expect(maskYtdlpOutput('ERROR https://media.test/v?signature=secret&x=1')).toBe(`ERROR https://media.test/v?signature=${REDACTED}&x=1`)

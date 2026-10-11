@@ -2,7 +2,8 @@ import { useLayoutEffect, useState } from 'react'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
-import { setWindowClosePending, windowCloseState } from '@renderer/lib/windowClose'
+import { setWindowClosePending, useWindowCloseGuard, windowCloseState } from '@renderer/lib/windowClose'
+import { useBoxesStore } from '@renderer/store/boxes'
 import { DiscardChangesPrompt } from './DiscardChangesPrompt'
 
 /** macOS closes the workspace without quitting. The native close request
@@ -11,6 +12,15 @@ import { DiscardChangesPrompt } from './DiscardChangesPrompt'
  * window close; OS session end follows that same non-prompting exit boundary. */
 export function WindowCloseGuard() {
   const [asking, setAsking] = useState(false)
+  // The box editor may be unmounted while Inbox is visible. Its session draft
+  // and pending save still participate in native-close consent.
+  useWindowCloseGuard(() => {
+    const { boxes, editingId, draftName, pendingRenames } = useBoxesStore.getState()
+    return {
+      dirty: editingId !== null && draftName !== boxes.find((box) => box.id === editingId)?.name,
+      busy: pendingRenames > 0,
+    }
+  })
 
   function question(value: boolean) {
     setWindowClosePending(value)

@@ -21,10 +21,10 @@ export const REDACTED = '[REDACTED]'
  */
 export function maskYtdlpOutput(text: string): string {
   const fields = text.replace(
-    /(^|[,{]\s*)"(cookies|cookie|authorization|proxy-authorization)"(\s*:\s*)"((?:\\.|[^"\\])*)("|$)/gim,
+    /(^|[,{]\s*)"(cookies|cookie|authorization|proxy-authorization)"(\s*:\s*)"((?:\\.|[^"\\])*)("|\\?$)/gim,
     (_match, before: string, key: string, separator: string, value: string, end: string) => {
       const scheme = /authorization$/i.test(key) ? /^(Basic|Bearer|Digest|Token|Negotiate)\s+/i.exec(value)?.[0] ?? '' : ''
-      return `${before}"${key}"${separator}"${scheme}${REDACTED}${end}`
+      return `${before}"${key}"${separator}"${scheme}${REDACTED}${end === '"' ? end : ''}`
     },
   )
   return fields.replace(/https?:\/\/[^\s"<>\\]+/gi, (url) => url.replace(
@@ -64,6 +64,19 @@ export function maskCredentials<T>(value: T, credentials: readonly string[]): T 
       const copy: unknown[] = []
       seen.set(current, copy)
       for (const item of current) copy.push(walk(item))
+      return copy
+    }
+    // Terminal errors cross into logging and presentation after retry decisions.
+    // Copy their non-enumerable message, stack and cause too, retaining the type
+    // and authored UserFacingError fields without mutating the provider error.
+    if (current instanceof Error) {
+      const copy = Object.create(Object.getPrototypeOf(current)) as Error
+      seen.set(current, copy)
+      for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(current))) {
+        Object.defineProperty(copy, key, 'value' in descriptor
+          ? { ...descriptor, value: walk(descriptor.value) }
+          : descriptor)
+      }
       return copy
     }
     const copy: Record<string, unknown> = {}

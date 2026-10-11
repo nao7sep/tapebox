@@ -26,7 +26,7 @@ beforeEach(async () => {
   HTMLElement.prototype.scrollIntoView = vi.fn()
   bridge.invoke.mockReset().mockResolvedValue(undefined)
   vi.spyOn(document, 'hasFocus').mockReturnValue(true)
-  useBoxesStore.setState({ boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
+  useBoxesStore.setState({ editingId: null, draftName: '', pendingRenames: 0, boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
   useBoxActionResultsStore.setState({ results: {} })
   const host = document.createElement('div')
   document.body.append(host)
@@ -80,6 +80,39 @@ describe('box draft on workspace close', () => {
     await act(async () => fail(new Error('failed save')))
     expect(windowCloseState()).toEqual({ dirty: true, busy: false })
     expect(input().value).toBe('Keep on failure')
+    expect(document.body.textContent).toContain('The box could not be renamed.')
+  })
+})
+
+
+async function showArchive(visible: boolean) {
+  await act(async () => root.render(createElement(Fragment, null,
+    visible ? createElement(BoxList, { onReorder: () => {}, orderError: null, onDismissOrderError: () => {} }) : null,
+    createElement(WindowCloseGuard),
+  )))
+}
+
+describe('box draft across Archive/Inbox navigation', () => {
+  it('retains exact invalid text while the Archive view is absent', async () => {
+    await type('   ')
+    await showArchive(false)
+    expect(windowCloseState().dirty).toBe(true)
+    await showArchive(true)
+    expect(input().value).toBe('   ')
+    expect(bridge.invoke).not.toHaveBeenCalled()
+  })
+
+  it('keeps a pending rename owned and restores the exact failed draft after navigation', async () => {
+    let fail!: (reason: Error) => void
+    bridge.invoke.mockImplementation(() => new Promise((_resolve, reject) => { fail = reject }))
+    await type('  Keep on failure  ')
+    await act(async () => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    await showArchive(false)
+    expect(windowCloseState().busy).toBe(true)
+    await act(async () => fail(new Error('failed save')))
+    expect(windowCloseState()).toEqual({ dirty: true, busy: false })
+    await showArchive(true)
+    expect(input().value).toBe('  Keep on failure  ')
     expect(document.body.textContent).toContain('The box could not be renamed.')
   })
 })

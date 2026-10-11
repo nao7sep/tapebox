@@ -32,10 +32,11 @@ vi.mock('@main/store/session', () => ({ getTape: () => tape }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => libraryState.dir }))
 vi.mock('@main/ipc/library', () => ({
   caseInsensitiveSiblingExists: vi.fn(async () => false),
-  removeTapes: vi.fn(async () => ({ failed: [] })),
+  removeTapes: vi.fn(async () => ({ removed: [], failed: [] as string[], busy: [] as string[] })),
 }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 
+const { removeTapes } = await import('@main/ipc/library')
 const { registerExportHandlers } = await import('@main/ipc/export')
 
 let root: string
@@ -43,6 +44,7 @@ let destinationDir: string
 
 beforeEach(async () => {
   handlers.clear()
+  vi.mocked(removeTapes).mockResolvedValue({ removed: [], failed: [], busy: [] })
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-sidecar-'))
   libraryState.dir = join(root, 'library')
   destinationDir = join(root, 'destination')
@@ -71,6 +73,15 @@ async function exportedSidecar(name: string): Promise<Record<string, unknown>> {
 }
 
 describe('export:files sidecar', () => {
+  it('reports a kept busy original without undoing the completed export', async () => {
+    vi.mocked(removeTapes).mockResolvedValue({ removed: [], failed: [], busy: [tape.id] })
+    await expect(handlers.get('export:files')!({ tapeId: tape.id, destinationDir, name: 'Holiday', deleteFromApp: true }))
+      .rejects.toMatchObject({ code: 'conflict', userMessage: { key: 'errors.exportOriginalsKept' } })
+    expect(await readFile(join(destinationDir, 'Holiday.mp4'), 'utf8')).toBe('video')
+    expect(JSON.parse(await readFile(join(destinationDir, 'Holiday.json'), 'utf8')).tapebox.name).toBe('Holiday')
+    expect(await readFile(join(libraryState.dir, 'Take.mp4'), 'utf8')).toBe('video')
+  })
+
   it('records the rename when the bundle leaves under a new name', async () => {
     const tb = await exportedSidecar('Holiday')
 

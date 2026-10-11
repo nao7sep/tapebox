@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useDroppable } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -22,7 +22,7 @@ import { useBoxActionResultsStore, type BoxAction } from '@renderer/store/boxAct
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
 import type { MessageKey } from '@shared/i18n/catalogues'
-import { isWindowClosePending, useWindowCloseGuard } from '@renderer/lib/windowClose'
+import { isWindowClosePending } from '@renderer/lib/windowClose'
 
 const CLOSE_ACTION_LABEL: Record<BoxAction, MessageKey> = {
   create: 'boxes.closeCreateResult',
@@ -54,25 +54,10 @@ export function BoxList({
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
   const selectBox = useArchiveStore((s) => s.selectBox)
 
-  const [editingId, updateEditingId] = useState<string | null>(null)
-  const [draftName, updateDraftName] = useState('')
-  // Read by a rename that fails after its editor closed: it reopens with the name
-  // the user typed only while no other edit has started.
-  const editingRef = useRef(editingId)
-  const draftRef = useRef(draftName)
-  const pendingRenames = useRef(0)
-  function setEditingId(id: string | null) {
-    editingRef.current = id
-    updateEditingId(id)
-  }
-  function setDraftName(name: string) {
-    draftRef.current = name
-    updateDraftName(name)
-  }
-  useWindowCloseGuard(() => ({
-    dirty: editingRef.current !== null && draftRef.current !== boxes.find((box) => box.id === editingRef.current)?.name,
-    busy: pendingRenames.current > 0,
-  }))
+  const editingId = useBoxesStore((s) => s.editingId)
+  const draftName = useBoxesStore((s) => s.draftName)
+  function setEditingId(id: string | null) { useBoxesStore.setState({ editingId: id }) }
+  function setDraftName(name: string) { useBoxesStore.setState({ draftName: name }) }
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const actionErrors = useBoxActionResultsStore((state) => state.results)
   const setActionResult = useBoxActionResultsStore((state) => state.setResult)
@@ -124,17 +109,17 @@ export function BoxList({
     if (boxNameError(name, otherNames(id))) return
     setEditingId(null)
     clearActionError('rename')
-    pendingRenames.current += 1
+    useBoxesStore.setState((s) => ({ pendingRenames: s.pendingRenames + 1 }))
     try {
       await ipcInvoke('boxes:rename', { boxId: id, name })
     } catch (error) {
       setActionResult('rename', presentFailure(error, message('boxes.renameFailed'), 'box rename failed'))
-      if (editingRef.current === null) {
-        setDraftName(name)
+      if (useBoxesStore.getState().editingId === null) {
+        setDraftName(draftName)
         setEditingId(id)
       }
     } finally {
-      pendingRenames.current -= 1
+      useBoxesStore.setState((s) => ({ pendingRenames: s.pendingRenames - 1 }))
     }
   }
 
