@@ -7,6 +7,8 @@ import { boxNameError, normalizeBoxName, uniqueBoxName } from '@shared/box-names
 import { mainTranslator } from '@main/i18n'
 import { frontOrders } from '@shared/order'
 import type { Box, Tape } from '@shared/domain'
+import { UserFacingError } from '@main/user-facing-error'
+import { message } from '@shared/i18n/translate'
 
 /**
  * Organization of archived tapes into boxes. A box is a named, ordered list; a
@@ -81,6 +83,9 @@ export function registerBoxHandlers(): void {
   })
 
   handle('boxes:place', async ({ tapeIds, boxId }) => {
+    if (boxId !== null && !session.getBoxes().some((box) => box.id === boxId)) {
+      throw new UserFacingError('refused', message('tapeActions.placementFailed'))
+    }
     const moving = new Set(tapeIds)
     const all = session.getTapes()
 
@@ -93,9 +98,9 @@ export function registerBoxHandlers(): void {
 
     // The moved tapes, kept in the caller's requested order, placed on top — newly
     // filed tapes land at the front of their new box.
-    const movingTapes = tapeIds
+    const movingTapes = [...moving]
       .map((id) => all.find((i) => i.id === id))
-      .filter((i): i is Tape => i !== undefined)
+      .filter((i): i is Tape => i !== undefined && i.archivedAtUtc !== null)
 
     const ordered = [...movingTapes, ...members]
     const changed: Tape[] = []

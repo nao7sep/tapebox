@@ -177,6 +177,19 @@ describe('importing a bundle', () => {
     expect(state.tapes.map((tape) => tape.id)).toEqual(['has-trip'])
   })
 
+  it('refuses a tracked bundle name before checking whether its source media is readable', async () => {
+    state.tapes = [makeTape({ id: 'has-trip', filename: 'trip.mp4', sidecarFilename: 'has-trip.json' })]
+    const sidecar = await stageBundle({ stem: 'trip', sourceUrl: 'https://example.test/other-trip', withMedia: false })
+
+    const result = await importPaths(sidecar)
+
+    expect(result.imported).toEqual([])
+    expect(result.issues).toEqual([
+      expect.objectContaining({ path: sidecar, severity: 'warning', reason: expect.stringContaining('already uses the file name trip.mp4') }),
+    ])
+    expect(await readdir(state.libraryDir)).toEqual([])
+  })
+
   it('imports without a thumbnail whose file name another tape tracks', async () => {
     state.tapes = [makeTape({ id: 'has-poster', thumbnailFilename: 'poster.jpg' })]
     const sidecar = await stageBundle({ stem: 'holiday', thumbnailFilename: 'poster.jpg' })

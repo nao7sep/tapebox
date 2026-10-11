@@ -181,8 +181,9 @@ export class Job {
       return true
     }
     this.controller.signal.throwIfAborted()
-    const adopted = this.move(found.move)
+    this.move(found.move)
     const committed = await this.d.session.persistNow()
+    const adopted = this.current()
     this.d.log.info('job adopted a finished download', { tapeId: this.tapeId, filename: adopted?.filename ?? null, committed })
     try {
       if (adopted) this.d.emit('tapes:updated', adopted)
@@ -323,7 +324,7 @@ export class Job {
       },
     })
 
-    const finished = this.move({
+    this.move({
       state: 'downloaded',
       failureCode: null,
       filename: mediaBasename,
@@ -345,6 +346,7 @@ export class Job {
     // is logged here, never caught as a download failure that would mark failed a
     // tape that names its finished files.
     try {
+      const finished = this.current()
       if (finished) this.d.emit('tapes:updated', finished)
       this.d.emit('tapes:completed', { tapeId: this.tapeId })
     } catch (err) {

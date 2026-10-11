@@ -251,8 +251,9 @@ export async function reorderTapesDurably(orderedIds: readonly string[]): Promis
 /** Commit one tape's rename fields to catalog.json before publishing them to the
  * in-memory session. This is the transaction boundary for a filesystem rename:
  * new paths must not become authoritative until the durable catalog names them.
+ * Return the merged current row so callers publish its newer unrelated fields.
  * Ordinary queue/progress updates keep using the debounced upsert above. */
-export async function renameTapeDurably(tape: Tape): Promise<void> {
+export async function renameTapeDurably(tape: Tape): Promise<Tape> {
   assertLoaded()
   if (saveTimer) {
     clearTimeout(saveTimer)
@@ -261,6 +262,7 @@ export async function renameTapeDurably(tape: Tape): Promise<void> {
   // Reserve the serialized position immediately. Computing the candidate outside
   // the queued task would let an ordinary persist called while an older write is
   // settling slip in ahead and make candidate paths durable before this transaction.
+  let committed = tape
   await enqueueCatalogWrite(async () => {
     const idx = cache.tapes.findIndex((item) => item.id === tape.id)
     if (idx < 0) throw new Error(`Tape not found during durable rename: ${tape.id}`)
@@ -275,9 +277,11 @@ export async function renameTapeDurably(tape: Tape): Promise<void> {
     // scheduled ordinary persist serialize the combined current state afterward.
     const currentIdx = cache.tapes.findIndex((item) => item.id === tape.id)
     if (currentIdx >= 0) {
-      cache.tapes[currentIdx] = applyRenameFields(cache.tapes[currentIdx]!, tape)
+      committed = applyRenameFields(cache.tapes[currentIdx]!, tape)
+      cache.tapes[currentIdx] = committed
     }
   })
+  return committed
 }
 
 function applyRenameFields(current: Tape, renamed: Tape): Tape {

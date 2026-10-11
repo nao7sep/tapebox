@@ -1,5 +1,5 @@
 import { access, constants, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
-import { dirname, extname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
 import { handle } from './handle'
@@ -27,7 +27,7 @@ import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
 import { runCancellable } from '@main/work-registry'
 import { withLibraryWrite } from '@main/library-writes'
-import { librarySourceIndex } from '@shared/source-identity'
+import { librarySourceIndex, type SourceRef } from '@shared/source-identity'
 import { downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
@@ -39,6 +39,10 @@ import { message } from '@shared/i18n/translate'
 import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
 
 const tapeWrites = new Set<string>()
+/** A copy or rollback owns its filename until the primitive and its failure
+ * cleanup settle. Counts keep portable-equivalent copies on a case-sensitive
+ * volume from releasing one another's claim. */
+const unsettledImportFiles = new Map<string, number>()
 
 function claimTapeWrite(id: string): (() => void) | null {
   if (tapeWrites.has(id)) return null
@@ -370,15 +374,26 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     claimedCompanionPaths.push(join(dir, mediaFilename))
     if (tbThumb) claimedCompanionPaths.push(join(dir, tbThumb))
 
-    const existing = librarySourceIndex(session.getTapes()).has({
+    const source: SourceRef = {
       url: sourceUrl,
       extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
       sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
-    })
-    if (existing) {
-      issues.push({ path: sidecarPath, reason: message(ALREADY_IN_LIBRARY), severity: 'information' })
+    }
+    // Library names follow the media file's stem so the bundle stays internally
+    // consistent regardless of the sidecar's own name. Admit its source and every
+    // tracked filename before awaiting any of the companion-file work.
+    const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
+    const bundleNames = [mediaFilename, `${mediaStem}.json`]
+    const admissionTapes = session.getTapes()
+    const conflict = importBundleConflict(admissionTapes, source, bundleNames, sidecarPath)
+    if (conflict) {
+      issues.push(conflict)
       continue
     }
+    const thumbnailTaken = tbThumb !== null && (
+      trackedFilenameIdentities(admissionTapes).has(portableFilenameIdentity(tbThumb)) ||
+      unsettledImportFiles.has(portableFilenameIdentity(tbThumb))
+    )
 
     const srcMedia = join(dir, mediaFilename)
     try {
@@ -392,24 +407,6 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       continue
     }
 
-    // Library names follow the media file's stem so the bundle stays internally
-    // consistent (media + sidecar share a stem) regardless of the sidecar's own name.
-    const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
-
-    // The catalog tracks each library filename once. A name another tape already
-    // owns is refused here, before anything is copied: the disk alone cannot tell
-    // (the other tape's file may be missing, or this bundle may already sit in the
-    // library folder), and a row that broke the rule would fail every later save.
-    const tracked = trackedFilenameIdentities(session.getTapes())
-    const clash = [mediaFilename, `${mediaStem}.json`].find((name) => tracked.has(portableFilenameIdentity(name)))
-    if (clash) {
-      issues.push({
-        path: sidecarPath,
-        reason: message('import.nameTaken', { name: clash }),
-        severity: 'warning',
-      })
-      continue
-    }
     const targetMedia = join(libraryDir, mediaFilename)
     const targetSidecar = join(libraryDir, `${mediaStem}.json`)
     const copied: string[] = []
@@ -419,17 +416,17 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       // the user's library membership, is what is backed up.
       if (srcMedia !== targetMedia) {
         await assertMissing(targetMedia)
-        await copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal })
+        await withImportFileClaim(targetMedia, () => copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal }))
         copied.push(targetMedia)
       }
       if (sidecarPath !== targetSidecar) {
         await assertMissing(targetSidecar)
-        await copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal })
+        await withImportFileClaim(targetSidecar, () => copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal }))
         copied.push(targetSidecar)
       }
     } catch (err) {
       try {
-        await unlinkFiles(copied)
+        await rollbackImportCopies(copied)
         log.error('import bundle copy failed', {
           path: sidecarPath,
           error: describeError(err),
@@ -461,7 +458,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // it. Best-effort: a missing or unreadable thumbnail just imports the tape
     // without a poster — it never rejects the import.
     let thumbnailFilename: string | null = null
-    if (tbThumb && tracked.has(portableFilenameIdentity(tbThumb))) {
+    if (tbThumb && thumbnailTaken) {
       issues.push({
         path: join(dir, tbThumb),
         reason: message('import.thumbnailNameTaken'),
@@ -474,7 +471,8 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
         // not recorded: the imported poster is library content, like its media.
         if (srcThumb !== dstThumb) {
           await assertMissing(dstThumb)
-          await copyFileNoOverwrite(srcThumb, dstThumb, { hardLinks, signal })
+          await withImportFileClaim(dstThumb, () => copyFileNoOverwrite(srcThumb, dstThumb, { hardLinks, signal }))
+          copied.push(dstThumb)
         }
         thumbnailFilename = tbThumb
       } catch (err) {
@@ -490,6 +488,29 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       }
     }
 
+    // Another import may have committed while the copies waited, including one
+    // that adopted this run's already-published files from inside the library.
+    // Recheck synchronously through upsert; rollback retires only copies that no
+    // live row now owns, and never the referenced originals of an in-place import.
+    const commitTapes = session.getTapes()
+    const commitConflict = importBundleConflict(commitTapes, source, bundleNames, sidecarPath)
+    if (commitConflict) {
+      issues.push(commitConflict)
+      try {
+        await rollbackImportCopies(copied)
+      } catch (cleanupError) {
+        log.error('import admission rollback failed', { path: sidecarPath, error: describeError(cleanupError) })
+        issues.push({ path: sidecarPath, reason: message('import.copyIncomplete'), severity: 'error' })
+      }
+      continue
+    }
+    if (thumbnailFilename && (
+      trackedFilenameIdentities(commitTapes).has(portableFilenameIdentity(thumbnailFilename)) ||
+      unsettledImportFiles.has(portableFilenameIdentity(thumbnailFilename))
+    )) {
+      issues.push({ path: join(dir, thumbnailFilename), reason: message('import.thumbnailNameTaken'), severity: 'warning' })
+      thumbnailFilename = null
+    }
     const tape = tapeFromSidecar(sidecar, {
       id: nanoid(10),
       sourceUrl,
@@ -509,7 +530,12 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // are in the library either way; a failed write is the session store's to
     // retry and report, and the window must still learn about them.
     await session.persistNow()
-    emit('tapes:added', imported)
+    // A window can list and organize these rows while the save waits. Announce
+    // their current values, leaving out any tape already removed in that time.
+    const current = imported
+      .map((tape) => session.getTape(tape.id))
+      .filter((tape): tape is Tape => tape !== undefined)
+    if (current.length > 0) emit('tapes:added', current)
   }
   for (const path of unsupportedSelectedPaths(paths, claimedCompanionPaths)) {
     issues.push({
@@ -521,6 +547,48 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
 
   log.info('library:import', { imported: imported.length, issues: issues.length })
   return { imported, issues }
+}
+
+/** The catalog owns source and portable filename admission, even for missing files. */
+function importBundleConflict(tapes: readonly Tape[], source: SourceRef, names: readonly string[], path: string): ImportIssue | null {
+  if (librarySourceIndex(tapes).has(source)) {
+    return { path, reason: message(ALREADY_IN_LIBRARY), severity: 'information' }
+  }
+  const tracked = trackedFilenameIdentities(tapes)
+  const clash = names.find((name) => {
+    const identity = portableFilenameIdentity(name)
+    return tracked.has(identity) || unsettledImportFiles.has(identity)
+  })
+  return clash ? { path, reason: message('import.nameTaken', { name: clash }), severity: 'warning' } : null
+}
+
+/** Remove this run's copies, rechecking ownership immediately before each unlink. */
+async function rollbackImportCopies(copied: readonly string[]): Promise<void> {
+  const failures: unknown[] = []
+  for (const path of copied) {
+    try {
+      await withImportFileClaim(path, async () => {
+        if (trackedFilenameIdentities(session.getTapes()).has(portableFilenameIdentity(basename(path)))) return
+        await unlinkFiles([path])
+      })
+    } catch (error) {
+      failures.push(error)
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, 'Imported files could not be fully cleaned up.')
+}
+
+/** Keep adoption out of a copy's visible destination and any primitive cleanup. */
+async function withImportFileClaim(path: string, work: () => Promise<void>): Promise<void> {
+  const identity = portableFilenameIdentity(basename(path))
+  unsettledImportFiles.set(identity, (unsettledImportFiles.get(identity) ?? 0) + 1)
+  try {
+    await work()
+  } finally {
+    const remaining = unsettledImportFiles.get(identity)! - 1
+    if (remaining === 0) unsettledImportFiles.delete(identity)
+    else unsettledImportFiles.set(identity, remaining)
+  }
 }
 
 /**
@@ -631,12 +699,8 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
     await rollbackBeforeCatalogCommit(err)
   }
 
-  try {
-    await session.renameTapeDurably(updated)
-  } catch (catalogError) {
-    await rollbackBeforeCatalogCommit(catalogError)
-  }
-  emit('tapes:updated', updated)
+  const committed = await session.renameTapeDurably(updated).catch(rollbackBeforeCatalogCommit)
+  emit('tapes:updated', committed)
 
   // The durable catalog is the commit point. Equivalent-name sidecars retain
   // their old physical path and are rewritten only now; genuinely renamed old
@@ -671,7 +735,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
     )
   }
   log.info('renamed', { tapeId: tape.id, name: cleanName })
-  return updated
+  return session.getTape(tapeId) ?? committed
 }
 
 /**

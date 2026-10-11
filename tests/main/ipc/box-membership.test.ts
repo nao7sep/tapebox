@@ -188,6 +188,51 @@ describe('filing tapes into a box', () => {
     expect(listing('box-summer')).toEqual(['unboxed-a@0'])
   })
 
+  it('refuses a destination deleted after the caller chose it and leaves the tapes in place', async () => {
+    state.tapes = [makeTape({ id: 'unboxed-a', boxId: null, order: 3 })]
+    await invoke('boxes:delete', { boxId: 'box-summer' })
+    emit.mockClear()
+    const before = [...state.tapes]
+
+    await expect(invoke('boxes:place', { tapeIds: ['unboxed-a'], boxId: 'box-summer' })).rejects.toThrow(
+      'This tape could not be moved to that box. Its previous location remains in use; try again.',
+    )
+
+    expect(state.tapes).toEqual(before)
+    expect(emitted('tapes:updatedMany')).toEqual([])
+  })
+
+  it('ignores tapes restored to the inbox after the caller selected archived tapes', async () => {
+    state.tapes = [
+      makeTape({ id: 'restored', archivedAtUtc: null, boxId: null, order: -4 }),
+      makeTape({ id: 'still-archived', boxId: null, order: 2 }),
+      makeTape({ id: 'summer-member', boxId: 'box-summer', order: 0 }),
+    ]
+    const restored = state.tapes[0]
+
+    await invoke('boxes:place', { tapeIds: ['restored', 'still-archived'], boxId: 'box-summer' })
+
+    expect(state.tapes.find((tape) => tape.id === 'restored')).toBe(restored)
+    expect(listing('box-summer')).toEqual(['still-archived@0', 'summer-member@1'])
+  })
+
+  it('places repeated tape ids only once without duplicating updates or leaving an order gap', async () => {
+    state.tapes = [
+      makeTape({ id: 'unboxed-a', boxId: null, order: 5 }),
+      makeTape({ id: 'unboxed-b', boxId: null, order: 6 }),
+      makeTape({ id: 'summer-member', boxId: 'box-summer', order: 0 }),
+    ]
+
+    await invoke('boxes:place', { tapeIds: ['unboxed-a', 'unboxed-a', 'unboxed-b'], boxId: 'box-summer' })
+
+    expect(listing('box-summer')).toEqual(['unboxed-a@0', 'unboxed-b@1', 'summer-member@2'])
+    expect(emitted('tapes:updatedMany')).toEqual([[[
+      expect.objectContaining({ id: 'unboxed-a', order: 0 }),
+      expect.objectContaining({ id: 'unboxed-b', order: 1 }),
+      expect.objectContaining({ id: 'summer-member', order: 2 }),
+    ]]])
+  })
+
   it('reports only the tapes whose filing actually changed', async () => {
     state.tapes = [
       makeTape({ id: 'already-first', boxId: 'box-summer', order: 0 }),

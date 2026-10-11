@@ -187,6 +187,40 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(emits.indexOf('persist:downloaded')).toBeLessThan(emits.indexOf('tapes:completed'))
   })
 
+  it.each(['fresh', 'adopted'] as const)('announces the latest row after a %s download commit waits through organization changes', async (kind) => {
+    const t = tape({ id: 't1' })
+    const { deps, tapes, emits, payloads } = makeDeps({
+      initial: [t], probe: async () => video,
+      finished: kind === 'adopted' ? async () => ({
+        status: 'found',
+        move: { state: 'downloaded', failureCode: null, filename: 't1.mp4', sidecarFilename: 't1.json', thumbnailFilename: 't1.jpg', downloadedAtUtc: T0 },
+      }) : undefined,
+    })
+    let commitStarted!: () => void
+    let releaseCommit!: () => void
+    const started = new Promise<void>((resolve) => { commitStarted = resolve })
+    const blocked = new Promise<void>((resolve) => { releaseCommit = resolve })
+    const persist = deps.session.persistNow
+    deps.session.persistNow = async () => {
+      commitStarted()
+      await blocked
+      return persist()
+    }
+    const run = new Job(t, deps).run()
+    try {
+      await started
+      const current = tapes.get(t.id)!
+      tapes.set(t.id, { ...current, archivedAtUtc: T1, boxId: 'keepers123', order: -12 })
+      expect(emits).not.toContain('tapes:completed')
+    } finally { releaseCommit() }
+    await run
+
+    const latest = tapes.get(t.id)!
+    expect(latest).toMatchObject({ state: 'downloaded', archivedAtUtc: T1, boxId: 'keepers123', order: -12 })
+    expect(payloads[emits.lastIndexOf('tapes:updated')]).toEqual(latest)
+    expect(emits.indexOf('persist:downloaded')).toBeLessThan(emits.indexOf('tapes:completed'))
+  })
+
   it('fails without downloading over a finished bundle it cannot adopt', async () => {
     const t = tape({ id: 't1' })
     let downloaded = false

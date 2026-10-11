@@ -1,0 +1,155 @@
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SessionSchema, type Tape } from '@shared/domain'
+import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
+
+const state = vi.hoisted(() => ({
+  libraryDir: '', catalog: '', holdRename: false, holdCleanup: false,
+  started: () => {}, release: null as Promise<void> | null,
+}))
+const emit = vi.hoisted(() => vi.fn())
+const handlers = new Map<string, (req: unknown) => Promise<unknown>>()
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
+      handlers.set(channel, async (req) => unwrapIpcReply(channel, await fn({}, req) as IpcReply<unknown>))
+    },
+  },
+  shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
+}))
+vi.mock('@main/paths', () => ({ paths: { get catalog() { return state.catalog } } }))
+vi.mock('@main/store/config', () => ({
+  getLibraryDir: () => state.libraryDir,
+  getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
+}))
+vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
+vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
+vi.mock('@main/ipc/events', () => ({ emit }))
+vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
+vi.mock('@main/services/ytdlp', () => ({ downloadThumbnail: vi.fn(), probe: vi.fn() }))
+vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: vi.fn() }))
+vi.mock('@main/io/atomic-json', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
+  return {
+    ...actual,
+    writeManagedJson: async (...args: Parameters<typeof actual.writeManagedJson>) => {
+      const candidate = args[1] as { tapes: Tape[] }
+      if (state.holdRename && candidate.tapes.some((tape) => tape.name === 'Renamed')) {
+        state.holdRename = false
+        state.started()
+        await state.release
+      }
+      return actual.writeManagedJson(...args)
+    },
+  }
+})
+vi.mock('@main/io/atomic-file', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
+  return {
+    ...actual,
+    unlinkFiles: async (...args: Parameters<typeof actual.unlinkFiles>) => {
+      if (state.holdCleanup && args[0].includes(join(state.libraryDir, 'Original.mp4'))) {
+        state.holdCleanup = false
+        state.started()
+        await state.release
+      }
+      return actual.unlinkFiles(...args)
+    },
+  }
+})
+
+import { registerLibraryHandlers } from '@main/ipc/library'
+import * as session from '@main/store/session'
+
+let root: string
+let original: Tape
+
+beforeEach(async () => {
+  handlers.clear()
+  emit.mockClear()
+  root = await mkdtemp(join(tmpdir(), 'tapebox-rename-concurrency-'))
+  state.libraryDir = join(root, 'library')
+  state.catalog = join(root, 'catalog.json')
+  state.holdRename = false
+  state.holdCleanup = false
+  state.release = null
+  await mkdir(state.libraryDir)
+  await session.loadSession()
+  original = {
+    id: 'abc1234567', sourceUrl: 'https://example.test/clip', state: 'downloaded',
+    addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: null, extractor: null,
+    title: 'Clip', uploader: null, durationSeconds: null, chapterCount: null,
+    probedAtUtc: null, filename: 'Original.mp4', sidecarFilename: 'Original.json',
+    thumbnailFilename: null, downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
+    name: 'Original', renamedAtUtc: null, archivedAtUtc: null, boxId: null, order: 0,
+    pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+  }
+  await writeFile(join(state.libraryDir, original.filename!), 'video')
+  await writeFile(join(state.libraryDir, original.sidecarFilename!), JSON.stringify({
+    formatVersion: 1,
+    tapebox: {
+      sourceUrl: original.sourceUrl, name: original.name, addedAtUtc: original.addedAtUtc,
+      downloadedAtUtc: original.downloadedAtUtc, renamedAtUtc: null, media: null,
+      mediaFilename: original.filename, thumbnailFilename: null,
+    },
+  }))
+  session.upsertTape(original)
+  await session.persistNow()
+  registerLibraryHandlers()
+})
+
+afterEach(async () => {
+  await session.persistNow({ quitting: true })
+  await rm(root, { recursive: true, force: true })
+})
+
+describe('rename publication across the real session commit', () => {
+  it('returns and emits the canonical row with organization changes authored during its required write', async () => {
+    let started!: () => void
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { started = resolve })
+    state.release = new Promise<void>((resolve) => { release = resolve })
+    state.started = started
+    state.holdRename = true
+    const renaming = handlers.get('library:rename')!({ tapeId: original.id, name: 'Renamed' })
+    try {
+      await held
+      expect(session.getTape(original.id)?.filename).toBe('Original.mp4')
+      session.upsertBox({ id: 'keepers123', name: 'Keepers', order: 0 })
+      const current = session.getTape(original.id)!
+      session.upsertTape({ ...current, archivedAtUtc: '2026-01-02T00:00:00.000Z', boxId: 'keepers123', order: -12 })
+    } finally { release() }
+    const returned = await renaming as Tape
+    const current = session.getTape(original.id)!
+
+    expect(current).toMatchObject({ filename: 'Renamed.mp4', sidecarFilename: 'Renamed.json', boxId: 'keepers123', order: -12 })
+    expect(returned).toEqual(current)
+    expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:updated', current)
+    await session.persistNow()
+    expect(SessionSchema.parse(JSON.parse(await readFile(state.catalog, 'utf8'))).tapes).toEqual([current])
+    expect((await readdir(state.libraryDir)).sort()).toEqual(['Renamed.json', 'Renamed.mp4'])
+  })
+
+  it('returns the current row when newer organization changes arrive during post-commit source cleanup', async () => {
+    let started!: () => void
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { started = resolve })
+    state.release = new Promise<void>((resolve) => { release = resolve })
+    state.started = started
+    state.holdCleanup = true
+    const renaming = handlers.get('library:rename')!({ tapeId: original.id, name: 'Renamed' })
+    try {
+      await held
+      const committed = session.getTape(original.id)!
+      expect(committed.filename).toBe('Renamed.mp4')
+      expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:updated', committed)
+      session.upsertTape({ ...committed, archivedAtUtc: '2026-01-02T00:00:00.000Z', order: -9 })
+    } finally { release() }
+    const returned = await renaming as Tape
+
+    expect(returned).toEqual(session.getTape(original.id))
+    expect(returned).toMatchObject({ filename: 'Renamed.mp4', archivedAtUtc: '2026-01-02T00:00:00.000Z', order: -9 })
+  })
+})

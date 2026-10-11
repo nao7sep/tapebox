@@ -132,6 +132,7 @@ beforeEach(async () => {
     if (rollbackMutation.durableFails) throw new Error('catalog disk full')
     state.tape = tape
     rollbackMutation.order.push('catalog:committed')
+    return tape
   })
   registerLibraryHandlers()
 })
@@ -239,6 +240,7 @@ describe('library:rename', () => {
       const after = await Promise.all(['renamed.mp4', 'renamed.jpg'].map((name) => stat(join(dir, name))))
       linkedAtCommit = after.map((file, index) => file.ino === before[index]!.ino && file.dev === before[index]!.dev)
       state.tape = tape
+      return tape
     })
 
     await handlers.get('library:rename')!({ tapeId: state.tape!.id, name: 'renamed' })
