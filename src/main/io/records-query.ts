@@ -120,21 +120,33 @@ export function readPage(db: DatabaseSync, query: RecordsQuery): RecordsPage {
       where.push(`(${source.searched.map((column) => `${column} LIKE ? ESCAPE '\\'`).join(' OR ')})`)
       params.push(...source.searched.map(() => pattern))
     }
+    if (query.after !== null) {
+      const { time, kind, id } = query.after
+      // Each branch has a fixed Records kind (a run's native kind means
+      // something else). Reduce the global cursor tuple to this source's
+      // chronological range, so SQLite can seek its time/id index.
+      if (source.kind < kind) {
+        where.push(`${source.time} <= ?`)
+        params.push(time)
+      } else if (source.kind > kind) {
+        where.push(`${source.time} < ?`)
+        params.push(time)
+      } else {
+        where.push(`${source.time} <= ? AND (${source.time} < ? OR id < ?)`)
+        params.push(time, time, id)
+      }
+    }
     parts.push(
       `SELECT '${source.kind}' AS kind, id, session, ${source.time} AS time, ${source.level} AS level,
         ${source.title} AS title, ${source.text} AS text, tape_id AS tapeId
         FROM ${source.table} WHERE ${where.join(' AND ')}`,
     )
   }
-  let after = ''
-  if (query.after !== null) {
-    const { time, kind, id } = query.after
-    after = 'WHERE time < ? OR (time = ? AND (kind < ? OR (kind = ? AND id < ?)))'
-    params.push(time, time, kind, kind, id)
-  }
   params.push(RECORDS_PAGE_SIZE + 1)
   const rows = db
-    .prepare(`SELECT * FROM (${parts.join(' UNION ALL ')}) ${after} ORDER BY time DESC, kind DESC, id DESC LIMIT ?`)
+    // Order the compound query directly. An outer SELECT made SQLite scan and
+    // sort all kept rows; this form merges the indexed source streams.
+    .prepare(`${parts.join(' UNION ALL ')} ORDER BY time DESC, kind DESC, id DESC LIMIT ?`)
     .all(...params) as unknown as RecordSummary[]
   return { records: rows.slice(0, RECORDS_PAGE_SIZE), more: rows.length > RECORDS_PAGE_SIZE }
 }

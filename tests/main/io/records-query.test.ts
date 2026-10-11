@@ -1,0 +1,182 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import { afterEach, describe, expect, it } from 'vitest'
+import { readPage } from '@main/io/records-query'
+import type { RecordKind, RecordsQuery, RecordSummary } from '@shared/records'
+import { createRecordsDatabase, growRecords, pageQueryPlan, recordsQuery } from '../../helpers/records-query-growth'
+
+const roots: string[] = []
+const databases: DatabaseSync[] = []
+
+async function freshDatabase() {
+  const root = mkdtempSync(join(tmpdir(), 'tapebox-records-query-'))
+  roots.push(root)
+  const path = join(root, 'records.sqlite3')
+  await createRecordsDatabase(path)
+  const db = new DatabaseSync(path)
+  databases.push(db)
+  return { db, path }
+}
+
+afterEach(() => {
+  for (const db of databases.splice(0)) db.close()
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+/** Small, deliberately unbounded oracle: read facts, then select in memory. */
+function referenceRecords(db: DatabaseSync) {
+  const sources: Array<{ table: string; kind: RecordKind; search: string[] }> = [
+    { table: 'logs', kind: 'log', search: ['message', 'tape_id', 'fields'] },
+    { table: 'ai_calls', kind: 'ai-call', search: ['endpoint', 'model', 'tape_id', 'request', 'response', 'error'] },
+    { table: 'ytdlp_runs', kind: 'ytdlp-run', search: ['kind', 'url', 'args', 'tape_id', 'scan_id', 'stdout', 'stderr'] },
+    { table: 'ffmpeg_runs', kind: 'ffmpeg-run', search: ['kind', 'args', 'tape_id', 'stdout', 'stderr'] },
+  ]
+  return sources.flatMap((source) => {
+    const rows = db.prepare(`SELECT * FROM ${source.table}`).all() as Array<Record<string, string | number | null>>
+    return rows.map((row) => {
+      const isLog = source.kind === 'log'
+      const isCall = source.kind === 'ai-call'
+      const level: RecordSummary['level'] = isLog ? row.level as RecordSummary['level']
+        : isCall ? row.error === null ? 'info' : 'error'
+        : row.stop_reason === 'cancel' || row.stop_reason === 'quit' ? 'warn'
+        : row.exit_code === 0 ? 'info' : 'error'
+      const record: RecordSummary = {
+        kind: source.kind, id: Number(row.id), session: String(row.session), time: String(isLog ? row.time : row.started_at_utc), level,
+        title: String(isLog ? row.message : isCall ? row.model : `${source.kind === 'ytdlp-run' ? 'yt-dlp' : 'ffmpeg'} ${row.kind}`),
+        text: isCall ? String(row.endpoint) : source.kind === 'ytdlp-run' ? String(row.url) : null,
+        tapeId: row.tape_id === null ? null : String(row.tape_id),
+      }
+      return { record, searched: source.search.map((column) => row[column] === null ? '' : String(row[column]).toLowerCase()) }
+    })
+  })
+}
+
+function referencePage(facts: ReturnType<typeof referenceRecords>, query: RecordsQuery) {
+  const search = query.search.trim().toLowerCase()
+  const rows = facts.filter(({ record, searched }) => {
+    if (query.kind !== null && record.kind !== query.kind) return false
+    if (query.session !== null && record.session !== query.session) return false
+    if (query.tapeId !== null && record.tapeId !== query.tapeId) return false
+    if (query.level === 'attention' ? !['warn', 'error'].includes(record.level) : query.level !== null && record.level !== query.level) return false
+    if (search && !searched.some((value) => value.includes(search))) return false
+    if (query.after !== null) {
+      const { time, kind, id } = query.after
+      if (!(record.time < time || (record.time === time && (record.kind < kind || (record.kind === kind && record.id < id))))) return false
+    }
+    return true
+  }).map(({ record }) => record).sort((left, right) => {
+    if (left.time !== right.time) return left.time < right.time ? 1 : -1
+    if (left.kind !== right.kind) return left.kind < right.kind ? 1 : -1
+    return right.id - left.id
+  })
+  return { records: rows.slice(0, 100), more: rows.length > 100 }
+}
+
+describe('Records chronological page queries', () => {
+  it('uses chronological indexes for every kind in the real newest-page plan', async () => {
+    const { db } = await freshDatabase()
+    growRecords(db, 0, 4000)
+    const plan = pageQueryPlan(db).join('\n')
+    for (const table of ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']) {
+      expect(plan).toContain(`USING INDEX idx_${table}_time_id`)
+    }
+    const after = { time: '2026-01-01T00:01:00.000Z', kind: 'log' as const, id: 50 }
+    const cursorPlan = pageQueryPlan(db, recordsQuery({ after })).join('\n')
+    for (const table of ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']) {
+      expect(cursorPlan).toContain(`SEARCH ${table} USING INDEX idx_${table}_time_id`)
+    }
+  })
+
+  it('adds chronological indexes to an existing current store while preserving its facts', async () => {
+    const { db, path } = await freshDatabase()
+    growRecords(db, 0, 40)
+    const before = readPage(db, recordsQuery())
+    for (const table of ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']) {
+      db.exec(`DROP INDEX IF EXISTS idx_${table}_time_id`)
+    }
+    await createRecordsDatabase(path)
+    expect(readPage(db, recordsQuery())).toEqual(before)
+    for (const table of ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']) {
+      const column = table === 'logs' ? 'time' : 'started_at_utc'
+      const index = db.prepare(`PRAGMA index_xinfo('idx_${table}_time_id')`).all() as Array<{ name: string | null; desc: number; key: number }>
+      expect(index.filter((entry) => entry.key).map(({ name, desc }) => [name, desc])).toEqual([[column, 1], ['id', 1]])
+    }
+  })
+
+  it('keeps time, kind and id cursor ties across pages before and after the indexes exist', async () => {
+    const { db } = await freshDatabase()
+    growRecords(db, 0, 260)
+    // Put the entire first two pages on one shared time, making both the kind
+    // and id ties matter at the cursor boundary.
+    const time = '2026-01-01T00:00:00.000Z'
+    for (const table of ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']) {
+      const column = table === 'logs' ? 'time' : 'started_at_utc'
+      db.prepare(`UPDATE ${table} SET ${column} = ?`).run(time)
+    }
+    const all = () => {
+      const found = []
+      let query = recordsQuery()
+      for (;;) {
+        const page = readPage(db, query)
+        found.push(...page.records)
+        if (!page.more) break
+        const last = page.records.at(-1)!
+        query = recordsQuery({ after: { time: last.time, kind: last.kind, id: last.id } })
+      }
+      return found
+    }
+    const indexed = all()
+    expect(indexed).toHaveLength(260)
+    expect(new Set(indexed.map(({ kind, id }) => `${kind}:${id}`)).size).toBe(260)
+    expect(indexed).toEqual([...indexed].sort((left, right) =>
+      right.time.localeCompare(left.time) || right.kind.localeCompare(left.kind) || right.id - left.id,
+    ))
+    for (const table of ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']) {
+      db.exec(`DROP INDEX IF EXISTS idx_${table}_time_id`)
+    }
+    expect(all()).toEqual(indexed)
+  })
+
+  it('matches the unbounded reference through cursor ties and every filter', async () => {
+    const { db } = await freshDatabase()
+    growRecords(db, 0, 440)
+    for (const table of ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']) {
+      db.exec(`UPDATE ${table} SET session = 'synthetic-launch-' || (id % 2), tape_id = 'synthetic-tape-' || (id % 3)`)
+    }
+    db.exec(`
+      UPDATE logs SET level = CASE id % 3 WHEN 0 THEN 'warn' WHEN 1 THEN 'error' ELSE 'info' END, fields = '{"synthetic":"field_needle"}';
+      UPDATE ai_calls SET request = 'REQUEST needle_', response = 'response 100%', error = CASE id % 2 WHEN 0 THEN 'synthetic error' ELSE NULL END;
+      UPDATE ytdlp_runs SET exit_code = id % 2, stop_reason = CASE id % 4 WHEN 0 THEN 'cancel' ELSE NULL END, scan_id = 'scan_needle', stderr = 'run error';
+      UPDATE ffmpeg_runs SET exit_code = id % 2, stop_reason = CASE id % 4 WHEN 0 THEN 'quit' ELSE NULL END, stderr = 'run error';
+    `)
+    const facts = referenceRecords(db)
+    const filters: Partial<RecordsQuery>[] = [
+      {},
+      ...(['log', 'ai-call', 'ytdlp-run', 'ffmpeg-run'] as const).map((kind) => ({ kind })),
+      ...(['info', 'warn', 'error', 'attention'] as const).map((level) => ({ level })),
+      { session: 'synthetic-launch-1' }, { session: 'missing launch' },
+      { tapeId: 'synthetic-tape-1' }, { tapeId: 'missing tape' },
+      ...['field_needle', 'needle_', '100%', 'scan_needle', 'run error', 'REQUEST', '  thumbnail  ', 'no match'].map((search) => ({ search })),
+      { session: 'synthetic-launch-0', tapeId: 'synthetic-tape-2', level: 'attention' },
+      { kind: 'ai-call', session: 'synthetic-launch-1', search: '100%' },
+    ]
+    for (const filter of filters) {
+      let query = recordsQuery(filter)
+      for (;;) {
+        const expected = referencePage(facts, query)
+        const page = readPage(db, query)
+        expect(page, JSON.stringify(query)).toEqual(expected)
+        if (!page.more) break
+        const last = page.records.at(-1)!
+        query = { ...query, after: { time: last.time, kind: last.kind, id: last.id } }
+      }
+      // Also start inside a timestamp group for each possible Records kind.
+      for (const kind of ['log', 'ai-call', 'ytdlp-run', 'ffmpeg-run'] as const) {
+        const query = recordsQuery({ ...filter, after: { time: '2026-01-01T00:00:13.000Z', kind, id: 7 } })
+        expect(readPage(db, query), JSON.stringify(query)).toEqual(referencePage(facts, query))
+      }
+    }
+  })
+})

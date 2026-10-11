@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS logs (
 );
 CREATE INDEX IF NOT EXISTS idx_logs_session ON logs (session);
 CREATE INDEX IF NOT EXISTS idx_logs_tape_id ON logs (tape_id);
+CREATE INDEX IF NOT EXISTS idx_logs_time_id ON logs (time DESC, id DESC);
 CREATE TABLE IF NOT EXISTS ai_calls (
   id             INTEGER PRIMARY KEY,
   session        TEXT NOT NULL,
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS ai_calls (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_calls_session ON ai_calls (session);
 CREATE INDEX IF NOT EXISTS idx_ai_calls_tape_id ON ai_calls (tape_id);
+CREATE INDEX IF NOT EXISTS idx_ai_calls_time_id ON ai_calls (started_at_utc DESC, id DESC);
 CREATE TABLE IF NOT EXISTS ytdlp_runs (
   id             INTEGER PRIMARY KEY,
   session        TEXT NOT NULL,
@@ -59,6 +61,7 @@ CREATE TABLE IF NOT EXISTS ytdlp_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_session ON ytdlp_runs (session);
 CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_tape_id ON ytdlp_runs (tape_id);
+CREATE INDEX IF NOT EXISTS idx_ytdlp_runs_time_id ON ytdlp_runs (started_at_utc DESC, id DESC);
 CREATE TABLE IF NOT EXISTS ffmpeg_runs (
   id             INTEGER PRIMARY KEY,
   session        TEXT NOT NULL,
@@ -75,6 +78,7 @@ CREATE TABLE IF NOT EXISTS ffmpeg_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_session ON ffmpeg_runs (session);
 CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_tape_id ON ffmpeg_runs (tape_id);
+CREATE INDEX IF NOT EXISTS idx_ffmpeg_runs_time_id ON ffmpeg_runs (started_at_utc DESC, id DESC);
 `
 
 if (!parentPort) throw new Error('The Records writer needs a parent port.')
