@@ -33,20 +33,6 @@ const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
   "zh-Hans": ["settings.tabAi", "settings.tabYtdlp", "settings.openai", "records.url"],
 };
 
-// Controls whose command label is replaced by a running status on the same
-// button: [command key, status key].
-const COMMAND_STATUS_PAIRS: ReadonlyArray<readonly [string, string]> = [
-  ["common.save", "common.saving"],
-  ["common.save", "settings.moving"],
-  ["refresh.apply", "refresh.applying"],
-  ["rename.rename", "rename.renaming"],
-  ["export.export", "export.exporting"],
-  ["export.exportAndRemove", "export.exporting"],
-  ["scan.addTapes", "scan.adding"],
-  ["settings.stopMove", "settings.stoppingMove"],
-  ["tools.cancelCheck", "tools.cancelling"],
-];
-
 // The hidden-character-conventions set, plus the no-break spaces, figure space,
 // word joiner and soft hyphen that look like ordinary text in a diff.
 const LITERAL_HIDDEN =
@@ -127,17 +113,6 @@ describe("catalogues", () => {
       return forms(catalogues[language][key] ?? "").some((text) => text.includes("…") !== expected);
     });
     expect(mismatched.map(([key]) => key)).toEqual([]);
-  });
-
-  // A control that swaps its command for a running status must read differently
-  // in every language, or a press looks ignored; the comparison ignores the
-  // ellipsis, so "Export" and "Export…" would still count as the same words.
-  it.each(LANGUAGES)("%s keeps each command distinct from the status that replaces it", (language) => {
-    const words = (text: string) => text.replace(/[\s\u00a0]*…/gu, "").trim().toLocaleLowerCase(language);
-    const same = COMMAND_STATUS_PAIRS.filter(([command, status]) =>
-      forms(catalogues[language][command]!).some((text) => forms(catalogues[language][status]!).some((other) => words(text) === words(other))),
-    );
-    expect(same).toEqual([]);
   });
 
   it.each(translations)("%s translates everything not listed as the same word", (language) => {

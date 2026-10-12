@@ -34,7 +34,7 @@ describe('export draft window protection', () => {
   it.each(['name', 'folder', 'delete-after'] as const)('protects a changed %s', async (field) => {
     expect(windowCloseState().dirty).toBe(false)
     await act(async () => {
-      if (field === 'folder') button('Choose…').click()
+      if (field === 'folder') button('Choose').click()
       else if (field === 'delete-after') [...document.querySelectorAll('label')]
         .find((label) => label.textContent?.includes('Delete from library after export'))!.querySelector('input')!.click()
       else {
@@ -47,7 +47,7 @@ describe('export draft window protection', () => {
   })
 
   it('keeps the renderer alive while an export is submitted', async () => {
-    await act(async () => button('Choose…').click())
+    await act(async () => button('Choose').click())
     ipcInvoke.mockImplementation(() => new Promise(() => {}))
     await act(async () => button('Export').click())
     expect(windowCloseState().busy).toBe(true)
