@@ -52,7 +52,7 @@ export function ChapterList({ chapters, currentIndex, onActivate }: Props) {
             aria-selected={i === currentIndex}
             onClick={() => onActivate(i)}
             className={
-              'flex w-full cursor-pointer items-baseline gap-3 rounded border px-2 py-1 text-left text-sm hover:bg-hover ' +
+              'listbox-item flex w-full cursor-pointer items-baseline gap-3 rounded border px-2 py-1 text-left text-sm hover:bg-hover ' +
               (i === currentIndex ? 'border-selected ring-1 ring-selected/40' : 'border-transparent')
             }
           >

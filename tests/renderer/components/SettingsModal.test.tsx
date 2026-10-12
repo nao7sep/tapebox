@@ -68,6 +68,21 @@ afterEach(() => {
 })
 
 describe('SettingsModal', () => {
+  it('keeps selected-tab hover and its existing keyboard ring distinct', async () => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const selected = document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')!
+    expect(selected.className).toContain('bg-raised')
+    expect(selected.className).toContain('hover:bg-raised-hover')
+    expect(selected.className).toContain('focus-visible:ring-2')
+    await act(async () => {
+      selected.focus()
+      selected.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    })
+    expect(selected.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(selected)
+  })
+
   it('lists System first, then each language by its own name, and saves the choice', async () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()

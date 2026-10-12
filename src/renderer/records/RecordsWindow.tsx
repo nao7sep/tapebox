@@ -437,7 +437,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
                       data-record-key={key}
                       onClick={() => select(record)}
                       className={
-                        'cursor-pointer rounded border px-3 py-2 transition ' +
+                        'listbox-item cursor-pointer rounded border px-3 py-2 transition ' +
                         (isSelected
                           ? 'border-selected ring-1 ring-inset ring-selected/40'
                           : 'border-transparent hover:bg-hover')

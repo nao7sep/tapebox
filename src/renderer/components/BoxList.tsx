@@ -262,7 +262,7 @@ export function BoxList({
  */
 function rowClass(selected: boolean, dropTarget: boolean): string {
   return (
-    'group flex items-center gap-1.5 rounded px-2 py-1.5 text-sm transition ' +
+    'listbox-item group flex items-center gap-1.5 rounded px-2 py-1.5 text-sm transition ' +
     (selected ? 'bg-info-selected font-medium text-fg-strong ' : 'text-fg hover:bg-hover ') +
     (dropTarget ? 'bg-info-drop ring-2 ring-info-ring ' : '')
   )
@@ -278,7 +278,8 @@ function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: numb
   })
   // A non-focusable option — the box list container holds the single tab stop and
   // the keys, pointing aria-activedescendant at the selected row. The accent fill is
-  // the only marker (a flat row, no ring).
+  // the persistent marker; the shared row style adds the keyboard cue while the
+  // list owns focus.
   return (
     <div ref={ref} role="presentation" className={rowClass(selected, isDropTarget && !selected)}>
       <div

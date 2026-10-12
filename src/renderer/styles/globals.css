@@ -62,6 +62,8 @@ button:disabled {
   /* Row and item hover. */
   --color-hover: #f1f1f3;
   --color-hover-strong: #e4e4e7b3;
+  /* Overlay keeps a hovered row's selected or status-colored surface intact. */
+  --color-item-hover-tint: #18181b0f;
   /* Sticky section headers. */
   --color-sticky: #f4f4f5f2;
   /* Behind a modal. */
@@ -176,6 +178,7 @@ button:disabled {
       --color-raised-hover: #3f3f46;
       --color-hover: #27272a99;
       --color-hover-strong: #3f3f4699;
+      --color-item-hover-tint: #ffffff0f;
       --color-sticky: #27272af2;
       --color-backdrop: #09090bcc;
       --color-row: #18181b99;
@@ -375,6 +378,23 @@ button:disabled {
   outline: none;
 }
 
+/* Active-descendant lists keep persistent selection on the item and project the
+   container's keyboard cue onto that same whole item. Boxes wrap their option in
+   a row with pointer actions; outline the row, not only the label inside it. */
+[role="listbox"]:focus-visible .listbox-item:is([aria-selected="true"], :has(> [role="option"][aria-selected="true"])) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.listbox-item:hover {
+  background-image: linear-gradient(var(--color-item-hover-tint), var(--color-item-hover-tint));
+}
+
+/* Status-border hover utilities must never replace the selected tape's border. */
+.tape-row[aria-selected="true"] {
+  border-color: var(--color-selected);
+}
+
 /* Native application inactivity is distinct from DOM focus on macOS. Keep the
    keyboard target legible, but mute the active-window accent while another app
    owns the menu bar. This is intentionally unlayered so it also overrides
@@ -382,6 +402,10 @@ button:disabled {
 [data-window-inactive] :focus-visible {
   outline-color: var(--color-line);
   --tw-ring-color: var(--color-line);
+}
+
+[data-window-inactive] [role="listbox"]:focus-visible .listbox-item:is([aria-selected="true"], :has(> [role="option"][aria-selected="true"])) {
+  outline-color: var(--color-line);
 }
 
 /* Indeterminate "still working" bar: a short segment sweeping left to right. */

@@ -7,7 +7,7 @@ vi.mock('@renderer/ipc/client', () => ({ ipcInvoke: vi.fn(), ipcOn: () => () => 
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
 
 import { TapeRow } from '@renderer/components/TapeRow'
-import type { Tape } from '@shared/domain'
+import { tapeStates, type Tape } from '@shared/domain'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -32,6 +32,24 @@ const tape: Tape = {
 }
 
 describe('TapeRow', () => {
+  it.each(tapeStates)('keeps the selected %s row eligible for hover and a separate keyboard cue', async (state) => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    const onSelect = vi.fn()
+    await act(async () => root!.render(createElement(TapeRow, {
+      tape: { ...tape, state }, progress: undefined, selected: true, onSelect,
+    })))
+    const row = host.querySelector<HTMLElement>('[role="option"]')!
+    expect(row.getAttribute('aria-selected')).toBe('true')
+    expect(row.classList.contains('listbox-item')).toBe(true)
+    expect(row.classList.contains('tape-row')).toBe(true)
+    expect(row.classList.contains('border-selected')).toBe(true)
+    await act(async () => row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(row.getAttribute('aria-selected')).toBe('true')
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   it('shows a title that reads like a catalogue key as the title it is', async () => {
     const host = document.createElement('div')
     document.body.append(host)

@@ -20,3 +20,17 @@ describe('renderer scrollbar contract', () => {
     expect(compact).toContain('scrollbar-gutter:stable')
   })
 })
+
+describe('composite row states', () => {
+  it('projects keyboard focus onto the whole selected item, including a wrapped box option', () => {
+    expect(compact).toContain('[role="listbox"]:focus-visible.listbox-item:is([aria-selected="true"],:has(>[role="option"][aria-selected="true"]))')
+    expect(css).toMatch(/\[role="listbox"\]:focus-visible \.listbox-item[^\{]*\{\s*outline: 2px solid var\(--color-focus\);\s*outline-offset: -2px;/)
+    expect(css).toMatch(/\[data-window-inactive\] \[role="listbox"\]:focus-visible \.listbox-item[^\{]*\{\s*outline-color: var\(--color-line\);/)
+  })
+
+  it('layers hover over the row palette and keeps the selected tape border authoritative', () => {
+    expect(compact).toContain('.listbox-item:hover{background-image:linear-gradient(var(--color-item-hover-tint),var(--color-item-hover-tint));}')
+    expect(compact).toContain('.tape-row[aria-selected="true"]{border-color:var(--color-selected);}')
+    expect(css.match(/--color-item-hover-tint:/g)).toHaveLength(2)
+  })
+})

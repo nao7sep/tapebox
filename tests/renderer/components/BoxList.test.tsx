@@ -6,6 +6,7 @@ import { BoxList } from '@renderer/components/BoxList'
 import { WindowCloseGuard } from '@renderer/components/WindowCloseGuard'
 import { windowCloseState } from '@renderer/lib/windowClose'
 import { useBoxesStore } from '@renderer/store/boxes'
+import { useArchiveStore } from '@renderer/store/archive'
 import { useBoxActionResultsStore } from '@renderer/store/boxActionResults'
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), closeRequest: (() => {}) as () => void }))
@@ -26,6 +27,7 @@ beforeEach(async () => {
   HTMLElement.prototype.scrollIntoView = vi.fn()
   bridge.invoke.mockReset().mockResolvedValue(undefined)
   vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+  useArchiveStore.setState({ selectedBoxId: null })
   useBoxesStore.setState({ editingId: null, draftName: '', pendingRenames: 0, boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
   useBoxActionResultsStore.setState({ results: {} })
   const host = document.createElement('div')
@@ -82,6 +84,26 @@ describe('box draft on workspace close', () => {
     expect(input().value).toBe('Keep on failure')
     expect(document.body.textContent).toContain('The box could not be renamed.')
   })
+})
+
+it('marks the whole selected box row for keyboard emphasis while hover leaves navigation alone', async () => {
+  await act(async () => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  const list = document.querySelector<HTMLElement>('[role="listbox"]')!
+  await act(async () => {
+    list.focus()
+    list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  })
+  const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'))
+  const selected = options[1]!
+  expect(selected.getAttribute('aria-selected')).toBe('true')
+  expect(selected.parentElement!.classList.contains('listbox-item')).toBe(true)
+  expect(selected.parentElement!.matches(':has(> [role="option"][aria-selected="true"])')).toBe(true)
+  await act(async () => options[0]!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+  expect(useArchiveStore.getState().selectedBoxId).toBe('box1')
+  expect(document.activeElement).toBe(list)
+  await act(async () => list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })))
+  expect(useArchiveStore.getState().selectedBoxId).toBeNull()
+  expect(bridge.invoke).not.toHaveBeenCalled()
 })
 
 

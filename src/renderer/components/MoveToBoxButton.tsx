@@ -60,28 +60,21 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
         </button>
       )}
     >
-      <MenuItem onSelect={() => moveTo(null)} className={itemClass(tape.boxId === null)}>
+      <MenuItem onSelect={() => moveTo(null)} selected={tape.boxId === null}>
         {tape.boxId === null ? <CheckIcon className="mr-1.5" /> : null}
         {t.t('boxes.unboxed')}
       </MenuItem>
       {sorted.map((g) => (
-        <MenuItem key={g.id} onSelect={() => moveTo(g.id)} className={itemClass(tape.boxId === g.id)}>
+        <MenuItem key={g.id} onSelect={() => moveTo(g.id)} selected={tape.boxId === g.id}>
           {tape.boxId === g.id ? <CheckIcon className="mr-1.5" /> : null}
           {g.name}
         </MenuItem>
       ))}
       <div className="my-1 border-t border-line" role="separator" />
-      <MenuItem onSelect={() => void newBoxAndMove()} className="whitespace-nowrap">
+      <MenuItem onSelect={() => void newBoxAndMove()}>
         <PlusIcon className="mr-1.5" />
         {t.t('boxes.newBox')}
       </MenuItem>
     </Menu>
-  )
-}
-
-function itemClass(active: boolean): string {
-  return (
-    'block w-full px-3 py-1.5 text-left text-sm transition ' +
-    (active ? 'text-fg-strong' : 'text-fg hover:bg-raised hover:text-fg-strong')
   )
 }

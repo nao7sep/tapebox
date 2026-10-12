@@ -435,7 +435,7 @@ function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
             className={
               'block w-full rounded px-3 py-1.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-muted ' +
               (selected
-                ? 'bg-raised text-fg-strong'
+                ? 'bg-raised text-fg-strong hover:bg-raised-hover'
                 : 'text-fg hover:bg-hover hover:text-fg-strong')
             }
           >

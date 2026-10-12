@@ -42,7 +42,7 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
       aria-selected={selected}
       onClick={onSelect}
       className={
-        'block w-full cursor-pointer rounded-md border px-3 py-2 text-left transition ' +
+        'listbox-item tape-row block w-full cursor-pointer rounded-md border px-3 py-2 text-left transition ' +
         palette
       }
     >

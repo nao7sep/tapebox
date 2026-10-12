@@ -296,6 +296,12 @@ describe('RecordsWindow', () => {
     expect(document.activeElement).toBe(listbox())
     expect(ipcInvoke).toHaveBeenLastCalledWith('records:detail', { kind: 'log', id: 9 })
     expect(options()[1]!.getAttribute('aria-selected')).toBe('true')
+    expect(options()[1]!.classList.contains('listbox-item')).toBe(true)
+    await act(async () => options()[0]!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(options()[1]!.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(listbox())
+    await press('ArrowUp')
+    expect(ipcInvoke).toHaveBeenLastCalledWith('records:detail', { kind: 'ai-call', id: 4 })
   })
 
   it('reads again with each filter, and searches once typing pauses', async () => {

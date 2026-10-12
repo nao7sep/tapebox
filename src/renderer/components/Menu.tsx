@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { nextIndex } from '@renderer/lib/nextIndex'
+import { isComposingKeyboardEvent, useComposing } from '@renderer/lib/useComposing'
 
 /**
  * The app's in-app menu layer: a trigger plus a popup list of commands that
@@ -28,6 +29,7 @@ type TriggerProps = {
   'aria-haspopup': 'menu'
   'aria-expanded': boolean
   onClick: () => void
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
 }
 
 type Props = {
@@ -63,13 +65,24 @@ export function Menu({
 }: Props) {
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<PopupPosition | null>(null)
+  const positioned = position !== null
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
+  const initialEdge = useRef<'first' | 'last'>('first')
+  const { composingRef, handlers: composing } = useComposing()
 
-  const items = (): HTMLElement[] =>
+  const items = (): HTMLButtonElement[] =>
     contentRef.current
-      ? Array.from(contentRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      ? Array.from(contentRef.current.querySelectorAll<HTMLButtonElement>('[role="menuitem"], [role="menuitemradio"]'))
+          .filter((item) => !item.disabled)
       : []
+
+  const focusInitialItem = () => {
+    const all = items()
+    const target = all.find((item) => item.getAttribute('aria-checked') === 'true')
+      ?? (initialEdge.current === 'last' ? all.at(-1) : all[0])
+    target?.focus()
+  }
 
   const close = (focusTrigger = true) => {
     setOpen(false)
@@ -138,13 +151,16 @@ export function Menu({
     }
   }, [align, maxHeight, open, placement])
 
-  // On open, move focus into the menu (first item). On a re-render while open
-  // (the item set changed), leave focus where it is.
-  useEffect(() => {
-    if (!open) return
-    const id = requestAnimationFrame(() => items()[0]?.focus())
-    return () => cancelAnimationFrame(id)
-  }, [open])
+  // Navigation is ready once the popup is visible, before another key can arrive. Selected
+  // choices take precedence over command-menu entry from the first/last edge.
+  // Later renders leave focus alone, and hover never changes it.
+  useLayoutEffect(() => {
+    if (!open) {
+      composingRef.current = false
+      return
+    }
+    if (positioned) focusInitialItem()
+  }, [open, positioned])
 
   // Outside click closes without yanking focus back (a pointer interaction).
   useEffect(() => {
@@ -160,9 +176,13 @@ export function Menu({
   }, [open])
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (isComposingKeyboardEvent(composingRef, e)) {
+      if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
+      return
+    }
     const all = items()
     if (all.length === 0) return
-    const current = Math.max(0, all.indexOf(document.activeElement as HTMLElement))
+    const current = Math.max(0, all.indexOf(document.activeElement as HTMLButtonElement))
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       all[nextIndex(current, all.length, 1)]?.focus()
@@ -178,6 +198,9 @@ export function Menu({
     } else if (e.key === 'Escape' || e.key === 'Tab') {
       e.preventDefault()
       close()
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      all[current]?.click()
     } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
       const ch = e.key.toLowerCase()
       const order = [...all.slice(current + 1), ...all.slice(0, current + 1)]
@@ -194,8 +217,23 @@ export function Menu({
         'aria-haspopup': 'menu',
         'aria-expanded': open,
         onClick: () => {
+          initialEdge.current = 'first'
           setPosition(null)
           setOpen((v) => !v)
+        },
+        onKeyDown: (event) => {
+          if (isComposingKeyboardEvent(composingRef, event)) {
+            if (event.key === 'Enter' || event.key === ' ') event.preventDefault()
+            return
+          }
+          if (!['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) return
+          event.preventDefault()
+          initialEdge.current = event.key === 'ArrowUp' ? 'last' : 'first'
+          if (open) focusInitialItem()
+          else {
+            setPosition(null)
+            setOpen(true)
+          }
         },
       })}
       {open && createPortal(
@@ -204,6 +242,7 @@ export function Menu({
           role="menu"
           aria-label={label}
           onKeyDown={onKeyDown}
+          {...composing}
           className={
             contentClassName ??
             'w-max min-w-[12rem] rounded-md border border-line bg-panel py-1 shadow-xl'
@@ -238,28 +277,34 @@ export function MenuItem({
   onSelect,
   children,
   className,
+  selected,
+  disabled = false,
 }: {
   onSelect: () => void
   children: ReactNode
   className?: string
+  /** A persistent choice, distinct from the item keyboard navigation targets. */
+  selected?: boolean
+  disabled?: boolean
 }) {
   const ctx = useContext(MenuContext)
   return (
     <button
       type="button"
-      role="menuitem"
+      role={selected === undefined ? 'menuitem' : 'menuitemradio'}
+      aria-checked={selected}
+      disabled={disabled}
       tabIndex={-1}
       onClick={() => {
         ctx?.close()
         onSelect()
       }}
-      // The arrow-focused item is the menu's cursor: give it the app's highlight
-      // (a background, like the lists' selection) and suppress the default ring,
-      // which an `overflow` container otherwise clips into stray edges.
+      // Native :focus-visible keeps pointer entry quiet, then marks keyboard use.
+      // The app's focus outline is inset to survive the popup's scrolling/clipping;
+      // it remains distinct from hover and any persistent choice checkmark.
       className={
-        'outline-none focus:bg-raised focus:text-fg-strong whitespace-nowrap overflow-hidden text-ellipsis ' +
-        (className ??
-          'block w-full px-3 py-1.5 text-left text-sm text-fg hover:bg-raised hover:text-fg-strong')
+        'mx-1 block w-[calc(100%-0.5rem)] rounded px-3 py-1.5 text-left text-sm text-fg whitespace-nowrap overflow-hidden text-ellipsis hover:bg-raised hover:text-fg-strong focus-visible:bg-raised focus-visible:text-fg-strong focus-visible:outline-offset-[-2px] disabled:opacity-40 ' +
+        (className ?? '')
       }
     >
       {children}

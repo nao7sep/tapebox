@@ -35,7 +35,7 @@ export function FilterChips() {
             className={
               'flex h-7 cursor-pointer items-center rounded px-2.5 text-xs transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-fg-muted ' +
               (active
-                ? 'bg-inverse text-on-inverse'
+                ? 'bg-inverse text-on-inverse hover:bg-inverse-hover'
                 : 'text-fg hover:bg-raised-hover')
             }
           >
