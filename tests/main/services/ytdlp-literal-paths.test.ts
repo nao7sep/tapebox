@@ -165,8 +165,7 @@ describe('raw poster scratch ownership', () => {
     const controller = new AbortController()
     const result = downloadThumbnail(tapeId, sourceUrl, dir, controller.signal)
     const observed = result.then(() => 'resolved', (err: unknown) => err)
-    // A real child under the loaded default suite can take well over waitFor's default second to start.
-    await vi.waitFor(async () => expect((await readdir(dir)).length).toBeGreaterThan(0), { timeout: 10_000 })
+    await vi.waitFor(async () => expect((await readdir(dir)).length).toBeGreaterThan(0))
     controller.abort(new DOMException('cancel poster', 'AbortError'))
 
     expect(await observed).toMatchObject({ name: 'AbortError' })
@@ -175,7 +174,7 @@ describe('raw poster scratch ownership', () => {
     const firstLine = (writeRecord.mock.calls[0]![1].stdout as string).split('\n')[0]!
     const { pid } = JSON.parse(firstLine.slice('[fixture] '.length)) as { pid: number }
     expect(() => process.kill(pid, 0)).toThrow()
-  }, 20_000)
+  })
 
   it('returns null for a missing optional poster and leaves existing files intact', async () => {
     vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', 'posix')
