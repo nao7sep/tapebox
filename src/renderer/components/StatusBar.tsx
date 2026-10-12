@@ -12,9 +12,11 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 import { joinMessages, message, type Message, type MessageValue } from '@shared/i18n/translate'
 
 /**
- * Footer split into three fixed zones, each owning one kind of information so
- * none evicts another. A zone too narrow for its text wraps rather than cutting
- * it short, since nothing else shows the complete status (text-cleanup rule 4):
+ * Footer split into three zones, each owning one kind of information so none
+ * evicts another. A zone too narrow for its text wraps rather than cutting it
+ * short, since nothing else shows the complete status (text-cleanup rule 4); an
+ * empty notice zone takes no width and the tools zone takes its content's, so the
+ * activity line has the room and wraps only in an unusually narrow window:
  *   left   — live download activity, or an idle library summary
  *   center — an eligible app-wide passing notice; empty when none
  *   right  — managed-tool / update state, click-through to the tools modal
@@ -25,10 +27,8 @@ export function StatusBar() {
       <div className="min-w-0 flex-1">
         <ActivityZone />
       </div>
-      <div className="min-w-0 flex-1 text-center">
-        <NoticeZone />
-      </div>
-      <div className="flex min-w-0 flex-1 justify-end">
+      <NoticeZone />
+      <div className="flex min-w-0 justify-end">
         <ToolsZone />
       </div>
     </footer>
@@ -96,7 +96,11 @@ function NoticeZone() {
   const info = useToastStore((s) => s.toasts).filter((toast) => toast.kind === 'info').at(-1)
   const t = useI18n()
   if (!info) return null
-  return <span className="block wrap-anywhere text-fg">{t.text(info.text)}</span>
+  return (
+    <div className="min-w-0 flex-1 text-center">
+      <span className="block wrap-anywhere text-fg">{t.text(info.text)}</span>
+    </div>
+  )
 }
 
 /**
