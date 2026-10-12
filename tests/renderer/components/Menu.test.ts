@@ -135,6 +135,50 @@ describe('Menu', () => {
     expect(document.activeElement).toBe(trigger())
   })
 
+  it('Enter straight after hovering an earlier item activates the keyboard target', async () => {
+    const onSelect = { a: vi.fn(), b: vi.fn(), c: vi.fn() }
+    await mountMenu(onSelect)
+    await key(trigger(), 'ArrowDown')
+    await key(items()[0], 'ArrowDown')
+    await key(items()[1], 'ArrowDown')
+    await act(async () => {
+      items()[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      items()[0].dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    })
+    await key(document.activeElement as HTMLElement, 'Enter')
+    expect(onSelect.c).toHaveBeenCalledOnce()
+    expect(onSelect.a).not.toHaveBeenCalled()
+  })
+
+  it('keeps the keyboard target on the same item when the items reorder live', async () => {
+    const onSelect = { a: vi.fn(), b: vi.fn(), c: vi.fn() }
+    await mountMenu(onSelect)
+    await key(trigger(), 'ArrowDown')
+    await key(items()[0], 'ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Banana')
+    // A live update (another window renaming or reordering boxes) re-renders the
+    // open menu with the same keyed items in a new order.
+    const handlers: Record<string, () => void> = { Apple: onSelect.a, Banana: onSelect.b, Cherry: onSelect.c }
+    await act(async () => {
+      root!.render(
+        React.createElement(Menu, {
+          label: 'Test menu',
+          trigger: (props: Record<string, unknown>) =>
+            React.createElement('button', { ...props, 'data-testid': 'trigger' }, 'Open'),
+          children: ['Cherry', 'Apple', 'Banana'].map((label) => React.createElement(MenuItem, {
+            onSelect: handlers[label]!, key: label, children: label,
+          })),
+        }),
+      )
+    })
+    expect(items().map((item) => item.textContent)).toEqual(['Cherry', 'Apple', 'Banana'])
+    expect(document.activeElement?.textContent).toBe('Banana')
+    await key(document.activeElement as HTMLElement, 'Enter')
+    expect(onSelect.b).toHaveBeenCalledOnce()
+    expect(onSelect.a).not.toHaveBeenCalled()
+    expect(onSelect.c).not.toHaveBeenCalled()
+  })
+
   it('click activates the clicked command even while another command is the keyboard target', async () => {
     const onSelect = { a: vi.fn(), b: vi.fn(), c: vi.fn() }
     await mountMenu(onSelect)
