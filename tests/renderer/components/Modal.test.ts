@@ -81,6 +81,15 @@ describe('Modal accessibility', () => {
     ])
   })
 
+  it('wraps footer buttons onto a new row instead of squeezing their labels', async () => {
+    await mountModal('Long labels', {
+      footer: React.createElement('button', null, 'Продолжить редактирование'),
+    })
+    // jsdom has no layout; the classes are the contract a real render follows.
+    const footer = dialog().querySelector('footer')!.className.split(/\s+/)
+    expect(footer).toEqual(expect.arrayContaining(['flex-wrap', '[&>button]:shrink-0', '[&>button]:whitespace-nowrap']))
+  })
+
   it('makes the passive scroll body the single labelled keyboard owner', async () => {
     await mountModal('Activity')
 

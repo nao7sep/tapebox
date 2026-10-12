@@ -167,7 +167,10 @@ export function Modal({ title,
         </PassiveScrollRegion>
 
         {footer && (
-          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-separator p-4">
+          // Fixed-height buttons never shrink or wrap their labels: a content-sized
+          // panel widens to its cap first, then a button moves to its own row
+          // (modal-dialog-conventions, Header, Body, and Footer Layout).
+          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-separator p-4 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
             {footer}
           </footer>
         )}
