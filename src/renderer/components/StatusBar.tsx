@@ -13,7 +13,8 @@ import { joinMessages, message, type Message, type MessageValue } from '@shared/
 
 /**
  * Footer split into three fixed zones, each owning one kind of information so
- * none evicts another:
+ * none evicts another. A zone too narrow for its text wraps rather than cutting
+ * it short, since nothing else shows the complete status (text-cleanup rule 4):
  *   left   — live download activity, or an idle library summary
  *   center — an eligible app-wide passing notice; empty when none
  *   right  — managed-tool / update state, click-through to the tools modal
@@ -76,7 +77,7 @@ function ActivityZone() {
   const active = downloading > 0 || (queued > 0 && autoStart)
 
   return (
-    <span className="flex items-center gap-1.5 truncate">
+    <span className="flex flex-wrap items-center gap-x-1.5">
       {active && <Spinner className={tone} />}
       {downloading > 0 && <ArrowDownIcon className={tone} />}
       <span className={tone}>{t.text(text)}</span>
@@ -95,7 +96,7 @@ function NoticeZone() {
   const info = useToastStore((s) => s.toasts).filter((toast) => toast.kind === 'info').at(-1)
   const t = useI18n()
   if (!info) return null
-  return <span className="block truncate text-fg">{t.text(info.text)}</span>
+  return <span className="block wrap-anywhere text-fg">{t.text(info.text)}</span>
 }
 
 /**
@@ -122,17 +123,17 @@ function ToolsZone() {
 
   const cls = ROLE_TEXT_CLASS[role]
   if (actionable) return <Action onClick={openModal} className={cls}>{t.text(text)}</Action>
-  return <span className={`block truncate ${cls}`}>{t.text(text)}</span>
+  return <span className={`block wrap-anywhere text-right ${cls}`}>{t.text(text)}</span>
 }
 
 function Plain({ children }: { children: ReactNode }) {
-  return <span className="block truncate text-fg">{children}</span>
+  return <span className="block wrap-anywhere text-right text-fg">{children}</span>
 }
 
 /** A still status with a spinner, for genuinely in-progress tool states. */
 function Busy({ children }: { children: ReactNode }) {
   return (
-    <span className="flex items-center justify-end gap-1.5 truncate text-fg">
+    <span className="flex items-center justify-end gap-1.5 wrap-anywhere text-right text-fg">
       <Spinner /> {children}
     </span>
   )
@@ -148,7 +149,7 @@ function Action({
   children: ReactNode
 }) {
   return (
-    <button onClick={onClick} className={`block truncate hover:underline ${className}`}>
+    <button onClick={onClick} className={`block wrap-anywhere text-right hover:underline ${className}`}>
       {children}
     </button>
   )
