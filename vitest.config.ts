@@ -24,6 +24,11 @@ export default defineConfig({
     // Node by default for the pure main/shared logic; the renderer's DOM helpers
     // opt into jsdom per file via a `// @vitest-environment jsdom` pragma.
     environment: 'node',
+    // Electron's npm entry downloads its ~100 MB binary the first time anything
+    // imports it while the binary is missing, as after a fresh npm ci with install
+    // scripts blocked. Unit tests need only the module's path string, never the
+    // binary; the live lane, which runs real Electron, does not inherit this.
+    env: { ELECTRON_OVERRIDE_DIST_PATH: resolve('tests/no-electron-binary') },
     include: ['tests/**/*.test.{ts,tsx}'],
     // The rendered-key gate watches every test that mounts the interface.
     setupFiles: ['tests/setup/rendered-keys.ts'],
