@@ -512,7 +512,7 @@ function FilterSelect({
       aria-label={label}
       value={value ?? ''}
       onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
-      className={`block w-full min-w-0 ${INPUT_LINE_CLASS}`}
+      className={`block w-full min-w-0 text-ellipsis ${INPUT_LINE_CLASS}`}
     >
       <option value="">{allLabel}</option>
       {shown.map((option) => (

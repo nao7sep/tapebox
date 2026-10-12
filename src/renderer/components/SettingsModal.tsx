@@ -497,7 +497,7 @@ function GeneralTab({
           value={draft.language}
           disabled={busy}
           onChange={(e) => onPatch({ language: normalizeLanguagePreference(e.target.value) })}
-          className={`mt-1 block w-full ${INPUT_LINE_CLASS}`}
+          className={`mt-1 block w-full text-ellipsis ${INPUT_LINE_CLASS}`}
         >
           <option value="system">{t.t('settings.languageSystem')}</option>
           {LANGUAGES.map((language) => (
@@ -770,7 +770,7 @@ function AiTab({
               value={thinkingFor(row, thinking)}
               disabled={busy}
               onChange={(e) => onThinkingChange(e.target.value)}
-              className={`mt-1 block w-full ${INPUT_LINE_CLASS}`}
+              className={`mt-1 block w-full text-ellipsis ${INPUT_LINE_CLASS}`}
             >
               {row.thinking.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
