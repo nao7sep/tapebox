@@ -12,27 +12,35 @@ import type { Message } from '@shared/i18n/translate'
 // A line is yt-dlp's own output, shown as it printed it; an error is app copy.
 export type LogEntry = { kind: 'line'; text: string } | { kind: 'error'; text: Message }
 
-/** Bound per-tape history so a chatty or stuck download can't grow unbounded. */
-const MAX_ENTRIES = 300
+/** Bound per-tape history so a chatty or stuck download can't grow unbounded.
+ *  Records keeps the run's complete output; the panel says when older lines left. */
+export const MAX_LOG_ENTRIES = 300
 
 type DownloadLogState = {
   entries: Record<string, LogEntry[]>
+  /** Tapes whose live history has dropped its oldest lines. */
+  trimmed: Record<string, true>
   prepend: (tapeId: string, entry: LogEntry) => void
   reset: (tapeId: string) => void
 }
 
 export const useDownloadLogStore = create<DownloadLogState>((set) => ({
   entries: {},
+  trimmed: {},
   prepend: (tapeId, entry) =>
     set((state) => {
-      const next = [entry, ...(state.entries[tapeId] ?? [])].slice(0, MAX_ENTRIES)
-      return { entries: { ...state.entries, [tapeId]: next } }
+      const all = [entry, ...(state.entries[tapeId] ?? [])]
+      const entries = { ...state.entries, [tapeId]: all.slice(0, MAX_LOG_ENTRIES) }
+      if (all.length <= MAX_LOG_ENTRIES || state.trimmed[tapeId]) return { entries }
+      return { entries, trimmed: { ...state.trimmed, [tapeId]: true } }
     }),
   reset: (tapeId) =>
     set((state) => {
       if (!state.entries[tapeId]) return state
-      const next = { ...state.entries }
-      delete next[tapeId]
-      return { entries: next }
+      const entries = { ...state.entries }
+      delete entries[tapeId]
+      const trimmed = { ...state.trimmed }
+      delete trimmed[tapeId]
+      return { entries, trimmed }
     }),
 }))

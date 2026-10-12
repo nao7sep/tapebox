@@ -30,8 +30,6 @@ const READ_ATTRIBUTES = new Set([
 const LITERAL_TEXT = new Set([
   "TapeBox",
   "GitHub",
-  // The file-name example in the API-key field (an OpenAI key's prefix).
-  "sk-…",
   // yt-dlp command-line examples in the argument fields.
   '--add-header "Accept-Language: ja"\n--sleep-requests "1"',
   '--add-header "Accept-Language: ja" -f bestvideo+bestaudio',

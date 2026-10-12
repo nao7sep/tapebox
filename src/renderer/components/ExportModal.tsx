@@ -107,7 +107,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
           <div className="flex items-center gap-2">
             <code
               className={
-                'min-w-0 flex-1 truncate rounded border bg-canvas px-2 py-1.5 text-xs ' +
+                'min-w-0 flex-1 wrap-anywhere rounded border bg-canvas px-2 py-1.5 text-xs ' +
                 // Not set is a neutral placeholder, not a warning — choosing per-export
                 // is a legitimate preference, so it stays muted rather than amber.
                 (dir ? 'border-line text-fg' : 'border-dashed border-line text-fg-subtle')
@@ -124,7 +124,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
               type="button"
               onClick={() => setDir(defaultDir)}
               disabled={busy}
-              className="mt-1 truncate text-xs text-fg-muted hover:text-fg-emphasis disabled:opacity-50"
+              className="mt-1 wrap-anywhere text-left text-xs text-fg-muted hover:text-fg-emphasis disabled:opacity-50"
             >
               {t.t('export.useDefault', { path: defaultDir })}
             </button>

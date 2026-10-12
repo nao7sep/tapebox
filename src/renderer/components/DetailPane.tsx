@@ -5,7 +5,7 @@ import type { SidecarRaw } from '@shared/ipc-contract'
 import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
-import { useDownloadLogStore, type LogEntry } from '@renderer/store/downloadLog'
+import { MAX_LOG_ENTRIES, useDownloadLogStore, type LogEntry } from '@renderer/store/downloadLog'
 import { useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
@@ -87,6 +87,7 @@ export function DetailPane({
   const progress = useTapesStore((s) => s.progress[tape.id])
   const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
   const logEntries = useDownloadLogStore((s) => s.entries[tape.id]) ?? NO_ENTRIES
+  const logTrimmed = useDownloadLogStore((s) => s.trimmed[tape.id] === true)
   const mediaBase = useMediaStore((s) => s.baseUrl)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
@@ -398,7 +399,7 @@ export function DetailPane({
                   </h2>
                   {/* Always visible: the media line for a downloaded tape (its "status"
                       is just "In library", which says nothing), otherwise the status. */}
-                  <p className="mt-0.5 truncate text-xs text-fg-muted">
+                  <p className="mt-0.5 wrap-anywhere text-xs text-fg-muted">
                     {downloaded && mediaMeta ? mediaMeta : t.text(headerStatus(tape, progress, stalled, t))}
                   </p>
                 </div>
@@ -519,7 +520,7 @@ export function DetailPane({
             </p>
           </CaptionedPanel>
         ) : (
-          <DownloadLogPanel tape={tape} progress={progress} entries={logEntries} />
+          <DownloadLogPanel tape={tape} progress={progress} entries={logEntries} trimmed={logTrimmed} />
         )}
 
         {/* All operations live here, in a consistent order for every state:
@@ -668,10 +669,12 @@ function DownloadLogPanel({
   tape,
   progress,
   entries,
+  trimmed,
 }: {
   tape: Tape
   progress: ProgressEntry | undefined
   entries: LogEntry[]
+  trimmed: boolean
 }) {
   const t = useI18n()
   const failed = tape.state === 'failed'
@@ -714,6 +717,9 @@ function DownloadLogPanel({
                 {e.kind === 'error' ? t.text(e.text) : e.text}
               </li>
             ))}
+            {/* Newest first, so the oldest kept line is last: a note, not an
+                appended ellipsis, since a line may itself end in one. */}
+            {trimmed && <li className="pt-1 text-fg-subtle">{t.t('detail.logTrimmed', { count: MAX_LOG_ENTRIES })}</li>}
           </ul>
         ) : (
           <p className="text-fg-subtle">{t.t(WORKING_PLACEHOLDER[tape.state] ?? 'common.working')}</p>

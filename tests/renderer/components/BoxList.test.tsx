@@ -37,7 +37,7 @@ beforeEach(async () => {
     createElement(BoxList, { onReorder: () => {}, orderError: null, onDismissOrderError: () => {} }),
     createElement(WindowCloseGuard),
   )))
-  await act(async () => (document.querySelector('[aria-label="Rename box"]') as HTMLButtonElement).click())
+  await act(async () => (document.querySelector('[aria-label="Rename box…"]') as HTMLButtonElement).click())
 })
 afterEach(async () => {
   await act(async () => root.unmount())

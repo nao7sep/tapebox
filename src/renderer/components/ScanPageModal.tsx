@@ -63,6 +63,10 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const listRef = useRef<HTMLUListElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  // Rows have one fixed height for virtualization, so a long title is cut short
+  // there; the row last focused or tapped shows its complete title and reason
+  // beneath the list (responsive-interface-conventions).
+  const [activeUrl, setActiveUrl] = useState<string | null>(null)
 
   function flushPending() {
     frameRef.current = null
@@ -228,6 +232,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
 
   const range = visibleRowRange(scrollTop, viewportHeight, ROW_HEIGHT, filtered.length)
   const visibleRows = filtered.slice(range.start, range.end)
+  const active = activeUrl === null ? undefined : filtered.find((e) => e.sourceUrl === activeUrl)
 
   function toggle(sourceUrl: string) {
     setSelected((prev) => {
@@ -371,6 +376,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
               return (
                 <li key={e.sourceUrl} style={{ height: ROW_HEIGHT }}>
                   <label
+                    onClick={() => setActiveUrl(e.sourceUrl)}
                     className={
                       'flex h-full items-center gap-3 rounded px-2 text-sm ' +
                       (disabled ? 'opacity-50' : 'hover:bg-hover')
@@ -379,8 +385,11 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => toggle(e.sourceUrl)}
-                      disabled={disabled}
+                      // aria-disabled rather than disabled keeps an unaddable row
+                      // focusable, so its full title and reason stay reachable.
+                      aria-disabled={disabled || undefined}
+                      onChange={() => { if (!disabled) toggle(e.sourceUrl) }}
+                      onFocus={() => setActiveUrl(e.sourceUrl)}
                     />
                     {e.alreadyInLibrary && <span className="shrink-0 text-xs text-fg-muted">{t.t('tapeState.downloaded')}</span>}
                     <span className="min-w-0 flex-1 truncate">
@@ -395,6 +404,12 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
               )
             })}
           </ul>
+          {active && (
+            <p className="mt-2 text-xs text-fg wrap-anywhere">
+              {active.title ?? active.sourceUrl}
+              {active.unavailable && <span className="ml-2">({active.unavailable.reason})</span>}
+            </p>
+          )}
         </>
       )}
     </Modal>

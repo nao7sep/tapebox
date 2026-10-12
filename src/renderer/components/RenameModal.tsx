@@ -71,7 +71,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
     <Modal title={t.t('rename.title')} onClose={requestClose} size="2xl" footer={footer} closeDisabled={applying}>
       <div className="mb-4">
         <div className="text-xs text-fg-muted">{t.t('rename.currentName')}</div>
-        <div className="mt-1 truncate text-base text-fg-emphasis">{tape.filename ?? '—'}</div>
+        <div className="mt-1 wrap-anywhere text-base text-fg-emphasis">{tape.filename ?? '—'}</div>
       </div>
 
       <NameEditor

@@ -208,6 +208,42 @@ function heldFrames(): { pending: () => number; run: () => Promise<void> } {
   }
 }
 
+describe('ScanPageModal cut-short rows', () => {
+  it('shows the focused or tapped row in full, including an unaddable row and its reason', async () => {
+    await mount(vi.fn())
+    ipcInvoke.mockResolvedValueOnce({ sessionId: 'S1' }) // scan:start
+    await act(async () => { buttonByText('Scan').click() })
+    await flush()
+    const long = { ...ENTRY, title: `A very long title ${'that keeps going '.repeat(12)}to its end` }
+    const gone = { ...ENTRY, sourceId: 'v2', sourceUrl: 'https://example.test/watch?v=2', title: 'Removed clip', unavailable: { reason: 'Private video' } }
+    await act(async () => {
+      emitEvent('scan:entry', { sessionId: 'S1', entry: long })
+      emitEvent('scan:entry', { sessionId: 'S1', entry: gone })
+    })
+    await nextFrame()
+
+    const boxes = Array.from(document.querySelectorAll<HTMLInputElement>('[role="dialog"] input[type="checkbox"]'))
+    expect(boxes).toHaveLength(2)
+    const fullLine = () => document.querySelector('[role="dialog"] ul + p')?.textContent ?? null
+    expect(fullLine()).toBeNull()
+
+    await act(async () => { boxes[0]!.focus() })
+    expect(fullLine()).toBe(long.title)
+
+    // Unaddable rows stay focusable so their reason is reachable, but never toggle.
+    expect(boxes[1]!.disabled).toBe(false)
+    expect(boxes[1]!.getAttribute('aria-disabled')).toBe('true')
+    await act(async () => { boxes[1]!.focus() })
+    expect(fullLine()).toBe('Removed clip(Private video)')
+    await act(async () => { boxes[1]!.click() })
+    expect(boxes[1]!.checked).toBe(false)
+    expect(buttonByText('Add 1 tape')).toBeTruthy()
+
+    await act(async () => { (boxes[0]!.closest('label') as HTMLLabelElement).click() })
+    expect(fullLine()).toBe(long.title)
+  })
+})
+
 describe('ScanPageModal streaming', () => {
   afterEach(() => {
     vi.unstubAllGlobals()

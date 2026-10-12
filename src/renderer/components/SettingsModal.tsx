@@ -707,7 +707,7 @@ function AiTab({
             type="password"
             value={apiKeyDraft}
             onChange={(e) => onApiKeyChange(e.target.value)}
-            placeholder={keyIsSet ? '••••••••' : 'sk-…'}
+            placeholder={keyIsSet ? '••••••••' : undefined}
             spellCheck={false}
             disabled={busy}
             className={`flex-1 ${INPUT_LINE_CLASS}`}

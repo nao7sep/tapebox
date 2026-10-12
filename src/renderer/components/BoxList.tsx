@@ -287,7 +287,7 @@ function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: numb
         role="option"
         aria-selected={selected}
         onClick={onSelect}
-        className="min-w-0 flex-1 cursor-pointer truncate text-left"
+        className="min-w-0 flex-1 cursor-pointer wrap-anywhere text-left"
       >
         {t.t('boxes.unboxed')}
       </div>
@@ -351,7 +351,7 @@ function SortableBoxRow({
         role="option"
         aria-selected={selected}
         onClick={onSelect}
-        className="min-w-0 flex-1 cursor-pointer truncate text-left"
+        className="min-w-0 flex-1 cursor-pointer wrap-anywhere text-left"
       >
         {label}
       </div>
