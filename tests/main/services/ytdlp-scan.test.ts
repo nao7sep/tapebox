@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { SubprocessError } from '@main/io/spawn'
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 const { writeRecord } = vi.hoisted(() => ({ writeRecord: vi.fn() }))
@@ -30,7 +31,7 @@ describe('scanOutcome', () => {
   it('reports a failed exit with nothing listed as a failure carrying yt-dlp reason', () => {
     const outcome = scanOutcome({ ...ended, exitCode: 1, stderr: 'ERROR: Unsupported URL' })
     expect(outcome.kind).toBe('failed')
-    expect((outcome as { error: Error }).error.message).toContain('Unsupported URL')
+    expect((outcome as { error: SubprocessError }).error.stderr).toBe('ERROR: Unsupported URL')
 
     const idle = new Error('no output')
     expect(scanOutcome({ ...ended, failure: idle, exitCode: null })).toEqual({ kind: 'failed', error: idle })

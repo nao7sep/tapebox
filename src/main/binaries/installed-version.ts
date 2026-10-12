@@ -144,7 +144,7 @@ async function probe(
     if (version === null) {
       log.warn('installed version probe printed nothing recognizable', {
         name,
-        output: stdout.slice(0, 200),
+        output: stdout,
       })
     }
     return version

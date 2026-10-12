@@ -1,6 +1,7 @@
 import { mkdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { linkOrCopyNoOverwrite, unlinkFiles } from '@main/io/atomic-file'
+import { log } from '@main/io/logger'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { portableFilenameIdentity } from '@shared/filename'
 import { UserFacingError } from '@main/user-facing-error'
@@ -121,6 +122,8 @@ export async function relocateLibrary(
   }
   if (collisions.length > 0) {
     // File names are the user's own, listed as they are; the count is a plural entry.
+    // The notice names the first five; Records keeps every one (text-cleanup rule 4).
+    log.warn('library move destination already holds files', { toDir, collisions })
     const shown = collisions.slice(0, 5).join(', ')
     throw new UserFacingError(
       'conflict',

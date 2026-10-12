@@ -55,12 +55,13 @@ export class SubprocessError extends Error implements LoggableError {
     public readonly exitCode: number | null,
     public readonly stderr: string,
   ) {
-    super(`${command} exited with code ${exitCode}: ${stderr.slice(0, 500)}`)
+    super(`${command} exited with code ${exitCode}`)
     this.name = 'SubprocessError'
   }
 
   // Discrete, machine-parseable fields for describeError — exitCode as a number
-  // to filter on, and the FULL stderr (the message truncates it to 500 chars).
+  // to filter on, and the complete stderr, which the message leaves out rather
+  // than carrying a shortened copy.
   toLogFields(): Record<string, unknown> {
     return { command: this.command, exitCode: this.exitCode, stderr: this.stderr }
   }
