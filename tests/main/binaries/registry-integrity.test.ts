@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fetchLatestRelease = vi.fn()
 const fetchReleases = vi.fn()
@@ -23,22 +23,11 @@ const asset = (name: string) => ({
   size: 1,
 })
 
-function ytDlpName(): string {
-  if (process.platform === 'darwin') return 'yt-dlp_macos'
-  if (process.platform === 'linux') return 'yt-dlp_linux'
-  return 'yt-dlp.exe'
-}
-
-function denoName(): string {
-  if (process.platform === 'darwin') {
-    return process.arch === 'arm64' ? 'deno-aarch64-apple-darwin.zip' : 'deno-x86_64-apple-darwin.zip'
-  }
-  if (process.platform === 'linux') {
-    return process.arch === 'arm64'
-      ? 'deno-aarch64-unknown-linux-gnu.zip'
-      : 'deno-x86_64-unknown-linux-gnu.zip'
-  }
-  return 'deno-x86_64-pc-windows-msvc.zip'
+// Asset selection reads the platform at resolve time, so each case supplies one;
+// registry-platforms.test.ts covers the selection itself.
+function onPlatform(platform: NodeJS.Platform, arch: NodeJS.Architecture): void {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+  vi.spyOn(process, 'arch', 'get').mockReturnValue(arch)
 }
 
 describe('registry integrity is mandatory', () => {
@@ -46,19 +35,23 @@ describe('registry integrity is mandatory', () => {
     fetchLatestRelease.mockReset()
     fetchReleases.mockReset()
   })
+  afterEach(() => { vi.restoreAllMocks() })
 
   it('refuses a yt-dlp release without SHA2-256SUMS', async () => {
-    fetchLatestRelease.mockResolvedValue(release([asset(ytDlpName())]))
+    onPlatform('darwin', 'arm64')
+    fetchLatestRelease.mockResolvedValue(release([asset('yt-dlp_macos')]))
     await expect(binarySpecs['yt-dlp'].resolveLatest()).rejects.toThrow('no SHA2-256SUMS')
   })
 
   it('refuses a Deno release without its per-asset checksum', async () => {
-    const name = denoName()
+    onPlatform('darwin', 'arm64')
+    const name = 'deno-aarch64-apple-darwin.zip'
     fetchLatestRelease.mockResolvedValue(release([asset(name)]))
     await expect(binarySpecs.deno.resolveLatest()).rejects.toThrow(`has no ${name}.sha256sum`)
   })
 
-  it.runIf(process.platform === 'win32')('refuses a Windows ffmpeg release without checksums.sha256', async () => {
+  it('refuses a Windows ffmpeg release without checksums.sha256', async () => {
+    onPlatform('win32', 'x64')
     fetchReleases.mockResolvedValue([
       autobuildRelease([asset('ffmpeg-N-119123-gabcdef0123-win64-gpl.zip')]),
     ])

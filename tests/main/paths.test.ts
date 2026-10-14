@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { paths, resolveStorageRoot } from '@main/paths'
+import { binaryPath, paths, resolveStorageRoot, secureRoot } from '@main/paths'
 
 // The TAPEBOX_DATA_DIR storage-root resolution (storage-path-conventions). The home
 // directory is injected so these are pure, working-directory-independent
@@ -52,6 +52,18 @@ describe('resolveStorageRoot', () => {
     }
   })
 
+  it('expands Windows %VAR% references and a leading ~\\ on any host', () => {
+    const previous = process.env.TAPEBOX_TEST_ROOT
+    process.env.TAPEBOX_TEST_ROOT = resolve(tmpdir(), 'tapebox-disk2')
+    try {
+      expect(resolveStorageRoot('%TAPEBOX_TEST_ROOT%/tapebox', HOME)).toBe(join(process.env.TAPEBOX_TEST_ROOT, 'tapebox'))
+      expect(resolveStorageRoot('~\\tapebox', HOME)).toBe(join(HOME, 'tapebox'))
+    } finally {
+      if (previous === undefined) delete process.env.TAPEBOX_TEST_ROOT
+      else process.env.TAPEBOX_TEST_ROOT = previous
+    }
+  })
+
   it('throws when a set override expands to empty, rather than collapsing onto home', () => {
     // A non-empty override that is ENTIRELY an unset $VAR reference expands to ''.
     // That is a misconfiguration the convention says to report as a startup error,
@@ -83,6 +95,28 @@ describe('paths catalog file', () => {
     expect(paths.catalog).not.toBe(paths.config)
     expect(paths.catalog).not.toBe(paths.layout)
     expect(paths.catalog).not.toBe(paths.apiKeys)
+  })
+})
+
+describe('managed tool file names', () => {
+  it('names the executable with .exe on Windows only', () => {
+    expect(binaryPath('yt-dlp', 'win32')).toBe(join(paths.bin, 'yt-dlp.exe'))
+    expect(binaryPath('ffmpeg', 'darwin')).toBe(join(paths.bin, 'ffmpeg'))
+    expect(binaryPath('deno', 'linux')).toBe(join(paths.bin, 'deno'))
+  })
+})
+
+// Windows has no POSIX modes to tighten, so the storage root keeps what it has.
+;(process.platform === 'win32' ? describe.skip : describe)('a storage root with the Windows platform supplied', () => {
+  it('leaves an existing root unchanged', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'tapebox-root-'))
+    try {
+      await chmod(base, 0o755)
+      await secureRoot(base, 'win32')
+      expect((await stat(base)).mode & 0o777).toBe(0o755)
+    } finally {
+      await rm(base, { force: true, recursive: true })
+    }
   })
 })
 

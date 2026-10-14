@@ -130,6 +130,19 @@ describe('settings:update — normalizeUserDir at the boundary', () => {
     expect(stored.defaultExportDir).toBe(join(homedir(), 'Downloads'))
   })
 
+  it('expands a Windows-style ~\\ folder under home on any host', async () => {
+    await update({ defaultExportDir: '~\\Videos' })
+    const stored = updateSettings.mock.calls[0]![0] as Partial<Settings>
+    expect(stored.defaultExportDir).toBe(join(homedir(), 'Videos'))
+  })
+
+  // Whether a drive-letter path is absolute is the host's own path rule.
+  it.runIf(process.platform === 'win32')('accepts a Windows drive-letter folder as absolute', async () => {
+    await update({ defaultExportDir: 'D:\\Videos\\Exports' })
+    const stored = updateSettings.mock.calls[0]![0] as Partial<Settings>
+    expect(stored.defaultExportDir).toBe('D:\\Videos\\Exports')
+  })
+
   it('keeps a blank library folder blank (the app default), not the cwd', async () => {
     await update({ libraryDir: '   ' })
     const stored = updateSettings.mock.calls[0]![0] as Partial<Settings>

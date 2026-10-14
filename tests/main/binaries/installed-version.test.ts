@@ -224,6 +224,14 @@ describe('the sidecar, where a binary cannot report itself', () => {
     expect(readFileSync(versionSidecarPath('ffmpeg'), 'utf8')).toBe(text)
   })
 
+  it('is replaced by a reinstall over a sidecar in a newer format', async () => {
+    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ formatVersion: 2, version: 'autobuild-2027-01-01-00-00' }))
+    await writeVersionSidecar('ffmpeg', 'autobuild-2026-09-01-00-00')
+    forgetInstalledVersion('ffmpeg')
+    expect(await readInstalledVersion('ffmpeg')).toBe('autobuild-2026-09-01-00-00')
+    expect(JSON.parse(readFileSync(versionSidecarPath('ffmpeg'), 'utf8'))).toMatchObject({ formatVersion: 1 })
+  })
+
   it('is null when unreadable or empty, rather than a blank version', async () => {
     writeFileSync(versionSidecarPath('ffmpeg'), '{ not json')
     expect(await readInstalledVersion('ffmpeg')).toBeNull()

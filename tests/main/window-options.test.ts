@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { windowOptions } from '@main/window-options'
+import { windowOptions, windowStatePersistence } from '@main/window-options'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 
 // The window's minimum size must be the DERIVED layout floor, not a hand-typed
@@ -19,10 +19,10 @@ describe('windowOptions', () => {
   it('uses Electron bounds persistence with Windows display mode', () => {
     const opts = windowOptions('/preload.cjs', '#ffffff')
     expect(opts.name).toBe('main')
-    expect(opts.windowStatePersistence).toEqual({
-      bounds: true,
-      displayMode: process.platform === 'win32',
-    })
+    expect(opts.windowStatePersistence).toEqual(windowStatePersistence())
+    expect(windowStatePersistence('win32')).toEqual({ bounds: true, displayMode: true })
+    expect(windowStatePersistence('darwin')).toEqual({ bounds: true, displayMode: false })
+    expect(windowStatePersistence('linux')).toEqual({ bounds: true, displayMode: false })
   })
 
   it('keeps the designed default size as the restoration fallback', () => {

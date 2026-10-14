@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from '@shared/layout'
+import { windowStatePersistence } from '@main/window-options'
 
 // The Records window is one durable secondary window with its own placement
 // (window-conventions, Placement): opening it again brings it forward.
@@ -93,7 +94,7 @@ describe('Records window', () => {
     const options = recordsWindowOptions('Records', '/preload.cjs', '#ffffff')
     expect(options).toMatchObject({
       name: 'records',
-      windowStatePersistence: { bounds: true, displayMode: process.platform === 'win32' },
+      windowStatePersistence: windowStatePersistence(),
       title: 'Records',
       minWidth: RECORDS_WINDOW_MIN_WIDTH,
       minHeight: RECORDS_WINDOW_MIN_HEIGHT,

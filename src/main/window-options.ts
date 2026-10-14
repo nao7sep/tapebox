@@ -1,5 +1,11 @@
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 
+/** Electron's window-state persistence for the app's windows: bounds everywhere,
+ * and the display mode (maximized, full screen) on Windows only. */
+export function windowStatePersistence(platform: NodeJS.Platform = process.platform): { bounds: boolean; displayMode: boolean } {
+  return { bounds: true, displayMode: platform === 'win32' }
+}
+
 /**
  * The main window's BrowserWindow options, isolated in its own module so the
  * sizing can be asserted in a unit test without importing index.ts (which boots
@@ -13,7 +19,7 @@ import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 export function windowOptions(preload: string, background: string): Electron.BrowserWindowConstructorOptions {
   return {
     name: 'main',
-    windowStatePersistence: { bounds: true, displayMode: process.platform === 'win32' },
+    windowStatePersistence: windowStatePersistence(),
     width: 1280,
     height: 800,
     minWidth: WINDOW_MIN_WIDTH,

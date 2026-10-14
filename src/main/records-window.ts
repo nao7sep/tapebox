@@ -9,6 +9,7 @@ import { windowBackground } from '@main/theme'
 import { configureWindowActivity } from '@main/window-activity'
 import { configureWindowMinimum } from '@main/window-minimum'
 import { createWindowWithUsablePersistedBounds } from '@main/window-state-recovery'
+import { windowStatePersistence } from '@main/window-options'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -26,7 +27,7 @@ export function recordsWindowOptions(
 ): Electron.BrowserWindowConstructorOptions {
   return {
     name: 'records',
-    windowStatePersistence: { bounds: true, displayMode: process.platform === 'win32' },
+    windowStatePersistence: windowStatePersistence(),
     title,
     width: 1240,
     height: 820,

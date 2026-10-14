@@ -104,8 +104,8 @@ export const paths = {
   get records()       { return join(storageRoot(), 'records.sqlite3') },
 }
 
-export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
-  const ext = process.platform === 'win32' ? '.exe' : ''
+export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno', platform: NodeJS.Platform = process.platform): string {
+  const ext = platform === 'win32' ? '.exe' : ''
   return join(paths.bin, `${name}${ext}`)
 }
 
@@ -129,8 +129,8 @@ export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno'): string {
 // after creation rather than relying on the mkdir call alone. A failure to
 // tighten is logged to the console — the records database opens later, under
 // the root this call itself is establishing — and never stops the app.
-async function secureRoot(rootDir: string): Promise<void> {
-  if (process.platform === 'win32') return
+export async function secureRoot(rootDir: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+  if (platform === 'win32') return
   try {
     const info = await stat(rootDir)
     if ((info.mode & 0o077) !== 0) {

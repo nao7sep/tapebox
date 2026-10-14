@@ -418,6 +418,33 @@ describe('linkOrCopyNoOverwrite', () => {
   })
 })
 
+// A read-only source (0444 on POSIX, the read-only attribute on Windows) gives
+// its copy or second name the same protection. TapeBox later renames and
+// removes library files, so neither may be blocked by it on any platform.
+describe('a read-only source', () => {
+  it.each([
+    ['a linked copy', (source: string, dest: string) => copyFileNoOverwrite(source, dest, { hardLinks: true })],
+    ['a direct copy', (source: string, dest: string) => copyFileNoOverwrite(source, dest, { hardLinks: false })],
+    ['a second name', (source: string, dest: string) => linkOrCopyNoOverwrite(source, dest)],
+  ])('leaves %s renamable and removable, with the source', async (_kind, publish) => {
+    const source = join(dir, 'source.mp4')
+    await writeFile(source, 'video bytes')
+    const when = new Date('2024-05-01T12:00:00Z')
+    await utimes(source, when, when)
+    await chmod(source, 0o444)
+
+    const dest = join(dir, 'copy.mp4')
+    await publish(source, dest)
+    expect(await readFile(dest, 'utf8')).toBe('video bytes')
+    expect((await stat(dest)).mtimeMs).toBe(when.getTime())
+
+    const renamed = join(dir, 'renamed.mp4')
+    await fileIo.rename(dest, renamed)
+    await unlinkFiles([renamed, source])
+    expect(await readdir(dir)).toEqual([])
+  })
+})
+
 describe('unlinkFiles', () => {
   it('removes every file, counts a missing one as removed, and reports what it could not remove', async () => {
     const kept = join(dir, 'kept')

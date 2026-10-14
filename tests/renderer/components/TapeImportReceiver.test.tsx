@@ -111,6 +111,22 @@ describe('TapeImportReceiver', () => {
     expect(alert.textContent).toContain('The import failed.')
   })
 
+  it('names an issue by its file name whichever separator its path uses', () => {
+    act(() => useImportResultStore.getState().settle({ operationKey: 'windows', entryKey: 'drop' }, {
+      imported: [],
+      issues: [
+        { path: 'C:\\Users\\me\\Videos\\broken.json', reason: message('import.sidecarUnreadable'), severity: 'error' },
+        { path: '/Users/me/Movies/other.json', reason: message('import.sidecarUnreadable'), severity: 'error' },
+      ],
+    }))
+
+    const alert = host.querySelector<HTMLElement>('[role="alert"]')!
+    expect(alert.textContent).toContain('broken.json')
+    expect(alert.textContent).toContain('other.json')
+    expect(alert.textContent).not.toContain('Videos')
+    expect(alert.textContent).not.toContain('Movies')
+  })
+
   it('describes a successful import with duplicates as information, not failure', () => {
     act(() => useImportResultStore.getState().settle({ operationKey: 'mixed', entryKey: 'drop' }, {
       imported: [{ id: 'new-tape' } as never],

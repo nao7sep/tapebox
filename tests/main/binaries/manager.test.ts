@@ -1,4 +1,4 @@
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Dependencies } from '@shared/dependencies'
@@ -275,6 +275,50 @@ describe('install terminal facts', () => {
     expect(await readFile(join(testRoot, 'bin', 'ffmpeg.exe'), 'utf8')).toBe('verified binary bytes')
     expect(forgetInstalledVersion).toHaveBeenCalledWith('ffmpeg')
     expect(log.warn).toHaveBeenCalledWith('installed binary version could not be recorded', expect.objectContaining({ error: expect.objectContaining({ message: 'sidecar save failed', stack: expect.stringContaining('sidecar save failed') }) }))
+  })
+})
+
+// The platform decides the final preparation of a staged binary: macOS strips the
+// quarantine flag and refuses a build without an arm64 slice, POSIX publishes it
+// executable, and Windows does neither. The platform is supplied, so each branch
+// runs on any host; manager-darwin.test.ts runs the real macOS tools.
+describe('install preparation per platform', () => {
+  // File modes exist only on a POSIX host, whatever platform the case supplies.
+  const posixHost = process.platform !== 'win32'
+  async function install(platform: NodeJS.Platform): Promise<string> {
+    seed()
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue(resolved('2026.08.21'))
+    downloadWithProgress.mockImplementation(async ({ destPath }: { destPath: string }) => {
+      await writeFile(destPath, 'verified binary bytes', { mode: 0o600 })
+    })
+    verifyBinaryIntegrity.mockResolvedValue({ verified: true, method: 'sha256' })
+    execCapture.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
+    assertArm64Slice.mockResolvedValue(undefined)
+    await expect(installOrUpdate('yt-dlp', `op-${platform}`)).resolves.toMatchObject({ outcome: 'installed' })
+    return join(testRoot, 'bin', 'yt-dlp.exe')
+  }
+
+  it('macOS strips quarantine, checks the arm64 slice and publishes it executable', async () => {
+    const binary = await install('darwin')
+    expect(execCapture).toHaveBeenCalledWith('xattr', ['-d', 'com.apple.quarantine', expect.any(String)], expect.anything())
+    expect(assertArm64Slice).toHaveBeenCalledOnce()
+    if (posixHost) expect((await stat(binary)).mode & 0o777).toBe(0o755)
+  })
+
+  it('Linux publishes it executable without macOS preparation', async () => {
+    const binary = await install('linux')
+    expect(execCapture).not.toHaveBeenCalled()
+    expect(assertArm64Slice).not.toHaveBeenCalled()
+    if (posixHost) expect((await stat(binary)).mode & 0o777).toBe(0o755)
+  })
+
+  it('Windows publishes it as staged, with no quarantine, architecture or mode step', async () => {
+    const binary = await install('win32')
+    expect(execCapture).not.toHaveBeenCalled()
+    expect(assertArm64Slice).not.toHaveBeenCalled()
+    expect(await readFile(binary, 'utf8')).toBe('verified binary bytes')
+    if (posixHost) expect((await stat(binary)).mode & 0o777).toBe(0o666 & ~process.umask())
   })
 })
 

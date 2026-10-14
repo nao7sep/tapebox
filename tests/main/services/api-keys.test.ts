@@ -169,6 +169,13 @@ describe('api-keys storage', () => {
     expect(mode).toBe(0o600)
   })
 
+  it.runIf(ENFORCE_MODE)('tightens a readable-by-others key file to 0600 when reading it on POSIX', async () => {
+    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { openai: 'sk-shared-456' } }), 'utf8')
+    await chmod(apiKeysPath, 0o644)
+    await expect(apiKeys.resolveApiKey('openai')).resolves.toBe('sk-shared-456')
+    expect(statSync(apiKeysPath).mode & 0o777).toBe(0o600)
+  })
+
   it('leaves a corrupt key file where it is and resolves to no key instead of throwing', async () => {
     await writeFile(apiKeysPath, 'not json at all', 'utf8')
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()

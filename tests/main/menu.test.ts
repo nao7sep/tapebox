@@ -28,6 +28,23 @@ describe('application menu', () => {
     )
   })
 
+  it.each(['win32', 'linux'])('gives %s no app menu, File → Exit and Window → Close', (platform) => {
+    const template = applicationMenuTemplate(createTranslator('en'), platform)
+    expect(template.map((menu) => menu.role)).toEqual(['fileMenu', 'editMenu', 'viewMenu', 'windowMenu'])
+    const roles = (menu: string) => (template.find((m) => m.role === menu)!.submenu as MenuItemConstructorOptions[]).map((item) => item.role)
+    expect(roles('fileMenu')).toEqual(['quit'])
+    expect(roles('windowMenu')).toEqual(['minimize', 'zoom', 'close'])
+    expect(roles('editMenu')).not.toContain('pasteAndMatchStyle')
+    expect(roles('editMenu')).not.toContain('startSpeaking')
+  })
+
+  it('gives macOS File → Close Window and Window → Bring All to Front', () => {
+    const template = applicationMenuTemplate(createTranslator('en'), 'darwin')
+    const roles = (menu: string) => (template.find((m) => m.role === menu)!.submenu as MenuItemConstructorOptions[]).map((item) => item.role)
+    expect(roles('fileMenu')).toEqual(['close'])
+    expect(roles('windowMenu')).toEqual(['minimize', 'zoom', undefined, 'front'])
+  })
+
   it('titles the Edit menu in the interface language, since macOS adds its own items to it', () => {
     const ja = applicationMenuTemplate(createTranslator('ja'), 'darwin')
     expect(ja.find((menu) => menu.role === 'editMenu')!.label).toBe(CATALOGUES.ja['nativeMenu.edit'])

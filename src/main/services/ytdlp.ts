@@ -1,4 +1,4 @@
-import { dirname, extname, join } from 'node:path'
+import { delimiter, dirname, extname, join } from 'node:path'
 import { readdir, unlink } from 'node:fs/promises'
 import { nanoid } from 'nanoid'
 import { binaryPath, paths } from '@main/paths'
@@ -29,10 +29,9 @@ const MANAGED_LIBRARY_ENV = 'TAPEBOX_MANAGED_LIBRARY'
 const MANAGED_LIBRARY_ARG = 'home:${' + MANAGED_LIBRARY_ENV + '}'
 
 export function ytdlpEnv(libraryDir?: string): NodeJS.ProcessEnv {
-  const sep = process.platform === 'win32' ? ';' : ':'
   return {
     ...process.env,
-    PATH: `${paths.bin}${sep}${process.env['PATH'] ?? ''}`,
+    PATH: `${paths.bin}${delimiter}${process.env['PATH'] ?? ''}`,
     // yt-dlp strips its --paths argument, then expands user/env expressions once.
     // Insert the literal directory through that final expansion so its spaces,
     // dollars, percents and tildes never become another expression. Keep cwd and
