@@ -170,6 +170,22 @@ describe('relocateLibrary', () => {
     expect(await exists(join(toDir, 'a.mp4'))).toBe(false)
   })
 
+  it('names a few colliding files, each shortened, and counts the rest', async () => {
+    const long = `${'Very long renamed tape title '.repeat(6).trim()}.mp4`
+    const files = [long, 'b.mp4', 'c.mp4', 'd.mp4', 'e.mp4', 'f.mp4', 'g.mp4']
+    await mkdir(toDir, { recursive: true })
+    for (const name of files) {
+      await seed(fromDir, name, 'video')
+      await seed(toDir, name, 'PRE-EXISTING')
+    }
+
+    const error = await relocateLibrary(fromDir, toDir, files).then(() => { throw new Error('moved') }, (caught: unknown) => caught as Error)
+    expect(error.message).toContain(`${long.slice(0, 48)}…, b.mp4, c.mp4, d.mp4, e.mp4`)
+    expect(error.message).not.toContain(long)
+    expect(error.message).not.toContain('f.mp4')
+    expect(error.message).toContain('and 2 more')
+  })
+
   it('rejects portable aliases in the incoming catalog before moving either entry', async () => {
     await seed(fromDir, 'Take.mp4', 'video-a')
 

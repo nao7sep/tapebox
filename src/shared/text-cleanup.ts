@@ -52,3 +52,32 @@ export function multiline(
   }
   return out.join('\n')
 }
+
+/**
+ * Shorten displayed text to at most `n` graphemes, never splitting one, with
+ * whitespace runs read as single spaces. `truncated` reports whether visible text
+ * was cut, so a caller appends "…" only then (localization-conventions, Ellipsis).
+ */
+export function truncate(text: string, n: number): { text: string; truncated: boolean } {
+  if (n <= 0) return { text: '', truncated: false }
+  const out: string[] = []
+  let pendingSpace = false
+  let budgetMet = false
+  let truncated = false
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)) {
+    const isWhitespace = segment.trim() === ''
+    if (!budgetMet) {
+      if (isWhitespace) {
+        if (out.length > 0) pendingSpace = true
+        continue
+      }
+      if (pendingSpace) { out.push(' '); pendingSpace = false }
+      out.push(segment)
+      if (out.length >= n) budgetMet = true
+    } else if (!isWhitespace) {
+      truncated = true
+      break
+    }
+  }
+  return { text: out.join(''), truncated }
+}

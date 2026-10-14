@@ -6,6 +6,15 @@ import { portableSiblingExists } from '@main/io/portable-directory'
 import { portableFilenameIdentity } from '@shared/filename'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
+import { truncate } from '@shared/text-cleanup'
+
+/** A file name in a notice keeps its first graphemes; a renamed tape's can run to 240 bytes. */
+const NOTICE_NAME_GRAPHEMES = 48
+
+function shortName(name: string): string {
+  const cut = truncate(name, NOTICE_NAME_GRAPHEMES)
+  return cut.truncated ? `${cut.text}…` : cut.text
+}
 
 /**
  * Move the library's flat contents from one folder to another when the user
@@ -121,10 +130,11 @@ export async function relocateLibrary(
     incoming.add(identity)
   }
   if (collisions.length > 0) {
-    // File names are the user's own, listed as they are; the count is a plural entry.
-    // The notice names the first five; Records keeps every one (text-cleanup rule 4).
+    // The notice names the first five, each shortened as identifying text, and
+    // counts the rest; Records keeps every complete name (interface-styling-
+    // conventions, Labels). The count is a plural entry.
     log.warn('library move destination already holds files', { toDir, collisions })
-    const shown = collisions.slice(0, 5).join(', ')
+    const shown = collisions.slice(0, 5).map(shortName).join(', ')
     throw new UserFacingError(
       'conflict',
       collisions.length > 5
