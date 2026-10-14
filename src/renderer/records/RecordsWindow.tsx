@@ -600,8 +600,6 @@ function RecordDetailView({
     if (text !== null) blocks.push({ label, text })
   }
   if (record.kind === 'log') {
-    // The heading takes one line; the message is text to read, so it is whole here.
-    addBlock(t.t('records.message'), record.message)
     // A string tapeId field is the row's own tape, shown above as the Tape field.
     addBlock(t.t('records.details'), jsonBlock(record.fields, record.tapeId === null ? {} : { tapeId: record.tapeId }))
   } else if (record.kind === 'ai-call') {
@@ -617,7 +615,7 @@ function RecordDetailView({
   return (
     <>
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-4 py-3">
-        <h2 className="min-w-0 truncate text-lg font-medium" data-literal>{recordTitle(record)}</h2>
+        <h2 className="min-w-0 text-lg font-medium wrap-anywhere">{recordTitle(record)}</h2>
         <div className="flex shrink-0 items-center gap-3 pt-1 text-xs">
           <span className={`font-medium ${LEVEL_CLASSES[level]}`}>{t.t(LEVEL_LABELS[level])}</span>
           <span className="text-fg-muted">{t.t(KIND_LABELS[record.kind])}</span>

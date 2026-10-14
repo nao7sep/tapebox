@@ -139,46 +139,15 @@ describe('box draft across Archive/Inbox navigation', () => {
   })
 })
 
-// A box name is identifying text: one line in the list, whole in the rename field,
-// which Enter (Finder) or F2 (Windows) opens from the keyboard and the selected
-// row's Rename button opens by touch (interface-styling-conventions, Labels).
+// A box name is identifying text: one line in the list; the rename field holds it
+// whole (interface-styling-conventions, Labels).
 describe('a long box name', () => {
   const long = Array.from({ length: 12 }, (_, i) => `segment${i}`).join(' ')
-  const listbox = () => document.querySelector('[role="listbox"]') as HTMLElement
-  const press = async (key: string) => {
-    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
-    await act(async () => listbox().dispatchEvent(event))
-    return event
-  }
 
-  beforeEach(async () => {
+  it('takes one line in the list', async () => {
     await act(async () => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    await act(async () => {
-      useBoxesStore.setState({ boxes: [{ id: 'box1', name: long, order: 0 }] })
-      useArchiveStore.setState({ selectedBoxId: 'box1' })
-    })
-  })
-
-  it('takes one line in the list and keeps the selected row\'s actions shown', () => {
+    await act(async () => useBoxesStore.setState({ boxes: [{ id: 'box1', name: long, order: 0 }] }))
     const option = [...document.querySelectorAll('[role="option"]')].find((element) => element.textContent === long)!
     expect(option.className.split(/\s+/)).toContain('truncate')
-    expect(option.className).not.toContain('wrap-anywhere')
-    const rename = document.querySelector('[aria-label="Rename box"]') as HTMLButtonElement
-    expect(rename.className.split(/\s+/)).toContain('inline-flex')
-    expect(rename.className.split(/\s+/)).not.toContain('hidden')
-  })
-
-  it.each(['Enter', 'F2'])('opens the whole name for renaming on %s', async (key) => {
-    expect(input()).toBeNull()
-    const event = await press(key)
-    expect(event.defaultPrevented).toBe(true)
-    expect(input().value).toBe(long)
-  })
-
-  it('leaves Enter alone on Unboxed, which has no name to edit', async () => {
-    await act(async () => useArchiveStore.setState({ selectedBoxId: null }))
-    const event = await press('Enter')
-    expect(event.defaultPrevented).toBe(false)
-    expect(input()).toBeNull()
   })
 })

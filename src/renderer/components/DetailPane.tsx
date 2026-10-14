@@ -137,9 +137,11 @@ export function DetailPane({
 
   // Downloaded tapes lead with the media line (always visible) and disclose
   // source / file / uploader / description; other states keep the status sub-line
-  // and the older row set. The heading takes one line, so the disclosure always
-  // exists: it holds the whole title and source.
+  // and the older row set. The header expands only when a disclosed row exists.
   const downloaded = tape.state === 'downloaded'
+  const expandable = downloaded
+    ? !!tape.title || !!tape.filename || !!tape.uploader || !!description
+    : !!tape.uploader || tape.durationSeconds != null || !!tape.title || !!tape.name
 
   // The header splits into two columns only when there's a description to place on
   // the right. The title and the rest stay in the left column so the description
@@ -355,41 +357,45 @@ export function DetailPane({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col py-4">
         <div className="shrink-0 border-b border-line px-4 pb-3">
           {/* The header is purely informative — heading, live status, and the
-              details below the fold. Every operation lives in the button row, so
-              the header carries no actions. */}
+              optional details below the fold. Every operation lives in the
+              button row, so the header carries no actions. The chevron appears
+              only when there is something to expand. */}
           <div className={twoColumnHeader ? 'grid grid-cols-2 gap-6' : ''}>
             {/* Left column (full width unless a description sits beside it): the
                 title, the always-visible status/media line, and the disclosed
                 source / file / uploader. */}
             <div className="min-w-0">
               <div className="flex items-start gap-1">
-                <button
-                  onClick={() => setInfoOpen((v) => !v)}
-                  aria-expanded={infoOpen}
-                  aria-label={t.t(infoOpen ? 'detail.hideDetails' : 'detail.showDetails')}
-                  className="group flex h-7 w-5 shrink-0 items-center justify-center"
-                >
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    className={
-                      'text-fg-muted transition-transform group-hover:text-fg-emphasis ' +
-                      (infoOpen ? 'rotate-90' : '')
-                    }
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
+                {expandable ? (
+                  <button
+                    onClick={() => setInfoOpen((v) => !v)}
+                    aria-expanded={infoOpen}
+                    aria-label={t.t(infoOpen ? 'detail.hideDetails' : 'detail.showDetails')}
+                    className="group flex h-7 w-5 shrink-0 items-center justify-center"
                   >
-                    <polyline points="9 6 15 12 9 18" />
-                  </svg>
-                </button>
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      className={
+                        'text-fg-muted transition-transform group-hover:text-fg-emphasis ' +
+                        (infoOpen ? 'rotate-90' : '')
+                      }
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="9 6 15 12 9 18" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span className="h-7 w-5 shrink-0" aria-hidden="true" />
+                )}
                 <div className="min-w-0 flex-1">
-                  {/* Identifying text: one line. A URL heading keeps its final
-                      segment; the disclosure shows either one whole. */}
+                  {/* Identifying text: one line. A URL heading keeps its final segment. */}
                   <h2 className="text-lg font-medium leading-7">
                     {tape.title
                       ? <span className="block truncate" data-literal>{tape.title}</span>
@@ -402,66 +408,60 @@ export function DetailPane({
                   </p>
                 </div>
               </div>
-              {infoOpen && (
-                // The whole title and source, which the one-line heading may cut,
-                // with the rest of the disclosed rows, in a height-limited region.
-                <PassiveScrollRegion
-                  label={t.t('detail.infoLabel')}
-                  className="mt-2 max-h-40 space-y-1 overflow-y-auto pl-6 pr-1 text-xs text-fg"
-                >
+              {expandable && infoOpen && (downloaded ? (
+                // Unlabeled by design: a URL, a filename, and the uploader are each
+                // self-evident from their shape and position.
+                <div className="mt-2 space-y-1 pl-6 text-xs text-fg">
                   {tape.title && (
-                    <p className="select-text break-words text-sm text-fg-emphasis" data-literal>{tape.title}</p>
+                    <button
+                      type="button"
+                      onClick={() => void openSourceUrl()}
+                      className="block w-full select-text break-all bg-transparent p-0 text-left hover:text-fg-strong"
+                      data-literal
+                    >
+                      {tape.sourceUrl}
+                    </button>
                   )}
-                  {downloaded ? (
-                    // Unlabeled by design: a URL, a filename, and the uploader are each
-                    // self-evident from their shape and position.
-                    <>
+                  {tape.filename && <div className="select-text break-all" data-literal>{tape.filename}</div>}
+                  {tape.uploader && (
+                    <div className="select-text break-words">
+                      <span data-literal>{tape.uploader}</span>
+                      {chapterLabel && <span className="text-fg-subtle"> · {t.text(chapterLabel)}</span>}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <dl className="mt-2 space-y-1 pl-6 text-xs text-fg">
+                  {tape.uploader && (
+                    <DetailRow label={t.t('detail.uploader')}>
+                      <span data-literal>{tape.uploader}</span>
+                      {chapterLabel && <span className="text-fg-subtle"> · {t.text(chapterLabel)}</span>}
+                    </DetailRow>
+                  )}
+                  {tape.durationSeconds != null && (
+                    <DetailRow label={t.t('detail.duration')}>{formatTime(tape.durationSeconds)}</DetailRow>
+                  )}
+                  {/* Source is the heading already when there's no title, so only show it
+                      here as an opening action when a title occupies the heading. */}
+                  {tape.title && (
+                    <DetailRow label={t.t('detail.source')}>
                       <button
                         type="button"
                         onClick={() => void openSourceUrl()}
-                        className="block w-full select-text break-all bg-transparent p-0 text-left hover:text-fg-strong"
+                        className="select-text break-all bg-transparent p-0 text-left hover:text-fg-strong"
                         data-literal
                       >
                         {tape.sourceUrl}
                       </button>
-                      {tape.filename && <div className="select-text break-all" data-literal>{tape.filename}</div>}
-                      {tape.uploader && (
-                        <div className="select-text break-words">
-                          <span data-literal>{tape.uploader}</span>
-                          {chapterLabel && <span className="text-fg-subtle"> · {t.text(chapterLabel)}</span>}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <dl className="space-y-1">
-                      {tape.uploader && (
-                        <DetailRow label={t.t('detail.uploader')}>
-                          <span data-literal>{tape.uploader}</span>
-                          {chapterLabel && <span className="text-fg-subtle"> · {t.text(chapterLabel)}</span>}
-                        </DetailRow>
-                      )}
-                      {tape.durationSeconds != null && (
-                        <DetailRow label={t.t('detail.duration')}>{formatTime(tape.durationSeconds)}</DetailRow>
-                      )}
-                      <DetailRow label={t.t('detail.source')}>
-                        <button
-                          type="button"
-                          onClick={() => void openSourceUrl()}
-                          className="select-text break-all bg-transparent p-0 text-left hover:text-fg-strong"
-                          data-literal
-                        >
-                          {tape.sourceUrl}
-                        </button>
-                      </DetailRow>
-                      {tape.name && (
-                        <DetailRow label={t.t('detail.name')}>
-                          <span className="select-text" data-literal>{tape.name}</span>
-                        </DetailRow>
-                      )}
-                    </dl>
+                    </DetailRow>
                   )}
-                </PassiveScrollRegion>
-              )}
+                  {tape.name && (
+                    <DetailRow label={t.t('detail.name')}>
+                      <span className="select-text" data-literal>{tape.name}</span>
+                    </DetailRow>
+                  )}
+                </dl>
+              ))}
             </div>
             {/* Right column: the description, top-aligned with the title so it starts
                 at the top of the header rather than floating below a short title with
@@ -607,22 +607,13 @@ export function DetailPane({
               <p className="text-xs text-danger-fg">{t.text(sidecarError)}</p>
             </PassiveScrollRegion>
           ) : (
-            <>
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <ChapterList
-                  chapters={chapters}
-                  currentIndex={currentChapterIndex}
-                  onActivate={(i) => seek(chapters[i].start_time)}
-                />
-              </div>
-              {/* Chapter rows take one line; the chapter under the playhead, which
-                  arrows and taps move to, shows its whole title here. */}
-              {chapters[currentChapterIndex] && (
-                <p className="mt-2 shrink-0 text-xs text-fg wrap-anywhere" data-literal data-current-chapter>
-                  {chapters[currentChapterIndex].title}
-                </p>
-              )}
-            </>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ChapterList
+                chapters={chapters}
+                currentIndex={currentChapterIndex}
+                onActivate={(i) => seek(chapters[i].start_time)}
+              />
+            </div>
           )}
         </aside>
       )}

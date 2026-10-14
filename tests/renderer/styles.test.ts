@@ -35,31 +35,31 @@ describe('composite row states', () => {
   })
 })
 
-// Identifying text takes one line and ends in one marker; each site has a keyboard
-// and touch path to the complete value (interface-styling-conventions, Labels).
+// Identifying text takes one line and ends in one marker; an existing route shows
+// the complete value where it is needed (interface-styling-conventions, Labels).
 // New truncation is reviewed here, by file, rather than slipping in with a class
 // name; the path for each kept site is recorded beside it.
 const REVIEWED_MARKERS: Record<string, number> = {
-  // Box rows and Unboxed; Enter, F2 or the selected row's Rename shows the name whole.
+  // Box rows and Unboxed; renaming shows a name whole.
   'components/BoxList.tsx': 2,
-  // Chapter rows; the chapter under the playhead shows its whole title below.
+  // Chapter rows; the visible start tells chapters apart, with their times.
   'components/ChapterList.tsx': 1,
-  // The one-line heading; the disclosure holds the whole title and source.
+  // The one-line heading; Refresh metadata shows the whole title.
   'components/DetailPane.tsx': 1,
   // Fixed-height virtualized rows; the focused or tapped row is shown in full.
   'components/ScanPageModal.tsx': 1,
-  // Box headers over search results; the box list renames them whole.
+  // Box headers over search results; renaming in the box list shows them whole.
   'components/SearchResults.tsx': 1,
   // Title and status line; selection shows both in the detail pane.
   'components/TapeRow.tsx': 2,
   // A path's leading part and final segment; callers show the value whole elsewhere.
   'components/PathLine.tsx': 2,
-  // Labels past the menu's width cap; box names are whole in the box list's rename.
+  // Labels past the menu's width cap; renaming in the box list shows box names whole.
   'components/Menu.tsx': 1,
   // Language and thinking selects; opening one lists the full options.
   'components/SettingsModal.tsx': 2,
-  // Row title, row text clamp, heading (the detail shows the record) and the filter select.
-  'records/RecordsWindow.tsx': 4,
+  // Row title and text clamp (selection shows the record) and the filter select.
+  'records/RecordsWindow.tsx': 3,
 }
 const MARKER = /^(truncate|text-ellipsis|line-clamp-\d+)$/
 
