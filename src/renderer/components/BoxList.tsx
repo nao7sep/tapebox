@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { useDroppable } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -6,7 +6,7 @@ import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useArchiveStore } from '@renderer/store/archive'
 import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
-import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
+import { useComposing, isComposingKeyboardEvent, keyEventIsComposing } from '@renderer/lib/useComposing'
 import {
   BOX_DRAG_TYPE,
   BOX_SORT_GROUP,
@@ -81,6 +81,23 @@ export function BoxList({
       if (id !== UNBOXED_DROP_ID) onReorder(id, offset)
     },
   })
+
+  // A box name shows on one line; renaming shows it whole. Finder's Enter and
+  // Windows' F2 start renaming the selected box while the box list holds focus
+  // (interface-styling-conventions: the complete value is reachable by keyboard).
+  function onListKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+    if (e.target === e.currentTarget && plain && !keyEventIsComposing(e.nativeEvent) && (e.key === 'Enter' || e.key === 'F2')) {
+      const box = sorted.find((g) => g.id === selectedBoxId)
+      if (box && editingId === null) {
+        e.preventDefault()
+        setDraftName(box.name)
+        setEditingId(box.id)
+        return
+      }
+    }
+    kb.listboxProps.onKeyDown(e)
+  }
 
   // Names of every box except the one being edited — what a rename collides with.
   const otherNames = (id: string) => sorted.filter((g) => g.id !== id).map((g) => g.name)
@@ -176,6 +193,7 @@ export function BoxList({
       <div
         ref={kb.ref}
         {...kb.listboxProps}
+        onKeyDown={onListKeyDown}
         role="listbox"
         aria-label={t.t('boxes.heading')}
         className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 outline-none"
@@ -287,7 +305,7 @@ function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: numb
         role="option"
         aria-selected={selected}
         onClick={onSelect}
-        className="min-w-0 flex-1 cursor-pointer wrap-anywhere text-left"
+        className="min-w-0 flex-1 cursor-pointer truncate text-left"
       >
         {t.t('boxes.unboxed')}
       </div>
@@ -336,6 +354,9 @@ function SortableBoxRow({
     data: { type: BOX_TARGET_TYPE, boxId: id },
   })
   const t = useI18n()
+  // Hover reveals a row's actions; the selected row keeps them, so touch reaches
+  // Rename (which shows the whole name) by tapping the box first.
+  const actionsShown = selected ? 'inline-flex' : 'hidden group-hover:inline-flex'
   return (
     <div
       ref={(element) => {
@@ -351,7 +372,7 @@ function SortableBoxRow({
         role="option"
         aria-selected={selected}
         onClick={onSelect}
-        className="min-w-0 flex-1 cursor-pointer wrap-anywhere text-left"
+        className="min-w-0 flex-1 cursor-pointer truncate text-left"
       >
         {label}
       </div>
@@ -359,7 +380,7 @@ function SortableBoxRow({
         onClick={onRename}
         aria-label={t.t('boxes.rename')}
         tabIndex={-1}
-        className="hidden shrink-0 items-center justify-center rounded p-1 text-fg-muted transition hover:bg-hover-strong hover:text-fg-emphasis group-hover:inline-flex"
+        className={`${actionsShown} shrink-0 items-center justify-center rounded p-1 text-fg-muted transition hover:bg-hover-strong hover:text-fg-emphasis`}
       >
         <PencilGlyph />
       </button>
@@ -367,7 +388,7 @@ function SortableBoxRow({
         onClick={onDelete}
         aria-label={t.t('boxes.delete')}
         tabIndex={-1}
-        className="hidden shrink-0 items-center justify-center rounded p-1 text-fg-muted transition hover:bg-hover-strong hover:text-danger-fg group-hover:inline-flex"
+        className={`${actionsShown} shrink-0 items-center justify-center rounded p-1 text-fg-muted transition hover:bg-hover-strong hover:text-danger-fg`}
       >
         <TrashGlyph />
       </button>

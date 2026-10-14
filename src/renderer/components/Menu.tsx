@@ -46,6 +46,10 @@ type Props = {
 const MenuContext = createContext<{ close: () => void } | null>(null)
 
 const VIEWPORT_PADDING = 8
+/** A menu is as wide as its longest item up to this cap (composite-control-
+ * conventions): every command fits in the longest interface language, so only
+ * box names reach it, and they end in an ellipsis; the box list holds them whole. */
+export const MENU_MAX_WIDTH = '20rem'
 const TRIGGER_GAP = 4
 
 type PopupPosition = {
@@ -255,7 +259,7 @@ export function Menu({
             maxHeight: position
               ? Math.min(position.maxHeight, maxHeight ?? Number.POSITIVE_INFINITY)
               : maxHeight,
-            maxWidth: `calc(100vw - ${VIEWPORT_PADDING * 2}px)`,
+            maxWidth: `min(${MENU_MAX_WIDTH}, calc(100vw - ${VIEWPORT_PADDING * 2}px))`,
             overflowY: 'auto',
             visibility: position ? 'visible' : 'hidden',
           }}

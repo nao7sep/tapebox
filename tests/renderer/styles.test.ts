@@ -35,21 +35,31 @@ describe('composite row states', () => {
   })
 })
 
-// Every shortened value shows a marker and has a keyboard and touch path to its
-// complete value (text-cleanup rule 4). New truncation is reviewed here, by file,
-// rather than slipping in with a class name; the path for each kept site is
-// recorded beside it.
+// Identifying text takes one line and ends in one marker; each site has a keyboard
+// and touch path to the complete value (interface-styling-conventions, Labels).
+// New truncation is reviewed here, by file, rather than slipping in with a class
+// name; the path for each kept site is recorded beside it.
 const REVIEWED_MARKERS: Record<string, number> = {
+  // Box rows and Unboxed; Enter, F2 or the selected row's Rename shows the name whole.
+  'components/BoxList.tsx': 2,
+  // Chapter rows; the chapter under the playhead shows its whole title below.
+  'components/ChapterList.tsx': 1,
+  // The one-line heading; the disclosure holds the whole title and source.
+  'components/DetailPane.tsx': 1,
   // Fixed-height virtualized rows; the focused or tapped row is shown in full.
   'components/ScanPageModal.tsx': 1,
+  // Box headers over search results; the box list renames them whole.
+  'components/SearchResults.tsx': 1,
   // Title and status line; selection shows both in the detail pane.
   'components/TapeRow.tsx': 2,
-  // Labels wider than the viewport; box names are complete in the box list.
+  // A path's leading part and final segment; callers show the value whole elsewhere.
+  'components/PathLine.tsx': 2,
+  // Labels past the menu's width cap; box names are whole in the box list's rename.
   'components/Menu.tsx': 1,
   // Language and thinking selects; opening one lists the full options.
   'components/SettingsModal.tsx': 2,
-  // Row text clamp (selection shows the record) and the filter select.
-  'records/RecordsWindow.tsx': 2,
+  // Row title, row text clamp, heading (the detail shows the record) and the filter select.
+  'records/RecordsWindow.tsx': 4,
 }
 const MARKER = /^(truncate|text-ellipsis|line-clamp-\d+)$/
 

@@ -279,12 +279,23 @@ describe('RecordsWindow', () => {
   }
 
   it("shows a log line's fields without the tape the pane already shows", async () => {
-    expect(await logBlocks({ tapeId: 't1', bytes: 5 })).toEqual([['Details', JSON.stringify({ bytes: 5 }, null, 2)]])
+    expect(await logBlocks({ tapeId: 't1', bytes: 5 })).toEqual([
+      ['Message', 'download stalled'],
+      ['Details', JSON.stringify({ bytes: 5 }, null, 2)],
+    ])
     expect(document.querySelector('[data-records-detail]')!.textContent).toContain('t1')
   })
 
   it('leaves out the Details of a log line with nothing more to say', async () => {
-    expect(await logBlocks({ tapeId: 't1' })).toEqual([])
+    expect(await logBlocks({ tapeId: 't1' })).toEqual([['Message', 'download stalled']])
+  })
+
+  // The row and heading are identifying text on one line; the message, text to
+  // read, is whole in the detail.
+  it('shortens a long log message in its row and heading, and shows it whole in the detail', async () => {
+    await logBlocks({})
+    expect(document.querySelector('[data-record-title]')!.className.split(/\s+/)).toContain('truncate')
+    expect(document.querySelector('h2')!.className.split(/\s+/)).toContain('truncate')
   })
 
   it('moves the selection with the arrow keys, keeping focus on the list', async () => {

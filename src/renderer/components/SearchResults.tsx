@@ -50,7 +50,7 @@ export function SearchResults() {
           role="group"
           aria-label={boxName(group.boxId)}
         >
-          <div className="sticky top-0 z-10 bg-sticky px-3 py-1 text-xs font-medium uppercase tracking-wide text-fg backdrop-blur-sm">
+          <div className="sticky top-0 z-10 truncate bg-sticky px-3 py-1 text-xs font-medium uppercase tracking-wide text-fg backdrop-blur-sm" data-literal>
             {boxName(group.boxId)}
           </div>
           <ul role="presentation" className="space-y-1.5 px-3 py-2">

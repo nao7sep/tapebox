@@ -58,3 +58,21 @@ describe('TapeRow', () => {
     expect(host.textContent).toContain('settings.title')
   })
 })
+
+// An untitled tape is named by its URL, which keeps its final segment: the
+// beginning is the same site for many tapes (interface-styling-conventions).
+describe('an untitled tape row', () => {
+  it('shows its URL on one line, losing the shared beginning before the final segment', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    const sourceUrl = 'https://www.example.test/channel/uploads/watch?v=Distinct42'
+    await act(async () => root!.render(createElement(TapeRow, {
+      tape: { ...tape, title: null, sourceUrl }, progress: undefined, selected: false, onSelect: vi.fn(),
+    })))
+    const parts = [...host.querySelectorAll<HTMLElement>('[data-literal] > span')]
+    expect(parts.map((part) => part.textContent)).toEqual(['https://www.example.test/channel/uploads/', 'watch?v=Distinct42'])
+    expect(parts[0]!.className.split(/\s+/)).toEqual(expect.arrayContaining(['min-w-0', 'truncate']))
+    expect(parts[1]!.className.split(/\s+/)).toEqual(expect.arrayContaining(['shrink-0', 'max-w-full', 'truncate']))
+  })
+})

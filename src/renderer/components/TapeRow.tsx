@@ -4,6 +4,7 @@ import { chapterCountLabel, formatTime } from '@renderer/lib/format'
 import { tapeStatusLabel, isProcessing } from '@renderer/lib/tapeStatus'
 import { IndeterminateBar, ProgressBar } from './Progress'
 import { TapeActionResults } from './TapeActionResults'
+import { PathLine } from './PathLine'
 import { useI18n } from '@renderer/i18n/I18nContext'
 
 type Props = {
@@ -47,9 +48,9 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
       }
     >
       <div className="flex items-baseline justify-between gap-2">
-        <div className="min-w-0 flex-1 truncate text-sm" data-literal>
-          {tape.title ?? tape.sourceUrl}
-        </div>
+        {tape.title
+          ? <div className="min-w-0 flex-1 truncate text-sm" data-literal>{tape.title}</div>
+          : <PathLine value={tape.sourceUrl} className="flex-1 text-sm" />}
         {tape.durationSeconds != null && (
           <div className="shrink-0 text-xs tabular-nums text-fg">
             {formatTime(tape.durationSeconds)}

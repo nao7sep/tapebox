@@ -24,7 +24,7 @@ const translations = LANGUAGES.filter((language) => language !== "en");
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
   de: ["common.ok", "detail.name", "tools.columnTool", "settings.tabYtdlp", "settings.openai", "settings.languageSystem", "settings.themeSystem", "settings.profileName", "shortcuts.player", "about.version", "records.levelInfo", "records.levelDebug", "records.details", "records.url", "records.signal", "records.scan"],
   es: ["nativeMenu.zoom", "settings.tabGeneral", "settings.tabYtdlp", "settings.openai", "records.levelError", "records.error", "records.url"],
-  fr: ["common.ok", "nativeMenu.services", "refresh.description", "export.destination", "settings.tabYtdlp", "settings.openai", "about.version", "records.url", "records.signal", "records.arguments"],
+  fr: ["common.ok", "nativeMenu.services", "refresh.description", "export.destination", "settings.tabYtdlp", "settings.openai", "about.version", "records.url", "records.signal", "records.arguments", "records.message"],
   it: ["common.ok", "nativeMenu.file", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai", "records.levelInfo", "records.levelDebug", "records.url", "records.output"],
   "pt-BR": ["common.ok", "nativeMenu.zoom", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai", "shortcuts.player", "records.url"],
   ru: ["settings.tabYtdlp", "settings.openai", "records.url"],

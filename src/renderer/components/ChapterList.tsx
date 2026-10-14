@@ -59,7 +59,7 @@ export function ChapterList({ chapters, currentIndex, onActivate }: Props) {
             <span className="w-16 shrink-0 text-xs tabular-nums text-fg">
               {formatTime(c.start_time)}
             </span>
-            <span className="min-w-0 flex-1 wrap-anywhere">{c.title}</span>
+            <span className="min-w-0 flex-1 truncate" data-literal>{c.title}</span>
           </div>
         </li>
       ))}

@@ -3,7 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { Menu, MenuItem } from '@renderer/components/Menu'
+import { Menu, MenuItem, MENU_MAX_WIDTH } from '@renderer/components/Menu'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -378,6 +378,17 @@ describe('Menu', () => {
     expect(popupClass).toMatch(/w-max/)
     for (const item of items()) {
       expect(item.className).toMatch(/whitespace-nowrap/)
+    }
+  })
+
+  // A long box name must not stretch the menu toward the window's edge: the menu
+  // stops at a narrow cap (or the viewport) and the label ends in an ellipsis.
+  it('caps its width and shortens a label that would pass the cap', async () => {
+    await mountMenu({ a: vi.fn(), b: vi.fn(), c: vi.fn() })
+    await click(trigger())
+    expect(menu()!.style.maxWidth).toMatch(new RegExp(`^min\\(${MENU_MAX_WIDTH}, `))
+    for (const item of items()) {
+      expect(item.className.split(/\s+/)).toEqual(expect.arrayContaining(['overflow-hidden', 'text-ellipsis']))
     }
   })
 })

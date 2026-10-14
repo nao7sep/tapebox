@@ -23,6 +23,7 @@ function groups(mod: string): Group[] {
       shortcuts: [
         { label: 'shortcuts.moveSelection', keys: 'Up / Down' },
         { label: 'shortcuts.reorder', keys: `${mod}+Shift+Up / Down` },
+        { label: 'shortcuts.renameBox', keys: 'Enter / F2' },
         { label: 'filter.inbox', keys: `${mod}+1` },
         { label: 'filter.archived', keys: `${mod}+2` },
         { label: 'shortcuts.searchArchive', keys: 'Slash' },
