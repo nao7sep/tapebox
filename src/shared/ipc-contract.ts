@@ -105,6 +105,9 @@ export type IpcCalls = {
   'settings:setApiKey':    { req: { apiKey: string };                res: void }
   'settings:clearApiKey':  { req: undefined;                         res: void }
   'settings:apiKeyState':  { req: undefined;                         res: 'set' | 'absent' | 'unreadable' | 'newer' }
+  // The OS appearance the theme's System choice resolves to now, which the renderer
+  // cannot see while Light or Dark is forced (app-chrome-conventions, Theme).
+  'settings:systemAppearance': { req: undefined;                     res: 'light' | 'dark' }
 
   // ── Layout (window/view geometry, separate from settings) ────────────────
   'layout:get':            { req: undefined;                         res: Layout }
@@ -307,6 +310,8 @@ export type IpcEvents = {
   // Settings saved a language choice; a window that keeps no settings of its own
   // (the Records window) follows it.
   'settings:languageChanged': LanguagePreference
+  // Settings saved a display zone; the Records window shows its times in it.
+  'settings:timeZoneChanged': string
 
   // The records database stored a record; the Records window reads the newest page.
   'records:changed':          null

@@ -4,6 +4,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT, defaultSettings, effectiveSettings, settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
 
+// The computer speaks Japanese, which the language's System choice resolves to.
+vi.hoisted(() => {
+  Object.defineProperty(window, 'tapebox', {
+    configurable: true,
+    value: { languageEnvironment: { preference: 'en', systemLanguage: 'ja', systemLocale: 'ja-JP' } },
+  })
+})
 const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
@@ -26,6 +33,7 @@ function stubMain(updateReply: (patch: SettingsSets) => unknown, keyState = 'abs
     if (channel === 'settings:apiKeyState') return Promise.resolve(keyState)
     if (channel === 'settings:defaultLibraryDir') return Promise.resolve('/home/me/.tapebox/library')
     if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsSets))
+    if (channel === 'settings:systemAppearance') return Promise.resolve('dark')
     return Promise.resolve()
   })
 }
@@ -91,7 +99,7 @@ describe('SettingsModal', () => {
     const options = [...select.options]
     expect(options[0]!.value).toBe('system')
     expect(options.map((option) => option.textContent)).toEqual([
-      'System', 'English', 'Deutsch', 'Español', 'Français', 'Italiano', 'Português', 'Русский', '日本語', '한국어', '中文',
+      'System (日本語)', 'English', 'Deutsch', 'Español', 'Français', 'Italiano', 'Português', 'Русский', '日本語', '한국어', '中文',
     ])
     expect(options.slice(1).map((option) => option.lang)).toEqual(['en', 'de', 'es', 'fr', 'it', 'pt-BR', 'ru', 'ja', 'ko', 'zh-Hans'])
 
@@ -102,6 +110,41 @@ describe('SettingsModal', () => {
     await click('Save')
     const update = ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')
     expect(update![1]).toEqual({ language: 'ja' })
+  })
+
+  // Every System choice shows what it resolves to now (app-chrome-conventions,
+  // timestamp-conventions): the OS appearance from main, even while a theme is forced.
+  it('labels the theme\'s System choice with the OS appearance', async () => {
+    saved = { ...saved, theme: 'light' }
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const labels = [...document.querySelectorAll<HTMLInputElement>('input[name="settings-theme"]')].map((input) => input.parentElement!.textContent)
+    expect(labels).toEqual(['System (Dark)', 'Light', 'Dark'])
+  })
+
+  it('offers System with the computer\'s zone first, then the platform\'s zones, and saves the choice', async () => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const select = [...document.querySelectorAll('select')].find((element) => [...element.options].some((option) => option.value === 'Asia/Tokyo'))!
+    const options = [...select.options]
+    expect(options[0]!.value).toBe('system')
+    expect(options[0]!.textContent).toBe(`System (${Intl.DateTimeFormat().resolvedOptions().timeZone})`)
+    expect(options.slice(1).map((option) => option.value)).toEqual(Intl.supportedValuesOf('timeZone'))
+
+    await act(async () => {
+      select.value = 'Asia/Tokyo'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Save')
+    expect(ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')![1]).toEqual({ timeZone: 'Asia/Tokyo' })
+  })
+
+  it('keeps a saved zone the platform lists under another name selectable', async () => {
+    saved = { ...saved, timeZone: 'Asia/Calcutta' }
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const select = [...document.querySelectorAll('select')].find((element) => element.value === 'Asia/Calcutta')
+    expect(select).toBeDefined()
   })
 
   it('Reset model fills the draft with the built-in model and keeps the endpoint', async () => {
@@ -130,7 +173,7 @@ describe('SettingsModal', () => {
     expect(document.querySelector('h3')!.textContent).toBe('OpenAI')
     expect(document.body.textContent).toContain('OpenAI is the only provider supported.')
     expect(document.querySelectorAll('select')).toHaveLength(0)
-    expect(ipcInvoke.mock.calls.map(([channel]) => channel)).toEqual(['settings:get', 'settings:apiKeyState', 'settings:defaultLibraryDir'])
+    expect(ipcInvoke.mock.calls.map(([channel]) => channel)).toEqual(['settings:get', 'settings:apiKeyState', 'settings:defaultLibraryDir', 'settings:systemAppearance'])
   })
 
   it.each([

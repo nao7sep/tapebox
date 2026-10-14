@@ -56,8 +56,8 @@ const REVIEWED_MARKERS: Record<string, number> = {
   'components/PathLine.tsx': 2,
   // Labels past the menu's width cap; renaming in the box list shows box names whole.
   'components/Menu.tsx': 1,
-  // Language and thinking selects; opening one lists the full options.
-  'components/SettingsModal.tsx': 2,
+  // Language, time zone and thinking selects; opening one lists the full options.
+  'components/SettingsModal.tsx': 3,
   // Row title and text clamp (selection shows the record) and the filter select.
   'records/RecordsWindow.tsx': 3,
 }

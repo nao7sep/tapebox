@@ -31,6 +31,8 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
 import type { MessageKey } from '@shared/i18n/catalogues'
 import { LANGUAGE_NAMES, LANGUAGES, normalizeLanguagePreference } from '@shared/i18n/languages'
+import { computerTimeZone, SYSTEM_TIME_ZONE, timeZoneChoices } from '@shared/time-zone'
+import { computerLanguage } from '@renderer/i18n/useInterfaceLanguage'
 
 type Props = { onClose: () => void }
 type Tab = 'general' | 'ai' | 'ytdlp'
@@ -361,6 +363,7 @@ function pickEditable(s: Settings) {
     uiFontFamily: s.uiFontFamily,
     theme: s.theme,
     language: s.language,
+    timeZone: s.timeZone,
     'openai.endpoint': s['openai.endpoint'],
     'openai.slug': s['openai.slug'],
     'openai.thinking.slug': s['openai.thinking.slug'],
@@ -370,14 +373,21 @@ function pickEditable(s: Settings) {
   }
 }
 
+/** The platform's zones, plus a saved one it lists under another name, so the
+ * select always shows the saved choice. */
+function zoneOptions(saved: string): readonly string[] {
+  const zones = timeZoneChoices()
+  return saved === SYSTEM_TIME_ZONE || zones.includes(saved) ? zones : [saved, ...zones]
+}
+
 // The prompt's template tokens, literal in every language.
 const SLUG_TOKENS = ['{title}', '{uploader}', '{description}']
 
-const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: MessageKey }> = [
-  { value: 'system', label: 'settings.themeSystem' },
-  { value: 'light', label: 'settings.themeLight' },
-  { value: 'dark', label: 'settings.themeDark' },
-]
+const THEME_LABELS: Record<Exclude<ThemePreference, 'system'>, MessageKey> = {
+  light: 'settings.themeLight',
+  dark: 'settings.themeDark',
+}
+const THEME_CHOICES: readonly ThemePreference[] = ['system', 'light', 'dark']
 
 const TABS: { id: Tab; label: MessageKey }[] = [
   { id: 'general', label: 'settings.tabGeneral' },
@@ -462,6 +472,21 @@ function GeneralTab({
 }) {
   const [pickerError, setPickerError] = useState<Message | null>(null)
   const t = useI18n()
+  // Every System choice shows what it resolves to now (app-chrome-conventions,
+  // Theme; timestamp-conventions, Time zones). Main knows the OS appearance even
+  // while Light or Dark is forced.
+  const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>('light')
+  useEffect(() => {
+    let current = true
+    void ipcInvoke('settings:systemAppearance').then(
+      (appearance) => { if (current) setSystemTheme(appearance) },
+      (error: unknown) => log.debug('system appearance read failed', { error: describeError(error) }),
+    )
+    return () => { current = false }
+  }, [])
+  const systemChoice = (value: string) => t.t('settings.systemChoice', { value })
+  const themeLabel = (value: ThemePreference) =>
+    value === 'system' ? systemChoice(t.t(THEME_LABELS[systemTheme])) : t.t(THEME_LABELS[value])
 
   async function chooseExportDir() {
     setPickerError(null)
@@ -499,7 +524,7 @@ function GeneralTab({
           onChange={(e) => onPatch({ language: normalizeLanguagePreference(e.target.value) })}
           className={`mt-1 block w-full text-ellipsis ${INPUT_LINE_CLASS}`}
         >
-          <option value="system">{t.t('settings.languageSystem')}</option>
+          <option value="system">{systemChoice(LANGUAGE_NAMES[computerLanguage()])}</option>
           {LANGUAGES.map((language) => (
             <option key={language} value={language} lang={language}>
               {LANGUAGE_NAMES[language]}
@@ -512,7 +537,7 @@ function GeneralTab({
       <fieldset className="space-y-1.5" disabled={busy}>
         <legend className="mb-1 text-xs font-medium text-fg">{t.t('settings.theme')}</legend>
         <div className="flex flex-wrap gap-x-5 gap-y-1">
-          {THEME_OPTIONS.map(({ value, label }) => (
+          {THEME_CHOICES.map((value) => (
             <label key={value} className="flex items-center gap-2 text-sm">
               <input
                 type="radio"
@@ -521,12 +546,29 @@ function GeneralTab({
                 checked={draft.theme === value}
                 onChange={() => onPatch({ theme: value })}
               />
-              {t.t(label)}
+              {themeLabel(value)}
             </label>
           ))}
         </div>
         <p className="text-xs text-fg-muted">{t.t('settings.themeHint')}</p>
       </fieldset>
+      {/* The platform's IANA zones after System, chosen from a list and staged in
+          the draft like the rest of Settings. */}
+      <label className="block">
+        <span className="text-xs font-medium text-fg">{t.t('settings.timeZone')}</span>
+        <select
+          value={draft.timeZone}
+          disabled={busy}
+          onChange={(e) => onPatch({ timeZone: e.target.value })}
+          className={`mt-1 block w-full text-ellipsis ${INPUT_LINE_CLASS}`}
+        >
+          <option value={SYSTEM_TIME_ZONE}>{systemChoice(computerTimeZone())}</option>
+          {zoneOptions(draft.timeZone).map((zone) => (
+            <option key={zone} value={zone} data-literal>{zone}</option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs text-fg-muted">{t.t('settings.timeZoneHint')}</span>
+      </label>
       <div>
         <TextField
           label={t.t('settings.uiFont')}

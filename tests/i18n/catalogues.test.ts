@@ -22,7 +22,7 @@ const translations = LANGUAGES.filter((language) => language !== "en");
 
 // Keys whose text is the same word in that language as in English.
 const SAME_AS_ENGLISH: Partial<Record<Language, readonly string[]>> = {
-  de: ["common.ok", "detail.name", "tools.columnTool", "settings.tabYtdlp", "settings.openai", "settings.languageSystem", "settings.themeSystem", "settings.profileName", "shortcuts.player", "about.version", "records.levelInfo", "records.levelDebug", "records.details", "records.url", "records.signal", "records.scan"],
+  de: ["common.ok", "detail.name", "tools.columnTool", "settings.tabYtdlp", "settings.openai", "settings.systemChoice", "settings.profileName", "shortcuts.player", "about.version", "records.levelInfo", "records.levelDebug", "records.details", "records.url", "records.signal", "records.scan"],
   es: ["nativeMenu.zoom", "settings.tabGeneral", "settings.tabYtdlp", "settings.openai", "records.levelError", "records.error", "records.url"],
   fr: ["common.ok", "nativeMenu.services", "refresh.description", "export.destination", "settings.tabYtdlp", "settings.openai", "about.version", "records.url", "records.signal", "records.arguments"],
   it: ["common.ok", "nativeMenu.file", "tools.phaseDownload", "settings.tabYtdlp", "settings.openai", "records.levelInfo", "records.levelDebug", "records.url", "records.output"],

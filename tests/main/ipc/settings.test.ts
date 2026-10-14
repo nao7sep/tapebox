@@ -103,6 +103,15 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+// A window that keeps no settings of its own (Records) follows the saved display zone.
+describe('settings:update and the display zone', () => {
+  it('tells other windows the zone saved', async () => {
+    const { emit } = await import('@main/ipc/events')
+    await update({ timeZone: 'Asia/Tokyo' })
+    expect(emit).toHaveBeenCalledWith('settings:timeZoneChanged', 'Asia/Tokyo')
+  })
+})
+
 describe('settings:update — normalizeUserDir at the boundary', () => {
   it('rejects a relative typed library folder (it must never reach a path join)', async () => {
     await expect(update({ libraryDir: 'relative/library' })).rejects.toThrow('Library folder must be an absolute path')

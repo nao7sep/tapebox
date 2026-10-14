@@ -113,6 +113,7 @@ beforeEach(() => {
   })
   replies.set('layout:update', async (patch) => ({ ...defaultLayout, ...(patch as object) }))
   answer('layout:get', { ...defaultLayout, recordsListWidth: 512 })
+  answer('settings:get', { timeZone: 'system' })
   Object.assign(box, { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000 })
   resizeCallbacks.clear()
   vi.stubGlobal('ResizeObserver', TestResizeObserver)
@@ -140,7 +141,7 @@ afterEach(async () => {
   }
 })
 
-async function mount(element = createElement(RecordsWindow, { initialListWidth: LAYOUT_BOUNDS.recordsListWidth.default })) {
+async function mount(element = createElement(RecordsWindow, { initialListWidth: LAYOUT_BOUNDS.recordsListWidth.default, timeZone: 'UTC' })) {
   const host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
@@ -570,6 +571,19 @@ describe('RecordsApp', () => {
     await act(async () => listeners.get('settings:languageChanged')!('ja'))
     expect(document.title).toBe(CATALOGUES.ja['records.title'])
     expect(document.documentElement.lang).toBe('ja')
+  })
+
+  // Times show in the display zone saved in Settings (timestamp-conventions).
+  it('shows times in the saved display zone, and follows one saved in Settings', async () => {
+    answer('settings:get', { timeZone: 'Asia/Tokyo' })
+    await mount(createElement(RecordsApp))
+    // The AI call at 08:01 UTC.
+    expect(options()[0]!.textContent).toContain('5:01:00')
+    expect(options()[0]!.textContent).toContain('PM')
+
+    await act(async () => listeners.get('settings:timeZoneChanged')!('America/New_York'))
+    expect(options()[0]!.textContent).toContain('4:01:00')
+    expect(options()[0]!.textContent).toContain('AM')
   })
 
   it('opens at the default width when the saved one cannot be read', async () => {

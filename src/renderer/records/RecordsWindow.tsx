@@ -11,6 +11,7 @@ import { PassiveScrollRegion } from '@renderer/components/PassiveScrollRegion'
 import { InlineError } from '@renderer/components/ui'
 import { INPUT_LINE_CLASS } from '@renderer/components/ui/input-styles'
 import type { LanguagePreference } from '@shared/i18n/languages'
+import { displayTimeZone, SYSTEM_TIME_ZONE } from '@shared/time-zone'
 import {
   LAYOUT_BOUNDS,
   RECORDS_DETAIL_MIN_WIDTH,
@@ -58,8 +59,28 @@ export function RecordsApp() {
   const [preference, setPreference] = useState<LanguagePreference>(initialLanguagePreference)
   const interfaceLanguage = useLanguage(preference)
   const [listWidth, setListWidth] = useState<number | null>(null)
+  const [timeZone, setTimeZone] = useState<string | null>(null)
 
   useEffect(() => ipcOn('settings:languageChanged', setPreference), [])
+  useEffect(() => ipcOn('settings:timeZoneChanged', setTimeZone), [])
+
+  // Times show in the saved display zone (timestamp-conventions, Time zones);
+  // one that cannot be read leaves System.
+  useEffect(() => {
+    let cancelled = false
+    void ipcInvoke('settings:get').then(
+      (settings) => {
+        if (!cancelled) setTimeZone((current) => current ?? settings.timeZone)
+      },
+      (error: unknown) => {
+        diagnose('records display zone read failed', error)
+        if (!cancelled) setTimeZone((current) => current ?? SYSTEM_TIME_ZONE)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -77,10 +98,10 @@ export function RecordsApp() {
     }
   }, [])
 
-  if (!interfaceLanguage || listWidth === null) return null
+  if (!interfaceLanguage || listWidth === null || timeZone === null) return null
   return (
     <I18nProvider language={interfaceLanguage.language} locale={interfaceLanguage.locale}>
-      <RecordsWindow initialListWidth={listWidth} />
+      <RecordsWindow initialListWidth={listWidth} timeZone={displayTimeZone(timeZone)} />
     </I18nProvider>
   )
 }
@@ -107,7 +128,7 @@ type DetailState =
 
 type Selection = { kind: RecordKind; id: number }
 
-export function RecordsWindow({ initialListWidth }: { initialListWidth: number }) {
+export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth: number; timeZone: string }) {
   const t = useI18n()
   const [sources, setSources] = useState<RecordSources | null>(null)
   const [sourceReads, setSourceReads] = useState(0)
@@ -138,8 +159,8 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
   })
 
   const timeFormat = useMemo(
-    () => new Intl.DateTimeFormat(t.locale, { dateStyle: 'short', timeStyle: 'medium' }),
-    [t.locale],
+    () => new Intl.DateTimeFormat(t.locale, { dateStyle: 'short', timeStyle: 'medium', timeZone }),
+    [t.locale, timeZone],
   )
 
   useEffect(() => {
@@ -478,7 +499,7 @@ export function RecordsWindow({ initialListWidth }: { initialListWidth: number }
           aria-busy={detail.status === 'loading'}
         >
           {detail.status === 'ready' ? (
-            <RecordDetailView record={detail.record} tapes={sources?.tapes ?? []} launchLabel={launchLabel} />
+            <RecordDetailView record={detail.record} tapes={sources?.tapes ?? []} launchLabel={launchLabel} timeZone={timeZone} />
           ) : detail.status === 'failed' ? (
             <InlineError className="m-4">{t.t('records.detailFailed')}</InlineError>
           ) : detail.status === 'none' ? (
@@ -532,10 +553,12 @@ function RecordDetailView({
   record,
   tapes,
   launchLabel,
+  timeZone,
 }: {
   record: RecordDetail
   tapes: RecordSources['tapes']
   launchLabel: (session: string) => string
+  timeZone: string
 }) {
   const t = useI18n()
   const timeFormat = useMemo(
@@ -548,8 +571,9 @@ function RecordDetailView({
         minute: '2-digit',
         second: '2-digit',
         fractionalSecondDigits: 3,
+        timeZone,
       }),
-    [t.locale],
+    [t.locale, timeZone],
   )
   const secondsFormat = useMemo(
     () => new Intl.NumberFormat(t.locale, { style: 'unit', unit: 'second', minimumFractionDigits: 3, maximumFractionDigits: 3 }),

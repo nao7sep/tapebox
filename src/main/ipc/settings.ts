@@ -8,7 +8,7 @@ import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
 import { paths } from '@main/paths'
 import { reconcileWakeLock } from '@main/power-blocker'
-import { applyThemePreference } from '@main/theme'
+import { applyThemePreference, systemAppearance } from '@main/theme'
 import { applyLanguagePreference } from '@main/i18n'
 import {
   completeLibraryRelocation,
@@ -171,6 +171,7 @@ export function registerSettingsHandlers(): void {
     await apiKeys.clearApiKey('openai')
   })
   handle('settings:apiKeyState', async () => apiKeys.apiKeyState('openai'))
+  handle('settings:systemAppearance', () => systemAppearance())
 }
 
 type SettingsUpdateResult = IpcCalls['settings:update']['res']
@@ -209,6 +210,7 @@ async function applySettingsPatch(
   applyThemePreference(next.theme)
   await applyLanguagePreference(next.language)
   emit('settings:languageChanged', next.language)
+  emit('settings:timeZoneChanged', next.timeZone)
   // Flipping autostart on should start anything already waiting.
   if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
   // Toggling keep-awake off mid-playback must release the held wake lock now

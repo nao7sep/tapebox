@@ -23,13 +23,33 @@ function syncWindowBackgrounds(): void {
   }
 }
 
+// The OS appearance last seen while themeSource was System. Electron reports only
+// the resolved theme, so while Light or Dark is forced this is the appearance from
+// launch or from the last time System was in force.
+let systemDark: boolean | null = null
+
+function noteSystemAppearance(): void {
+  if (nativeTheme.themeSource === 'system') systemDark = nativeTheme.shouldUseDarkColors
+}
+
+/** What the System choice resolves to now, for its label in Settings. */
+export function systemAppearance(): 'light' | 'dark' {
+  noteSystemAppearance()
+  return (systemDark ?? nativeTheme.shouldUseDarkColors) ? 'dark' : 'light'
+}
+
 /** Applies a saved choice to the whole app; System follows the OS. */
 export function applyThemePreference(preference: ThemePreference): void {
+  noteSystemAppearance()
   nativeTheme.themeSource = preference
+  noteSystemAppearance()
   syncWindowBackgrounds()
 }
 
 /** Keeps window backgrounds in step when the OS appearance changes under System. */
 export function followOsThemeChanges(): void {
-  nativeTheme.on('updated', syncWindowBackgrounds)
+  nativeTheme.on('updated', () => {
+    noteSystemAppearance()
+    syncWindowBackgrounds()
+  })
 }

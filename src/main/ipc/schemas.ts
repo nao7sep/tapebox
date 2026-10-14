@@ -102,6 +102,7 @@ export const ipcRequestSchemas = {
   'settings:setApiKey':    z.object({ apiKey: z.string() }),
   'settings:clearApiKey':  z.undefined(),
   'settings:apiKeyState':  z.undefined(),
+  'settings:systemAppearance': z.undefined(),
 
   // ── Layout ──────────────────────────────────────────────────────────────
   'layout:get':            z.undefined(),

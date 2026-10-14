@@ -21,6 +21,11 @@ export function useInterfaceLanguage(): { language: Language; locale: string } |
   return useLanguage(saved ?? environment.preference)
 }
 
+/** The computer's language, which the System choice resolves to. */
+export function computerLanguage(): Language {
+  return environment.systemLanguage
+}
+
 /** The window's saved choice as of its creation, before anything else says otherwise. */
 export function initialLanguagePreference(): LanguagePreference {
   return environment.preference

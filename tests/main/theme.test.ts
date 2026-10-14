@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { applyThemePreference, followOsThemeChanges, windowBackground } from '@main/theme'
+import { applyThemePreference, followOsThemeChanges, systemAppearance, windowBackground } from '@main/theme'
 
 beforeEach(() => {
   electron.windows.splice(0)
@@ -29,6 +29,19 @@ beforeEach(() => {
 })
 
 describe('theme', () => {
+  // Electron resolves a forced theme, so the System label reads the OS appearance
+  // last seen while System was in force (app-chrome-conventions, Theme).
+  it('reports the OS appearance for the System label, even while a theme is forced', () => {
+    electron.nativeTheme.shouldUseDarkColors = true
+    expect(systemAppearance()).toBe('dark')
+    applyThemePreference('light')
+    electron.nativeTheme.shouldUseDarkColors = false
+    expect(systemAppearance()).toBe('dark')
+    applyThemePreference('system')
+    electron.nativeTheme.shouldUseDarkColors = false
+    expect(systemAppearance()).toBe('light')
+  })
+
   it('hands the saved choice to Electron as the one theme authority', () => {
     applyThemePreference('light')
     expect(electron.nativeTheme.themeSource).toBe('light')

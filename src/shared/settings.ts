@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { AI_ROLES, defaultModelFor, rowFor, thinkingFor } from './ai-models'
 import { multiline, singleLine } from './text-cleanup'
 import { LANGUAGE_PREFERENCES } from './i18n/languages'
+import { isTimeZone, SYSTEM_TIME_ZONE } from './time-zone'
 
 // The per-binary managed-dependency facts (installed/latest versions, last-check
 // time) are NOT config — they are app-recorded facts and live in their own
@@ -186,6 +187,12 @@ export const SettingsObjectSchema = z.object({
   // tags. Applied on Save with the rest of Settings. A missing, retired or
   // hand-edited value follows the computer instead of failing the whole file.
   language: z.enum(LANGUAGE_PREFERENCES),
+
+  // The display zone (timestamp-conventions, Time zones) for the times Records
+  // shows: System follows the computer's zone; otherwise an IANA zone from the
+  // platform's list. TapeBox reads no zoneless times, so it has no interpretation
+  // zone.
+  timeZone: z.string().refine((zone) => zone === SYSTEM_TIME_ZONE || isTimeZone(zone)),
 })
 
 // Every top-level key is one set; nested sets are validated and written whole.
@@ -314,6 +321,7 @@ export function defaultSettings(): Settings {
     uiFontFamily: '',
     theme: 'system',
     language: 'system',
+    timeZone: SYSTEM_TIME_ZONE,
   }
 }
 
@@ -348,5 +356,6 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     uiFontFamily: s.uiFontFamily,
     theme: s.theme,
     language: s.language,
+    timeZone: s.timeZone,
   }
 }
