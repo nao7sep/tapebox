@@ -178,8 +178,8 @@
   "tapeActions.closePlacement": "Close move to box result",
   "tapeActions.closeRemove": "Close remove result",
   "status.downloading": {
-    "one": "{count} downloading",
-    "other": "{count} downloading"
+    "one": "{count} downloading…",
+    "other": "{count} downloading…"
   },
   "status.queued": {
     "one": "{count} queued",
@@ -244,14 +244,14 @@
     "other": "{count} chapters"
   },
   "tapeState.queued": "Queued",
-  "tapeState.probing": "Probing",
+  "tapeState.probing": "Probing…",
   "tapeState.ready": "Ready",
-  "tapeState.downloading": "Downloading",
+  "tapeState.downloading": "Downloading…",
   "tapeState.downloaded": "In library",
   "tapeState.failed": "Failed",
   "tapeState.paused": "Paused",
   "tapeState.listing": "Video list",
-  "tapeState.downloadingPercent": "Downloading {percent}%",
+  "tapeState.downloadingPercent": "Downloading {percent}%…",
   "tapeState.stalled": {
     "one": "no progress for {count} min",
     "other": "no progress for {count} min"
@@ -477,9 +477,9 @@
   "tools.versionUnreadable": "Version unreadable",
   "tools.checking": "Checking…",
   "tools.notChecked": "Not checked",
-  "tools.phaseDownload": "Download {percent}%",
-  "tools.phaseVerify": "Verify {percent}%",
-  "tools.phaseInstall": "Install {percent}%",
+  "tools.phaseDownload": "Download {percent}%…",
+  "tools.phaseVerify": "Verify {percent}%…",
+  "tools.phaseInstall": "Install {percent}%…",
   "tools.install": "Install",
   "tools.update": "Update",
   "tools.checkIncomplete": {
@@ -497,8 +497,8 @@
   "settings.stoppingMove": "Stopping…",
   "settings.moving": "Moving…",
   "settings.moveProgress": {
-    "one": "Moving library: {done} of {count} file ({bytesDone} of {bytesTotal})",
-    "other": "Moving library: {done} of {count} files ({bytesDone} of {bytesTotal})"
+    "one": "Moving library: {done} of {count} file ({bytesDone} of {bytesTotal})…",
+    "other": "Moving library: {done} of {count} files ({bytesDone} of {bytesTotal})…"
   },
   "common.unsavedTitle": "Discard changes?",
   "common.unsavedMessage": "You have unsaved changes. Discard them and close?",

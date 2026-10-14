@@ -181,9 +181,9 @@
   "tapeActions.closePlacement": "Fermer le message de déplacement vers une boîte",
   "tapeActions.closeRemove": "Fermer le message de retrait",
   "status.downloading": {
-    "one": "{count} en téléchargement",
-    "many": "{count} en téléchargement",
-    "other": "{count} en téléchargement"
+    "one": "{count} en téléchargement…",
+    "many": "{count} en téléchargement…",
+    "other": "{count} en téléchargement…"
   },
   "status.queued": {
     "one": "{count} en attente",
@@ -257,14 +257,14 @@
     "other": "{count} chapitres"
   },
   "tapeState.queued": "En attente",
-  "tapeState.probing": "Analyse",
+  "tapeState.probing": "Analyse…",
   "tapeState.ready": "Prête",
-  "tapeState.downloading": "Téléchargement",
+  "tapeState.downloading": "Téléchargement…",
   "tapeState.downloaded": "Dans la bibliothèque",
   "tapeState.failed": "Échec",
   "tapeState.paused": "En pause",
   "tapeState.listing": "Liste de vidéos",
-  "tapeState.downloadingPercent": "Téléchargement {percent} %",
+  "tapeState.downloadingPercent": "Téléchargement {percent} %…",
   "tapeState.stalled": {
     "one": "aucune progression depuis {count} min",
     "many": "aucune progression depuis {count} min",
@@ -503,9 +503,9 @@
   "tools.versionUnreadable": "Version illisible",
   "tools.checking": "Vérification…",
   "tools.notChecked": "Non vérifié",
-  "tools.phaseDownload": "Téléchargement {percent} %",
-  "tools.phaseVerify": "Vérification {percent} %",
-  "tools.phaseInstall": "Installation {percent} %",
+  "tools.phaseDownload": "Téléchargement {percent} %…",
+  "tools.phaseVerify": "Vérification {percent} %…",
+  "tools.phaseInstall": "Installation {percent} %…",
   "tools.install": "Installer",
   "tools.update": "Mettre à jour",
   "tools.checkIncomplete": {
@@ -524,9 +524,9 @@
   "settings.stoppingMove": "Arrêt…",
   "settings.moving": "Déplacement…",
   "settings.moveProgress": {
-    "one": "Déplacement de la bibliothèque\u00a0: {done} sur {count} fichier ({bytesDone} sur {bytesTotal})",
-    "many": "Déplacement de la bibliothèque\u00a0: {done} sur {count} de fichiers ({bytesDone} sur {bytesTotal})",
-    "other": "Déplacement de la bibliothèque\u00a0: {done} sur {count} fichiers ({bytesDone} sur {bytesTotal})"
+    "one": "Déplacement de la bibliothèque\u00a0: {done} sur {count} fichier ({bytesDone} sur {bytesTotal})…",
+    "many": "Déplacement de la bibliothèque\u00a0: {done} sur {count} de fichiers ({bytesDone} sur {bytesTotal})…",
+    "other": "Déplacement de la bibliothèque\u00a0: {done} sur {count} fichiers ({bytesDone} sur {bytesTotal})…"
   },
   "common.unsavedTitle": "Abandonner les modifications\u00a0?",
   "common.unsavedMessage": "Des modifications ne sont pas enregistrées. Les abandonner et fermer\u00a0?",

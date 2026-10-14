@@ -175,7 +175,7 @@
   "tapeActions.closePlacement": "ボックスへの移動の結果を閉じる",
   "tapeActions.closeRemove": "削除の結果を閉じる",
   "status.downloading": {
-    "other": "{count} 件ダウンロード中"
+    "other": "{count} 件ダウンロード中…"
   },
   "status.queued": {
     "other": "{count} 件待機中"
@@ -231,14 +231,14 @@
     "other": "{count} チャプター"
   },
   "tapeState.queued": "待機中",
-  "tapeState.probing": "情報を取得中",
+  "tapeState.probing": "情報を取得中…",
   "tapeState.ready": "準備完了",
-  "tapeState.downloading": "ダウンロード中",
+  "tapeState.downloading": "ダウンロード中…",
   "tapeState.downloaded": "ライブラリ内",
   "tapeState.failed": "失敗",
   "tapeState.paused": "一時停止中",
   "tapeState.listing": "動画リスト",
-  "tapeState.downloadingPercent": "ダウンロード中 {percent}%",
+  "tapeState.downloadingPercent": "ダウンロード中 {percent}%…",
   "tapeState.stalled": {
     "other": "{count} 分間進展なし"
   },
@@ -451,9 +451,9 @@
   "tools.versionUnreadable": "バージョンを読み取れません",
   "tools.checking": "確認中…",
   "tools.notChecked": "未確認",
-  "tools.phaseDownload": "ダウンロード {percent}%",
-  "tools.phaseVerify": "検証 {percent}%",
-  "tools.phaseInstall": "インストール {percent}%",
+  "tools.phaseDownload": "ダウンロード {percent}%…",
+  "tools.phaseVerify": "検証 {percent}%…",
+  "tools.phaseInstall": "インストール {percent}%…",
   "tools.install": "インストール",
   "tools.update": "アップデート",
   "tools.checkIncomplete": {
@@ -470,7 +470,7 @@
   "settings.stoppingMove": "停止中…",
   "settings.moving": "移動中…",
   "settings.moveProgress": {
-    "other": "ライブラリを移動中: {count} 個中 {done} 個のファイル ({bytesTotal} 中 {bytesDone})"
+    "other": "ライブラリを移動中: {count} 個中 {done} 個のファイル ({bytesTotal} 中 {bytesDone})…"
   },
   "common.unsavedTitle": "変更を破棄しますか？",
   "common.unsavedMessage": "保存していない変更があります。破棄して閉じますか？",

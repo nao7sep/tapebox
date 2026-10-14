@@ -181,9 +181,9 @@
   "tapeActions.closePlacement": "Fechar mensagem de mover para uma caixa",
   "tapeActions.closeRemove": "Fechar mensagem de remover",
   "status.downloading": {
-    "one": "{count} baixando",
-    "many": "{count} baixando",
-    "other": "{count} baixando"
+    "one": "{count} baixando…",
+    "many": "{count} baixando…",
+    "other": "{count} baixando…"
   },
   "status.queued": {
     "one": "{count} na fila",
@@ -257,14 +257,14 @@
     "other": "{count} capítulos"
   },
   "tapeState.queued": "Na fila",
-  "tapeState.probing": "Analisando",
+  "tapeState.probing": "Analisando…",
   "tapeState.ready": "Pronta",
-  "tapeState.downloading": "Baixando",
+  "tapeState.downloading": "Baixando…",
   "tapeState.downloaded": "Na biblioteca",
   "tapeState.failed": "Com falha",
   "tapeState.paused": "Pausada",
   "tapeState.listing": "Lista de vídeos",
-  "tapeState.downloadingPercent": "Baixando {percent}%",
+  "tapeState.downloadingPercent": "Baixando {percent}%…",
   "tapeState.stalled": {
     "one": "sem progresso há {count} min",
     "many": "sem progresso há {count} min",
@@ -503,9 +503,9 @@
   "tools.versionUnreadable": "Versão ilegível",
   "tools.checking": "Verificando…",
   "tools.notChecked": "Não verificada",
-  "tools.phaseDownload": "Download {percent}%",
-  "tools.phaseVerify": "Verificação {percent}%",
-  "tools.phaseInstall": "Instalação {percent}%",
+  "tools.phaseDownload": "Download {percent}%…",
+  "tools.phaseVerify": "Verificação {percent}%…",
+  "tools.phaseInstall": "Instalação {percent}%…",
   "tools.install": "Instalar",
   "tools.update": "Atualizar",
   "tools.checkIncomplete": {
@@ -524,9 +524,9 @@
   "settings.stoppingMove": "Parando…",
   "settings.moving": "Movendo…",
   "settings.moveProgress": {
-    "one": "Movendo a biblioteca: {done} de {count} arquivo ({bytesDone} de {bytesTotal})",
-    "many": "Movendo a biblioteca: {done} de {count} de arquivos ({bytesDone} de {bytesTotal})",
-    "other": "Movendo a biblioteca: {done} de {count} arquivos ({bytesDone} de {bytesTotal})"
+    "one": "Movendo a biblioteca: {done} de {count} arquivo ({bytesDone} de {bytesTotal})…",
+    "many": "Movendo a biblioteca: {done} de {count} de arquivos ({bytesDone} de {bytesTotal})…",
+    "other": "Movendo a biblioteca: {done} de {count} arquivos ({bytesDone} de {bytesTotal})…"
   },
   "common.unsavedTitle": "Descartar as alterações?",
   "common.unsavedMessage": "Há alterações não salvas. Descartá-las e fechar?",

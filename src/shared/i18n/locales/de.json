@@ -178,8 +178,8 @@
   "tapeActions.closePlacement": "Meldung zum Verschieben in eine Box schließen",
   "tapeActions.closeRemove": "Meldung zum Entfernen schließen",
   "status.downloading": {
-    "one": "{count} wird heruntergeladen",
-    "other": "{count} werden heruntergeladen"
+    "one": "{count} wird heruntergeladen\u00a0…",
+    "other": "{count} werden heruntergeladen\u00a0…"
   },
   "status.queued": {
     "one": "{count} wartet",
@@ -244,14 +244,14 @@
     "other": "{count} Kapitel"
   },
   "tapeState.queued": "Wartet",
-  "tapeState.probing": "Wird analysiert",
+  "tapeState.probing": "Wird analysiert\u00a0…",
   "tapeState.ready": "Bereit",
-  "tapeState.downloading": "Wird heruntergeladen",
+  "tapeState.downloading": "Wird heruntergeladen\u00a0…",
   "tapeState.downloaded": "In der Mediathek",
   "tapeState.failed": "Fehlgeschlagen",
   "tapeState.paused": "Pausiert",
   "tapeState.listing": "Videoliste",
-  "tapeState.downloadingPercent": "Wird heruntergeladen: {percent} %",
+  "tapeState.downloadingPercent": "Wird heruntergeladen: {percent} %\u00a0…",
   "tapeState.stalled": {
     "one": "seit {count} Min. kein Fortschritt",
     "other": "seit {count} Min. kein Fortschritt"
@@ -477,9 +477,9 @@
   "tools.versionUnreadable": "Version nicht lesbar",
   "tools.checking": "Wird geprüft\u00a0…",
   "tools.notChecked": "Nicht geprüft",
-  "tools.phaseDownload": "Download {percent} %",
-  "tools.phaseVerify": "Prüfung {percent} %",
-  "tools.phaseInstall": "Installation {percent} %",
+  "tools.phaseDownload": "Download {percent} %\u00a0…",
+  "tools.phaseVerify": "Prüfung {percent} %\u00a0…",
+  "tools.phaseInstall": "Installation {percent} %\u00a0…",
   "tools.install": "Installieren",
   "tools.update": "Aktualisieren",
   "tools.checkIncomplete": {
@@ -497,8 +497,8 @@
   "settings.stoppingMove": "Wird gestoppt\u00a0…",
   "settings.moving": "Wird verschoben\u00a0…",
   "settings.moveProgress": {
-    "one": "Mediathek wird verschoben: {done} von {count} Datei ({bytesDone} von {bytesTotal})",
-    "other": "Mediathek wird verschoben: {done} von {count} Dateien ({bytesDone} von {bytesTotal})"
+    "one": "Mediathek wird verschoben: {done} von {count} Datei ({bytesDone} von {bytesTotal})\u00a0…",
+    "other": "Mediathek wird verschoben: {done} von {count} Dateien ({bytesDone} von {bytesTotal})\u00a0…"
   },
   "common.unsavedTitle": "Änderungen verwerfen?",
   "common.unsavedMessage": "Sie haben nicht gespeicherte Änderungen. Verwerfen und schließen?",

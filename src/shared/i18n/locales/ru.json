@@ -184,10 +184,10 @@
   "tapeActions.closePlacement": "Закрыть сообщение о перемещении в коробку",
   "tapeActions.closeRemove": "Закрыть сообщение об удалении",
   "status.downloading": {
-    "one": "{count} загружается",
-    "few": "{count} загружаются",
-    "many": "{count} загружаются",
-    "other": "{count} загружаются"
+    "one": "{count} загружается…",
+    "few": "{count} загружаются…",
+    "many": "{count} загружаются…",
+    "other": "{count} загружаются…"
   },
   "status.queued": {
     "one": "{count} в очереди",
@@ -270,14 +270,14 @@
     "other": "{count} главы"
   },
   "tapeState.queued": "В очереди",
-  "tapeState.probing": "Анализ",
+  "tapeState.probing": "Анализ…",
   "tapeState.ready": "Готова",
-  "tapeState.downloading": "Загрузка",
+  "tapeState.downloading": "Загрузка…",
   "tapeState.downloaded": "В медиатеке",
   "tapeState.failed": "Ошибка",
   "tapeState.paused": "На паузе",
   "tapeState.listing": "Список видео",
-  "tapeState.downloadingPercent": "Загрузка {percent} %",
+  "tapeState.downloadingPercent": "Загрузка {percent} %…",
   "tapeState.stalled": {
     "one": "нет прогресса {count} мин",
     "few": "нет прогресса {count} мин",
@@ -529,9 +529,9 @@
   "tools.versionUnreadable": "Версия не читается",
   "tools.checking": "Проверка…",
   "tools.notChecked": "Не проверено",
-  "tools.phaseDownload": "Загрузка {percent} %",
-  "tools.phaseVerify": "Проверка {percent} %",
-  "tools.phaseInstall": "Установка {percent} %",
+  "tools.phaseDownload": "Загрузка {percent} %…",
+  "tools.phaseVerify": "Проверка {percent} %…",
+  "tools.phaseInstall": "Установка {percent} %…",
   "tools.install": "Установить",
   "tools.update": "Обновить",
   "tools.checkIncomplete": {
@@ -551,10 +551,10 @@
   "settings.stoppingMove": "Остановка…",
   "settings.moving": "Перемещение…",
   "settings.moveProgress": {
-    "one": "Перемещение медиатеки: {done} из {count} файла ({bytesDone} из {bytesTotal})",
-    "few": "Перемещение медиатеки: {done} из {count} файлов ({bytesDone} из {bytesTotal})",
-    "many": "Перемещение медиатеки: {done} из {count} файлов ({bytesDone} из {bytesTotal})",
-    "other": "Перемещение медиатеки: {done} из {count} файла ({bytesDone} из {bytesTotal})"
+    "one": "Перемещение медиатеки: {done} из {count} файла ({bytesDone} из {bytesTotal})…",
+    "few": "Перемещение медиатеки: {done} из {count} файлов ({bytesDone} из {bytesTotal})…",
+    "many": "Перемещение медиатеки: {done} из {count} файлов ({bytesDone} из {bytesTotal})…",
+    "other": "Перемещение медиатеки: {done} из {count} файла ({bytesDone} из {bytesTotal})…"
   },
   "common.unsavedTitle": "Отказаться от изменений?",
   "common.unsavedMessage": "Есть несохранённые изменения. Отказаться от них и закрыть?",

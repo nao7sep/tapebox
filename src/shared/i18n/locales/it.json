@@ -181,9 +181,9 @@
   "tapeActions.closePlacement": "Chiudi messaggio di spostamento in una scatola",
   "tapeActions.closeRemove": "Chiudi messaggio di rimozione",
   "status.downloading": {
-    "one": "{count} in download",
-    "many": "{count} in download",
-    "other": "{count} in download"
+    "one": "{count} in download…",
+    "many": "{count} in download…",
+    "other": "{count} in download…"
   },
   "status.queued": {
     "one": "{count} in coda",
@@ -257,14 +257,14 @@
     "other": "{count} capitoli"
   },
   "tapeState.queued": "In coda",
-  "tapeState.probing": "Analisi",
+  "tapeState.probing": "Analisi…",
   "tapeState.ready": "Pronta",
-  "tapeState.downloading": "Download in corso",
+  "tapeState.downloading": "Download in corso…",
   "tapeState.downloaded": "Nella libreria",
   "tapeState.failed": "Non riuscita",
   "tapeState.paused": "In pausa",
   "tapeState.listing": "Elenco video",
-  "tapeState.downloadingPercent": "Download {percent}%",
+  "tapeState.downloadingPercent": "Download {percent}%…",
   "tapeState.stalled": {
     "one": "nessun progresso da {count} min",
     "many": "nessun progresso da {count} min",
@@ -503,9 +503,9 @@
   "tools.versionUnreadable": "Versione illeggibile",
   "tools.checking": "Controllo…",
   "tools.notChecked": "Non controllata",
-  "tools.phaseDownload": "Download {percent}%",
-  "tools.phaseVerify": "Verifica {percent}%",
-  "tools.phaseInstall": "Installazione {percent}%",
+  "tools.phaseDownload": "Download {percent}%…",
+  "tools.phaseVerify": "Verifica {percent}%…",
+  "tools.phaseInstall": "Installazione {percent}%…",
   "tools.install": "Installa",
   "tools.update": "Aggiorna",
   "tools.checkIncomplete": {
@@ -524,9 +524,9 @@
   "settings.stoppingMove": "Interruzione…",
   "settings.moving": "Spostamento…",
   "settings.moveProgress": {
-    "one": "Spostamento della libreria: {done} di {count} file ({bytesDone} di {bytesTotal})",
-    "many": "Spostamento della libreria: {done} di {count} di file ({bytesDone} di {bytesTotal})",
-    "other": "Spostamento della libreria: {done} di {count} file ({bytesDone} di {bytesTotal})"
+    "one": "Spostamento della libreria: {done} di {count} file ({bytesDone} di {bytesTotal})…",
+    "many": "Spostamento della libreria: {done} di {count} di file ({bytesDone} di {bytesTotal})…",
+    "other": "Spostamento della libreria: {done} di {count} file ({bytesDone} di {bytesTotal})…"
   },
   "common.unsavedTitle": "Scartare le modifiche?",
   "common.unsavedMessage": "Hai modifiche non salvate. Scartarle e chiudere?",

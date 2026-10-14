@@ -26,7 +26,7 @@ describe('createTranslator', () => {
     const t = createTranslator('en')
     expect(t.text(message('errors.aiHttp', { status: '404' }))).toContain('(HTTP 404)')
     expect(t.text(joinMessages(message('status.downloading', { count: 2 }), message('status.queued', { count: 1 }))))
-      .toBe('2 downloading · 1 queued')
+      .toBe('2 downloading… · 1 queued')
   })
 
   it('formats sizes, rates, lists and elapsed time for the locale', () => {

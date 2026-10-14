@@ -175,7 +175,7 @@
   "tapeActions.closePlacement": "상자로 이동 메시지 닫기",
   "tapeActions.closeRemove": "제거 메시지 닫기",
   "status.downloading": {
-    "other": "{count}개 다운로드 중"
+    "other": "{count}개 다운로드 중…"
   },
   "status.queued": {
     "other": "{count}개 대기 중"
@@ -231,14 +231,14 @@
     "other": "챕터 {count}개"
   },
   "tapeState.queued": "대기 중",
-  "tapeState.probing": "정보 확인 중",
+  "tapeState.probing": "정보 확인 중…",
   "tapeState.ready": "준비됨",
-  "tapeState.downloading": "다운로드 중",
+  "tapeState.downloading": "다운로드 중…",
   "tapeState.downloaded": "라이브러리에 있음",
   "tapeState.failed": "실패",
   "tapeState.paused": "일시 정지됨",
   "tapeState.listing": "동영상 목록",
-  "tapeState.downloadingPercent": "다운로드 중 {percent}%",
+  "tapeState.downloadingPercent": "다운로드 중 {percent}%…",
   "tapeState.stalled": {
     "other": "{count}분째 진행 없음"
   },
@@ -451,9 +451,9 @@
   "tools.versionUnreadable": "버전을 읽을 수 없음",
   "tools.checking": "확인 중…",
   "tools.notChecked": "확인 안 함",
-  "tools.phaseDownload": "다운로드 {percent}%",
-  "tools.phaseVerify": "검증 {percent}%",
-  "tools.phaseInstall": "설치 {percent}%",
+  "tools.phaseDownload": "다운로드 {percent}%…",
+  "tools.phaseVerify": "검증 {percent}%…",
+  "tools.phaseInstall": "설치 {percent}%…",
   "tools.install": "설치",
   "tools.update": "업데이트",
   "tools.checkIncomplete": {
@@ -470,7 +470,7 @@
   "settings.stoppingMove": "중지하는 중…",
   "settings.moving": "이동하는 중…",
   "settings.moveProgress": {
-    "other": "라이브러리 이동 중: 파일 {count}개 중 {done}개({bytesTotal} 중 {bytesDone})"
+    "other": "라이브러리 이동 중: 파일 {count}개 중 {done}개({bytesTotal} 중 {bytesDone})…"
   },
   "common.unsavedTitle": "변경 사항을 버리시겠습니까?",
   "common.unsavedMessage": "저장하지 않은 변경 사항이 있습니다. 버리고 닫으시겠습니까?",

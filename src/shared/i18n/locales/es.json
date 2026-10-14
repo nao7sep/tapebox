@@ -181,9 +181,9 @@
   "tapeActions.closePlacement": "Cerrar mensaje de mover a una caja",
   "tapeActions.closeRemove": "Cerrar mensaje de quitar",
   "status.downloading": {
-    "one": "{count} descargando",
-    "many": "{count} descargando",
-    "other": "{count} descargando"
+    "one": "{count} descargando…",
+    "many": "{count} descargando…",
+    "other": "{count} descargando…"
   },
   "status.queued": {
     "one": "{count} en cola",
@@ -257,14 +257,14 @@
     "other": "{count} capítulos"
   },
   "tapeState.queued": "En cola",
-  "tapeState.probing": "Analizando",
+  "tapeState.probing": "Analizando…",
   "tapeState.ready": "Preparada",
-  "tapeState.downloading": "Descargando",
+  "tapeState.downloading": "Descargando…",
   "tapeState.downloaded": "En la biblioteca",
   "tapeState.failed": "Con error",
   "tapeState.paused": "En pausa",
   "tapeState.listing": "Lista de videos",
-  "tapeState.downloadingPercent": "Descargando {percent} %",
+  "tapeState.downloadingPercent": "Descargando {percent} %…",
   "tapeState.stalled": {
     "one": "sin avance desde hace {count} min",
     "many": "sin avance desde hace {count} min",
@@ -503,9 +503,9 @@
   "tools.versionUnreadable": "Versión ilegible",
   "tools.checking": "Comprobando…",
   "tools.notChecked": "Sin comprobar",
-  "tools.phaseDownload": "Descarga {percent} %",
-  "tools.phaseVerify": "Verificación {percent} %",
-  "tools.phaseInstall": "Instalación {percent} %",
+  "tools.phaseDownload": "Descarga {percent} %…",
+  "tools.phaseVerify": "Verificación {percent} %…",
+  "tools.phaseInstall": "Instalación {percent} %…",
   "tools.install": "Instalar",
   "tools.update": "Actualizar",
   "tools.checkIncomplete": {
@@ -524,9 +524,9 @@
   "settings.stoppingMove": "Deteniendo…",
   "settings.moving": "Moviendo…",
   "settings.moveProgress": {
-    "one": "Moviendo la biblioteca: {done} de {count} archivo ({bytesDone} de {bytesTotal})",
-    "many": "Moviendo la biblioteca: {done} de {count} de archivos ({bytesDone} de {bytesTotal})",
-    "other": "Moviendo la biblioteca: {done} de {count} archivos ({bytesDone} de {bytesTotal})"
+    "one": "Moviendo la biblioteca: {done} de {count} archivo ({bytesDone} de {bytesTotal})…",
+    "many": "Moviendo la biblioteca: {done} de {count} de archivos ({bytesDone} de {bytesTotal})…",
+    "other": "Moviendo la biblioteca: {done} de {count} archivos ({bytesDone} de {bytesTotal})…"
   },
   "common.unsavedTitle": "¿Descartar los cambios?",
   "common.unsavedMessage": "Tienes cambios sin guardar. ¿Descartarlos y cerrar?",
