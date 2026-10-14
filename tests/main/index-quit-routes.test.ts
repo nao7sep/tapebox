@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { app } from 'electron'
+import { showPlainMessageDialog } from '@main/plain-message-dialog'
 import { SESSION_END_LIMIT_MS } from '@main/quit'
 
 // The Electron entry's platform quit routes. Closing the last window quits on
@@ -23,10 +24,12 @@ const state = vi.hoisted(() => ({
   order: [] as string[],
   releaseLanguage: (() => {}) as () => void,
   stopStalls: false,
+  focused: null as unknown,
 }))
 
 vi.mock('electron', () => {
   class BrowserWindow {
+    static getFocusedWindow(): unknown { return state.focused }
     readonly handlers = new Map<string, Handler>()
     readonly webContents = { setWindowOpenHandler: vi.fn() }
     constructor() { state.windows.push(this) }
@@ -128,6 +131,7 @@ afterEach(() => {
   for (const [event, listener] of processHandlers) process.off(event, listener)
   processHandlers = []
   state.stopStalls = false
+  state.focused = null
   vi.restoreAllMocks()
   vi.mocked(app.quit).mockClear()
 })
@@ -191,5 +195,25 @@ describe('an OS session end delivered to the Electron entry', () => {
     expect(Date.now() - started).toBeLessThan(SESSION_END_LIMIT_MS)
     expect(state.order).not.toContain('dialog')
     expect(state.order.slice(-2)).toEqual(['kill-tools', 'force-exit'])
+  })
+})
+
+// The failed-save question opens at the user's quit, so it sits above the window
+// they quit from (window-conventions): Records when it has focus, else the main window.
+describe('the failed-save question at a user quit', () => {
+  it('opens above the focused window', async () => {
+    await launch()
+    const records = { name: 'records' }
+    state.focused = records
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0].owner).toBe(records)
+  })
+
+  it('opens above the main window when no app window has focus', async () => {
+    const main = await launch()
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0].owner).toBe(main)
   })
 })

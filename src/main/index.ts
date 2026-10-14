@@ -246,8 +246,11 @@ const quit = createQuit({
 
 async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoice> {
   const t = mainTranslator()
+  // Above the window the user quit from, such as Records; otherwise the main
+  // window when it exists, else a standalone dialog (window-conventions).
+  const owner = BrowserWindow.getFocusedWindow() ?? (mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined)
   const choice = await showPlainMessageDialog({
-    owner: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    owner,
     language: t.language,
     title: t.t('quit.libraryNotSaved.title'),
     message: t.t('quit.libraryNotSaved.message'),
