@@ -56,6 +56,28 @@ describe('sanitizeFilename — general rules', () => {
     expect(sanitizeFilename('lpt1')).toBe('lpt1_')
   })
 
+  // Windows reads the part before the first dot, whatever follows: a name the
+  // caller then gives `.mp4` must not open the device.
+  it('defuses a device name followed by dots', () => {
+    expect(sanitizeFilename('CON.txt')).toBe('CON_.txt')
+    expect(sanitizeFilename('con.tar')).toBe('con_.tar')
+    expect(sanitizeFilename('Nul .backup.old')).toBe('Nul _.backup.old')
+    expect(sanitizeFilename('console.log')).toBe('console.log')
+    expect(sanitizeFilename('my.con')).toBe('my.con')
+  })
+
+  it('trims dots and spaces Windows refuses at either end', () => {
+    expect(sanitizeFilename('name.')).toBe('name')
+    expect(sanitizeFilename(' .hidden name ... ')).toBe('hidden name')
+  })
+
+  it('shortens to 240 UTF-8 bytes without splitting a character', () => {
+    expect(Buffer.byteLength(sanitizeFilename('a'.repeat(300)))).toBe(240)
+    const cut = sanitizeFilename('日'.repeat(100))
+    expect(Buffer.byteLength(cut)).toBeLessThanOrEqual(240)
+    expect(cut).toBe('日'.repeat(80))
+  })
+
   it('returns empty when nothing usable survives, so callers can reject it', () => {
     expect(sanitizeFilename('///')).toBe('')
     expect(sanitizeFilename('   ')).toBe('')

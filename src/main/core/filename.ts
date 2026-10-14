@@ -12,8 +12,9 @@
  *   - Collapse internal whitespace runs to a single space
  *   - Trim leading/trailing whitespace and dots (Windows refuses these)
  *   - Reject reserved DOS device names (CON, PRN, AUX, NUL, COM1–9, LPT1–9)
- *     by appending an underscore — the file still opens, just not as a
- *     pipe to that device.
+ *     by appending an underscore to the part before the first dot — Windows
+ *     reads `con.tar.mp4` as the CON device too, since callers add an
+ *     extension — so the file still opens, just not as a pipe to that device.
  *   - Truncate so the byte length fits within 240 bytes when UTF-8 encoded.
  *     Headroom under typical 255-byte limits and well under Windows 255-char
  *     filename limit. Truncation never splits a Unicode code point.
@@ -44,9 +45,10 @@ export function sanitizeFilename(input: string): string {
 
   if (s.length === 0) return ''
 
-  const lowerBase = portableFilenameIdentity(s.replace(/\.[^.]*$/, ''))
-  if (RESERVED_DOS_NAMES.has(lowerBase)) {
-    s = `${s}_`
+  const dot = s.indexOf('.')
+  const base = dot === -1 ? s : s.slice(0, dot)
+  if (RESERVED_DOS_NAMES.has(portableFilenameIdentity(base.trimEnd()))) {
+    s = `${base}_${s.slice(base.length)}`
   }
 
   return truncateUtf8Bytes(s, MAX_BYTES)
