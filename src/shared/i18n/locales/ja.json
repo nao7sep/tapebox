@@ -489,7 +489,7 @@
   "settings.pickLibraryFolder": "ライブラリフォルダを選択",
   "settings.closePickerResult": "フォルダ選択の結果を閉じる",
   "settings.language": "言語",
-  "settings.systemChoice": "システム ({value})",
+  "settings.systemChoice": "システム（{value}）",
   "settings.theme": "テーマ",
   "settings.themeLight": "ライト",
   "settings.themeDark": "ダーク",

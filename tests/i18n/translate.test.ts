@@ -33,7 +33,7 @@ describe('createTranslator', () => {
   // language (localization-conventions, Translation).
   it('words a System entry with its current value in the interface language', () => {
     const ja = createTranslator('ja')
-    expect(ja.t('settings.systemChoice', { value: ja.t('settings.themeDark') })).toBe('システム (ダーク)')
+    expect(ja.t('settings.systemChoice', { value: ja.t('settings.themeDark') })).toBe('システム（ダーク）')
     const en = createTranslator('en')
     expect(en.t('settings.systemChoice', { value: en.t('settings.themeDark') })).toBe('System (Dark)')
   })
