@@ -1,7 +1,10 @@
 /**
  * Every quit path in one place (unsaved-edits-conventions, Quitting). The menu
- * Quit, Cmd+Q, the Dock's Quit and closing the last window on Windows and Linux
- * all arrive as before-quit and are the user's. An OS logout, restart or
+ * Quit, Cmd+Q, the Dock's Quit and closing the main window on every platform
+ * (window-conventions) all arrive as before-quit and are the user's. A user's
+ * quit first asks before discarding the main window's drafts and before
+ * stopping app-owned work that is still running; Cancel leaves everything as it
+ * was. An OS logout, restart or
  * shutdown is a session end: macOS and Linux mark it with powerMonitor's
  * 'shutdown' before their quit arrives, and Windows raises the main window's
  * 'session-end' and never a quit event, so that handler closes the records and
@@ -51,6 +54,10 @@ export const SESSION_END_LIMIT_MS = 4_000
 export const SESSION_END_MARK_MS = 60_000
 
 export interface QuitSteps {
+  /** Asks about drafts the quit would discard and work it would stop; resolves
+   * false when the user keeps them. An abort of `signal` (a session end) ends
+   * the questions, and the quit goes on. */
+  confirm(signal: AbortSignal): Promise<boolean>
   /** Saves the library catalog; resolves true once it is on disk. */
   saveLibrary(): Promise<boolean>
   /** Shows the failed library save and resolves with the user's choice. An abort
@@ -186,7 +193,27 @@ export function createQuit(steps: QuitSteps): Quit {
     }
   }
 
+  /** The user's go-ahead for what the quit ends. A session end never asks. */
+  async function confirmed(): Promise<boolean> {
+    if (sessionEnding) return true
+    question = new AbortController()
+    try {
+      return await steps.confirm(question.signal) || sessionEnding
+    } catch (error) {
+      if (sessionEnding) return true
+      steps.warn('the quit questions could not be shown; cancelling the quit', { error: describeError(error) })
+      return false
+    } finally {
+      question = null
+    }
+  }
+
   async function run(): Promise<void> {
+    if (!(await confirmed())) {
+      running = false
+      steps.resume()
+      return
+    }
     if (!(await saveOrAsk())) {
       running = false
       steps.resume()

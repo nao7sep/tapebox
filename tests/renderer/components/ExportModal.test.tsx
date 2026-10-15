@@ -45,11 +45,4 @@ describe('export draft window protection', () => {
     })
     expect(windowCloseState().dirty).toBe(true)
   })
-
-  it('keeps the renderer alive while an export is submitted', async () => {
-    await act(async () => button('Choose').click())
-    ipcInvoke.mockImplementation(() => new Promise(() => {}))
-    await act(async () => button('Export').click())
-    expect(windowCloseState().busy).toBe(true)
-  })
 })

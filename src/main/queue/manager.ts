@@ -136,6 +136,11 @@ export function resumeAfterQuit(): void {
   tick()
 }
 
+/** Whether a download is running now, which quit asks about before stopping it. */
+export function hasActiveJobs(): boolean {
+  return active.size > 0
+}
+
 export function isActive(tapeId: string): boolean {
   return active.has(tapeId)
 }

@@ -142,7 +142,7 @@ export function SettingsModal({ onClose }: Props) {
     !!original && !!draft && JSON.stringify(pickEditable(original)) !== JSON.stringify(pickEditable(draft))
   const apiKeyDirty = apiKeyDraft.length > 0 || wantsClearKey
   const dirty = settingsDirty || apiKeyDirty
-  useWindowCloseGuard(() => ({ dirty, busy }))
+  useWindowCloseGuard(() => ({ dirty }))
 
   // How many existing tapes have files on disk that a library move would relocate.
   // Used only to decide whether to prompt before Save and to phrase the prompt;

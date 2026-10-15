@@ -74,6 +74,11 @@ export function registerScanHandlers(): void {
 }
 
 /** Quit-time teardown: stop every running scan and wait for its yt-dlp tree to exit. */
+/** Whether a page scan is running now, which quit asks about before stopping it. */
+export function hasActiveScans(): boolean {
+  return active.size > 0
+}
+
 export async function cancelAllScans(): Promise<void> {
   closed = true
   const handles = [...active.values()]

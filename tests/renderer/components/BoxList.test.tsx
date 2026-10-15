@@ -9,10 +9,10 @@ import { useBoxesStore } from '@renderer/store/boxes'
 import { useArchiveStore } from '@renderer/store/archive'
 import { useBoxActionResultsStore } from '@renderer/store/boxActionResults'
 
-const bridge = vi.hoisted(() => ({ invoke: vi.fn(), closeRequest: (() => {}) as () => void }))
+const bridge = vi.hoisted(() => ({ invoke: vi.fn(), closeRequest: ((_request: { requestId: number; ask: boolean }) => {}) as (request: { requestId: number; ask: boolean }) => void }))
 vi.mock('@renderer/ipc/client', () => ({
   ipcInvoke: bridge.invoke,
-  ipcOn: (_channel: string, listener: () => void) => { bridge.closeRequest = listener; return () => {} },
+  ipcOn: (_channel: string, listener: (request: { requestId: number; ask: boolean }) => void) => { bridge.closeRequest = listener; return () => {} },
 }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), warn: vi.fn() } }))
 vi.mock('@dnd-kit/react', () => ({ useDroppable: () => ({ ref: () => {}, isDropTarget: false }) }))
@@ -53,14 +53,14 @@ async function type(value: string) {
   })
 }
 
-describe('box draft on workspace close', () => {
+describe('box draft at quit', () => {
   it('does not save on window departure or while asking to discard, and keeps invalid text on blur', async () => {
     await type('Unfinished')
     vi.mocked(document.hasFocus).mockReturnValue(false)
     await act(async () => input().dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
     expect(bridge.invoke).not.toHaveBeenCalled()
     vi.mocked(document.hasFocus).mockReturnValue(true)
-    await act(async () => bridge.closeRequest())
+    await act(async () => bridge.closeRequest({ requestId: 1, ask: true }))
     expect(bridge.invoke).not.toHaveBeenCalled()
     const keep = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Keep editing')!
     await act(async () => keep.click())
@@ -71,16 +71,13 @@ describe('box draft on workspace close', () => {
     expect(windowCloseState().dirty).toBe(true)
   })
 
-  it('holds the owner through a submitted rename and retains its failed draft', async () => {
+  it('retains a failed rename\'s draft', async () => {
     let fail!: (reason: Error) => void
     bridge.invoke.mockImplementation(() => new Promise((_resolve, reject) => { fail = reject }))
     await type('Keep on failure')
     await act(async () => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
-    expect(windowCloseState().busy).toBe(true)
-    await act(async () => bridge.closeRequest())
-    expect(bridge.invoke.mock.calls.map((call) => call[0])).toEqual(['boxes:rename'])
     await act(async () => fail(new Error('failed save')))
-    expect(windowCloseState()).toEqual({ dirty: true, busy: false })
+    expect(windowCloseState()).toEqual({ dirty: true })
     expect(input().value).toBe('Keep on failure')
     expect(document.body.textContent).toContain('The box could not be renamed.')
   })
@@ -130,9 +127,8 @@ describe('box draft across Archive/Inbox navigation', () => {
     await type('  Keep on failure  ')
     await act(async () => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
     await showArchive(false)
-    expect(windowCloseState().busy).toBe(true)
     await act(async () => fail(new Error('failed save')))
-    expect(windowCloseState()).toEqual({ dirty: true, busy: false })
+    expect(windowCloseState()).toEqual({ dirty: true })
     await showArchive(true)
     expect(input().value).toBe('  Keep on failure  ')
     expect(document.body.textContent).toContain('The box could not be renamed.')

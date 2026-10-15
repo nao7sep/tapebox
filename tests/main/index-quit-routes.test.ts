@@ -25,6 +25,8 @@ const state = vi.hoisted(() => ({
   releaseLanguage: (() => {}) as () => void,
   stopStalls: false,
   focused: null as unknown,
+  working: false,
+  minimized: false,
 }))
 
 vi.mock('electron', () => {
@@ -36,7 +38,7 @@ vi.mock('electron', () => {
     on(event: string, handler: Handler): this { this.handlers.set(event, handler); return this }
     once(event: string, handler: Handler): this { return this.on(event, handler) }
     isDestroyed(): boolean { return false }
-    isMinimized(): boolean { return false }
+    isMinimized(): boolean { return state.minimized }
     isVisible(): boolean { return true }
     focus(): void {}
     restore(): void {}
@@ -80,9 +82,11 @@ vi.mock('@main/queue/manager', () => ({
     return state.stopStalls ? new Promise<void>(() => {}) : Promise.resolve()
   }),
   resumeAfterQuit: vi.fn(),
+  hasActiveJobs: () => state.working,
 }))
-vi.mock('@main/ipc/scan', () => ({ cancelAllScans: vi.fn(async () => {}), resumeScans: vi.fn() }))
-vi.mock('@main/work-registry', () => ({ cancelAllWork: vi.fn(async () => {}), resumeWork: vi.fn() }))
+vi.mock('@main/binaries/manager', () => ({ hasInstalls: () => false }))
+vi.mock('@main/ipc/scan', () => ({ cancelAllScans: vi.fn(async () => {}), resumeScans: vi.fn(), hasActiveScans: () => false }))
+vi.mock('@main/work-registry', () => ({ cancelAllWork: vi.fn(async () => {}), resumeWork: vi.fn(), hasRunningWork: () => false }))
 vi.mock('@main/media-server', () => ({ startMediaServer: vi.fn(async () => {}), stopMediaServer: vi.fn(async () => {}) }))
 vi.mock('@main/power-blocker', () => ({ releaseWakeLock: vi.fn() }))
 vi.mock('@main/window-options', () => ({ windowOptions: () => ({}) }))
@@ -90,9 +94,9 @@ vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn(), followOsThemeChan
 vi.mock('@main/window-state-recovery', () => ({ createWindowWithUsablePersistedBounds: (_key: string, make: () => unknown) => make() }))
 vi.mock('@main/window-minimum', () => ({ configureWindowMinimum: vi.fn() }))
 vi.mock('@main/window-activity', () => ({ configureWindowActivity: vi.fn() }))
-vi.mock('@main/window-close', () => ({ configureWindowClose: vi.fn() }))
+vi.mock('@main/window-close', () => ({ configureWindowClose: vi.fn(), registerDraftAnswers: vi.fn(), settleWindowDrafts: vi.fn(async () => { state.order.push('drafts'); return true }) }))
 vi.mock('@main/store/backupStore', () => ({ closeBackupStore: vi.fn(async () => {}) }))
-vi.mock('@main/plain-message-dialog', () => ({ showPlainMessageDialog: vi.fn(async () => { state.order.push('dialog'); return 'cancel' }) }))
+vi.mock('@main/plain-message-dialog', () => ({ showPlainMessageDialog: vi.fn(async (options: { title: string }) => { state.order.push(options.title === 'quit.workRunning.title' ? 'work-dialog' : 'dialog'); return 'cancel' }) }))
 vi.mock('@main/force-exit', () => ({ forceExitProcess: vi.fn(() => { state.order.push('force-exit') }) }))
 vi.mock('@main/io/spawn', () => ({ killOwnedProcessesNow: vi.fn(() => { state.order.push('kill-tools') }) }))
 vi.mock('@main/i18n', () => ({
@@ -132,12 +136,22 @@ afterEach(() => {
   processHandlers = []
   state.stopStalls = false
   state.focused = null
+  state.working = false
+  state.minimized = false
   vi.restoreAllMocks()
   vi.mocked(app.quit).mockClear()
 })
 
-describe('closing the last window', () => {
-  it.each(['win32', 'linux'] as const)('quits on %s', async (platform) => {
+describe('closing the main window', () => {
+  it('starts the quit, on every platform', async () => {
+    const win = await launch()
+    const configure = vi.mocked((await import('@main/window-close')).configureWindowClose)
+    expect(configure.mock.lastCall![0]).toBe(win)
+    configure.mock.lastCall![1]()
+    expect(app.quit).toHaveBeenCalledOnce()
+  })
+
+  it.each(['darwin', 'win32', 'linux'] as const)('ends the app when the last window is gone on %s', async (platform) => {
     const win = await launch()
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     win.handlers.get('closed')!()
@@ -145,13 +159,36 @@ describe('closing the last window', () => {
     state.app.get('window-all-closed')!()
     expect(app.quit).toHaveBeenCalledTimes(2)
   })
+})
 
-  it('keeps the app running on macOS', async () => {
-    const win = await launch()
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
-    win.handlers.get('closed')!()
-    state.app.get('window-all-closed')!()
-    expect(app.quit).not.toHaveBeenCalled()
+// A user's quit asks about drafts, then about running work, before anything is
+// saved or stopped (unsaved-edits-conventions); a session end never asks.
+describe('the quit questions', () => {
+  it('asks about running downloads before stopping them, and Cancel stops nothing', async () => {
+    await launch()
+    state.working = true
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(state.order).toContain('work-dialog'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(state.order).toEqual(['drafts', 'work-dialog'])
+  })
+
+  it('asks nothing about work when none is running', async () => {
+    await launch()
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(state.order).toContain('save-library'))
+    expect(state.order[0]).toBe('drafts')
+    expect(state.order).not.toContain('work-dialog')
+  })
+
+  it('never asks at a session end', async () => {
+    await launch()
+    state.working = true
+    state.power.get('shutdown')!({ preventDefault: vi.fn() })
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(state.order.at(-1)).toBe('app-exit'))
+    expect(state.order).not.toContain('drafts')
+    expect(state.order).not.toContain('work-dialog')
   })
 })
 
@@ -208,6 +245,14 @@ describe('the failed-save question at a user quit', () => {
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
     await vi.waitFor(() => expect(state.order).toContain('dialog'))
     expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0].owner).toBe(records)
+  })
+
+  it('stands alone rather than bring back a minimized main window', async () => {
+    await launch()
+    state.minimized = true
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0].owner).toBeUndefined()
   })
 
   it('opens above the main window when no app window has focus', async () => {

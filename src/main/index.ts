@@ -15,8 +15,8 @@ import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import { resumeBinaryOperations, shutdownBinaryOperations } from './ipc/binaries.js'
 import * as queue from './queue/manager.js'
-import { cancelAllScans, resumeScans } from './ipc/scan.js'
-import { cancelAllWork, resumeWork } from './work-registry.js'
+import { cancelAllScans, hasActiveScans, resumeScans } from './ipc/scan.js'
+import { cancelAllWork, hasRunningWork, resumeWork } from './work-registry.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
 import { windowOptions } from './window-options.js'
@@ -27,7 +27,8 @@ import { closeBackupStore } from './store/backupStore.js'
 import { isImportableUrl } from '@shared/url'
 import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
-import { configureWindowClose } from './window-close.js'
+import { configureWindowClose, registerDraftAnswers, settleWindowDrafts } from './window-close.js'
+import { hasInstalls } from './binaries/manager.js'
 import { createQuit, type QuitChoice } from './quit.js'
 import { forceExitProcess } from './force-exit.js'
 import { killOwnedProcessesNow } from './io/spawn.js'
@@ -70,7 +71,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const options = windowOptions(join(__dirname, '../preload/index.cjs'), windowBackground())
   const win = createWindowWithUsablePersistedBounds('main', () => new BrowserWindow(options))
   mainWindow = win
-  configureWindowClose(win)
+  configureWindowClose(win, () => app.quit())
   configureWindowActivity(app, win)
   configureWindowMinimum(win, () => ({ width: WINDOW_MIN_WIDTH, height: WINDOW_MIN_HEIGHT }),
     (error) => log.warn('window minimum could not be updated', { error: describeError(error) }))
@@ -78,9 +79,9 @@ async function createMainWindow(): Promise<BrowserWindow> {
   win.on('session-end', quit.endSessionNow)
   win.once('closed', () => {
     if (mainWindow === win) mainWindow = null
-    // The Records window beside it does not keep the app running: closing the
-    // main window quits on Windows and Linux, and on macOS the Dock reopens it.
-    if (process.platform !== 'darwin') app.quit()
+    // A main window gone by any other route still ends the app; the Records
+    // window beside it never keeps it running (window-conventions).
+    app.quit()
   })
 
   // Open external links (About modal, etc.) in the OS browser, never a new
@@ -109,6 +110,17 @@ async function createMainWindow(): Promise<BrowserWindow> {
 
   win.show()
   return win
+}
+
+/** The window a quit question or error sits above: the focused app window, else
+ * the main window while it is showing. A minimized or hidden window is never
+ * brought back for it, so with no window showing the dialog stands alone
+ * (window-conventions). */
+function questionOwner(): BrowserWindow | undefined {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused) return focused
+  const main = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  return main && main.isVisible() && !main.isMinimized() ? main : undefined
 }
 
 /** Focus the one owner window, or defer creation until stores/IPC/server are
@@ -160,6 +172,7 @@ async function startup(): Promise<void> {
 
   await startMediaServer()
   registerIpcHandlers()
+  registerDraftAnswers()
   queue.start()
 
   startupReady = true
@@ -207,14 +220,21 @@ async function handleTerminalStartupFailure(error: unknown): Promise<void> {
  * here resumes at the next launch. The media server is in-process, so it dies
  * with this process. */
 const quit = createQuit({
+  confirm: async (signal) => {
+    const main = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+    if (!(await settleWindowDrafts(main, signal, askToDiscardDrafts))) return false
+    if (signal.aborted || !workIsRunning()) return true
+    return askToStopWork(signal)
+  },
   saveLibrary: () => persistNow({ quitting: true }),
   ask: askAfterFailedLibrarySave,
+  // Cancel leaves the window as it was; only a main window that is gone comes back.
   resume: () => {
     resumeWork()
     resumeScans()
     resumeBinaryOperations()
     queue.resumeAfterQuit()
-    showOrCreateMainWindow()
+    if (startupReady && (!mainWindow || mainWindow.isDestroyed())) void createMainWindow().catch(handleTerminalStartupFailure)
   },
   stopWork: async () => {
     // The renderer can't report a final pause once we're tearing down.
@@ -244,13 +264,48 @@ const quit = createQuit({
   },
 })
 
+/** App-owned work quit would stop: downloads, tool installs, page scans and
+ * user-started operations such as exports, imports and library moves. Queued
+ * downloads are not running; they start again at the next launch. */
+function workIsRunning(): boolean {
+  return queue.hasActiveJobs() || hasInstalls() || hasActiveScans() || hasRunningWork()
+}
+
+async function askToStopWork(signal: AbortSignal): Promise<boolean> {
+  const t = mainTranslator()
+  const choice = await showPlainMessageDialog({
+    owner: questionOwner(),
+    language: t.language,
+    title: t.t('quit.workRunning.title'),
+    message: t.t('quit.workRunning.message'),
+    detail: t.t('quit.workRunning.detail'),
+    closeLabel: t.t('common.cancel'),
+    actions: [{ id: 'quit', label: t.t('quit.workRunning.quit') }],
+    signal,
+  })
+  return choice === 'quit'
+}
+
+/** Drafts in a minimized main window, asked about without bringing it back. */
+async function askToDiscardDrafts(signal: AbortSignal): Promise<boolean> {
+  const t = mainTranslator()
+  const choice = await showPlainMessageDialog({
+    owner: undefined,
+    language: t.language,
+    title: t.t('common.unsavedTitle'),
+    message: t.t('common.unsavedMessage'),
+    closeLabel: t.t('common.keepEditing'),
+    actions: [{ id: 'discard', label: t.t('common.discard'), danger: true }],
+    signal,
+  })
+  return choice === 'discard'
+}
+
 async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoice> {
   const t = mainTranslator()
-  // Above the window the user quit from, such as Records; otherwise the main
-  // window when it exists, else a standalone dialog (window-conventions).
-  const owner = BrowserWindow.getFocusedWindow() ?? (mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined)
   const choice = await showPlainMessageDialog({
-    owner,
+    // Above the window the user quit from, such as Records (window-conventions).
+    owner: questionOwner(),
     language: t.language,
     title: t.t('quit.libraryNotSaved.title'),
     message: t.t('quit.libraryNotSaved.message'),
@@ -294,12 +349,10 @@ void app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  // No window means no <video>, so a playback wake lock is now stale — release it
-  // even on macOS, where the app (and its media server) lingers in the dock for
-  // reactivation. Other platforms quit on last close; teardown belongs to the
-  // actual quit below.
+  // No window means no <video>, so a playback wake lock is now stale. The app
+  // ends with its windows on every platform; teardown belongs to the quit below.
   releaseWakeLock()
-  if (process.platform !== 'darwin') app.quit()
+  app.quit()
 })
 
 app.on('before-quit', quit.beforeQuit)

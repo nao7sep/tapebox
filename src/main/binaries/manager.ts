@@ -109,6 +109,11 @@ async function withBinaryLock<T>(
 
 /** Abort one user-started install/update. The original update IPC remains the
  * owner of settling and reporting the operation; this only delivers intent. */
+/** Whether a tool install is running now, which quit asks about before stopping it. */
+export function hasInstalls(): boolean {
+  return inFlight.size > 0
+}
+
 export function cancelInstall(name: BinaryName, operationId: string): BinaryCancelResult {
   const active = inFlight.get(name)
   if (!active || active.operationId !== operationId) return { outcome: 'not-running' }

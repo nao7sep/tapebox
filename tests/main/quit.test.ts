@@ -13,6 +13,7 @@ function makeSteps(overrides: Partial<QuitSteps> = {}) {
   const order: string[] = []
   const questions: { signal: AbortSignal; answer: (choice: QuitChoice) => void }[] = []
   const steps: QuitSteps = {
+    confirm: vi.fn(async () => true),
     saveLibrary: vi.fn(async () => { order.push('saveLibrary'); return true }),
     ask: vi.fn((signal: AbortSignal) => new Promise<QuitChoice>((resolve) => {
       order.push('ask')
@@ -54,6 +55,53 @@ describe('quit', () => {
     quit.beforeQuit(late)
     await vi.runAllTimersAsync()
     expect(late.preventDefault).toHaveBeenCalledOnce()
+    expect(steps.exit).toHaveBeenCalledOnce()
+  })
+
+  // A user's quit asks about drafts it would discard and work it would stop before
+  // anything else (unsaved-edits-conventions); a session end never asks.
+  it('asks first, and Cancel resumes with nothing saved or stopped', async () => {
+    const confirm = vi.fn(async () => false)
+    const { steps, order } = makeSteps({ confirm })
+    createQuit(steps).beforeQuit(quitEvent())
+    await vi.runAllTimersAsync()
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(order).toEqual(['resume'])
+    expect(steps.exit).not.toHaveBeenCalled()
+  })
+
+  it('cancels the quit when its questions cannot be shown', async () => {
+    const { steps, order } = makeSteps({ confirm: vi.fn(async () => { throw new Error('no dialog') }) })
+    createQuit(steps).beforeQuit(quitEvent())
+    await vi.runAllTimersAsync()
+    expect(order).toEqual(['resume'])
+    expect(steps.warn).toHaveBeenCalledWith('the quit questions could not be shown; cancelling the quit', expect.anything())
+  })
+
+  it('closes its questions and goes on when the session ends while they are open', async () => {
+    let signal!: AbortSignal
+    const confirm = vi.fn((s: AbortSignal) => new Promise<boolean>((resolve) => {
+      signal = s
+      s.addEventListener('abort', () => resolve(false))
+    }))
+    const { steps } = makeSteps({ confirm })
+    const quit = createQuit(steps)
+    quit.beforeQuit(quitEvent())
+    await vi.advanceTimersByTimeAsync(0)
+    quit.markSessionEnd()
+    expect(signal.aborted).toBe(true)
+    await vi.runAllTimersAsync()
+    expect(steps.resume).not.toHaveBeenCalled()
+    expect(steps.exit).toHaveBeenCalledOnce()
+  })
+
+  it('never asks during a session end', async () => {
+    const { steps } = makeSteps()
+    const quit = createQuit(steps)
+    quit.markSessionEnd()
+    quit.beforeQuit(quitEvent())
+    await vi.runAllTimersAsync()
+    expect(steps.confirm).not.toHaveBeenCalled()
     expect(steps.exit).toHaveBeenCalledOnce()
   })
 

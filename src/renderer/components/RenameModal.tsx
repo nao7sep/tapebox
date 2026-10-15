@@ -31,7 +31,7 @@ export function RenameModal({ tape, onRename, onClose }: Props) {
   const [applying, setApplying] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
-  useWindowCloseGuard(() => ({ dirty: name !== (tape.name ?? ''), busy: applying }))
+  useWindowCloseGuard(() => ({ dirty: name !== (tape.name ?? '') }))
 
   function requestClose() {
     if (applying) return

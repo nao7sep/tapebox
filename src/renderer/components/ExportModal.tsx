@@ -39,7 +39,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const t = useI18n()
   const edited = name !== currentName || dir !== defaultDir || deleteFromApp !== (settings?.deleteAfterExport ?? true)
-  useWindowCloseGuard(() => ({ dirty: edited, busy: exporting }))
+  useWindowCloseGuard(() => ({ dirty: edited }))
 
   function requestClose() {
     if (exporting) return

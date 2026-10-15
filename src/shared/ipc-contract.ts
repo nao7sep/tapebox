@@ -140,7 +140,9 @@ export type IpcCalls = {
   // ── Runtime info ─────────────────────────────────────────────────────────
   // Read-only facts about the current process.
   'app:runtimeInfo':       { req: undefined;                         res: RuntimeInfo }
-  'app:closeWindow':       { req: undefined;                         res: void }
+  // The main renderer's answer to app:quitDraftsRequested: whether it holds
+  // unsaved drafts and, when it asked, whether the user chose to discard them.
+  'app:quitDraftsAnswer':  { req: { requestId: number; dirty: boolean; discard: boolean }; res: void }
   'app:openExternal':      { req: { url: string };                   res: void }
   // Report whether a tape is currently playing, so main can hold or release an OS
   // wake lock that keeps the machine (and display) awake during playback. Gated
@@ -267,7 +269,9 @@ export type ScanResult = {
  * Renderer subscribes through preload's contextBridge wrapper.
  */
 export type IpcEvents = {
-  'app:windowCloseRequested': null
+  // A quit asks the main renderer about drafts it would discard; `ask` is false
+  // while the window is minimized, so it only reports them (main asks instead).
+  'app:quitDraftsRequested': { requestId: number; ask: boolean }
   'tapes:added':       Tape[]
   'tapes:updated':     Tape
   'tapes:progress':    {

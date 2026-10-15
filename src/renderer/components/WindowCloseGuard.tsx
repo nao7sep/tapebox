@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -6,41 +6,41 @@ import { setWindowClosePending, useWindowCloseGuard, windowCloseState } from '@r
 import { useBoxesStore } from '@renderer/store/boxes'
 import { DiscardChangesPrompt } from './DiscardChangesPrompt'
 
-/** macOS closes the workspace without quitting. The native close request
- * keeps its draft owners alive until discard is explicit. Ordinary Quit is
- * prevented by main's quit owner and ends through app.exit, which bypasses
- * window close; OS session end follows that same non-prompting exit boundary. */
+/** Every quit, including closing this window, asks here before it discards the
+ * window's drafts (unsaved-edits-conventions): Settings, Rename, Export and a box
+ * name being edited. Main asks the question itself while the window is
+ * minimized, so this only reports the drafts then. OS session end never asks. */
 export function WindowCloseGuard() {
   const [asking, setAsking] = useState(false)
+  const request = useRef<number | null>(null)
   // The box editor may be unmounted while Inbox is visible. Its session draft
-  // and pending save still participate in native-close consent.
+  // still counts.
   useWindowCloseGuard(() => {
-    const { boxes, editingId, draftName, pendingRenames } = useBoxesStore.getState()
-    return {
-      dirty: editingId !== null && draftName !== boxes.find((box) => box.id === editingId)?.name,
-      busy: pendingRenames > 0,
-    }
+    const { boxes, editingId, draftName } = useBoxesStore.getState()
+    return { dirty: editingId !== null && draftName !== boxes.find((box) => box.id === editingId)?.name }
   })
 
-  function question(value: boolean) {
-    setWindowClosePending(value)
-    setAsking(value)
-  }
-
-  function close() {
-    if (windowCloseState().busy) return
-    void ipcInvoke('app:closeWindow').catch((error) => {
-      question(false)
-      log.warn('window close failed', { error: describeError(error) })
+  function answer(requestId: number, dirty: boolean, discard: boolean) {
+    void ipcInvoke('app:quitDraftsAnswer', { requestId, dirty, discard }).catch((error) => {
+      log.warn('quit draft answer failed', { error: describeError(error) })
     })
   }
 
+  function settle(discard: boolean) {
+    const requestId = request.current
+    request.current = null
+    setWindowClosePending(false)
+    setAsking(false)
+    if (requestId !== null) answer(requestId, true, discard)
+  }
+
   useLayoutEffect(() => {
-    const stop = ipcOn('app:windowCloseRequested', () => {
-      const state = windowCloseState()
-      if (state.busy) return
-      if (state.dirty) question(true)
-      else close()
+    const stop = ipcOn('app:quitDraftsRequested', ({ requestId, ask }) => {
+      if (!windowCloseState().dirty) return answer(requestId, false, true)
+      if (!ask) return answer(requestId, true, false)
+      request.current = requestId
+      setWindowClosePending(true)
+      setAsking(true)
     })
     return () => {
       stop()
@@ -50,7 +50,7 @@ export function WindowCloseGuard() {
 
   if (!asking) return null
   return <DiscardChangesPrompt
-    onKeepEditing={() => question(false)}
-    onDiscard={close}
+    onKeepEditing={() => settle(false)}
+    onDiscard={() => settle(true)}
   />
 }

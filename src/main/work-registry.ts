@@ -42,6 +42,11 @@ export function runCancellable<T>(work: (signal: AbortSignal) => Promise<T>, key
   return promise
 }
 
+/** Whether any run is in flight, which quit asks about before stopping it. */
+export function hasRunningWork(): boolean {
+  return runs.size > 0
+}
+
 /** Abort the run registered under `key`, if it is still in flight. */
 export function cancelWork(key: string): void {
   byKey.get(key)?.controller.abort(new StopRequest('cancel'))
