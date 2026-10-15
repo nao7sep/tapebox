@@ -3,6 +3,8 @@ import {
   chromiumLocale,
   effectiveLanguage,
   formattingLocale,
+  LANGUAGES,
+  languageNameIn,
   normalizeLanguagePreference,
   resolveComputerLanguage,
 } from '@shared/i18n/languages'
@@ -72,5 +74,23 @@ describe('chromiumLocale', () => {
     expect(chromiumLocale('zh-Hans')).toBe('zh-CN')
     expect(chromiumLocale('pt-BR')).toBe('pt-BR')
     expect(chromiumLocale('ja')).toBe('ja')
+  })
+})
+
+// A System entry names its current value in the interface language
+// (localization-conventions, Translation).
+describe('languageNameIn', () => {
+  it('names the computer\'s language in the interface language', () => {
+    expect(languageNameIn('ja', 'en')).toBe('Japanese')
+    expect(languageNameIn('ja', 'ja')).toBe('日本語')
+    expect(languageNameIn('en', 'de')).toBe('Englisch')
+    expect(languageNameIn('pt-BR', 'en')).toBe('Portuguese')
+    expect(languageNameIn('zh-Hans', 'zh-Hans')).toBe('中文')
+  })
+
+  it('has a name for every shipped language in every interface language', () => {
+    for (const shown of LANGUAGES) {
+      for (const language of LANGUAGES) expect(languageNameIn(language, shown)).not.toBe(language.split('-')[0])
+    }
   })
 })

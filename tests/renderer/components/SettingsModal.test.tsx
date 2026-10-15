@@ -99,7 +99,7 @@ describe('SettingsModal', () => {
     const options = [...select.options]
     expect(options[0]!.value).toBe('system')
     expect(options.map((option) => option.textContent)).toEqual([
-      'System (日本語)', 'English', 'Deutsch', 'Español', 'Français', 'Italiano', 'Português', 'Русский', '日本語', '한국어', '中文',
+      'System (Japanese)', 'English', 'Deutsch', 'Español', 'Français', 'Italiano', 'Português', 'Русский', '日本語', '한국어', '中文',
     ])
     expect(options.slice(1).map((option) => option.lang)).toEqual(['en', 'de', 'es', 'fr', 'it', 'pt-BR', 'ru', 'ja', 'ko', 'zh-Hans'])
 

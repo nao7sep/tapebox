@@ -29,6 +29,15 @@ describe('createTranslator', () => {
       .toBe('2 downloading… · 1 queued')
   })
 
+  // Both the word and the current value of a System entry are in the interface
+  // language (localization-conventions, Translation).
+  it('words a System entry with its current value in the interface language', () => {
+    const ja = createTranslator('ja')
+    expect(ja.t('settings.systemChoice', { value: ja.t('settings.themeDark') })).toBe('システム (ダーク)')
+    const en = createTranslator('en')
+    expect(en.t('settings.systemChoice', { value: en.t('settings.themeDark') })).toBe('System (Dark)')
+  })
+
   it('formats sizes, rates, lists and elapsed time for the locale', () => {
     const en = createTranslator('en', 'en-US')
     expect(en.bytes(142 * 1024 * 1024)).toBe('142 MB')

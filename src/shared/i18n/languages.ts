@@ -28,6 +28,17 @@ export const LANGUAGE_NAMES: Readonly<Record<Language, string>> = {
   'zh-Hans': '中文',
 }
 
+/**
+ * A shipped language's name in the interface language, for a System entry's
+ * current value (localization-conventions, Translation): "Japanese" in English,
+ * "日本語" in Japanese. The picker itself lists each language by its own name.
+ * Each language ships in one variety, so its base name is enough.
+ */
+export function languageNameIn(language: Language, interfaceLanguage: Language): string {
+  const base = language.split('-')[0]!
+  return new Intl.DisplayNames([interfaceLanguage], { type: 'language' }).of(base) ?? LANGUAGE_NAMES[language]
+}
+
 // The saved choice. System follows the computer's language on every launch.
 export const LANGUAGE_PREFERENCES = ['system', ...LANGUAGES] as const
 export type LanguagePreference = (typeof LANGUAGE_PREFERENCES)[number]

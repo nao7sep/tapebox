@@ -30,7 +30,7 @@ import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
 import type { MessageKey } from '@shared/i18n/catalogues'
-import { LANGUAGE_NAMES, LANGUAGES, normalizeLanguagePreference } from '@shared/i18n/languages'
+import { languageNameIn, LANGUAGE_NAMES, LANGUAGES, normalizeLanguagePreference } from '@shared/i18n/languages'
 import { computerTimeZone, SYSTEM_TIME_ZONE, timeZoneChoices } from '@shared/time-zone'
 import { computerLanguage } from '@renderer/i18n/useInterfaceLanguage'
 
@@ -472,9 +472,9 @@ function GeneralTab({
 }) {
   const [pickerError, setPickerError] = useState<Message | null>(null)
   const t = useI18n()
-  // Every System choice shows what it resolves to now (app-chrome-conventions,
-  // Theme; timestamp-conventions, Time zones). Main knows the OS appearance even
-  // while Light or Dark is forced.
+  // Every System choice names what it resolves to now, in the interface language;
+  // a zone name appears as is (localization-conventions, Translation). Main knows
+  // the OS appearance even while Light or Dark is forced.
   const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>('light')
   useEffect(() => {
     let current = true
@@ -524,7 +524,7 @@ function GeneralTab({
           onChange={(e) => onPatch({ language: normalizeLanguagePreference(e.target.value) })}
           className={`mt-1 block w-full text-ellipsis ${INPUT_LINE_CLASS}`}
         >
-          <option value="system">{systemChoice(LANGUAGE_NAMES[computerLanguage()])}</option>
+          <option value="system">{systemChoice(languageNameIn(computerLanguage(), t.language))}</option>
           {LANGUAGES.map((language) => (
             <option key={language} value={language} lang={language}>
               {LANGUAGE_NAMES[language]}
