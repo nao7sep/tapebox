@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ipcInvoke } from '@renderer/ipc/client'
+import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import { presentFailure } from '@renderer/lib/presentFailure'
@@ -126,6 +126,7 @@ function HydratedApp() {
   const settings = useSettingsStore((s) => s.settings)
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
+  useEffect(() => ipcOn('app:showAbout', () => setShowAbout(true)), [])
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showScanPage, setShowScanPage] = useState(false)
   const [openRecordsError, setOpenRecordsError] = useState<Message | null>(null)

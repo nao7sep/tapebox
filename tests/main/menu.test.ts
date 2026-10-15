@@ -57,8 +57,26 @@ describe('application menu', () => {
     }
   })
 
+  // macOS's native About panel would show Electron's default copyright; the app
+  // menu's About opens TapeBox's own dialog instead.
+  it('opens TapeBox\'s own About from the app menu, not the native panel', () => {
+    const onAbout = vi.fn()
+    const template = applicationMenuTemplate(createTranslator('en'), 'darwin', onAbout)
+    const about = (template[0]!.submenu as MenuItemConstructorOptions[])[0]!
+    expect(about.label).toBe('About TapeBox')
+    expect(about.role).toBeUndefined()
+    ;(about.click as () => void)()
+    expect(onAbout).toHaveBeenCalledOnce()
+  })
+
   it('names the app in the About, Hide and Quit items', () => {
     const shown = labels(applicationMenuTemplate(createTranslator('en'), 'darwin'))
     expect(shown).toEqual(expect.arrayContaining(['About TapeBox', 'Hide TapeBox', 'Quit TapeBox']))
+  })
+})
+
+describe('the About copyright', () => {
+  it.each(LANGUAGES)('is the fleet\'s one line in %s, with a middle dot', (language) => {
+    expect(CATALOGUES[language]['about.copyright']).toMatch(/^© 2026 Yoshinao Inoguchi · GNU GPL v3 \S/)
   })
 })

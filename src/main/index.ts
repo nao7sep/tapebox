@@ -33,6 +33,7 @@ import { createQuit, type QuitChoice } from './quit.js'
 import { forceExitProcess } from './force-exit.js'
 import { killOwnedProcessesNow } from './io/spawn.js'
 import { showPlainMessageDialog } from './plain-message-dialog.js'
+import { setAboutRequest } from './menu.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 import {
   applyLanguagePreference,
@@ -56,6 +57,13 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on('second-instance', () => {
   showOrCreateMainWindow()
+})
+
+// The app menu's About is the user asking for the main window's About dialog.
+setAboutRequest(() => {
+  showOrCreateMainWindow()
+  const win = mainWindow
+  if (win && !win.isDestroyed()) win.webContents.send('app:showAbout', null)
 })
 
 // The interface language is known before anything is drawn: Chromium's own

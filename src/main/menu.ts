@@ -13,7 +13,7 @@ const APP_NAME = 'TapeBox'
  *
  * Built from the `nativeMenu.*` keys and rebuilt when the language changes.
  */
-export function applicationMenuTemplate(t: Translator, platform: string): MenuItemConstructorOptions[] {
+export function applicationMenuTemplate(t: Translator, platform: string, onAbout: () => void = () => {}): MenuItemConstructorOptions[] {
   const mac = platform === 'darwin'
   const item = (role: MenuItemConstructorOptions['role'], label: string): MenuItemConstructorOptions => ({ role, label })
   const separator: MenuItemConstructorOptions = { type: 'separator' }
@@ -22,7 +22,8 @@ export function applicationMenuTemplate(t: Translator, platform: string): MenuIt
     label: APP_NAME,
     role: 'appMenu',
     submenu: [
-      item('about', t.t('nativeMenu.about', { app: APP_NAME })),
+      // TapeBox's own About, not Electron's native panel with its default copyright.
+      { label: t.t('nativeMenu.about', { app: APP_NAME }), click: () => onAbout() },
       separator,
       item('services', t.t('nativeMenu.services')),
       separator,
@@ -99,6 +100,13 @@ export function applicationMenuTemplate(t: Translator, platform: string): MenuIt
   return [...(mac ? [appMenu] : []), fileMenu, editMenu, viewMenu, windowMenu]
 }
 
+let aboutRequest: () => void = () => {}
+
+/** The app menu's About opens the main window's About dialog through this. */
+export function setAboutRequest(request: () => void): void {
+  aboutRequest = request
+}
+
 export function installApplicationMenu(t: Translator): void {
-  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate(t, process.platform)))
+  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate(t, process.platform, () => aboutRequest())))
 }

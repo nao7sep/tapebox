@@ -272,6 +272,8 @@ export type IpcEvents = {
   // A quit asks the main renderer about drafts it would discard; `ask` is false
   // while the window is minimized, so it only reports them (main asks instead).
   'app:quitDraftsRequested': { requestId: number; ask: boolean }
+  // The app menu's About: the main window shows its About dialog.
+  'app:showAbout': null
   'tapes:added':       Tape[]
   'tapes:updated':     Tape
   'tapes:progress':    {

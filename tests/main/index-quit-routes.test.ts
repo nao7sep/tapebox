@@ -27,13 +27,14 @@ const state = vi.hoisted(() => ({
   focused: null as unknown,
   working: false,
   minimized: false,
+  about: (() => {}) as () => void,
 }))
 
 vi.mock('electron', () => {
   class BrowserWindow {
     static getFocusedWindow(): unknown { return state.focused }
     readonly handlers = new Map<string, Handler>()
-    readonly webContents = { setWindowOpenHandler: vi.fn() }
+    readonly webContents = { setWindowOpenHandler: vi.fn(), send: vi.fn() }
     constructor() { state.windows.push(this) }
     on(event: string, handler: Handler): this { this.handlers.set(event, handler); return this }
     once(event: string, handler: Handler): this { return this.on(event, handler) }
@@ -96,6 +97,7 @@ vi.mock('@main/window-minimum', () => ({ configureWindowMinimum: vi.fn() }))
 vi.mock('@main/window-activity', () => ({ configureWindowActivity: vi.fn() }))
 vi.mock('@main/window-close', () => ({ configureWindowClose: vi.fn(), registerDraftAnswers: vi.fn(), settleWindowDrafts: vi.fn(async () => { state.order.push('drafts'); return true }) }))
 vi.mock('@main/store/backupStore', () => ({ closeBackupStore: vi.fn(async () => {}) }))
+vi.mock('@main/menu', () => ({ setAboutRequest: (request: () => void) => { state.about = request } }))
 vi.mock('@main/plain-message-dialog', () => ({ showPlainMessageDialog: vi.fn(async (options: { title: string }) => { state.order.push(options.title === 'quit.workRunning.title' ? 'work-dialog' : 'dialog'); return 'cancel' }) }))
 vi.mock('@main/force-exit', () => ({ forceExitProcess: vi.fn(() => { state.order.push('force-exit') }) }))
 vi.mock('@main/io/spawn', () => ({ killOwnedProcessesNow: vi.fn(() => { state.order.push('kill-tools') }) }))
@@ -260,5 +262,14 @@ describe('the failed-save question at a user quit', () => {
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
     await vi.waitFor(() => expect(state.order).toContain('dialog'))
     expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0].owner).toBe(main)
+  })
+})
+
+// The app menu's About opens the main window's own About dialog.
+describe('the app menu About', () => {
+  it('asks the main window to show its About dialog', async () => {
+    const win = await launch() as unknown as { webContents: { send: ReturnType<typeof vi.fn> } }
+    state.about()
+    expect(win.webContents.send).toHaveBeenCalledWith('app:showAbout', null)
   })
 })
