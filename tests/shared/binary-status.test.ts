@@ -39,7 +39,7 @@ describe('deriveStatus — pure and total', () => {
   })
 })
 
-// The four states + their roles (managed-runtime-dependencies-conventions Show table).
+// The four states and the role each one shows.
 describe('the four-state model', () => {
   it('absent → not-installed (warning)', () => {
     expect(deriveStatus(facts())).toEqual({ state: 'not-installed', role: 'warning' })

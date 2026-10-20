@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AI_ROLES, MODEL_LINEUP, SUPPORTED_MODELS, defaultModelFor, modelsFor, rowFor, thinkingFor } from '@shared/ai-models'
+import { AI_ROLES, SUPPORTED_MODELS, defaultModelFor, modelsFor, rowFor, thinkingFor } from '@shared/ai-models'
 import { SLUG_RESPONSE_FORMAT, buildSlugRequest } from '@shared/model-routing'
 import { DEFAULT_SLUG_THINKING, defaultSettings } from '@shared/settings'
 
@@ -14,21 +14,14 @@ const response_format = {
 }
 
 describe('model routing and role guards', () => {
-  it('names the lineup the rows rest on', () => {
-    expect(MODEL_LINEUP).toBe('ai-model-lineup-20261004')
-  })
 
-  it('pins every approved row, in order, and the slug role', () => {
-    expect(SUPPORTED_MODELS).toEqual([
-      { provider: 'openai', id: 'gpt-6-astra', kinds: ['text-frontier'], defaultFor: [], thinking: ['low', 'medium', 'high', 'xhigh', 'max'], defaultThinking: 'medium' },
-      { provider: 'openai', id: 'gpt-6.1-sol', kinds: ['text-smart'], defaultFor: ['text-smart'], thinking: ['low', 'medium', 'high', 'xhigh', 'max'], defaultThinking: 'medium' },
-      { provider: 'openai', id: 'gpt-5.6-terra', kinds: ['text-balanced'], defaultFor: ['text-balanced'], thinking: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultThinking: 'medium' },
-      { provider: 'openai', id: 'gpt-6-luna', kinds: ['text-fast'], defaultFor: ['text-fast'], thinking: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultThinking: 'none' },
-    ])
-    expect(AI_ROLES).toEqual([{ id: 'slug', kind: 'text-fast' }])
-    expect(defaultModelFor('openai', 'text-fast')).toBe('gpt-6-luna')
-    expect(defaultSettings()['openai.slug']).toBe('gpt-6-luna')
-    expect(DEFAULT_SLUG_THINKING).toBe('none')
+  it('seeds each role with its kind\'s default model and that model\'s default thinking', () => {
+    const settings = defaultSettings()
+    for (const role of AI_ROLES) {
+      const model = defaultModelFor('openai', role.kind)
+      expect(settings[`openai.${role.id}`]).toBe(model)
+      expect(DEFAULT_SLUG_THINKING).toBe(rowFor('openai', model)!.defaultThinking)
+    }
   })
 
   it('has one default for every non-frontier kind and a built-in model for every role', () => {

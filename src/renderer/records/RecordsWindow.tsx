@@ -151,7 +151,8 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
   const liveSuspended = useRef(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  // Pane sizing: window-conventions. The list pane's border-r is on its side.
+  // The list pane keeps its saved width but yields to the detail pane's minimum
+  // when the window narrows. The list pane's border-r is on its side.
   const { containerRef: shellRef, displayed: shownListWidth } = usePaneSize<HTMLElement>(dragWidth ?? listWidth, false, {
     siblingMin: RECORDS_DETAIL_MIN_WIDTH,
     min: LIST_WIDTH.min,
@@ -284,8 +285,8 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey])
 
-  // Loading more: composite-control-conventions, Integration Points. A failed
-  // page is read again when the end is reached again.
+  // The next page is read as the end of the list comes near, with no button. A
+  // failed page is read again when the end is reached again.
   const loadMore = (): void => {
     if (list.status !== 'ready' || !list.more || fetchingMore.current) return
     fetchingMore.current = true
@@ -355,8 +356,8 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
     page: LIST_PAGE,
   })
 
-  // Drag intent: window-conventions, Content-based minimum size. Only the end of
-  // a drag saves.
+  // A drag is the user's intended width, which a narrower window only overrides
+  // for display. Only the end of a drag saves.
   const commitListWidth = (width: number): void => {
     setListWidth(width)
     setDragWidth(null)

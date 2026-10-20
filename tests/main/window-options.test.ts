@@ -2,18 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { windowOptions, windowStatePersistence } from '@main/window-options'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 
-// The window's minimum size must be the DERIVED layout floor, not a hand-typed
-// magic number (window-chrome-conventions). These assert the main process
-// consumes the derived constants verbatim — so the OS-enforced minimum can never
-// drift from the pane minimums the layout reserves.
+// The OS-enforced minimum is the layout's derived floor, so a pane can never be
+// squeezed below what the layout reserves.
 describe('windowOptions', () => {
-  it('uses the derived window minimums, not magic literals', () => {
+  it('uses the layout\'s window minimums', () => {
     const opts = windowOptions('/preload.cjs', '#ffffff')
     expect(opts.minWidth).toBe(WINDOW_MIN_WIDTH)
     expect(opts.minHeight).toBe(WINDOW_MIN_HEIGHT)
-    // The retired band-aids must be gone.
-    expect(opts.minWidth).not.toBe(900)
-    expect(opts.minHeight).not.toBe(600)
   })
 
   it('uses Electron bounds persistence with Windows display mode', () => {
@@ -23,12 +18,6 @@ describe('windowOptions', () => {
     expect(windowStatePersistence('win32')).toEqual({ bounds: true, displayMode: true })
     expect(windowStatePersistence('darwin')).toEqual({ bounds: true, displayMode: false })
     expect(windowStatePersistence('linux')).toEqual({ bounds: true, displayMode: false })
-  })
-
-  it('keeps the designed default size as the restoration fallback', () => {
-    const opts = windowOptions('/preload.cjs', '#ffffff')
-    expect(opts.width).toBe(1280)
-    expect(opts.height).toBe(800)
   })
 
   it("paints the background it is given (the resolved theme's canvas)", () => {

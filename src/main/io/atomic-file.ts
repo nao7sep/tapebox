@@ -86,8 +86,9 @@ function linkUnsupported(err: unknown): boolean {
  * place a file's bytes are copied, so it is where the copy keeps the source's
  * ordinary permission bits and copy times (content-lifecycle conventions, Files).
  * Where the destination has no hard links this writes straight to the final
- * name, so power loss mid-copy can leave a truncated file there (Decisions in
- * the TapeBox plan: destinations without hard links).
+ * name, so power loss mid-copy can leave a truncated file there: accepted rather
+ * than refusing FAT and exFAT drives, since the library source is kept until the
+ * commit.
  */
 async function copyExclusive(sourcePath: string, destPath: string, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted()

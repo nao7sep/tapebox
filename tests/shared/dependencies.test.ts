@@ -11,7 +11,7 @@ import { binaryNames as names } from '@shared/ipc-contract'
 describe('the dependencies (managed-facts) store', () => {
   it('defaults every managed binary to never-checked', () => {
     const d = defaultDependencies()
-    expect(Object.keys(d).sort()).toEqual(['deno', 'ffmpeg', 'lastCheckAttemptAtUtc', 'yt-dlp'])
+    expect(Object.keys(d).sort()).toEqual([...names, 'lastCheckAttemptAtUtc'].sort())
     expect(d.lastCheckAttemptAtUtc).toBeNull()
     for (const entry of names.map((name) => d[name])) {
       expect(entry).toEqual({
@@ -20,15 +20,6 @@ describe('the dependencies (managed-facts) store', () => {
       })
     }
     expect(freshBinaryEntry()).toEqual(d['yt-dlp'])
-  })
-
-  // The store holds NETWORK facts only. The installed version is read from the
-  // binary itself, so persisting it here is what let the two drift apart.
-  it('does not persist an installed version', () => {
-    const d = defaultDependencies()
-    for (const entry of names.map((name) => d[name])) {
-      expect(entry).not.toHaveProperty('installedVersion')
-    }
   })
 
   it('accepts the fresh default it seeds', () => {

@@ -7,7 +7,7 @@ import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery
 
 /**
  * Request/response contract for ipcMain.handle / ipcRenderer.invoke channels.
- * Channel names use 'domain:action' convention.
+ * Channel names are 'domain:action', so a channel's owner reads from its name.
  *
  * This file is type-only and pure — safe to import from main, preload, and
  * renderer. The renderer's typed client (preload contextBridge) and the main

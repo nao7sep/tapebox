@@ -47,8 +47,8 @@ const POSITION: Record<Edge, string> = {
  * (clampSplitter), the single place the intent meets the live geometry.
  *
  * It highlights on hover and shows the axis-matched resize cursor (col-resize on
- * a left/right edge, row-resize on a top/bottom edge), per the cursor conventions'
- * divider rule.
+ * a left/right edge, row-resize on a top/bottom edge), so the pointer shows
+ * which way the divider moves.
  */
 export function ResizeHandle({ edge, size, min, max, onResize, onCommit, keyboardLabel }: Props) {
   const alongY = edge === 'top' || edge === 'bottom'

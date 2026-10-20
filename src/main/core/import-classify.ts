@@ -92,7 +92,7 @@ export function classifyImport(sidecar: unknown): ImportClassification {
  * filesystem). A time the sidecar does not record stays empty; the import does not
  * probe or download, so it has no such time of its own. The one required time,
  * when the tape was added, falls back to when it was downloaded and only then to
- * `nowUtc`, the import itself (content-lifecycle conventions).
+ * `nowUtc`, the import itself, so an imported tape keeps the oldest time known for it.
  */
 export function tapeFromSidecar(
   sidecar: Record<string, unknown>,

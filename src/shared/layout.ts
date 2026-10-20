@@ -141,7 +141,8 @@ export const RECORDS_LIST_MIN_HEIGHT = 160
 /** The list pane's border-r, the one vertical divider in the Records window. */
 const RECORDS_PANE_BORDERS = 1
 
-// Derived — do not hand-edit (window-conventions, Content-based minimum size).
+// The Records window's minimum is its panes' minimums and the divider, so no
+// pane can be squeezed below its own.
 export const RECORDS_WINDOW_MIN_WIDTH =
   LAYOUT_BOUNDS.recordsListWidth.min + RECORDS_PANE_BORDERS + RECORDS_DETAIL_MIN_WIDTH
 export const RECORDS_WINDOW_MIN_HEIGHT = RECORDS_FILTERS_HEIGHT + RECORDS_LIST_MIN_HEIGHT

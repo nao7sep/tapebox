@@ -6,7 +6,7 @@ import { FORMAT_VERSIONS } from '../io/format-version.ts'
 import { describeError } from '../../shared/error.ts'
 
 export type BackupRequest = { id: number; absolutePath: string; bytes: Uint8Array }
-/** `session`: this launch, so each file keeps one row per launch (data-backup conventions). */
+/** `session`: this launch, so each file keeps one row per launch rather than one per save. */
 export type BackupWorkerData = { databasePath: string; session: string }
 export type BackupResponse = { id: number; warning?: { message: string; fields: Record<string, unknown> }; disabled?: boolean }
 

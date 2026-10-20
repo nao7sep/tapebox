@@ -127,7 +127,7 @@ function rejectWhenAborted(signal: AbortSignal): Promise<never> {
   })
 }
 
-describe('checkForUpdates — a failed check writes nothing (I3)', () => {
+describe('checkForUpdates — a failed check writes nothing', () => {
   it('folds only successful resolves; a failed binary keeps its facts null', async () => {
     seed()
     vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue(resolved('2024.01.01'))

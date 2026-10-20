@@ -7,7 +7,8 @@ export type TapeMove = Omit<Partial<Tape>, 'pausedAtUtc' | 'failedAtUtc'> & { st
 /**
  * Move a tape to a new state. The pause and failure times each belong to their own
  * state: entering it sets the time to `nowUtc`, staying in it keeps the time, and
- * leaving it clears the time (content-lifecycle conventions).
+ * leaving it clears the time, so a time is never left over from a state the tape
+ * is no longer in.
  */
 export function moveTape(tape: Tape, move: TapeMove, nowUtc: string): Tape {
   const next = { ...tape, ...move }

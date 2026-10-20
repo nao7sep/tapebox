@@ -8,7 +8,8 @@ import { SETTINGS_KEYS, SettingsObjectSchema, type Settings, type SettingsSets }
  * shape and so cannot carry `node:path`.
  */
 
-/** The library and default export folders: blank, or an absolute path (storage-path-conventions). */
+/** The library and default export folders: blank, or an absolute path, so a
+ * folder never resolves against whatever directory TapeBox started in. */
 export const FolderSetSchema = z.string().refine((value) => value === '' || isAbsolute(value))
 
 const StoredSettingsObjectSchema = SettingsObjectSchema.extend({

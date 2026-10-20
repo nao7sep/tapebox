@@ -46,7 +46,7 @@ describe('TapeSchema', () => {
     expect(() => TapeSchema.parse(missingOrder)).toThrow()
   })
 
-  it('strips unknown keys (e.g. a since-removed field) instead of failing', () => {
+  it('strips unknown keys instead of failing', () => {
     const parsed = TapeSchema.parse({ ...completeTape(), thumbnailUrl: 'https://cdn/x.jpg' }) as Record<string, unknown>
     expect('thumbnailUrl' in parsed).toBe(false)
   })

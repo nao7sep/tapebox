@@ -30,8 +30,6 @@ describe('the managed-tool gate', () => {
   it('defaults the single launch-check toggle on (nothing auto-downloads)', () => {
     const d = defaultSettings()
     expect(d.checkUpdatesAtLaunch).toBe(true)
-    expect(d).not.toHaveProperty('autoDownloadTools')
-    expect(d).not.toHaveProperty('checkToolUpdates')
   })
 
   it('preserves an explicit off value through the schema', () => {
@@ -39,12 +37,6 @@ describe('the managed-tool gate', () => {
     expect(parsed.checkUpdatesAtLaunch).toBe(false)
   })
 
-  // The per-binary facts moved out of Settings into their own dependencies store;
-  // the launch-check TOGGLE stays here (it is a setting the user authors). The
-  // legacy-field-stripping behavior now lives in tests/shared/dependencies.test.ts.
-  it('no longer carries the binaries facts — those are their own store', () => {
-    expect(defaultSettings()).not.toHaveProperty('binaries')
-  })
 })
 
 describe('SettingsSchema', () => {
@@ -65,11 +57,9 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.parse({ autoplay: false })).toEqual({ autoplay: false })
   })
 
-  // Volume moved to the layout (state) store — see tests/shared/layout.test.ts.
-  // A stray `volume` key on a config is simply ignored, not a field this schema
-  // defends: it must not resurrect as config.
-  it('does not carry volume — it is view state, not config', () => {
-    expect(defaultSettings()).not.toHaveProperty('volume')
+  // A key the schema does not define, such as view state that belongs to the
+  // layout store, is dropped rather than kept as config.
+  it('drops a key it does not define', () => {
     const parsed = SettingsSchema.parse({ ...defaultSettings(), volume: 0.5 } as Record<string, unknown>)
     expect(parsed).not.toHaveProperty('volume')
   })

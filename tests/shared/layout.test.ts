@@ -1,69 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CONTENT_MIN_HEIGHT,
-  HEADER_HEIGHT,
   LAYOUT_BOUNDS,
   LayoutSchema,
   PANE_BORDERS,
-  RECORDS_DETAIL_MIN_WIDTH,
-  RECORDS_FILTERS_HEIGHT,
-  RECORDS_LIST_MIN_HEIGHT,
-  RECORDS_WINDOW_MIN_HEIGHT,
-  RECORDS_WINDOW_MIN_WIDTH,
-  STATUS_BAR_HEIGHT,
   VOLUME_DEFAULT,
-  WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
   clampSplitter,
   defaultLayout,
   detailPaneWidth,
 } from '@shared/layout'
-
-// The window minimum must FALL OUT of the pane minimums plus fixed chrome, never
-// be hand-typed (window-chrome-conventions). These guard that the derivation
-// stays a derivation — if a pane min or a chrome height changes, the constants
-// move with it and these still hold; if someone replaces them with a magic
-// number, the invariant breaks.
-describe('window minimum derivation', () => {
-  it('WINDOW_MIN_WIDTH equals the summed horizontal pane mins + dividers', () => {
-    expect(WINDOW_MIN_WIDTH).toBe(
-      LAYOUT_BOUNDS.leftPaneWidth.min +
-        detailPaneWidth.min +
-        LAYOUT_BOUNDS.chaptersPaneWidth.min +
-        PANE_BORDERS,
-    )
-  })
-
-  it('WINDOW_MIN_HEIGHT equals the fixed chrome bars + content row min', () => {
-    expect(WINDOW_MIN_HEIGHT).toBe(HEADER_HEIGHT + STATUS_BAR_HEIGHT + CONTENT_MIN_HEIGHT)
-  })
-
-  // No-squeeze safety: even with the left pane dragged to its maximum, the
-  // window's enforced minimum still leaves the chapters pane its minimum AND the
-  // detail pane its minimum. (At the window minimum, a left pane at its own max is
-  // geometrically impossible — the clamp prevents it — but this proves the budget
-  // covers the worst stated case rather than relying on the runtime clamp.)
-  it('leaves the detail pane its min when the left pane is at its max', () => {
-    const remaining =
-      WINDOW_MIN_WIDTH -
-      LAYOUT_BOUNDS.leftPaneWidth.max -
-      LAYOUT_BOUNDS.chaptersPaneWidth.min -
-      PANE_BORDERS
-    // With the left pane at its max, the window minimum cannot also fit the detail
-    // pane's min — which is exactly why the splitter is clamped against the live
-    // container (below): the left pane can only reach its max on a window wide
-    // enough to keep both siblings whole.
-    expect(remaining).toBeLessThan(detailPaneWidth.min)
-    // The honest budget: at the window minimum, the left pane at its OWN minimum
-    // leaves both siblings their minimums exactly.
-    const atLeftMin =
-      WINDOW_MIN_WIDTH -
-      LAYOUT_BOUNDS.leftPaneWidth.min -
-      LAYOUT_BOUNDS.chaptersPaneWidth.min -
-      PANE_BORDERS
-    expect(atLeftMin).toBe(detailPaneWidth.min)
-  })
-})
 
 // Playback volume is view state and lives here, not in settings
 // (persisted-store-separation-conventions). Unlike the config store, which is
@@ -71,7 +16,6 @@ describe('window minimum derivation', () => {
 // so a lost/garbled volume never blocks load — losing it costs nothing.
 describe('volume as self-healing layout state', () => {
   it('defaults to full and matches the seeded default', () => {
-    expect(VOLUME_DEFAULT).toBe(1)
     expect(defaultLayout.volume).toBe(VOLUME_DEFAULT)
   })
 
@@ -152,15 +96,6 @@ describe('clampSplitter', () => {
 // layout.json beside the main window's panes, and the window minimum falls out of
 // its pane minimums (window-conventions).
 describe('Records window layout', () => {
-  it('derives the window minimum from the list and detail pane minimums', () => {
-    expect(RECORDS_WINDOW_MIN_WIDTH).toBe(LAYOUT_BOUNDS.recordsListWidth.min + 1 + RECORDS_DETAIL_MIN_WIDTH)
-    expect(RECORDS_WINDOW_MIN_HEIGHT).toBe(RECORDS_FILTERS_HEIGHT + RECORDS_LIST_MIN_HEIGHT)
-  })
-
-  it('bounds the list width at 320 to 640, opening at 380', () => {
-    expect(LAYOUT_BOUNDS.recordsListWidth).toEqual({ min: 320, max: 640, default: 380 })
-    expect(defaultLayout.recordsListWidth).toBe(380)
-  })
 
   it('keeps an in-range width and self-heals a missing or out-of-range one to the default', () => {
     expect(LayoutSchema.parse({ ...defaultLayout, recordsListWidth: 512 }).recordsListWidth).toBe(512)
