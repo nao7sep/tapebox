@@ -14,7 +14,7 @@ import { releaseVideo } from '@renderer/lib/video'
 import { archiveTape, openTapeSourceUrl, unarchiveTape } from '@renderer/lib/tapeActions'
 import { useCopyTapeSourceUrl } from '@renderer/lib/useCopyTapeSourceUrl'
 import { isShortcutBlocked } from '@renderer/lib/dom'
-import { seekDirection } from '@renderer/lib/seekKey'
+import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
 import { log } from '@renderer/ipc/log'
 import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { useKeepAwake } from '@renderer/lib/useKeepAwake'
@@ -283,28 +283,26 @@ export function DetailPane({
       if (e.defaultPrevented || isShortcutBlocked(e.target)) return
       const { tape, onScanPage, onRequestRemove } = keyRef.current
 
-      // Selected-tape commands first, so they work regardless of focus and tolerate
-      // their own modifier rules. Backspace/Delete (with or without Cmd/Ctrl) removes;
-      // A (plain) archives/unarchives — the keyboard's triage 'list' policy, advancing
-      // selection to a neighbor (the detail-pane button uses 'tape' to follow it).
-      if ((e.key === 'Backspace' || e.key === 'Delete') && !e.altKey) {
+      // Selected-tape commands, so they work regardless of focus. A archives or
+      // unarchives with the keyboard's triage 'list' policy, advancing selection to
+      // a neighbor (the detail-pane button uses 'tape' to follow it).
+      if (matchShortcut(SHORTCUTS.remove, e) >= 0) {
         e.preventDefault()
         onRequestRemove(tape)
         return
       }
-      if ((e.key === 'a' || e.key === 'A') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (matchShortcut(SHORTCUTS.archiveToggle, e) >= 0) {
         if (tape.archivedAtUtc) { e.preventDefault(); unarchiveTape(tape, 'list') }
         else if (tape.state === 'downloaded') { e.preventDefault(); archiveTape(tape, 'list') }
         return
       }
 
-      if (e.metaKey || e.ctrlKey || e.altKey) return // remaining keys are plain only
-
       // Left/Right (or YouTube's J/L) seek the open video regardless of which list
       // owns Up/Down — so seeking works the instant a tape is selected, without
       // clicking into the player.
-      const direction = seekDirection(e)
-      if (tape.state === 'downloaded' && direction !== null) {
+      const seek = matchShortcut(SHORTCUTS.seek, e)
+      const direction = seek === 0 ? -1 : 1
+      if (tape.state === 'downloaded' && seek >= 0) {
         const v = videoRef.current
         if (!v) return
         e.preventDefault()
@@ -313,7 +311,7 @@ export function DetailPane({
         return
       }
 
-      if (e.key === 'Enter') {
+      if (matchShortcut(SHORTCUTS.mainAction, e) >= 0) {
         if (tape.state === 'downloaded') {
           const v = videoRef.current
           if (!v) return
@@ -337,10 +335,9 @@ export function DetailPane({
       }
 
       if (tape.state !== 'downloaded') return // R / E / M act on a downloaded tape's files
-      const key = e.key.toLowerCase()
-      if (key === 'r') { e.preventDefault(); setRenameFor(tape.id) }
-      else if (key === 'e') { e.preventDefault(); setExportFor(tape.id) }
-      else if (key === 'm') { e.preventDefault(); setRefreshFor(tape.id) }
+      if (matchShortcut(SHORTCUTS.rename, e) >= 0) { e.preventDefault(); setRenameFor(tape.id) }
+      else if (matchShortcut(SHORTCUTS.export, e) >= 0) { e.preventDefault(); setExportFor(tape.id) }
+      else if (matchShortcut(SHORTCUTS.refreshMetadata, e) >= 0) { e.preventDefault(); setRefreshFor(tape.id) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)

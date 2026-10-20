@@ -7,6 +7,7 @@ import { presentFailure } from '@renderer/lib/presentFailure'
 import { Button, InlineError } from '@renderer/components/ui'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
+import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
 
 type Props = {
   /** Pause clipboard auto-fill (e.g. while the Scan-a-page modal owns the clipboard). */
@@ -63,7 +64,7 @@ export function TopBar({ clipboardEnabled }: Props) {
           onPaste={onPaste}
           onCompositionStart={composing.onCompositionStart}
           onCompositionEnd={composing.onCompositionEnd}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !isComposingKeyboardEvent(composingRef, e)) void add(url) }}
+          onKeyDown={(e) => { if (matchShortcut(SHORTCUTS.addUrl, e) >= 0 && !isComposingKeyboardEvent(composingRef, e)) void add(url) }}
           // Add is off until the tools are installed; the field says why, in place,
           // without the layout shift a banner would bring.
           placeholder={t.t(toolsReady ? 'topBar.placeholder' : 'topBar.placeholderNeedsTools')}

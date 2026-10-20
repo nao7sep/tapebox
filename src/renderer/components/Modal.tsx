@@ -5,6 +5,7 @@ import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposi
 import { CloseIcon } from './Icon'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
 import { useI18n } from '@renderer/i18n/I18nContext'
+import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
 
 /**
  * Four tiers, by content:
@@ -103,7 +104,7 @@ export function Modal({ title,
   function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     const panel = panelRef.current
     if (panel === null || !isTopmost(panel)) return
-    if (e.key === 'Escape') {
+    if (matchShortcut(SHORTCUTS.closeDialog, e) >= 0) {
       // During IME composition, Escape cancels the candidate: let it reach the
       // input and leave the modal open.
       if (isComposingKeyboardEvent(composing.composingRef, e)) return

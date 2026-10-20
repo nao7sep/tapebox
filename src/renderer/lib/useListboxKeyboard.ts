@@ -1,6 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from 'react'
 import { nextIndex } from '@renderer/lib/nextIndex'
 import { isEditableElement } from '@renderer/lib/dom'
+import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
 
 /**
  * The shared spine for the app's keyboard-navigable lists, in the ARIA
@@ -75,17 +76,10 @@ export function useListboxKeyboard<E extends HTMLElement = HTMLElement>(opts: {
     if (e.defaultPrevented) return
     const { itemIds, activeId, onActivate, page, onCommandKey, onReorder } = stateRef.current
 
-    const reorderOffset =
-      e.shiftKey && !e.altKey && (e.metaKey || e.ctrlKey)
-        ? e.key === 'ArrowUp'
-          ? -1
-          : e.key === 'ArrowDown'
-            ? 1
-            : null
-        : null
-    if (onReorder && reorderOffset !== null) {
+    const reorder = matchShortcut(SHORTCUTS.reorder, e)
+    if (onReorder && reorder >= 0) {
       e.preventDefault()
-      if (activeId !== null) onReorder(activeId, reorderOffset)
+      if (activeId !== null) onReorder(activeId, reorder === 0 ? -1 : 1)
       return
     }
 

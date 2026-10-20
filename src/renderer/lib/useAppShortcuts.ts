@@ -4,6 +4,7 @@ import { useArchiveStore } from '@renderer/store/archive'
 import { useRuntimeStore } from '@renderer/store/runtime'
 import { isEditableElement, isModalOpen } from '@renderer/lib/dom'
 import { keyEventIsComposing } from '@renderer/lib/useComposing'
+import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
 
 /**
  * App-level navigation shortcuts — distinct from the per-list keys (useListboxKeyboard)
@@ -32,24 +33,18 @@ export function useAppShortcuts(onShowShortcuts: () => void): void {
       const typing = isEditableElement(e.target)
       const isMac = useRuntimeStore.getState().info?.platform === 'darwin'
       const modChordStandsDown = typing && isMac && e.ctrlKey && !e.metaKey
-      const mod = (e.metaKey || e.ctrlKey) && !e.altKey
 
-      // "?" first, then Cmd/Ctrl+/ — both forms open the same list, and the
-      // slash branch tolerates Shift so shifted-slash layouts (German QWERTZ)
-      // can reach the advertised chord (keyboard-shortcut-conventions).
-      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        if (typing) return
+      // Cmd/Ctrl+/ and "?" open the same list (keyboard-shortcut-conventions).
+      const showList = matchShortcut(SHORTCUTS.showList, e)
+      if (showList >= 0) {
+        if (showList === 0 ? modChordStandsDown : typing) return
         e.preventDefault()
         onShowRef.current()
-      } else if (mod && e.key === '/') {
+      } else if (matchShortcut(SHORTCUTS.inbox, e) >= 0 || matchShortcut(SHORTCUTS.archived, e) >= 0) {
         if (modChordStandsDown) return
         e.preventDefault()
-        onShowRef.current()
-      } else if (mod && (e.key === '1' || e.key === '2')) {
-        if (modChordStandsDown) return
-        e.preventDefault()
-        useFilterStore.getState().setFilter(e.key === '1' ? 'inbox' : 'archived')
-      } else if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        useFilterStore.getState().setFilter(matchShortcut(SHORTCUTS.inbox, e) >= 0 ? 'inbox' : 'archived')
+      } else if (matchShortcut(SHORTCUTS.searchArchive, e) >= 0) {
         if (typing) return
         e.preventDefault()
         useFilterStore.getState().setFilter('archived')
