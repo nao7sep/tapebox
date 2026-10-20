@@ -91,7 +91,7 @@ catch {
 finally {
     & node $runtimeHelper is-owner $runtimeToken *> $null
     if ($LASTEXITCODE -eq 0) {
-        & node $runtimeHelper stop-if-owner $runtimeToken electron "TapeBox" "TapeBox" *> $null
+        & node $runtimeHelper stop-if-owner $runtimeToken *> $null
         Read-Host "Press Enter to close" | Out-Null
     }
 }

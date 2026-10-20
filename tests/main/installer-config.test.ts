@@ -18,15 +18,12 @@ describe("Windows installer configuration", () => {
   });
 });
 
+// Third-party notices are written in the release licence pass from what the
+// candidate ships (licensing-conventions); only the app's own licence ships now.
 describe("packaged license texts", () => {
-  it("ships the app, Electron, and Chromium licenses", () => {
+  it("ships the app license", () => {
     expect(packageJson.build.extraResources).toEqual(expect.arrayContaining([
       { from: "LICENSE", to: "LICENSE.txt" },
-      { from: "node_modules/electron/dist/LICENSE", to: "electron/LICENSE" },
-      {
-        from: "node_modules/electron/dist/LICENSES.chromium.html",
-        to: "electron/LICENSES.chromium.html",
-      },
     ]));
   });
 

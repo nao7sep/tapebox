@@ -83,6 +83,6 @@ fi
 
 log_step "Launching the packaged app"
 node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
-node "$RUNTIME_HELPER" stop electron "TapeBox" "TapeBox"
+node "$RUNTIME_HELPER" stop
 open -n "$APP_BUNDLE"
 node "$RUNTIME_HELPER" wait-process "$APP_BUNDLE/Contents/MacOS/TapeBox" 30000

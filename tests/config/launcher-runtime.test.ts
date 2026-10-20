@@ -6,33 +6,31 @@ import { describe, expect, it } from "vitest";
 import { claimRuntime, isRuntimeOwner, ownsProcess, releaseRuntime, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
 
 describe("launcher process identity", () => {
-  const identity = { kind: "electron", label: "TapeBox", executable: "TapeBox" };
-
   it("owns only this repository's TapeBox runtime", () => {
     expect(ownsProcess({
       pid: 10,
       parentPid: 1,
       executablePath: `${REPO_ROOT}/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron`,
       commandLine: "",
-    }, identity)).toBe(true);
+    })).toBe(true);
     expect(ownsProcess({
       pid: 11,
       parentPid: 1,
       executablePath: `${REPO_ROOT}/dist/mac-arm64/TapeBox.app/Contents/MacOS/TapeBox`,
       commandLine: "",
-    }, identity)).toBe(true);
+    })).toBe(true);
     expect(ownsProcess({
       pid: 12,
       parentPid: 1,
       executablePath: `${REPO_ROOT}\\dist\\win-unpacked\\TapeBox.exe`,
       commandLine: "",
-    }, identity)).toBe(true);
+    })).toBe(true);
     expect(ownsProcess({
       pid: 13,
       parentPid: 1,
       executablePath: "/another/repo/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
       commandLine: "",
-    }, identity)).toBe(false);
+    })).toBe(false);
   });
 
   it("does not let a stale launcher generation clean up its replacement", async () => {

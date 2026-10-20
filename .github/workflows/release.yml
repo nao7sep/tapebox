@@ -34,7 +34,9 @@ jobs:
         with:
           node-version: lts/*
           cache: npm
-      - run: npm install --global npm@12.2.0
+      # The npm version package.json's packageManager names, so it has one source.
+      - run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+        shell: bash
       - run: npm ci
       - run: npm run check:release-tag
       # npm test is a fixed set, so it runs the same here as it does locally.
@@ -56,7 +58,9 @@ jobs:
         with:
           node-version: lts/*
           cache: npm
-      - run: npm install --global npm@12.2.0
+      # The npm version package.json's packageManager names, so it has one source.
+      - run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+        shell: bash
       - run: npm ci
 
       # One command: electron-vite build + electron-builder for the host OS.
