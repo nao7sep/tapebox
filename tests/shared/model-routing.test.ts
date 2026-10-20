@@ -57,22 +57,25 @@ describe('model routing and role guards', () => {
   })
 
   it('matches a row on the trimmed, lower-cased id and sends the id as stored', () => {
-    expect(buildSlugRequest(' GPT-6-Luna ', 'low', 'title')).toEqual({ model: ' GPT-6-Luna ', messages, response_format, reasoning_effort: 'low' })
-    expect(rowFor('openai', ' GPT-6-Luna ')?.id).toBe('gpt-6-luna')
+    for (const row of SUPPORTED_MODELS) {
+      const typed = ` ${row.id.toUpperCase()} `
+      const value = row.thinking[0]!
+      expect(buildSlugRequest(typed, value, 'title')).toEqual({ model: typed, messages, response_format, reasoning_effort: value })
+      expect(rowFor('openai', typed)).toBe(row)
+    }
   })
 
   it('sends an id with no row the plain request, the strict schema included, and no thinking parameter', () => {
-    for (const id of ['gpt-6-sol', 'gpt-5.6-luna', 'gpt-future', 'local-model']) {
+    for (const id of [...SUPPORTED_MODELS.map((row) => `${row.id}-unlisted`), 'local-model']) {
       expect(buildSlugRequest(id, 'high', 'title')).toEqual({ model: id, messages, response_format })
       expect(rowFor('openai', id)).toBeUndefined()
     }
   })
 
-  it('replaces a choice the row does not list with the row\'s default', () => {
-    const row = (id: string) => rowFor('openai', id)!
-    expect(thinkingFor(row('gpt-6.1-sol'), 'none')).toBe('medium')
-    expect(thinkingFor(row('gpt-6-astra'), 'none')).toBe('medium')
-    expect(thinkingFor(row('gpt-6-luna'), 'adaptive')).toBe('none')
-    expect(thinkingFor(row('gpt-6.1-sol'), 'max')).toBe('max')
+  it('keeps a choice the row lists and replaces any other with the row\'s default', () => {
+    for (const row of SUPPORTED_MODELS) {
+      for (const value of row.thinking) expect(thinkingFor(row, value)).toBe(value)
+      expect(thinkingFor(row, 'not-a-thinking-value')).toBe(row.defaultThinking)
+    }
   })
 })
