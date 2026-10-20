@@ -1,6 +1,5 @@
 import { app, BrowserWindow } from 'electron'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from '@shared/layout'
 import { describeError } from '@shared/error'
 import { log } from '@main/io/logger'
@@ -12,7 +11,6 @@ import { createWindowWithUsablePersistedBounds } from '@main/window-state-recove
 import { windowStatePersistence } from '@main/window-options'
 import { sendTo } from '@main/ipc/events'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
  * The Records window shows records.sqlite3. It is a durable secondary window
@@ -64,7 +62,7 @@ export async function openRecordsWindow(): Promise<void> {
 
   const options = recordsWindowOptions(
     mainTranslator().t('records.title'),
-    join(__dirname, '../preload/index.cjs'),
+    join(import.meta.dirname, '../preload/index.cjs'),
     windowBackground(),
   )
   const window = createWindowWithUsablePersistedBounds('records', () => new BrowserWindow(options))
@@ -86,7 +84,7 @@ export async function openRecordsWindow(): Promise<void> {
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   try {
     if (devUrl) await window.loadURL(`${devUrl}/records.html`)
-    else await window.loadFile(join(__dirname, '../renderer/records.html'))
+    else await window.loadFile(join(import.meta.dirname, '../renderer/records.html'))
   } catch (error) {
     window.destroy()
     throw error

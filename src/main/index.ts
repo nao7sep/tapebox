@@ -1,6 +1,5 @@
 import { app, BrowserWindow, powerMonitor, shell } from 'electron'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { ensureDirs, paths, sweepAbandonedStaging } from './paths.js'
 import { notifyCorruptConfig, notifyCorruptSession, notifySettingsKept, notifyStartupFailure } from './startup-dialog.js'
 import { initLogger, isDebugEnabled, log } from './io/logger.js'
@@ -44,7 +43,6 @@ import {
   settleLanguageWhenReady,
 } from './i18n.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
  * Single-instance lock. If another tapebox instance already holds the lock,
@@ -77,7 +75,7 @@ let terminalStartupFailure = false
 
 async function createMainWindow(): Promise<BrowserWindow> {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow
-  const options = windowOptions(join(__dirname, '../preload/index.cjs'), windowBackground())
+  const options = windowOptions(join(import.meta.dirname, '../preload/index.cjs'), windowBackground())
   const win = createWindowWithUsablePersistedBounds('main', () => new BrowserWindow(options))
   mainWindow = win
   configureWindowClose(win, () => app.quit())
@@ -108,7 +106,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   try {
     if (devUrl) await win.loadURL(devUrl)
-    else await win.loadFile(join(__dirname, '../renderer/index.html'))
+    else await win.loadFile(join(import.meta.dirname, '../renderer/index.html'))
   } catch (error) {
     log.error('main window document failed to load', { error: describeError(error) })
     // Keep the failed, never-shown owner alive until the terminal recovery

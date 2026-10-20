@@ -14,7 +14,7 @@ export function windowStatePersistence(platform: NodeJS.Platform = process.platf
  * state exists. The minimums are DERIVED in @shared/layout from the pane
  * minimums plus fixed chrome, so the OS floor can never let a pane be squeezed
  * out and there is no hand-typed magic minimum to drift. `preload` is injected
- * because it depends on the caller's resolved __dirname.
+ * because it depends on the calling module's directory.
  */
 export function windowOptions(preload: string, background: string): Electron.BrowserWindowConstructorOptions {
   return {
