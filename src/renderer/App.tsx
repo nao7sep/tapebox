@@ -5,7 +5,7 @@ import { describeError } from '@shared/error'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
-import { LAYOUT_BOUNDS, detailPaneWidth, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT, CONTENT_MIN_HEIGHT } from '@shared/layout'
+import { LAYOUT_BOUNDS, detailPaneWidth, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT, CONTENT_MIN_HEIGHT, HEADER_HEIGHT } from '@shared/layout'
 import { pullInitialSyncState, startIpcSync, type IpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -234,7 +234,7 @@ function HydratedApp() {
       onDragOver={denyUnhandledExternalDrop}
       onDrop={denyUnhandledExternalDrop}
     >
-        <header className="flex shrink-0 items-center gap-4 border-b border-line px-4 py-2.5">
+        <header className="flex shrink-0 items-center gap-4 border-b border-line px-4" style={{ height: HEADER_HEIGHT }}>
           <h1 className="shrink-0 text-xl font-medium tracking-tight">TapeBox</h1>
           <div className="flex min-w-0 flex-1 justify-center">
             <div className="w-full max-w-5xl">

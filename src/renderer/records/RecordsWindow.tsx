@@ -15,6 +15,7 @@ import { displayTimeZone, SYSTEM_TIME_ZONE } from '@shared/time-zone'
 import {
   LAYOUT_BOUNDS,
   RECORDS_DETAIL_MIN_WIDTH,
+  RECORDS_FILTERS_HEIGHT,
   RECORDS_WINDOW_MIN_HEIGHT,
   RECORDS_WINDOW_MIN_WIDTH,
 } from '@shared/layout'
@@ -384,7 +385,7 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
           style={{ width: shownListWidth }}
           className="relative flex shrink-0 flex-col border-r border-line"
         >
-          <div className="shrink-0 space-y-2 border-b border-line p-3">
+          <div className="flex shrink-0 flex-col justify-center space-y-2 border-b border-line px-3" style={{ height: RECORDS_FILTERS_HEIGHT }}>
             <input
               type="search"
               value={searchText}

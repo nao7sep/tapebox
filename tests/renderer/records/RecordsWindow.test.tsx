@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcCalls } from '@shared/ipc-contract'
-import { LAYOUT_BOUNDS, RECORDS_DETAIL_MIN_WIDTH, defaultLayout } from '@shared/layout'
+import { LAYOUT_BOUNDS, RECORDS_DETAIL_MIN_WIDTH, RECORDS_FILTERS_HEIGHT, defaultLayout } from '@shared/layout'
 import type { RecordDetail, RecordsPage, RecordsQuery, RecordSummary } from '@shared/records'
 
 const bridge = vi.hoisted(() => {
@@ -289,6 +289,12 @@ describe('RecordsWindow', () => {
   })
 
   // A row's title is identifying text on one line; the detail heading shows it whole.
+  // The window minimum reserves the filter band's height, which the band takes.
+  it('gives the filter band the height the window minimum reserves', async () => {
+    await mount()
+    expect(document.querySelector<HTMLElement>('input[type="search"]')!.parentElement!.style.height).toBe(`${RECORDS_FILTERS_HEIGHT}px`)
+  })
+
   it('shortens a long title in its row', async () => {
     await logBlocks({})
     expect(document.querySelector('[data-record-title]')!.className.split(/\s+/)).toContain('truncate')

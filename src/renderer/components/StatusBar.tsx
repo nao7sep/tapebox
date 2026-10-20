@@ -9,6 +9,7 @@ import { formatTime } from '@renderer/lib/format'
 import { Spinner } from '@renderer/components/ui'
 import { ArrowDownIcon } from './Icon'
 import { useI18n } from '@renderer/i18n/I18nContext'
+import { STATUS_BAR_HEIGHT } from '@shared/layout'
 import { joinMessages, message, type Message, type MessageValue } from '@shared/i18n/translate'
 
 /**
@@ -23,7 +24,7 @@ import { joinMessages, message, type Message, type MessageValue } from '@shared/
  */
 export function StatusBar() {
   return (
-    <footer className="flex shrink-0 items-center gap-4 border-t border-line px-4 py-1.5 text-xs">
+    <footer className="flex shrink-0 items-center gap-4 border-t border-line px-4 text-xs" style={{ minHeight: STATUS_BAR_HEIGHT }}>
       <div className="min-w-0 flex-1">
         <ActivityZone />
       </div>

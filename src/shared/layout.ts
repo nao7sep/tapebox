@@ -40,8 +40,8 @@ export const LAYOUT_BOUNDS = {
 export const archiveLowerListMin = { min: 120 } as const
 
 /**
- * The archived view's search box height (its px-3 py-2 wrapper around the
- * py-1.5 text-sm input). Fixed chrome above the boxes list, reserved alongside
+ * The archived view's search box height: its wrapper takes this height, centring
+ * the py-1.5 text-sm input. Fixed chrome above the boxes list, reserved alongside
  * the lower-list minimum when clamping the boxes height.
  */
 export const ARCHIVE_SEARCH_BOX_HEIGHT = 52
@@ -57,16 +57,15 @@ export const ARCHIVE_SEARCH_BOX_HEIGHT = 52
 export const detailPaneWidth = { min: 360 } as const
 
 /**
- * Fixed chrome heights, in CSS pixels, measured from the rendered classes so the
- * derived WINDOW_MIN_HEIGHT covers the bars that are reserved before the content
- * area (window-chrome-conventions: fixed chrome is reserved first and counts
- * toward the window minimum). Kept deliberately in sync with the markup:
+ * Fixed chrome heights, in CSS pixels, which the bars take as their height, so the
+ * derived WINDOW_MIN_HEIGHT covers what is reserved before the content area:
  *
- *   HEADER_HEIGHT     header in App.tsx: py-2.5 (20px) + 1px border-b, around the
- *                     tallest control, the URL input (text-sm 22px line + py-2
- *                     16px + 2px border = 40px) → 61px.
- *   STATUS_BAR_HEIGHT footer in StatusBar.tsx: py-1.5 (12px) + 1px border-t,
- *                     around text-xs content (18px line) → 31px.
+ *   HEADER_HEIGHT     the header in App.tsx, centring its tallest control, the
+ *                     40px URL input, with 10px above and below and its 1px
+ *                     border-b.
+ *   STATUS_BAR_HEIGHT the footer in StatusBar.tsx (its minimum: an unusually
+ *                     narrow window wraps it), centring its 18px text-xs line
+ *                     with 6px above and below and its 1px border-t.
  */
 export const HEADER_HEIGHT = 61
 export const STATUS_BAR_HEIGHT = 31
@@ -123,12 +122,12 @@ export function clampSplitter(
 
 /**
  * The Records window: the list pane (filters above the record list) with a
- * border-r beside the detail pane, which takes the rest. Mirrors the classes in
- * records/RecordsWindow.tsx.
+ * border-r beside the detail pane, which takes the rest. The filter band in
+ * records/RecordsWindow.tsx takes its height from here.
  *
  *   RECORDS_DETAIL_MIN_WIDTH  the detail pane's field grid and JSON blocks still
  *                             read at this width.
- *   RECORDS_FILTERS_HEIGHT    the filter band: p-3 (12px above and below) around a
+ *   RECORDS_FILTERS_HEIGHT    the filter band: 12px above and below, around a
  *                             search field and two rows of selects (three h-9
  *                             36px controls, space-y-2 8px apart), and its 1px
  *                             border-b.
