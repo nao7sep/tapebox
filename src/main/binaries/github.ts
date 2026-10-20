@@ -1,5 +1,8 @@
 import { fetchJson } from '@main/io/fetch-json'
 
+// GitHub's API refuses requests without a User-Agent.
+const USER_AGENT = 'tapebox'
+
 /**
  * Minimal GitHub Releases API helper.
  * Unauthenticated; rate limit is 60 requests/hour per IP, which is plenty
@@ -29,7 +32,7 @@ export async function fetchLatestRelease(
     signal,
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'tapebox',
+      'User-Agent': USER_AGENT,
     },
   })
 }
@@ -51,7 +54,7 @@ export async function fetchReleases(
     signal,
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'tapebox',
+      'User-Agent': USER_AGENT,
     },
   })
 }

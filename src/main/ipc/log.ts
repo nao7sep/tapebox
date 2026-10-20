@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { parseLogMessage } from '@shared/log'
+import { LOG_DEBUG_ENABLED_CHANNEL, LOG_WRITE_CHANNEL } from '@shared/log-channels'
 import { getDebugEnabled, log } from '@main/io/logger'
 
 /**
@@ -10,18 +11,18 @@ import { getDebugEnabled, log } from '@main/io/logger'
  * logger. Every renderer line is tagged source:"renderer" so a reader can tell
  * vantage points apart; debug gating still happens in the logger.
  *
- * The 'log:debug-enabled' synchronous reply lets the preload learn main's debug
+ * The debug-enabled synchronous reply lets the preload learn main's debug
  * state once at startup, so the renderer can skip forwarding debug lines that a
  * packaged release would only drop.
  */
 export function registerLogHandlers(): void {
-  ipcMain.on('log:write', (_event, payload: unknown) => {
+  ipcMain.on(LOG_WRITE_CHANNEL, (_event, payload: unknown) => {
     const msg = parseLogMessage(payload)
     if (!msg) return
     log[msg.level](msg.message, { ...msg.fields, source: 'renderer' })
   })
 
-  ipcMain.on('log:debug-enabled', (event) => {
+  ipcMain.on(LOG_DEBUG_ENABLED_CHANNEL, (event) => {
     event.returnValue = getDebugEnabled()
   })
 }

@@ -10,13 +10,14 @@ import { configureWindowActivity } from '@main/window-activity'
 import { configureWindowMinimum } from '@main/window-minimum'
 import { createWindowWithUsablePersistedBounds } from '@main/window-state-recovery'
 import { windowStatePersistence } from '@main/window-options'
+import { sendTo } from '@main/ipc/events'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
  * The Records window shows records.sqlite3. It is a durable secondary window
- * with its own placement (window-conventions, Placement), and there is only ever
- * one: opening it again brings it forward.
+ * that users reopen on its own, so it remembers its own placement, and there is
+ * only ever one: opening it again brings it forward.
  */
 let recordsWindow: BrowserWindow | null = null
 
@@ -48,7 +49,7 @@ export function recordsWindowOptions(
 export function notifyRecordsChanged(): void {
   const window = recordsWindow
   if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-    window.webContents.send('records:changed', null)
+    sendTo(window.webContents, 'records:changed', null)
   }
 }
 

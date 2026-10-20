@@ -1,5 +1,6 @@
 import { fetchLatestRelease, fetchReleases } from './github'
 import { fetchRedirectLocation } from '@main/io/fetch-json'
+import { binaryPath } from '@main/paths'
 import { assertHttpsUrl } from '@main/io/network'
 import type { BinaryName } from '@shared/ipc-contract'
 import { FFMPEG_BUILD_TAG } from '@shared/binary-status'
@@ -279,7 +280,7 @@ const ffmpegSpec: BinarySpec = {
     if (process.platform === 'win32')  return resolveFfmpegWindows(signal)
     throw new Error(
       `ffmpeg auto-install not yet supported on ${process.platform}. ` +
-      `Install ffmpeg manually and place it at ~/.tapebox/bin/ffmpeg.`,
+      `Install ffmpeg manually and place it at ${binaryPath('ffmpeg')}.`,
     )
   },
 }

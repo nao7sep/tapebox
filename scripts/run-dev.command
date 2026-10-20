@@ -61,7 +61,7 @@ npm install
 log_step "Verifying Electron binary"
 if [[ ! -f node_modules/electron/path.txt ]]; then
   echo "Electron binary missing; downloading..."
-  node node_modules/electron/install.js
+  npm run prepare:electron
 fi
 
 log_step "Starting TapeBox in development mode"

@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import type { LogMessage } from '@shared/log'
-import type { TapeBoxApi } from '@shared/bridge'
+import { BRIDGE_KEY, type TapeBoxApi } from '@shared/bridge'
 import { WINDOW_ACTIVITY_CHANNEL } from '@shared/window-activity'
 import { LANGUAGE_ENVIRONMENT_CHANNEL } from '@shared/i18n/environment'
+import { LOG_DEBUG_ENABLED_CHANNEL, LOG_WRITE_CHANNEL } from '@shared/log-channels'
 import type { LanguageEnvironment } from '@shared/i18n/languages'
 
 /**
@@ -43,10 +44,10 @@ const api = {
     return webUtils.getPathForFile(file)
   },
   log(message: LogMessage): void {
-    ipcRenderer.send('log:write', message)
+    ipcRenderer.send(LOG_WRITE_CHANNEL, message)
   },
-  isDebugEnabled: ipcRenderer.sendSync('log:debug-enabled') !== false,
+  isDebugEnabled: ipcRenderer.sendSync(LOG_DEBUG_ENABLED_CHANNEL) !== false,
   languageEnvironment: ipcRenderer.sendSync(LANGUAGE_ENVIRONMENT_CHANNEL) as LanguageEnvironment,
 } satisfies TapeBoxApi
 
-contextBridge.exposeInMainWorld('tapebox', api)
+contextBridge.exposeInMainWorld(BRIDGE_KEY, api)

@@ -34,7 +34,7 @@ vi.mock('electron', () => {
   class BrowserWindow {
     static getFocusedWindow(): unknown { return state.focused }
     readonly handlers = new Map<string, Handler>()
-    readonly webContents = { setWindowOpenHandler: vi.fn(), send: vi.fn() }
+    readonly webContents = { setWindowOpenHandler: vi.fn(), send: vi.fn(), isDestroyed: () => false }
     constructor() { state.windows.push(this) }
     on(event: string, handler: Handler): this { this.handlers.set(event, handler); return this }
     once(event: string, handler: Handler): this { return this.on(event, handler) }

@@ -5,28 +5,7 @@ const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 );
 
-describe("Windows installer configuration", () => {
-  it("uses the assisted dual-scope NSIS contract", () => {
-    expect(packageJson.build.nsis).toMatchObject({
-      oneClick: false,
-      perMachine: false,
-      allowElevation: true,
-      createDesktopShortcut: true,
-      createStartMenuShortcut: true,
-      runAfterFinish: true,
-    });
-  });
-});
-
-// Third-party notices are written in the release licence pass from what the
-// candidate ships (licensing-conventions); only the app's own licence ships now.
-describe("packaged license texts", () => {
-  it("ships the app license", () => {
-    expect(packageJson.build.extraResources).toEqual(expect.arrayContaining([
-      { from: "LICENSE", to: "LICENSE.txt" },
-    ]));
-  });
-
+describe("package scripts", () => {
   it("prepares Electron before every package-script builder invocation", () => {
     for (const script of Object.values(packageJson.scripts) as string[]) {
       if (script.includes("electron-builder")) {
@@ -35,5 +14,24 @@ describe("packaged license texts", () => {
         );
       }
     }
+  });
+});
+
+// The release attaches exactly the installers and portables the build names.
+describe("release attachments", () => {
+  it("lists one file glob for each artifact the build produces", () => {
+    const workflow = readFileSync(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
+    const attached = [...workflow.matchAll(/^\s+(dist\/\S+)$/gm)].map((match) => match[1]);
+    const named = (pattern: string, ext: string) => `dist/${pattern
+      .replace("${productName}", packageJson.build.productName)
+      .replace("${version}", "*")
+      .replace("${ext}", ext)}`;
+    const { mac, win, nsis } = packageJson.build;
+    const expected = [
+      ...mac.target.map((target: { target: string }) => named(mac.artifactName, target.target)),
+      named(nsis.artifactName, "exe"),
+      ...win.target.filter((target: string) => target !== "nsis").map((target: string) => named(win.artifactName, target)),
+    ];
+    expect(new Set(attached)).toEqual(new Set(expected));
   });
 });

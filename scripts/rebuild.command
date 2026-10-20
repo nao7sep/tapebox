@@ -49,7 +49,7 @@ npm install --no-audit --no-fund
 log_step "Verifying Electron binary"
 if [[ ! -f node_modules/electron/path.txt ]]; then
   echo "Electron binary missing; downloading..."
-  node node_modules/electron/install.js
+  npm run prepare:electron
 fi
 
 # Remove stale output so a build that fails to emit a file can't be masked by a
@@ -61,8 +61,8 @@ rm -rf out "$OUT_DIR"
 # the dev server skips this entirely. Tests are checked separately and are not
 # part of the release build, so they are not gated here.
 log_step "Type-checking production sources (node + web)"
-node_modules/.bin/tsc --noEmit -p tsconfig.node.json
-node_modules/.bin/tsc --noEmit -p tsconfig.web.json
+npm run typecheck:node
+npm run typecheck:web
 
 log_step "Building production bundle"
 node_modules/.bin/electron-vite build

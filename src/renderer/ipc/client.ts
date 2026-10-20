@@ -1,5 +1,5 @@
 import type { IpcCalls, IpcEvents } from '@shared/ipc-contract'
-import type { TapeBoxApi } from '@shared/bridge'
+import { tapeboxBridge } from '@shared/bridge'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 
 /**
@@ -12,7 +12,7 @@ import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
  * (see lib/presentFailure).
  */
 
-const bridge = (window as unknown as { tapebox: TapeBoxApi }).tapebox
+const bridge = tapeboxBridge()
 
 type InvokeArgs<K extends keyof IpcCalls> =
   IpcCalls[K]['req'] extends undefined ? [] : [req: IpcCalls[K]['req']]

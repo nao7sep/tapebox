@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { TapeBoxApi } from '@shared/bridge'
+import { tapeboxBridge } from '@shared/bridge'
 import { isCatalogueLoaded, loadCatalogue } from '@shared/i18n/catalogues'
 import { effectiveLanguage, formattingLocale, type Language, type LanguagePreference } from '@shared/i18n/languages'
 import { describeError } from '@shared/error'
 import { log } from '@renderer/ipc/log'
 import { useSettingsStore } from '@renderer/store/settings'
 
-const environment = (window as unknown as { tapebox: TapeBoxApi }).tapebox.languageEnvironment
+const environment = tapeboxBridge().languageEnvironment
 
 /**
  * The interface language: the saved choice (main's copy until settings hydrate),

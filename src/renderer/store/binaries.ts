@@ -11,6 +11,8 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import {
   deriveStatus,
+  isRequiredBinary,
+  REQUIRED_BINARIES,
   rollupRole,
   type DependencyFacts,
   type DerivedStatus,
@@ -259,7 +261,7 @@ export function factsOf(s: BinaryStatus): DependencyFacts {
 }
 
 export function derivedOf(s: BinaryStatus): DerivedStatus {
-  return deriveStatus(factsOf(s), s.name !== 'deno')
+  return deriveStatus(factsOf(s), isRequiredBinary(s.name))
 }
 
 /**
@@ -267,7 +269,7 @@ export function derivedOf(s: BinaryStatus): DerivedStatus {
  * yt-dlp uses it only for sites that need a JavaScript runtime.
  */
 export function requiredBinariesUsable(statuses: BinaryStatus[]): boolean {
-  return (['yt-dlp', 'ffmpeg'] as const).every(
+  return REQUIRED_BINARIES.every(
     (name) => statuses.find((status) => status.name === name)?.present === true,
   )
 }
@@ -278,7 +280,7 @@ export function requiredBinariesUsable(statuses: BinaryStatus[]): boolean {
  * it surfaces passively in the status bar.
  */
 export function binariesNeedAttention(statuses: BinaryStatus[]): boolean {
-  return statuses.some((s) => s.name !== 'deno' && derivedOf(s).state === 'not-installed')
+  return statuses.some((s) => isRequiredBinary(s.name) && derivedOf(s).state === 'not-installed')
 }
 
 export type ToolsSummary = { role: Role; text: Message; actionable: boolean }
@@ -310,7 +312,7 @@ export function summarizeBinaries(statuses: BinaryStatus[]): ToolsSummary {
     if (unreadable > 0) {
       return { role, text: message('tools.summaryUnreadable', { count: unreadable }), actionable: true }
     }
-    if (statuses.some((s) => s.name === 'deno' && !s.present)) {
+    if (statuses.some((s) => !isRequiredBinary(s.name) && !s.present)) {
       return { role, text: message('tools.summaryOptionalMissing'), actionable: true }
     }
     return { role, text: message('tools.summaryUnchecked'), actionable: false }

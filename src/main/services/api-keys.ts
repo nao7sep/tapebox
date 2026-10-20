@@ -56,9 +56,8 @@ function assertKeyId(id: string): void {
   }
 }
 
-export function apiKeyEnvVar(id: string): string {
-  return `${id.toUpperCase().replaceAll('.', '_')}_API_KEY`
-}
+export { apiKeyEnvVar } from '@shared/api-key-env'
+import { apiKeyEnvVar } from '@shared/api-key-env'
 
 // --- obfuscation (NOT encryption) --------------------------------------------
 

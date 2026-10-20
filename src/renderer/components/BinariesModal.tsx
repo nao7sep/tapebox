@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { BinaryName, BinaryStatus } from '@shared/ipc-contract'
-import { identityLabel, type DependencyState, type DerivedStatus } from '@shared/binary-status'
+import { identityLabel, isRequiredBinary, type DependencyState, type DerivedStatus } from '@shared/binary-status'
 import { ipcInvoke } from '@renderer/ipc/client'
 import {
   useBinariesStore,
@@ -49,7 +49,7 @@ export function BinariesModal() {
   const t = useI18n()
 
   const checkUpdatesAtLaunch = settings?.checkUpdatesAtLaunch ?? true
-  const missingRequired = statuses.filter((status) => status.name !== 'deno' && !status.present)
+  const missingRequired = statuses.filter((status) => isRequiredBinary(status.name) && !status.present)
 
   // Persist the one gate: whether to check for tool updates at launch. Nothing
   // auto-downloads — every install/update needs an explicit action below.

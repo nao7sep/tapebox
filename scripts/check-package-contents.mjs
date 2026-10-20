@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { listPackage } from '@electron/asar'
 
 const distDir = resolve('dist')
@@ -44,11 +44,18 @@ if (unexpected.length > 0) {
   throw new Error(`Packaged app contains unexpected files:\n${unexpected.slice(0, 20).join('\n')}`)
 }
 
-const developmentMetadata = entries.filter((entry) =>
-  entry.endsWith('.map') || entry.endsWith('.d.ts') || entry.endsWith('.d.mts') || entry.endsWith('.d.cts')
-)
+// The suffixes build.files excludes ("!**/*.map" and the like) must be absent.
+const excludedSuffixes = packageJson.build.files
+  .filter((pattern) => pattern.startsWith('!**/*'))
+  .map((pattern) => pattern.slice('!**/*'.length))
+const developmentMetadata = entries.filter((entry) => excludedSuffixes.some((suffix) => entry.endsWith(suffix)))
 if (developmentMetadata.length > 0) {
   throw new Error(`Packaged app contains development metadata:\n${developmentMetadata.slice(0, 20).join('\n')}`)
+}
+
+// Each extra resource the build names lands beside app.asar.
+for (const { to } of packageJson.build.extraResources) {
+  if (!existsSync(join(dirname(archive), to))) throw new Error(`Packaged app is missing the resource ${to}`)
 }
 
 console.log(`Verified ${entries.length} app.asar entries in ${archive}`)

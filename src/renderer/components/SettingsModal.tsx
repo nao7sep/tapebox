@@ -32,6 +32,8 @@ import { message, type Message } from '@shared/i18n/translate'
 import type { MessageKey } from '@shared/i18n/catalogues'
 import { languageNameIn, LANGUAGE_NAMES, LANGUAGES, normalizeLanguagePreference } from '@shared/i18n/languages'
 import { computerTimeZone, SYSTEM_TIME_ZONE, timeZoneChoices } from '@shared/time-zone'
+import { apiKeyEnvVar } from '@shared/api-key-env'
+import { MAX_CONCURRENT_DOWNLOADS } from '@shared/settings'
 import { computerLanguage } from '@renderer/i18n/useInterfaceLanguage'
 
 type Props = { onClose: () => void }
@@ -591,8 +593,8 @@ function GeneralTab({
       <NumberField
         label={t.t('settings.maxConcurrent')}
         value={draft.maxConcurrentDownloads}
-        min={1}
-        max={8}
+        min={MAX_CONCURRENT_DOWNLOADS.min}
+        max={MAX_CONCURRENT_DOWNLOADS.max}
         disabled={busy}
         onChange={(v) => onPatch({ maxConcurrentDownloads: v })}
       />
@@ -760,7 +762,7 @@ function AiTab({
             </Button>
           )}
         </div>
-        <p className="mt-1 text-xs text-fg-muted">{t.t('settings.apiKeyHint', { variable: 'OPENAI_API_KEY' })}</p>
+        <p className="mt-1 text-xs text-fg-muted">{t.t('settings.apiKeyHint', { variable: apiKeyEnvVar('openai') })}</p>
         {willClear && (
           <p className="mt-1 text-xs text-warning-fg">{t.t('settings.apiKeyWillClear')}</p>
         )}

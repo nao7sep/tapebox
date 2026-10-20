@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parse } from "@babel/parser";
+import { READ_ATTRIBUTES as RENDERED_READ_ATTRIBUTES } from "../helpers/rendered-keys";
 import { describe, expect, it } from "vitest";
 
 // Interface text comes from the catalogues. This scan fails on words written
@@ -11,12 +12,7 @@ import { describe, expect, it } from "vitest";
 const SOURCE = join(process.cwd(), "src", "renderer");
 
 const READ_ATTRIBUTES = new Set([
-  "title",
-  "aria-label",
-  "aria-description",
-  "placeholder",
-  "alt",
-  "label",
+  ...RENDERED_READ_ATTRIBUTES,
   // The app's own components that put a prop's text on screen or in a read name.
   "caption",
   "closeLabel",

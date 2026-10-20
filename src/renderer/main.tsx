@@ -6,12 +6,12 @@ import { RendererErrorBoundary } from './components/RendererErrorBoundary'
 import { I18nProvider } from './i18n/I18nContext'
 import { useInterfaceLanguage } from './i18n/useInterfaceLanguage'
 import { installWindowActivityState } from './lib/windowActivity'
-import type { TapeBoxApi } from '@shared/bridge'
+import { tapeboxBridge } from '@shared/bridge'
 
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Renderer root element missing')
 
-const bridge = (window as unknown as { tapebox: TapeBoxApi }).tapebox
+const bridge = tapeboxBridge()
 installWindowActivityState(bridge.onWindowActivityChanged, document.documentElement)
 
 // The interface language is known before the first render (main hands it to

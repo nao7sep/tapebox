@@ -68,7 +68,7 @@ try {
     Write-Step "Verifying Electron binary"
     if (-not (Test-Path "node_modules/electron/path.txt")) {
         Write-Host "Electron binary missing; downloading..."
-        Invoke-Native -FilePath "node" -ArgumentList @("node_modules/electron/install.js")
+        Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "prepare:electron")
     }
 
     # Windows locks the packaged executable while it runs, so replacement must
@@ -87,8 +87,8 @@ try {
     # the dev server skips this entirely. Tests are checked separately and are not
     # part of the release build, so they are not gated here.
     Write-Step "Type-checking production sources (node + web)"
-    Invoke-Native -FilePath "node_modules/.bin/tsc.cmd" -ArgumentList @("--noEmit", "-p", "tsconfig.node.json")
-    Invoke-Native -FilePath "node_modules/.bin/tsc.cmd" -ArgumentList @("--noEmit", "-p", "tsconfig.web.json")
+    Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "typecheck:node")
+    Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "typecheck:web")
 
     Write-Step "Building production bundle"
     Invoke-Native -FilePath "node_modules/.bin/electron-vite.cmd" -ArgumentList @("build")

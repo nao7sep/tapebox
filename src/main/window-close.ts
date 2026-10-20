@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { handle } from './ipc/handle'
+import { sendTo } from './ipc/events'
 
 /** Closing the main window ends the app on every platform (window-conventions):
  * the close becomes a quit, whose owner asks about the window's drafts through
@@ -57,7 +58,7 @@ export function settleWindowDrafts(
     signal.addEventListener('abort', goOn)
     contents.once('render-process-gone', goOn)
     contents.once('destroyed', goOn)
-    contents.send('app:quitDraftsRequested', { requestId, ask: showing })
+    sendTo(contents, 'app:quitDraftsRequested', { requestId, ask: showing })
   }).then(async (answer) => {
     if (!answer.dirty || signal.aborted) return true
     return showing ? answer.discard : askStandalone(signal)

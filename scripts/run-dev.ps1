@@ -70,7 +70,7 @@ try {
     Write-Step "Verifying Electron binary"
     if (-not (Test-Path "node_modules/electron/path.txt")) {
         Write-Host "Electron binary missing; downloading..."
-        Invoke-Native -FilePath "node" -ArgumentList @("node_modules/electron/install.js")
+        Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "prepare:electron")
     }
 
     Write-Step "Starting TapeBox in development mode"

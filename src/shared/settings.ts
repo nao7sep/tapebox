@@ -4,6 +4,9 @@ import { multiline, singleLine } from './text-cleanup'
 import { LANGUAGE_PREFERENCES } from './i18n/languages'
 import { isTimeZone, SYSTEM_TIME_ZONE } from './time-zone'
 
+/** How many downloads may run at once; Settings' field takes the same bounds. */
+export const MAX_CONCURRENT_DOWNLOADS = { min: 1, max: 8 } as const
+
 // The per-binary managed-dependency facts (installed/latest versions, last-check
 // time) are NOT config — they are app-recorded facts and live in their own
 // dependencies.json / Dependencies type (see shared/dependencies.ts), per
@@ -100,7 +103,7 @@ export const SettingsObjectSchema = z.object({
   // new value (refused while any download, import, rename or export is writing).
   libraryDir: z.string(),
   autoStartDownloads: z.boolean(),
-  maxConcurrentDownloads: z.number().int().min(1).max(8),
+  maxConcurrentDownloads: z.number().int().min(MAX_CONCURRENT_DOWNLOADS.min).max(MAX_CONCURRENT_DOWNLOADS.max),
 
   // Start playback automatically when a downloaded tape is opened in the player.
   autoplay: z.boolean(),

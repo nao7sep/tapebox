@@ -1,3 +1,5 @@
+import type { BinaryName } from './ipc-contract'
+
 /**
  * The managed-dependency state model (managed-runtime-dependencies-conventions).
  *
@@ -70,6 +72,12 @@ function stateOf(f: DependencyFacts): DependencyState {
 // yt-dlp and ffmpeg are required throughout the download flow; Deno is optional
 // outside the sites whose yt-dlp extractor needs a JavaScript runtime. Missing is
 // therefore warning or informational according to the current scope.
+export const REQUIRED_BINARIES: readonly BinaryName[] = ['yt-dlp', 'ffmpeg']
+
+export function isRequiredBinary(name: BinaryName): boolean {
+  return REQUIRED_BINARIES.includes(name)
+}
+
 function roleOf(state: DependencyState, required: boolean): Role {
   switch (state) {
     case 'not-installed':
@@ -128,7 +136,7 @@ const ROLE_RANK: Record<Role, number> = { none: 0, info: 1, warning: 2, error: 3
 
 /**
  * The single indicator for a whole set takes the worst role present
- * (error > warning > info > none) — invariant I6.
+ * (error > warning > info > none), so the status bar shows the most urgent one.
  */
 export function rollupRole(roles: Role[]): Role {
   return roles.reduce<Role>((worst, r) => (ROLE_RANK[r] > ROLE_RANK[worst] ? r : worst), 'none')

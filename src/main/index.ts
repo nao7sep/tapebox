@@ -34,6 +34,7 @@ import { forceExitProcess } from './force-exit.js'
 import { killOwnedProcessesNow } from './io/spawn.js'
 import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { setAboutRequest } from './menu.js'
+import { sendTo } from './ipc/events.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 import {
   applyLanguagePreference,
@@ -63,7 +64,7 @@ app.on('second-instance', () => {
 setAboutRequest(() => {
   showOrCreateMainWindow()
   const win = mainWindow
-  if (win && !win.isDestroyed()) win.webContents.send('app:showAbout', null)
+  if (win && !win.isDestroyed()) sendTo(win.webContents, 'app:showAbout', null)
 })
 
 // The interface language is known before anything is drawn: Chromium's own

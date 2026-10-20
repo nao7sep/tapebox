@@ -15,6 +15,14 @@ import type { LanguageEnvironment } from './i18n/languages'
  * and from @types/node's web globals in the preload (node) program, so this
  * shared interface type-checks in both.
  */
+/** The name the preload exposes the bridge under on `window`. */
+export const BRIDGE_KEY = 'tapebox'
+
+/** The preload's bridge in a renderer. */
+export function tapeboxBridge(): TapeBoxApi {
+  return (globalThis as unknown as Record<typeof BRIDGE_KEY, TapeBoxApi>)[BRIDGE_KEY]
+}
+
 export interface TapeBoxApi {
   invoke(channel: string, req: unknown): Promise<unknown>
   on(channel: string, listener: (payload: unknown) => void): () => void
