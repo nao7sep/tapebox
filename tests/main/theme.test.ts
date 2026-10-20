@@ -18,8 +18,6 @@ vi.mock('electron', () => ({
   nativeTheme: electron.nativeTheme,
 }))
 
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { applyThemePreference, followOsThemeChanges, systemAppearance, windowBackground } from '@main/theme'
 
 beforeEach(() => {
@@ -62,12 +60,4 @@ describe('theme', () => {
     expect(window.setBackgroundColor).toHaveBeenLastCalledWith(windowBackground(false))
   })
 
-  it("uses globals.css's --color-canvas in each theme so the frame behind the page never flashes", () => {
-    const css = readFileSync(resolve('src/renderer/styles/globals.css'), 'utf8')
-    const light = css.slice(css.indexOf('@theme {\n  /* The window'))
-    const dark = css.slice(css.indexOf('@media (prefers-color-scheme: dark) {'))
-    const canvas = (block: string) => block.match(/--color-canvas:\s*(#[0-9a-f]{6});/i)?.[1]?.toLowerCase()
-    expect(windowBackground(false)).toBe(canvas(light))
-    expect(windowBackground(true)).toBe(canvas(dark))
-  })
 })

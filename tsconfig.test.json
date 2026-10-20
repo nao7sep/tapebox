@@ -3,21 +3,9 @@
   // code, so this config intentionally carries BOTH environments. Per-environment
   // isolation is enforced by tsconfig.node.json / tsconfig.web.json against the
   // shipped source; this config only typechecks the test files.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true,
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true,
-    "isolatedModules": true,
     // The records worker imports its sibling by its .ts name, so Node can run
     // the source as it is under the tests (src/main/io/records-worker.ts).
     "allowImportingTsExtensions": true,
@@ -30,5 +18,5 @@
     }
   },
   "include": [
-    "src/main/app-version.d.ts","tests/**/*.ts", "tests/**/*.tsx"]
+    "src/main/app-version.d.ts", "src/main/raw-import.d.ts","tests/**/*.ts", "tests/**/*.tsx"]
 }

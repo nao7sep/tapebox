@@ -1,5 +1,7 @@
 import { BrowserWindow, nativeTheme } from 'electron'
 import type { ThemePreference } from '@shared/settings'
+import { themeTokens } from '@shared/theme-tokens'
+import globalsCss from '../renderer/styles/globals.css?raw'
 
 // Electron's nativeTheme.themeSource is TapeBox's one theme authority (app-chrome
 // conventions, Theme): it paints the native title bar, menus, and dialogs, and it
@@ -7,13 +9,13 @@ import type { ThemePreference } from '@shared/settings'
 // dark block and the plain message dialog follow. No renderer resolves System
 // itself.
 
-// globals.css's --color-canvas in each theme, so the frames before a page paints
-// and the backing exposed while resizing already match it.
-const LIGHT_BACKGROUND = '#ffffff'
-const DARK_BACKGROUND = '#09090b'
+/** The renderer's colour tokens, for surfaces drawn outside its stylesheet. */
+export const THEME_TOKENS = themeTokens(globalsCss)
 
+// The canvas token in each theme, so the frames before a page paints and the
+// backing exposed while resizing already match it.
 export function windowBackground(dark: boolean = nativeTheme.shouldUseDarkColors): string {
-  return dark ? DARK_BACKGROUND : LIGHT_BACKGROUND
+  return THEME_TOKENS[dark ? 'dark' : 'light']['--color-canvas']!
 }
 
 function syncWindowBackgrounds(): void {

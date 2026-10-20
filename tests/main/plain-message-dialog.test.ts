@@ -56,3 +56,26 @@ describe('plain message dialog', () => {
     expect(style).toMatch(/\.button\{max-width:100%;overflow-wrap:anywhere/)
   })
 })
+
+// The dialog is drawn outside the renderer's stylesheet, so it declares the
+// renderer's own colour tokens in each theme rather than a copy of their values.
+describe('the message dialog palette', () => {
+  it('paints with the renderer\'s tokens in each theme', async () => {
+    const { THEME_TOKENS } = await import('@main/theme')
+    const html = renderPlainMessageDialogHtml({ language: 'en', title: 'T', message: 'M', closeLabel: 'OK' })
+    const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
+    const declared = (theme: 'light' | 'dark') => {
+      const block = theme === 'light' ? style.slice(0, style.indexOf('@media')) : style.slice(style.indexOf('@media'))
+      return Object.fromEntries([...block.matchAll(/(--color-[\w-]+):([^;}]+)/g)].map((match) => [match[1], match[2]]))
+    }
+    for (const theme of ['light', 'dark'] as const) {
+      const tokens = declared(theme)
+      expect(Object.keys(tokens).length).toBeGreaterThan(0)
+      for (const [name, value] of Object.entries(tokens)) expect(value, `${theme} ${name}`).toBe(THEME_TOKENS[theme][name])
+    }
+    const used = new Set([...style.matchAll(/var\((--color-[\w-]+)\)/g)].map((match) => match[1]))
+    expect([...used].every((name) => name! in declared('light'))).toBe(true)
+    // No colour is written anywhere but in the token declarations.
+    expect(style.replace(/--color-[\w-]+:[^;}]+/g, '')).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+  })
+})

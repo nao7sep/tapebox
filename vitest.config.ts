@@ -1,5 +1,6 @@
 import { configDefaults, defineConfig } from 'vitest/config'
 import { resolve } from 'node:path'
+import { aliasMap } from './aliases.config'
 
 import { readFileSync } from 'node:fs';
 
@@ -8,14 +9,9 @@ import { readFileSync } from 'node:fs';
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
 // Tests live under tests/, mirroring the src/ layout, so src/ stays pure shipped
-// code and the production typecheck (tsc over src/**) never sees test files. The
-// alias map mirrors electron.vite.config.ts / tsconfig.json so tests import
-// modules by the same @-aliases the app uses.
-const alias = {
-  '@shared': resolve('src/shared'),
-  '@main': resolve('src/main'),
-  '@renderer': resolve('src/renderer'),
-}
+// code and the production typecheck (tsc over src/**) never sees test files.
+// Tests import modules by every alias the app uses.
+const alias = aliasMap()
 
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
@@ -32,6 +28,9 @@ export default defineConfig({
     include: ['tests/**/*.test.{ts,tsx}'],
     // The rendered-key gate watches every test that mounts the interface.
     setupFiles: ['tests/setup/rendered-keys.ts'],
+    // Main reads the renderer's colour tokens from globals.css as text (`?raw`);
+    // Vitest blanks unprocessed stylesheets unless they are included here.
+    css: { include: [/globals\.css/] },
     // tests/live runs the real yt-dlp, ffmpeg, and OpenAI; only
     // vitest.live.config.ts, run by npm run test:full, includes it.
     exclude: [...configDefaults.exclude, 'tests/live/**'],

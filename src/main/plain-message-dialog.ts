@@ -1,5 +1,5 @@
 import { BrowserWindow } from 'electron'
-import { windowBackground } from './theme'
+import { THEME_TOKENS, windowBackground } from './theme'
 import { log } from './io/logger'
 import { describeError } from '@shared/error'
 
@@ -105,15 +105,27 @@ export async function showPlainMessageDialog(options: PlainMessageDialogOptions)
   })
 }
 
+// The renderer's tokens the dialog paints with, in each theme (THEME_TOKENS).
+const DIALOG_TOKENS = [
+  '--color-canvas', '--color-fg-strong', '--color-fg-muted', '--color-fg-emphasis', '--color-control-line',
+  '--color-raised', '--color-raised-hover', '--color-focus', '--color-danger-fill', '--color-danger-fill-hover',
+  '--color-on-danger',
+] as const
+
+function tokenDeclarations(theme: 'light' | 'dark'): string {
+  return DIALOG_TOKENS.map((name) => `${name}:${THEME_TOKENS[theme][name]}`).join(';')
+}
+
 export function renderPlainMessageDialogHtml(options: PlainMessageDialogOptions): string {
   return `<!doctype html><html lang="${escapeHtml(options.language)}"><head><meta charset="utf-8"><style>
-    :root{color-scheme:light;font:14px/1.5 system-ui,-apple-system,sans-serif;background:#ffffff;color:#09090b}
+    :root{color-scheme:light;${tokenDeclarations('light')}}
+    @media (prefers-color-scheme:dark){:root{color-scheme:dark;${tokenDeclarations('dark')}}}
+    :root{font:14px/1.5 system-ui,-apple-system,sans-serif;background:var(--color-canvas);color:var(--color-fg-strong)}
     *{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}.dialog{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
     .header{padding:24px 24px 12px}.body{min-height:0;overflow:auto;padding:0 24px;display:flex;flex-direction:column;gap:12px}
-    h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:#52525b}
-    .actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding:12px 24px 24px}.button{max-width:100%;overflow-wrap:anywhere;color:#18181b;border:1px solid #8a8a93;border-radius:6px;padding:7px 16px;background:#efeff1;font:inherit}.button:hover,.button:focus{background:#e4e4e7;outline:2px solid #52525b;outline-offset:2px}
-    .button.danger{color:#ffffff;border-color:#dc2626;background:#dc2626;font-weight:500}.button.danger:hover,.button.danger:focus{background:#b91c1c}
-    @media (prefers-color-scheme:dark){:root{color-scheme:dark;background:#09090b;color:#f4f4f5}.detail{color:#a1a1aa}.button{color:#f4f4f5;border-color:#3f3f46;background:#27272a}.button:hover,.button:focus{background:#3f3f46;outline-color:#a1a1aa}.button.danger{color:#ffffff;border-color:#dc2626;background:#dc2626}.button.danger:hover,.button.danger:focus{background:#b91c1c}}
+    h1{font-size:18px;line-height:1.3;margin:0}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.detail{color:var(--color-fg-muted)}
+    .actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding:12px 24px 24px}.button{max-width:100%;overflow-wrap:anywhere;color:var(--color-fg-emphasis);border:1px solid var(--color-control-line);border-radius:6px;padding:7px 16px;background:var(--color-raised);font:inherit}.button:hover,.button:focus{background:var(--color-raised-hover);outline:2px solid var(--color-focus);outline-offset:2px}
+    .button.danger{color:var(--color-on-danger);border-color:var(--color-danger-fill);background:var(--color-danger-fill);font-weight:500}.button.danger:hover,.button.danger:focus{background:var(--color-danger-fill-hover)}
   </style></head><body><main class="dialog"><header class="header" id="dialog-header"><h1>${escapeHtml(options.title)}</h1></header><section class="body" id="dialog-body"><p>${escapeHtml(options.message)}</p>${options.detail ? `<p class="detail">${escapeHtml(options.detail)}</p>` : ''}</section><footer class="actions" id="dialog-footer"><button id="close" class="button" type="button" onclick="location.href='${CLOSE_URL}'">${escapeHtml(options.closeLabel)}</button>${(options.actions ?? []).map(renderAction).join('')}</footer></main></body></html>`
 }
 
