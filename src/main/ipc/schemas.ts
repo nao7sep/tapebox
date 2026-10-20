@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { IpcCalls } from '@shared/ipc-contract'
+import { binaryNames, type IpcCalls } from '@shared/ipc-contract'
 import { SettingsSchema } from '@shared/settings'
 import { LayoutSchema } from '@shared/layout'
 import { RECORD_KINDS, RECORD_LEVEL_FILTERS } from '@shared/records'
@@ -27,7 +27,7 @@ import { RECORD_KINDS, RECORD_LEVEL_FILTERS } from '@shared/records'
 // BinaryName mirrored as a runtime enum. The satisfies clause ties it back to the
 // IpcCalls['binaries:update'] req type, so a change to BinaryName not reflected here
 // fails to compile.
-const BinaryNameSchema = z.enum(['yt-dlp', 'ffmpeg', 'deno'])
+const BinaryNameSchema = z.enum(binaryNames)
 
 const RecordKindSchema = z.enum(RECORD_KINDS)
 

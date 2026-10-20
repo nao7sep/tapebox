@@ -157,7 +157,9 @@ export type IpcCalls = {
   'records:sources':       { req: undefined;                         res: RecordSources }
 }
 
-export type BinaryName = 'yt-dlp' | 'ffmpeg' | 'deno'
+/** The managed tools, in the order Tools lists them. */
+export const binaryNames = ['yt-dlp', 'ffmpeg', 'deno'] as const
+export type BinaryName = (typeof binaryNames)[number]
 
 export type BinaryUpdateResult =
   | { outcome: 'installed'; operationId: string; status: BinaryStatus }

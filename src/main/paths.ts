@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { chmod, mkdir, readdir, rm, stat } from 'node:fs/promises'
+import type { BinaryName } from '@shared/ipc-contract'
 
 /**
  * All TapeBox app state lives under ~/.tapebox by convention — this is our own
@@ -104,7 +105,7 @@ export const paths = {
   get records()       { return join(storageRoot(), 'records.sqlite3') },
 }
 
-export function binaryPath(name: 'yt-dlp' | 'ffmpeg' | 'deno', platform: NodeJS.Platform = process.platform): string {
+export function binaryPath(name: BinaryName, platform: NodeJS.Platform = process.platform): string {
   const ext = platform === 'win32' ? '.exe' : ''
   return join(paths.bin, `${name}${ext}`)
 }

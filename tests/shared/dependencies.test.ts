@@ -6,7 +6,7 @@ import {
   launchCheckDue,
 } from '@shared/dependencies'
 
-const names = ['yt-dlp', 'ffmpeg', 'deno'] as const
+import { binaryNames as names } from '@shared/ipc-contract'
 
 describe('the dependencies (managed-facts) store', () => {
   it('defaults every managed binary to never-checked', () => {

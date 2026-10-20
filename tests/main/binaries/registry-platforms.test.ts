@@ -63,7 +63,6 @@ describe('yt-dlp build per platform', () => {
 describe('Deno build per platform and architecture', () => {
   it.each([
     ['darwin', 'arm64', 'deno-aarch64-apple-darwin.zip', 'deno'],
-    ['darwin', 'x64', 'deno-x86_64-apple-darwin.zip', 'deno'],
     ['win32', 'x64', 'deno-x86_64-pc-windows-msvc.zip', 'deno.exe'],
     ['linux', 'x64', 'deno-x86_64-unknown-linux-gnu.zip', 'deno'],
     ['linux', 'arm64', 'deno-aarch64-unknown-linux-gnu.zip', 'deno'],
@@ -78,10 +77,14 @@ describe('Deno build per platform and architecture', () => {
     })
   })
 
-  it('refuses a platform and architecture Deno publishes no build for', async () => {
-    const specs = await registryOn('win32', 'arm64')
+  it.each([
+    ['win32', 'arm64'],
+    // macOS is Apple Silicon only, as for ffmpeg, though Deno publishes an Intel build.
+    ['darwin', 'x64'],
+  ] as const)('refuses %s %s as unsupported', async (platform, arch) => {
+    const specs = await registryOn(platform, arch)
     fetchLatestRelease.mockResolvedValue({ tag_name: 'v2.9.7', assets: DENO_ASSETS.map(asset) })
-    await expect(specs.deno.resolveLatest()).rejects.toThrow('Unsupported platform/arch for deno: win32/arm64')
+    await expect(specs.deno.resolveLatest()).rejects.toThrow(`Unsupported platform/arch for deno: ${platform}/${arch}`)
   })
 })
 

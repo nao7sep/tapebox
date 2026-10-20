@@ -118,12 +118,13 @@ const ytDlpSpec: BinarySpec = {
 // yt-dlp's external JavaScript runtime: yt-dlp discovers it on PATH (see
 // ytdlp.ts, which adds ~/.tapebox/bin) and uses it to run player JS / solve
 // challenges on sites that need it. denoland publishes a per-asset
-// `<asset>.sha256sum` next to each zip, verified before install (see checksum.ts).
+// `<asset>.sha256sum` next to each zip, verified before install (integrity.ts).
+// macOS is arm64-only, as for ffmpeg: TapeBox ships Apple Silicon builds, so an
+// Intel Mac is unsupported rather than given an x86_64 Deno.
 function denoAssetName(): string {
   const p = process.platform
   const a = process.arch
   if (p === 'darwin' && a === 'arm64') return 'deno-aarch64-apple-darwin.zip'
-  if (p === 'darwin' && a === 'x64')   return 'deno-x86_64-apple-darwin.zip'
   if (p === 'win32'  && a === 'x64')   return 'deno-x86_64-pc-windows-msvc.zip'
   if (p === 'linux'  && a === 'x64')   return 'deno-x86_64-unknown-linux-gnu.zip'
   if (p === 'linux'  && a === 'arm64') return 'deno-aarch64-unknown-linux-gnu.zip'
@@ -289,4 +290,4 @@ export const binarySpecs: Record<BinaryName, BinarySpec> = {
   deno: denoSpec,
 }
 
-export const binaryNames: readonly BinaryName[] = ['yt-dlp', 'ffmpeg', 'deno']
+export { binaryNames } from '@shared/ipc-contract'
