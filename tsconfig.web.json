@@ -5,23 +5,11 @@
   // broken in the sandboxed renderer at runtime. Preload is checked by
   // tsconfig.node.json, not here, precisely so its `electron` import can't drag
   // @types/node back into this program.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
     "outDir": "./out/tsbuild-web",
-    "noEmit": true,
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true,
-    "isolatedModules": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],
     "paths": {

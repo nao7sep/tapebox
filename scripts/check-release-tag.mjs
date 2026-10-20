@@ -1,3 +1,6 @@
+// Fails when a pushed release tag is not `v` + package.json's version.
+// Run by `npm run check:release-tag` in the release workflow; outside a tag push
+// it does nothing.
 import { readFile } from 'node:fs/promises'
 
 const packageJson = JSON.parse(

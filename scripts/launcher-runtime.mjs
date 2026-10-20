@@ -1,3 +1,8 @@
+// The launchers' process helper (scripts/*.command, scripts/*.ps1): one TapeBox
+// runtime per checkout. Usage: node launcher-runtime.mjs <command> [args], where
+// the command is claim <token>, is-owner <token>, release-if-owner <token>, stop,
+// stop-if-owner <token>, check-endpoint <host> <port>, wait-http <url> [ms] or
+// wait-process <executable> [ms].
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, unlink, writeFile } from "node:fs/promises";

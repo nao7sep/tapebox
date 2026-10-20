@@ -1,3 +1,6 @@
+// Checks a packaged build: app.asar holds the built app and its runtime
+// dependencies and nothing else, and the extra resources sit beside it.
+// Run by `npm run check:package`, which `npm run dist` calls after packaging.
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { listPackage } from '@electron/asar'

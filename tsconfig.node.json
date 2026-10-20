@@ -6,22 +6,10 @@
   // transitively pull in @types/node — which would otherwise leak Node globals
   // back into the renderer program. The `File` it receives across the bridge is
   // available as one of @types/node's web globals.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
     "outDir": "./out/tsbuild-node",
-    "noEmit": true,
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true,
-    "isolatedModules": true,
     // The records worker imports its sibling by its .ts name, so Node can run
     // the source as it is under the tests (src/main/io/records-worker.ts).
     "allowImportingTsExtensions": true,

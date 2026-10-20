@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
+import { aliasMap } from './aliases.config'
 
 /**
  * Electron-vite config for an ESM main process.
@@ -19,25 +20,25 @@ import { resolve } from 'node:path'
 // so an unpackaged run reported Electron's version as the app's.
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
+// The main process's worker threads: the records reader and writer, and the backups.
+const MAIN_WORKERS = [
+  'src/main/io/records-worker.ts',
+  'src/main/io/records-write-worker.ts',
+  'src/main/store/backup-worker.ts',
+]
+
 export default defineConfig({
   main: {
     define: { __APP_VERSION__: JSON.stringify(version) },
     plugins: [externalizeDepsPlugin()],
-    resolve: {
-      alias: {
-        '@shared': resolve('src/shared'),
-        '@main': resolve('src/main'),
-      },
-    },
+    resolve: { alias: aliasMap('@shared', '@main') },
     build: {
       rollupOptions: {
-        // The records reader runs on its own thread (io/records-read.ts), from
-        // its own entry beside index.js.
+        // Each worker thread runs from its own entry beside index.js, named after
+        // its source file, which is the name the code that starts it uses.
         input: {
           index: resolve('src/main/index.ts'),
-          'records-worker': resolve('src/main/io/records-worker.ts'),
-          'records-write-worker': resolve('src/main/io/records-write-worker.ts'),
-          'backup-worker': resolve('src/main/store/backup-worker.ts'),
+          ...Object.fromEntries(MAIN_WORKERS.map((source) => [basename(source, '.ts'), resolve(source)])),
         },
         output: { format: 'es', entryFileNames: '[name].js' },
       },
@@ -45,11 +46,7 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
-    resolve: {
-      alias: {
-        '@shared': resolve('src/shared'),
-      },
-    },
+    resolve: { alias: aliasMap('@shared') },
     build: {
       rollupOptions: {
         output: { format: 'cjs' },
@@ -63,12 +60,7 @@ export default defineConfig({
       port: 27143,
       strictPort: true,
     },
-    resolve: {
-      alias: {
-        '@shared': resolve('src/shared'),
-        '@renderer': resolve('src/renderer'),
-      },
-    },
+    resolve: { alias: aliasMap('@shared', '@renderer') },
     root: 'src/renderer',
     build: {
       minify: true,
