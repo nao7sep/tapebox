@@ -76,6 +76,38 @@ afterEach(() => {
 })
 
 describe('SettingsModal', () => {
+  it.each(['libraryDir', 'defaultExportDir'] as const)('Browse follows the current %s draft and preserves it on cancel', async (key) => {
+    saved = { ...saved, [key]: '/saved' }
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const field = key === 'libraryDir'
+      ? document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
+      : [...document.querySelectorAll<HTMLInputElement>('input')].find((input) => input.value === '/saved')!
+    const choose = field.parentElement!.querySelector('button')!
+    await type(field, '~/draft')
+    ipcInvoke.mockResolvedValueOnce('/selected/$LITERAL%name% ')
+    await act(async () => choose.click())
+    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: '~/draft' }))
+    expect(field.value).toBe('/selected/$LITERAL%name% ')
+    ipcInvoke.mockResolvedValueOnce(null)
+    await act(async () => choose.click())
+    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: '/selected/$LITERAL%name% ' }))
+    expect(field.value).toBe('/selected/$LITERAL%name% ')
+    expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'settings:update')).toBe(false)
+  })
+
+  it('Browse uses the effective library default after clearing a saved folder', async () => {
+    saved = { ...saved, libraryDir: '/saved' }
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
+    await type(field, '')
+    ipcInvoke.mockResolvedValueOnce(null)
+    await act(async () => field.parentElement!.querySelector('button')!.click())
+    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: '/home/me/.tapebox/library' }))
+    expect(field.value).toBe('')
+  })
+
   it('keeps selected-tab hover and its existing keyboard ring distinct', async () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()

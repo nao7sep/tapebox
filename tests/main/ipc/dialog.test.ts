@@ -1,3 +1,6 @@
+import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { tmpdir, homedir } from 'node:os'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // A file or folder picker opens above the window that asked for it, not whichever
@@ -42,5 +45,35 @@ describe('pickers', () => {
     await handlers.get('dialog:pickDirectory')!({ title: 'Choose' }, { sender: {} })
     expect(electron.showOpenDialog).toHaveBeenCalledWith(expect.objectContaining({ title: 'Choose' }))
     expect(electron.showOpenDialog.mock.lastCall).toHaveLength(1)
+  })
+})
+
+describe('directory picker locations', () => {
+  it('resolves authored tilde input with the Settings rule', async () => {
+    await handlers.get('dialog:pickDirectory')!({ initialDirectory: '~' }, { sender: {} })
+    expect(electron.showOpenDialog).toHaveBeenCalledWith(records, expect.objectContaining({ defaultPath: homedir() }))
+  })
+
+  it('uses an existing ancestor and preserves the native selection literally', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'tapebox-picker-'))
+    try {
+      const literal = join(base, '$NOT_EXPANDED%literal% ')
+      await mkdir(literal)
+      electron.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [literal] })
+      expect(await handlers.get('dialog:pickDirectory')!({ initialDirectory: join(literal, 'missing', 'child') }, { sender: {} })).toBe(literal)
+      expect(electron.showOpenDialog).toHaveBeenLastCalledWith(records, expect.objectContaining({ defaultPath: literal }))
+    } finally {
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+
+  it.each([undefined, '', 'relative/path'])('leaves an unusable or absent hint to the platform: %s', async (initialDirectory) => {
+    expect(await handlers.get('dialog:pickDirectory')!({ initialDirectory }, { sender: {} })).toBeNull()
+    expect(electron.showOpenDialog.mock.lastCall![1]).not.toHaveProperty('defaultPath')
+  })
+
+  it('keeps sidecar import generic', async () => {
+    expect(await handlers.get('dialog:pickFiles')!({}, { sender: {} })).toEqual([])
+    expect(electron.showOpenDialog.mock.lastCall![1]).not.toHaveProperty('defaultPath')
   })
 })

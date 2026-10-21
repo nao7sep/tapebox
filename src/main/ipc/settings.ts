@@ -1,8 +1,7 @@
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { handle } from './handle'
 import * as config from '@main/store/config'
-import { FolderSetSchema } from '@main/store/settings-sets'
+import { normalizeUserDir } from '@main/core/user-directory'
 import * as apiKeys from '@main/services/api-keys'
 import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
@@ -21,7 +20,6 @@ import { describeError } from '@shared/error'
 import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import { settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
-import { UserFacingError } from '@main/user-facing-error'
 import { withLibraryMove } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { message } from '@shared/i18n/translate'
@@ -45,34 +43,13 @@ function trackedLibraryFiles(): string[] {
 
 /**
  * Resolve a persisted libraryDir value to its effective absolute path, the same way
- * getLibraryDir() does (blank/whitespace → the default library folder). Used to
+ * getLibraryDir() does (blank → the default library folder). Used to
  * compare the OLD effective dir against the NEW one a patch would produce, so the
  * move triggers on any real change — including custom→default and default→custom —
  * and no-ops when they resolve equal.
  */
 function effectiveLibraryDir(libraryDir: string): string {
-  return libraryDir.trim() || paths.library
-}
-
-/**
- * Normalize a user-typed folder setting (libraryDir, defaultExportDir) at the
- * boundary, before it is stored or used: trimmed, and a leading ~ / ~/ / ~\
- * expanded to the home directory. A value its set schema refuses is reported
- * with the folder's own message.
- */
-function normalizeUserDir(
-  notAbsolute: 'errors.libraryFolderNotAbsolute' | 'errors.exportFolderNotAbsolute',
-  value: string,
-): string {
-  let expanded = value.trim()
-  if (expanded === '~') expanded = homedir()
-  else if (expanded.startsWith('~/') || expanded.startsWith('~\\')) {
-    expanded = join(homedir(), expanded.slice(2))
-  }
-  if (!FolderSetSchema.safeParse(expanded).success) {
-    throw new UserFacingError('invalid', message(notAbsolute))
-  }
-  return expanded
+  return libraryDir || paths.library
 }
 
 /**

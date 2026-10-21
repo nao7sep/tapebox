@@ -46,3 +46,26 @@ describe('export draft window protection', () => {
     expect(windowCloseState().dirty).toBe(true)
   })
 })
+
+describe('export folder picker context', () => {
+  it('uses each selection as the next hint and keeps it on cancel', async () => {
+    ipcInvoke.mockResolvedValueOnce('/export/$LITERAL%name% ')
+    await act(async () => button('Choose').click())
+    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: undefined }))
+    ipcInvoke.mockResolvedValueOnce(null)
+    await act(async () => button('Choose').click())
+    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: '/export/$LITERAL%name% ' }))
+    expect(document.querySelector('code')!.textContent).toBe('/export/$LITERAL%name% ')
+  })
+
+  it('uses the saved default first, then the per-export draft', async () => {
+    await act(async () => root.unmount())
+    useSettingsStore.setState({ settings: { ...defaultSettings(), defaultExportDir: '/saved/default ' } })
+    root = createRoot(document.body.appendChild(document.createElement('div')))
+    await act(async () => root.render(createElement(ExportModal, { tape, videoRef: { current: null }, onClose: () => {} })))
+    await act(async () => button('Choose').click())
+    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: '/saved/default ' }))
+    await act(async () => button('Choose').click())
+    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: '/export' }))
+  })
+})

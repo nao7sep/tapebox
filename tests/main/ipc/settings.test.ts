@@ -158,6 +158,12 @@ describe('settings:update — normalizeUserDir at the boundary', () => {
     expect(stored.libraryDir).toBe('')
   })
 
+  it('keeps a native absolute folder with expression characters and trailing spaces literal', async () => {
+    const directory = join(homedir(), '$NOT_EXPANDED%literal% ')
+    await update({ defaultExportDir: directory, libraryDir: directory })
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ defaultExportDir: directory, libraryDir: directory }))
+  })
+
   it('passes an already-absolute typed folder through unchanged', async () => {
     await update({ libraryDir: '/data/custom-library' })
     const stored = updateSettings.mock.calls[0]![0] as Partial<Settings>

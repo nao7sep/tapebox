@@ -25,7 +25,7 @@ type Props = { tape: Tape; videoRef: RefObject<HTMLVideoElement | null>; onClose
  */
 export function ExportModal({ tape, videoRef, onClose }: Props) {
   const settings = useSettingsStore((s) => s.settings)
-  const defaultDir = settings?.defaultExportDir?.trim() || null
+  const defaultDir = settings?.defaultExportDir || null
 
   // Default to the tape's current on-disk name (filename without the extension), so
   // a plain export keeps that name; editing it renames only the exported copy.
@@ -50,7 +50,7 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
   async function pickDir() {
     setError(null)
     try {
-      const d = await ipcInvoke('dialog:pickDirectory', { title: t.t('export.pickerTitle') })
+      const d = await ipcInvoke('dialog:pickDirectory', { title: t.t('export.pickerTitle'), initialDirectory: dir ?? undefined })
       if (d) setDir(d)
     } catch (err) {
       setError(presentFailure(err, message('common.folderPickerFailed'), 'export folder picker failed'))

@@ -121,7 +121,7 @@ export const ipcRequestSchemas = {
   'scan:cancel':           z.object({ sessionId: z.string() }),
 
   // ── Native dialogs ──────────────────────────────────────────────────────
-  'dialog:pickDirectory':  z.object({ title: z.string().optional() }),
+  'dialog:pickDirectory':  z.object({ title: z.string().optional(), initialDirectory: z.string().optional() }),
   'dialog:pickFiles':      z.object({ title: z.string().optional() }),
 
   // ── Media ──────────────────────────────────────────────────────────────

@@ -127,14 +127,13 @@ export function getSettings(): Settings {
 }
 
 /**
- * The resolved library directory every main consumer must use. An empty (or
- * whitespace-only) libraryDir means "use the default", which resolves to
- * paths.library; a set value is a custom folder used as-is. Routing all consumers
+ * The resolved library directory every main consumer must use. An empty
+ * libraryDir means "use the default", which resolves to paths.library; a set value is a custom folder used as-is. Routing all consumers
  * through this is what keeps a cleared Settings field from ever producing a
  * cwd-relative path (join('', file)) — see storage-path-conventions.
  */
 export function getLibraryDir(): string {
-  return getSettings().libraryDir.trim() || paths.library
+  return getSettings().libraryDir || paths.library
 }
 
 // One serialized owner applies the cleaned patch to the cached settings and

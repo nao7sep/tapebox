@@ -129,7 +129,7 @@ export type IpcCalls = {
   'scan:cancel':           { req: { sessionId: string };             res: void }
 
   // ── Native dialogs ───────────────────────────────────────────────────────
-  'dialog:pickDirectory':  { req: { title?: string };                res: string | null }
+  'dialog:pickDirectory':  { req: { title?: string; initialDirectory?: string }; res: string | null }
   'dialog:pickFiles':      { req: { title?: string };                res: string[] }
 
   // ── Media (loopback playback server) ─────────────────────────────────────

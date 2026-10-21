@@ -8,6 +8,11 @@ import { ipcRequestSchemas } from '@main/ipc/schemas'
  * type; these tests pin the runtime behavior — that bad input is actually rejected.
  */
 describe('ipcRequestSchemas — validation at the IPC trust boundary', () => {
+  it('carries directory context and rejects non-string hints', () => {
+    expect(ipcRequestSchemas['dialog:pickDirectory'].parse({ initialDirectory: '~/Movies' })).toEqual({ initialDirectory: '~/Movies' })
+    expect(ipcRequestSchemas['dialog:pickDirectory'].safeParse({ initialDirectory: 12 }).success).toBe(false)
+  })
+
   it('accepts a well-formed request', () => {
     expect(ipcRequestSchemas['downloads:add'].safeParse({ url: 'https://x' }).success).toBe(true)
   })

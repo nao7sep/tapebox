@@ -158,7 +158,7 @@ export function SettingsModal({ onClose }: Props) {
   // while a whitespace-only tweak that still resolves to the same folder does not.
   function libraryDirChanged(): boolean {
     if (!original || !draft) return false
-    const effective = (v: string) => v.trim() || defaultLibraryDir
+    const effective = (v: string) => v.trim() ? v : defaultLibraryDir
     return effective(original.libraryDir) !== effective(draft.libraryDir)
   }
 
@@ -493,7 +493,7 @@ function GeneralTab({
   async function chooseExportDir() {
     setPickerError(null)
     try {
-      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickExportFolder') })
+      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickExportFolder'), initialDirectory: draft.defaultExportDir })
       if (dir) onPatch({ defaultExportDir: dir })
     } catch (error) {
       setPickerError(presentFailure(error, message('common.folderPickerFailed'), 'settings export folder picker failed'))
@@ -502,7 +502,7 @@ function GeneralTab({
   async function chooseLibraryDir() {
     setPickerError(null)
     try {
-      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickLibraryFolder') })
+      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickLibraryFolder'), initialDirectory: draft.libraryDir.trim() ? draft.libraryDir : defaultLibraryDir })
       if (dir) onPatch({ libraryDir: dir })
     } catch (error) {
       setPickerError(presentFailure(error, message('common.folderPickerFailed'), 'settings library folder picker failed'))
