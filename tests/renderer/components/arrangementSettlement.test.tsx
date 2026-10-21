@@ -3,7 +3,7 @@ import { act, createElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TapeSchema, type Tape } from '@shared/domain'
-import { defaultLayout } from '@shared/layout'
+import { ARCHIVE_SEARCH_BOX_HEIGHT, defaultLayout } from '@shared/layout'
 
 const { ipcInvoke, logError } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), logError: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
@@ -299,6 +299,16 @@ describe.each([
     await act(async () => pending.resolve())
 
     expect(useTapesStore.getState().tapes).toBe(confirmed)
+  })
+})
+
+// The boxes height is clamped against the search box's reserved height, which the
+// search box takes.
+describe('the archive search box', () => {
+  it('takes the height the boxes clamp reserves for it', async () => {
+    await mountTapes(true)
+    const search = document.querySelector<HTMLInputElement>('input')!
+    expect(search.parentElement!.style.height).toBe(`${ARCHIVE_SEARCH_BOX_HEIGHT}px`)
   })
 })
 

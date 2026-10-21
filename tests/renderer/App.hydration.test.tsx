@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TapeSchema, type Box, type Tape } from '@shared/domain'
 import type { BinaryStatus, IpcCalls, IpcEvents } from '@shared/ipc-contract'
-import { defaultLayout } from '@shared/layout'
+import { defaultLayout, HEADER_HEIGHT } from '@shared/layout'
 import { defaultSettings } from '@shared/settings'
 
 const { ipcInvoke, ipcOn, logError } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), ipcOn: vi.fn(), logError: vi.fn() }))
@@ -144,6 +144,13 @@ describe('App hydration and live IPC handoff', () => {
     expect(useTapesStore.getState().tapes).toEqual([downloaded])
     expect(useTapesStore.getState().progress).toEqual({})
     expect(useDownloadLogStore.getState().entries).toEqual({})
+  })
+
+  // The window minimum reserves the header's height, which the header takes.
+  it('gives the header the height the window minimum reserves', async () => {
+    await mount()
+    await vi.waitFor(() => expect(shellMounted()).toBe(true))
+    expect(document.querySelector<HTMLElement>('main > header')!.style.height).toBe(`${HEADER_HEIGHT}px`)
   })
 
   it('replays additions, latest bulk updates, removals and boxes over the initial snapshot', async () => {
