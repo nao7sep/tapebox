@@ -1,3 +1,8 @@
+import { runTapeAction } from '@renderer/lib/runTapeAction'
+import { useBoxActionResultsStore } from '@renderer/store/boxActionResults'
+import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
+import { useSelectionStore } from '@renderer/store/selection'
+import { useArchiveStore } from '@renderer/store/archive'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultLayout } from '@shared/layout'
 import { defaultSettings } from '@shared/settings'
@@ -13,7 +18,7 @@ import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useBinariesStore } from '@renderer/store/binaries'
 import { useRuntimeStore } from '@renderer/store/runtime'
-import { useMediaStore } from '@renderer/store/media'
+import { mediaFileUrl, useMediaStore } from '@renderer/store/media'
 import { useLayoutStore } from '@renderer/store/layout'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
@@ -37,7 +42,7 @@ beforeEach(() => {
   useBoxesStore.setState({ boxes: [] })
   useBinariesStore.setState({ statuses: [] })
   useRuntimeStore.setState({ info: null })
-  useMediaStore.setState({ baseUrl: null })
+  useMediaStore.setState({ baseUrl: null, collectionRevision: 0 })
   useLayoutStore.setState({ layout: null, persistedLayout: null, writeErrors: {} })
   useSettingsStore.setState({ settings: null, writeErrors: {}, saving: {} })
 })
@@ -90,6 +95,69 @@ describe('required renderer hydration', () => {
 })
 
 describe('live sync', () => {
+  it('gives video and poster files distinct URLs on every Open, including returning to an earlier library', () => {
+    const listeners = new Map<string, (payload: unknown) => void>()
+    ipcOn.mockImplementation((channel: string, listener: (payload: unknown) => void) => {
+      listeners.set(channel, listener)
+      return () => listeners.delete(channel)
+    })
+    const sync = startIpcSync()
+    useMediaStore.setState({ baseUrl: 'http://127.0.0.1:1234/token' })
+    const urls = () => ['same name.mp4', 'same name.jpg'].map((name) => mediaFileUrl(useMediaStore.getState(), name))
+    const before = urls()
+    listeners.get('library:opened')!({ tapes: [], boxes: [] })
+    const other = urls()
+    expect(other[0]).not.toBe(before[0])
+    expect(other[1]).not.toBe(before[1])
+    listeners.get('library:opened')!({ tapes: [], boxes: [] })
+    expect(urls()[0]).not.toBe(other[0])
+    expect(urls()[0]).not.toBe(before[0])
+    // An ordinary update in the same collection preserves reusable byte ranges.
+    const current = urls()
+    listeners.get('boxes:changed')!([])
+    expect(urls()).toEqual(current)
+    expect(new URL(urls()[0]!).pathname).toBe('/token/same%20name.mp4')
+    sync.stop()
+  })
+
+  it('replaces the collection during hydration and clears the previous collection view and pending results', async () => {
+    const listeners = new Map<string, (payload: unknown) => void>()
+    ipcOn.mockImplementation((channel: string, listener: (payload: unknown) => void) => {
+      listeners.set(channel, listener)
+      return () => listeners.delete(channel)
+    })
+    const old = tape('SameTapeId', 9)
+    const fresh = tape('SameTapeId', 3)
+    useTapesStore.setState({ tapes: [old], progress: { [old.id]: { phase: 'downloading', percent: 50 } }, stalled: { [old.id]: true } })
+    useSelectionStore.getState().select(old.id)
+    useArchiveStore.getState().selectBox('OldBoxId')
+    useArchiveStore.getState().setQuery('old search')
+    const attempt = useOrderFailuresStore.getState().beginAttempt('inbox', [old])
+    useOrderFailuresStore.getState().setInbox({ key: 'app.librarySaveFailed' })
+    let fail!: (reason: Error) => void
+    const oldAction = runTapeAction(old.id, 'archive', 'archive failed', { key: 'app.librarySaveFailed' }, () => new Promise((_resolve, reject) => { fail = reject }))
+    useBoxActionResultsStore.getState().setResult('create', { key: 'app.librarySaveFailed' })
+    const sync = startIpcSync()
+    const hydration = sync.beginHydration()
+    const boxes = [{ id: 'FreshBoxId', name: 'Fresh', order: 0 }]
+    listeners.get('library:opened')!({ tapes: [fresh], boxes })
+    fail(new Error('old collection result'))
+    expect(await oldAction).toBe('superseded')
+    expect(useBoxActionResultsStore.getState().results).toEqual({})
+    expect(useTapeActionResultsStore.getState().byTape).toEqual({})
+    expect(useSelectionStore.getState().selectedId).toBeNull()
+    expect(useArchiveStore.getState()).toMatchObject({ selectedBoxId: null, query: '' })
+    expect(useTapesStore.getState()).toMatchObject({ tapes: [fresh], progress: {}, stalled: {} })
+    expect(useOrderFailuresStore.getState()).toMatchObject({ inbox: null, pending: {} })
+    expect(useOrderFailuresStore.getState().isCurrentAttempt('inbox', attempt)).toBe(false)
+    const nextAttempt = useOrderFailuresStore.getState().beginAttempt('inbox', [fresh])
+    expect(nextAttempt).not.toBe(attempt)
+    hydration.commit({ tapes: [old], boxes: [], binaries: [], runtime: { platform: 'darwin', arch: 'arm64', version: '1' }, mediaBaseUrl: 'http://127.0.0.1', layout: defaultLayout, settings: defaultSettings() })
+    expect(useTapesStore.getState().tapes).toEqual([fresh])
+    expect(useBoxesStore.getState().boxes).toEqual(boxes)
+    sync.stop()
+  })
+
   it('advances pending baselines only at canonical events, retaining list independence and organization ABA', () => {
     const listeners = new Map<string, (payload: unknown) => void>()
     ipcOn.mockImplementation((channel: string, listener: (payload: unknown) => void) => {

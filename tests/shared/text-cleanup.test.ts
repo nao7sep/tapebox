@@ -44,6 +44,6 @@ describe('truncate', () => {
 
   it('never splits a grapheme', () => {
     expect(truncate('\u{1F600}x', 1)).toEqual({ text: '\u{1F600}', truncated: true })
-    expect(truncate('\u{1F468}‍\u{1F469}‍\u{1F467}x', 1)).toEqual({ text: '\u{1F468}‍\u{1F469}‍\u{1F467}', truncated: true })
+    expect(truncate('\u{1F468}\u200D\u{1F469}\u200D\u{1F467}x', 1)).toEqual({ text: '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}', truncated: true })
   })
 })

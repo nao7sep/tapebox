@@ -4,8 +4,9 @@ import { chmod, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import type { BinaryName } from '@shared/ipc-contract'
 
 /**
- * All TapeBox app state lives under ~/.tapebox by convention — this is our own
- * data only. Electron/Chromium state (cache, cookies, GPU cache, etc.) is left
+ * Machine-local TapeBox files live under ~/.tapebox; the configurable library
+ * holds its media and authoritative collection metadata. Electron/Chromium state
+ * (cache, cookies, GPU cache, etc.) is left
  * in the OS-default userData location and never mixed in here.
  *
  * 'temp' is our own disposable staging for managed-tool installs in progress —
@@ -90,7 +91,8 @@ export const paths = {
   get logs()          { return join(storageRoot(), 'logs') },
   get temp()          { return join(storageRoot(), 'temp') },
   get config()        { return join(storageRoot(), 'config.json') },
-  get catalog()       { return join(storageRoot(), 'catalog.json') },
+  get legacyCatalog() { return join(storageRoot(), 'catalog.json') },
+  get retainedLegacyCatalog() { return join(storageRoot(), 'catalog-before-portable-library.json') },
   get layout()        { return join(storageRoot(), 'layout.json') },
   // Re-derivable managed-dependency facts (latest versions and last-check time),
   // kept apart from config.json so a settings reset never wipes them and their
@@ -103,6 +105,12 @@ export const paths = {
   get backupsDb()     { return join(storageRoot(), 'backups.sqlite3') },
   // Log lines and AI calls (data-lifecycle conventions); see io/records.ts.
   get records()       { return join(storageRoot(), 'records.sqlite3') },
+}
+
+// Separate metadata from flat media bundles, whose sidecars may have any name.
+export const COLLECTION_CATALOG = join('.tapebox', 'catalog.json')
+export function collectionCatalog(libraryDir: string): string {
+  return join(libraryDir, COLLECTION_CATALOG)
 }
 
 export function binaryPath(name: BinaryName, platform: NodeJS.Platform = process.platform): string {

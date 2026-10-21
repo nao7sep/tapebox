@@ -5,7 +5,7 @@ import { normalizeUserDir } from '@main/core/user-directory'
 import * as apiKeys from '@main/services/api-keys'
 import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
-import { paths } from '@main/paths'
+import { paths, collectionCatalog, COLLECTION_CATALOG } from '@main/paths'
 import { reconcileWakeLock } from '@main/power-blocker'
 import { applyThemePreference, systemAppearance } from '@main/theme'
 import { applyLanguagePreference } from '@main/i18n'
@@ -15,24 +15,25 @@ import {
   rollbackLibraryRelocation,
   type RelocatedFile,
 } from '@main/store/library-move'
+import { UserFacingError } from '@main/user-facing-error'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import { settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
-import { withLibraryMove } from '@main/library-writes'
+import { withLibraryClaim, withLibraryMove } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { message } from '@shared/i18n/translate'
 
 /**
- * The flat library files the app owns and tracks, as basenames — every tape's
- * media, its sidecar, and its (optional) thumbnail. This is what a relocation
- * moves: files the app created, never unrelated files the user dropped in the
- * folder. Deduplicated because the same basename can't legitimately repeat, but a
+ * The library-relative files the app tracks: each tape's flat media, sidecar and
+ * optional thumbnail, plus its own metadata directory's catalog. Relocation never
+ * adopts unrelated files the user dropped in the folder. Deduplicated because the
+ * same basename can't legitimately repeat, but a
  * corrupt session could, and a duplicate would make the move's second pass fail.
  */
 function trackedLibraryFiles(): string[] {
-  const names = new Set<string>()
+  const names = new Set<string>([COLLECTION_CATALOG])
   for (const tape of session.getTapes()) {
     if (tape.filename) names.add(tape.filename)
     if (tape.sidecarFilename) names.add(tape.sidecarFilename)
@@ -84,6 +85,8 @@ async function relocateIfLibraryDirChanged(
   const fromDir = config.getLibraryDir()
   const toDir = effectiveLibraryDir(patch.libraryDir!)
 
+  await session.prepareCollection()
+  signal.throwIfAborted()
   const entries = trackedLibraryFiles()
   log.info('relocating library', { from: fromDir, to: toDir, files: entries.length })
   const result = await relocateLibrary(fromDir, toDir, entries, {
@@ -105,7 +108,7 @@ export function registerSettingsHandlers(): void {
   handle('settings:get', async () => config.getSettings())
   // The default library folder, shown as the placeholder when libraryDir is blank.
   handle('settings:defaultLibraryDir', async () => paths.library)
-  handle('settings:update', async (patch) => {
+  handle('settings:update', async ({ libraryAction, ...patch }) => {
     const wasAutostart = config.getSettings().autoStartDownloads
     // Normalize user-typed folder fields at the boundary.
     const normalized: SettingsSets = { ...patch }
@@ -128,10 +131,10 @@ export function registerSettingsHandlers(): void {
     // after. Stop (settings:cancelLibraryMove) or quitting aborts the copy and rolls
     // back every file already published.
     const apply = () => runCancellable(
-      (signal) => applySettingsPatch(normalized, wasAutostart, signal),
+      (signal) => applySettingsPatch(normalized, wasAutostart, signal, libraryAction),
       LIBRARY_MOVE_KEY,
     )
-    if (!movesLibrary(normalized)) return apply()
+    if (!movesLibrary(normalized)) return withLibraryClaim(apply)
     try {
       return await withLibraryMove(apply)
     } finally {
@@ -160,10 +163,24 @@ async function applySettingsPatch(
   normalized: SettingsSets,
   wasAutostart: boolean,
   signal: AbortSignal,
+  libraryAction?: 'open',
 ): Promise<SettingsUpdateResult> {
-  const relocation = await relocateIfLibraryDirChanged(normalized, signal)
+  const switching = movesLibrary(normalized)
+  const toDir = effectiveLibraryDir(normalized.libraryDir ?? config.getSettings().libraryDir)
+  const opening = switching && libraryAction === 'open'
+  // Inspect an explicitly opened collection without quarantine or writes. It is
+  // never a destination for the current collection's media or organization.
+  const opened = opening
+    ? await session.loadSessionFile(collectionCatalog(toDir), { requireExisting: true }).catch((cause: unknown) => {
+      throw new UserFacingError('refused', message('errors.libraryOpenFailed', { path: toDir }), { cause })
+    })
+    : null
+  if (opening) await session.prepareCollection()
+  signal.throwIfAborted()
+  const relocation = opening ? null : await relocateIfLibraryDirChanged(normalized, signal)
   let next: Settings
   try {
+    signal.throwIfAborted()
     next = await config.updateSettings(normalized)
   } catch (saveError) {
     if (relocation) {
@@ -181,6 +198,12 @@ async function applySettingsPatch(
       }
     }
     throw saveError
+  }
+  if (opened) {
+    session.bindSession(collectionCatalog(toDir), opened.session)
+    emit('library:opened', opened.session)
+  } else if (relocation) {
+    session.bindMovedSession(toDir)
   }
   // Settings apply on Save, the theme (app-chrome conventions, Theme) and the
   // language (localization-conventions) included.

@@ -97,7 +97,7 @@ export const ipcRequestSchemas = {
   // ── Settings ──────────────────────────────────────────────────────────────
   'settings:get':          z.undefined(),
   'settings:defaultLibraryDir': z.undefined(),
-  'settings:update':       SettingsSchema,
+  'settings:update':       SettingsSchema.extend({ libraryAction: z.literal('open').optional() }),
   'settings:cancelLibraryMove': z.undefined(),
   'settings:setApiKey':    z.object({ apiKey: z.string() }),
   'settings:clearApiKey':  z.undefined(),

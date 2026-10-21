@@ -5,7 +5,12 @@ import {
   useTapeActionResultsStore,
 } from '@renderer/store/tapeActionResults'
 
-const attempts = new Map<string, number>()
+const attempts = new Map<string, object>()
+
+/** A newly opened collection retires every outstanding command's consequence. */
+export function invalidateTapeActions(): void {
+  attempts.clear()
+}
 
 export type TapeActionOutcome = 'succeeded' | 'failed' | 'superseded'
 
@@ -18,7 +23,7 @@ export async function runTapeAction(
   invoke: () => Promise<unknown>,
 ): Promise<TapeActionOutcome> {
   const attemptKey = `${tapeId}:${action}`
-  const attempt = (attempts.get(attemptKey) ?? 0) + 1
+  const attempt = {}
   attempts.set(attemptKey, attempt)
   const results = useTapeActionResultsStore.getState()
   results.setResult(tapeId, action, null)

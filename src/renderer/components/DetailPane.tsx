@@ -6,7 +6,7 @@ import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
 import { MAX_LOG_ENTRIES, useDownloadLogStore, type LogEntry } from '@renderer/store/downloadLog'
-import { useMediaStore } from '@renderer/store/media'
+import { mediaFileUrl, useMediaStore } from '@renderer/store/media'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
@@ -89,7 +89,6 @@ export function DetailPane({
   const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
   const logEntries = useDownloadLogStore((s) => s.entries[tape.id]) ?? NO_ENTRIES
   const logTrimmed = useDownloadLogStore((s) => s.trimmed[tape.id] === true)
-  const mediaBase = useMediaStore((s) => s.baseUrl)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
   // Persisted chaptersPaneWidth is the drag-set INTENT; the displayed width is
@@ -149,14 +148,10 @@ export function DetailPane({
   // title with a stretch of empty space above it.
   const twoColumnHeader = infoOpen && downloaded && !!description
 
-  const mediaUrl = tape.filename && mediaBase
-    ? `${mediaBase}/${encodeURIComponent(tape.filename)}`
-    : null
+  const mediaUrl = useMediaStore((media) => mediaFileUrl(media, tape.filename))
 
   // Local poster, served from the same loopback media server as the video.
-  const posterSrc = tape.thumbnailFilename && mediaBase
-    ? `${mediaBase}/${encodeURIComponent(tape.thumbnailFilename)}`
-    : undefined
+  const posterSrc = useMediaStore((media) => mediaFileUrl(media, tape.thumbnailFilename)) ?? undefined
 
   // A new source clears any prior playback error (and a fresh load may succeed).
   useEffect(() => { setPlaybackError(null) }, [mediaUrl])

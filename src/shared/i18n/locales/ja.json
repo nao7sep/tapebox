@@ -626,5 +626,8 @@
   "records.arguments": "引数",
   "records.output": "出力",
   "records.errorOutput": "エラー出力",
-  "records.scan": "スキャン"
+  "records.scan": "スキャン",
+  "settings.openLibrary": "既存のライブラリを開く",
+  "settings.openLibraryHint": "保存すると、選択したライブラリのテープとボックスを開きます。現在のライブラリは元のフォルダに残ります。",
+  "errors.libraryOpenFailed": "{path} のライブラリを開けませんでした。既存の TapeBox ライブラリがあるフォルダを選択してください。"
 }

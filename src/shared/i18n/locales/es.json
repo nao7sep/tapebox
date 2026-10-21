@@ -684,5 +684,8 @@
   "records.arguments": "Argumentos",
   "records.output": "Salida",
   "records.errorOutput": "Salida de error",
-  "records.scan": "Escaneo"
+  "records.scan": "Escaneo",
+  "settings.openLibrary": "Abrir una biblioteca existente",
+  "settings.openLibraryHint": "Al guardar, se abre la biblioteca seleccionada con sus cintas y cajas. La biblioteca actual permanece en su carpeta.",
+  "errors.libraryOpenFailed": "No se pudo abrir la biblioteca en {path}. Elige una carpeta que contenga una biblioteca de TapeBox existente."
 }

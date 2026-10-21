@@ -54,6 +54,18 @@ async function type(value: string) {
 }
 
 describe('box draft at quit', () => {
+  it('does not restore an old rename draft or result after another collection opens', async () => {
+    let fail!: (reason: Error) => void
+    bridge.invoke.mockImplementation(() => new Promise((_resolve, reject) => { fail = reject }))
+    await type('Old collection draft')
+    await act(async () => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    await act(async () => useBoxesStore.setState({ collection: {}, boxes: [{ id: 'box1', name: 'New collection', order: 0 }], editingId: null, draftName: '', pendingRenames: 0 }))
+    await act(async () => fail(new Error('old rename failed')))
+    expect(useBoxesStore.getState()).toMatchObject({ editingId: null, draftName: '', pendingRenames: 0 })
+    expect(useBoxActionResultsStore.getState().results).toEqual({})
+    expect(document.body.textContent).not.toContain('The box could not be renamed.')
+  })
+
   it('does not save on window departure or while asking to discard, and keeps invalid text on blur', async () => {
     await type('Unfinished')
     vi.mocked(document.hasFocus).mockReturnValue(false)

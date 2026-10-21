@@ -684,5 +684,8 @@
   "records.arguments": "Argomenti",
   "records.output": "Output",
   "records.errorOutput": "Output di errore",
-  "records.scan": "Scansione"
+  "records.scan": "Scansione",
+  "settings.openLibrary": "Apri una libreria esistente",
+  "settings.openLibraryHint": "Al salvataggio, viene aperta la libreria selezionata con le sue cassette e i suoi contenitori. La libreria attuale rimane nella sua cartella.",
+  "errors.libraryOpenFailed": "Impossibile aprire la libreria in {path}. Scegli una cartella contenente una libreria TapeBox esistente."
 }

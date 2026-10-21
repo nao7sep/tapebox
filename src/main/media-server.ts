@@ -162,7 +162,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const start = range.kind === 'partial' ? range.start : 0
     const end = range.kind === 'partial' ? range.end : Math.max(0, size - 1)
     // Deliberately no 'Cache-Control: no-store'. Library files are content-stable —
-    // a rename changes the URL's filename, and the token is per-process — so letting
+    // a rename changes the URL's filename, opening a collection changes its query,
+    // and the token is per-process — so letting
     // Chromium cache and reuse byte ranges is safe, and it's what keeps seeking
     // smooth: with no-store the media stack re-fetched on every seek, stalling
     // playback for a beat each time.

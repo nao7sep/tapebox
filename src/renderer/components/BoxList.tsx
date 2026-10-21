@@ -91,19 +91,23 @@ export function BoxList({
     editingId !== null && trimmedDraft ? boxNameError(trimmedDraft, otherNames(editingId)) : null
 
   async function newBox() {
+    const collection = useBoxesStore.getState().collection
     clearActionError('create')
     try {
       const box = await ipcInvoke('boxes:create', { name: t.t('boxes.newBoxName') })
+      if (useBoxesStore.getState().collection !== collection) return
       selectBox(box.id)
       setDraftName(box.name)
       setEditingId(box.id)
     } catch (error) {
+      if (useBoxesStore.getState().collection !== collection) return
       setActionResult('create', presentFailure(error, message('boxes.createFailed'), 'box creation failed'))
     }
   }
 
   // Enter: commit when valid, stay editing when invalid, cancel when empty.
   async function commitRename(id: string) {
+    const collection = useBoxesStore.getState().collection
     const name = draftName.trim()
     if (!name) { setEditingId(null); return }
     if (boxNameError(name, otherNames(id))) return
@@ -113,13 +117,16 @@ export function BoxList({
     try {
       await ipcInvoke('boxes:rename', { boxId: id, name })
     } catch (error) {
+      if (useBoxesStore.getState().collection !== collection) return
       setActionResult('rename', presentFailure(error, message('boxes.renameFailed'), 'box rename failed'))
       if (useBoxesStore.getState().editingId === null) {
         setDraftName(draftName)
         setEditingId(id)
       }
     } finally {
-      useBoxesStore.setState((s) => ({ pendingRenames: s.pendingRenames - 1 }))
+      if (useBoxesStore.getState().collection === collection) {
+        useBoxesStore.setState((s) => ({ pendingRenames: s.pendingRenames - 1 }))
+      }
     }
   }
 
@@ -133,12 +140,14 @@ export function BoxList({
   }
 
   async function deleteBox(id: string) {
+    const collection = useBoxesStore.getState().collection
     setConfirmDeleteId(null)
     if (selectedBoxId === id) selectBox(null)
     clearActionError('delete')
     try {
       await ipcInvoke('boxes:delete', { boxId: id })
     } catch (error) {
+      if (useBoxesStore.getState().collection !== collection) return
       setActionResult('delete', presentFailure(error, message('boxes.deleteFailed'), 'box deletion failed'))
     }
   }

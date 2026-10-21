@@ -9,6 +9,7 @@ import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import type { IpcCalls, IpcEvents } from '@shared/ipc-contract'
 import { useSettingsStore } from '@renderer/store/settings'
+import { useBoxesStore } from '@renderer/store/boxes'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useToastStore } from '@renderer/store/toast'
 import { Modal } from '@renderer/components/Modal'
@@ -51,7 +52,9 @@ type Tab = 'general' | 'ai' | 'ytdlp'
  * it moves every existing tape's files to the new folder as part of Save (main does
  * the move, then commits the setting), so a confirm prompts first; the move is
  * refused while downloads, imports, renames or exports are running. While it runs, the dialog shows its
- * progress and offers Stop Move, which rolls the copies back.
+ * progress and offers Stop Move, which rolls the copies back. Open existing
+ * library instead switches to the selected collection on Save, leaving the current
+ * library in place; it never merges the two collections.
  */
 
 type MoveProgress = IpcEvents['settings:libraryMoveProgress']
@@ -61,12 +64,14 @@ export function SettingsModal({ onClose }: Props) {
   const [draft, setDraft] = useState<Settings | null>(null)
   const [keyState, setKeyState] = useState<IpcCalls['settings:apiKeyState']['res']>('absent')
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
+  const [openExistingLibrary, setOpenExistingLibrary] = useState(false)
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
   const [error, setError] = useState<Message | null>(null)
   const [busy, setBusy] = useState(false)
   const t = useI18n()
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [confirmOpenDiscard, setConfirmOpenDiscard] = useState(false)
   const [confirmMove, setConfirmMove] = useState<{ count: number } | null>(null)
   const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null)
   const [stoppingMove, setStoppingMove] = useState(false)
@@ -167,8 +172,14 @@ export function SettingsModal({ onClose }: Props) {
   // there are tapes to move; everything else saves straight through.
   function requestSave() {
     if (!draft) return
+    const boxes = useBoxesStore.getState()
+    if (openExistingLibrary && libraryDirChanged() && boxes.editingId !== null &&
+      boxes.draftName !== boxes.boxes.find((box) => box.id === boxes.editingId)?.name) {
+      setConfirmOpenDiscard(true)
+      return
+    }
     const count = tapesOnDiskCount()
-    if (libraryDirChanged() && count > 0) {
+    if (!openExistingLibrary && libraryDirChanged() && count > 0) {
       setConfirmMove({ count })
       return
     }
@@ -187,7 +198,7 @@ export function SettingsModal({ onClose }: Props) {
     try {
       const patch: SettingsSets = changedSettings(pickEditable(original), pickEditable(draft))
       if (Object.keys(patch).length > 0) {
-        const { settings: updated, warning } = await ipcInvoke('settings:update', patch)
+        const { settings: updated, warning } = await ipcInvoke('settings:update', { ...patch, ...(openExistingLibrary ? { libraryAction: 'open' as const } : {}) })
         // Not a rehydration: a playback toggle's own save may still be in flight.
         useSettingsStore.getState().setSettings(updated)
         setOriginal(updated)
@@ -278,6 +289,8 @@ export function SettingsModal({ onClose }: Props) {
                 busy={busy}
                 onPatch={patchDraft}
                 defaultLibraryDir={defaultLibraryDir}
+                openExistingLibrary={openExistingLibrary}
+                onOpenExistingLibrary={setOpenExistingLibrary}
               />
             )}
             {tab === 'ai' && (
@@ -332,6 +345,16 @@ export function SettingsModal({ onClose }: Props) {
           onDiscard={() => {
             setConfirmDiscard(false)
             onClose()
+          }}
+        />
+      )}
+
+      {confirmOpenDiscard && (
+        <DiscardChangesPrompt
+          onKeepEditing={() => setConfirmOpenDiscard(false)}
+          onDiscard={() => {
+            setConfirmOpenDiscard(false)
+            void save()
           }}
         />
       )}
@@ -466,11 +489,15 @@ function GeneralTab({
   busy,
   onPatch,
   defaultLibraryDir,
+  openExistingLibrary,
+  onOpenExistingLibrary,
 }: {
   draft: Settings
   busy: boolean
   onPatch: (p: Partial<Settings>) => void
   defaultLibraryDir: string
+  openExistingLibrary: boolean
+  onOpenExistingLibrary: (value: boolean) => void
 }) {
   const [pickerError, setPickerError] = useState<Message | null>(null)
   const t = useI18n()
@@ -615,8 +642,14 @@ function GeneralTab({
           </Button>
         </div>
         <p className="mt-1 text-xs text-fg-muted">
-          {t.t('settings.libraryFolderHint')}
+          {t.t(openExistingLibrary ? 'settings.openLibraryHint' : 'settings.libraryFolderHint')}
         </p>
+        <Toggle
+          label={t.t('settings.openLibrary')}
+          checked={openExistingLibrary}
+          disabled={busy}
+          onChange={onOpenExistingLibrary}
+        />
       </div>
       <Toggle
         label={t.t('settings.autoplay')}

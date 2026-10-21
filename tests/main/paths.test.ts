@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { binaryPath, paths, resolveStorageRoot, secureRoot } from '@main/paths'
+import { binaryPath, collectionCatalog, paths, resolveStorageRoot, secureRoot } from '@main/paths'
 
 // The TAPEBOX_DATA_DIR storage-root resolution (storage-path-conventions). The home
 // directory is injected so these are pure, working-directory-independent
@@ -82,19 +82,19 @@ describe('resolveStorageRoot', () => {
 
 // The durable tape-library catalog is catalog.json, not session.json — the name
 // must not imply throwaway state. It is a distinct file from the user-editable
-// config and the window layout; all three sit side by side under the storage root.
+// config and the window layout; the catalog travels with the library.
 describe('paths catalog file', () => {
-  it('resolves the catalog to catalog.json under the storage root', () => {
-    expect(basename(paths.catalog)).toBe('catalog.json')
-    expect(dirname(paths.catalog)).toBe(paths.root)
+  it('resolves the catalog to catalog.json inside the library', () => {
+    expect(basename(collectionCatalog(paths.library))).toBe('catalog.json')
+    expect(dirname(collectionCatalog(paths.library))).toBe(join(paths.library, '.tapebox'))
   })
 
   it('keeps the catalog separate from config and layout', () => {
     expect(basename(paths.config)).toBe('config.json')
     expect(basename(paths.layout)).toBe('layout.json')
-    expect(paths.catalog).not.toBe(paths.config)
-    expect(paths.catalog).not.toBe(paths.layout)
-    expect(paths.catalog).not.toBe(paths.apiKeys)
+    expect(collectionCatalog(paths.library)).not.toBe(paths.config)
+    expect(collectionCatalog(paths.library)).not.toBe(paths.layout)
+    expect(collectionCatalog(paths.library)).not.toBe(paths.apiKeys)
   })
 })
 

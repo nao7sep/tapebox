@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useBoxesStore } from '@renderer/store/boxes'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -66,6 +67,7 @@ beforeEach(() => {
   ipcInvoke.mockReset()
   onClose.mockReset()
   useToastStore.setState({ toasts: [] })
+  useBoxesStore.setState({ editingId: null, draftName: '', pendingRenames: 0, boxes: [] })
   saved = { ...defaultSettings(), 'openai.slug': 'retired-model' }
 })
 
@@ -76,6 +78,37 @@ afterEach(() => {
 })
 
 describe('SettingsModal', () => {
+  it('keeps an unsaved box name when opening is cancelled and asks before discarding it', async () => {
+    useBoxesStore.setState({ editingId: 'box1', draftName: 'Unsaved box', boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
+    await type(field, '/copied-library')
+    const toggle = [...document.querySelectorAll('label')].find((label) => label.textContent?.includes('Open an existing library'))!.querySelector('input')!
+    await act(async () => toggle.click())
+    await click('Save')
+    expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'settings:update')).toBe(false)
+    await click('Keep editing')
+    expect(useBoxesStore.getState().draftName).toBe('Unsaved box')
+    await click('Save')
+    await click('Discard')
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { libraryDir: '/copied-library', libraryAction: 'open' })
+  })
+
+  it('saves an explicit existing-library choice and replaces the move explanation', async () => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
+    await type(field, '/copied-library')
+    const toggle = [...document.querySelectorAll('label')].find((label) => label.textContent?.includes('Open an existing library'))!.querySelector('input')!
+    await act(async () => toggle.click())
+    expect(document.body.textContent).toContain('The current library stays in its folder.')
+    expect(document.body.textContent).not.toContain('Changing this moves your existing tapes')
+    await click('Save')
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { libraryDir: '/copied-library', libraryAction: 'open' })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it.each(['libraryDir', 'defaultExportDir'] as const)('Browse follows the current %s draft and preserves it on cancel', async (key) => {
     saved = { ...saved, [key]: '/saved' }
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))

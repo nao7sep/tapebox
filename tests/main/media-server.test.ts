@@ -77,8 +77,8 @@ describe('the media server lifecycle', () => {
 })
 
 describe('serving a library file', () => {
-  it('sends the whole file with its media type', async () => {
-    const response = await get('tape.mp4')
+  it.each(['tape.mp4', 'tape.mp4?collection=3'])('serves %s with its media type', async (path) => {
+    const response = await get(path)
 
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('video/mp4')

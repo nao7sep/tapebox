@@ -22,8 +22,8 @@ vi.mock('electron', () => ({
   } },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/paths', () => ({ paths: { get catalog() { return bridge.catalog } } }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => '/unused-reorder-library', getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
+vi.mock('@main/paths', () => ({ paths: { get legacyCatalog() { return bridge.catalog + '.legacy' } }, collectionCatalog: () => bridge.catalog }))
+vi.mock('@main/store/config', () => ({ getLibraryDir: () => join(bridge.catalog, '..'), getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/ipc/events', () => ({ emit: (channel: string, payload: unknown) => {

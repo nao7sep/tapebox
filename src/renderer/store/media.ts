@@ -6,10 +6,20 @@ import { create } from 'zustand'
  */
 type MediaState = {
   baseUrl: string | null
+  collectionRevision: number
   setBaseUrl: (baseUrl: string) => void
 }
 
 export const useMediaStore = create<MediaState>((set) => ({
   baseUrl: null,
+  collectionRevision: 0,
   setBaseUrl: (baseUrl) => set({ baseUrl }),
 }))
+
+/** Same-named files in another opened collection must have a new cache identity.
+ * The server's process token already separates application launches. */
+export function mediaFileUrl(media: Pick<MediaState, 'baseUrl' | 'collectionRevision'>, filename: string | null): string | null {
+  return media.baseUrl && filename
+    ? `${media.baseUrl}/${encodeURIComponent(filename)}?collection=${media.collectionRevision}`
+    : null
+}

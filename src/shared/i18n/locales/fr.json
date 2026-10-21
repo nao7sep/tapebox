@@ -684,5 +684,8 @@
   "records.arguments": "Arguments",
   "records.output": "Sortie",
   "records.errorOutput": "Sortie d’erreur",
-  "records.scan": "Analyse"
+  "records.scan": "Analyse",
+  "settings.openLibrary": "Ouvrir une bibliothèque existante",
+  "settings.openLibraryHint": "Lors de l’enregistrement, la bibliothèque sélectionnée s’ouvre avec ses cassettes et ses boîtes. La bibliothèque actuelle reste dans son dossier.",
+  "errors.libraryOpenFailed": "Impossible d’ouvrir la bibliothèque située dans {path}. Choisissez un dossier contenant une bibliothèque TapeBox existante."
 }

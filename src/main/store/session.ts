@@ -1,5 +1,8 @@
-import { readFile } from 'node:fs/promises'
-import { paths } from '@main/paths'
+import { mkdir, readFile, rename, stat } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { paths, collectionCatalog } from '@main/paths'
+import { getLibraryDir } from './config'
+import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
 import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { StoreAccessError } from '@main/io/store-access'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson, V0_1_0_FORMAT } from '@main/io/format-version'
@@ -8,7 +11,7 @@ import { describeError } from '@shared/error'
 import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
 
 /**
- * In-memory session cache, debounced atomic persistence to catalog.json.
+ * In-memory session cache, debounced atomic persistence to the library catalog.
  * Single instance per main process. Live progress fields are NOT persisted —
  * they're rebuilt by the queue at runtime.
  *
@@ -33,6 +36,7 @@ const SAVE_RETRY_AFTER_FAILURE_MS = 30_000
 let cache: Session = emptySession()
 let saveTimer: NodeJS.Timeout | null = null
 let loaded = false
+let catalogPath: string | null = null
 let persistChain: Promise<void> = Promise.resolve()
 /** Serialized durable content last written or loaded, to skip unchanged writes. */
 let lastWritten: string | null = null
@@ -70,7 +74,8 @@ async function writeCatalog(session: Session): Promise<void> {
   const durable = durableSession(session)
   const key = JSON.stringify(durable)
   if (key === lastWritten) return
-  await writeManagedJson(paths.catalog, durable, CATALOG_JSON)
+  if (catalogPath === null) throw new Error('Catalog location is not loaded')
+  await writeManagedJson(catalogPath, durable, CATALOG_JSON)
   lastWritten = key
   saveFailing = false
 }
@@ -110,12 +115,13 @@ export type SessionLoadResult =
  */
 export async function loadSessionFile(
   sessionPath: string,
+  options: { requireExisting?: boolean } = {},
 ): Promise<{ result: SessionLoadResult; session: Session }> {
   let text: string
   try {
     text = await readFile(sessionPath, 'utf8')
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !options.requireExisting) {
       return { result: { status: 'empty' }, session: emptySession() }
     }
     // Unexpected read failure (permissions, I/O): the caller leaves the session
@@ -131,6 +137,7 @@ export async function loadSessionFile(
   if (parsed?.success) {
     return { result: { status: 'loaded', tapeCount: parsed.data.tapes.length }, session: parsed.data }
   }
+  if (options.requireExisting) throw new StoreAccessError(sessionPath, new Error('Invalid library catalog'))
   const parseErr = found.status === 'unreadable' ? found.error : parsed?.error
   let quarantinePath: string
   try {
@@ -160,12 +167,41 @@ function catalogFromV010(value: Record<string, unknown>): Record<string, unknown
  * called once during startup before any getter/mutator.
  */
 export async function loadSession(): Promise<SessionLoadResult> {
-  const { result, session } = await loadSessionFile(paths.catalog)
-  cache = session
-  tapeReorderIntents.clear()
-  boxReorderIntents.clear()
-  lastWritten = JSON.stringify({ tapes: session.tapes, boxes: session.boxes })
-  loaded = true
+  const target = collectionCatalog(getLibraryDir())
+  // Only the built-in library is created implicitly. An unavailable chosen drive
+  // must not become an empty replacement collection.
+  const directory = await stat(getLibraryDir()).catch((cause: unknown) => {
+    throw new StoreAccessError(getLibraryDir(), cause)
+  })
+  if (!directory.isDirectory()) throw new StoreAccessError(getLibraryDir(), new Error('Not a directory'))
+  await mkdir(dirname(target), { recursive: true })
+  // One location transition, retaining the old bytes under an inert name. Once a
+  // collection has its own catalog it always wins; a settings reset cannot revive
+  // an obsolete machine-root catalog after a later move.
+  let legacy = false
+  try { await stat(paths.legacyCatalog); legacy = true } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new StoreAccessError(paths.legacyCatalog, error)
+  }
+  if (legacy) {
+    try { await stat(target) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      // Validate without modifying the source before publishing the same bytes.
+      await loadSessionFile(paths.legacyCatalog, { requireExisting: true })
+      await linkOrCopyNoOverwrite(paths.legacyCatalog, target)
+    }
+    const retained = paths.retainedLegacyCatalog
+    try { await stat(retained); throw new Error(`Retained catalog already exists: ${retained}`) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    await rename(paths.legacyCatalog, retained)
+  }
+  const { result, session } = await loadSessionFile(target)
+  bindSession(target, session)
+  if (result.status !== 'loaded') {
+    lastWritten = null
+    await prepareCollection()
+  }
+
   switch (result.status) {
     case 'loaded':
       log.info('session loaded', { tapeCount: result.tapeCount })
@@ -180,6 +216,32 @@ export async function loadSession(): Promise<SessionLoadResult> {
       break
   }
   return result
+}
+
+/** Bind only after the destination location has durably committed. The caller
+ * holds the library gate and has flushed all previous writes. */
+export function bindSession(target: string, session: Session): void {
+  cancelScheduledSave()
+  catalogPath = target
+  cache = session
+  tapeReorderIntents.clear()
+  boxReorderIntents.clear()
+  lastWritten = JSON.stringify(durableSession(session))
+  loaded = true
+  saveFailing = false
+}
+
+/** A move preserves the same cache and durable bytes at its new location. */
+export function bindMovedSession(libraryDir: string): void {
+  catalogPath = collectionCatalog(libraryDir)
+}
+
+/** Materialize even an empty collection before it is copied or moved. */
+export async function prepareCollection(): Promise<void> {
+  assertLoaded()
+  await enqueueCatalogWrite(async () => {
+    await writeCatalog(cache)
+  })
 }
 
 function assertLoaded(): void {

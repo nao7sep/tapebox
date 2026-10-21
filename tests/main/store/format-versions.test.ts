@@ -1,6 +1,6 @@
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultDependencies } from '@shared/dependencies'
 import { defaultLayout } from '@shared/layout'
@@ -53,8 +53,12 @@ const NEWER = { name: 'NewerFormatError', version: 2 }
 const BOX = { id: 'box1234567', name: 'Box', order: 0 }
 
 describe('catalog.json', () => {
+  beforeEach(async () => {
+    await mkdir(join(root, 'library', '.tapebox'), { recursive: true })
+    await (await import('@main/store/config')).loadSettings()
+  })
   const session = () => import('@main/store/session')
-  const path = () => join(root, 'catalog.json')
+  const path = () => join(root, 'library', '.tapebox', 'catalog.json')
 
   it('reads a v0.1.0 file, which had no marker and no failure class, and marks it at the next save', async () => {
     const tape = {
@@ -80,9 +84,9 @@ describe('catalog.json', () => {
     const store = await session()
     expect(await store.loadSession()).toMatchObject({ status: 'recovered' })
     expect(store.getBoxes()).toEqual([])
-    const [aside] = (await readdir(root)).filter((name) => name.endsWith('.invalid'))
+    const [aside] = (await readdir(dirname(path()))).filter((name) => name.endsWith('.invalid'))
     expect(aside).toMatch(/^catalog-\d{8}-\d{6}-utc\.invalid$/)
-    expect(await readFile(join(root, aside!), 'utf8')).toBe(text)
+    expect(await readFile(join(dirname(path()), aside!), 'utf8')).toBe(text)
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -93,7 +97,10 @@ describe('catalog.json', () => {
     expect(Object.keys(await stored(path()))[0]).toBe('formatVersion')
     expect(await stored(path())).toMatchObject({ formatVersion: 1 })
 
-    const relaunched = await relaunch(session)
+    const relaunched = await relaunch(async () => {
+      await (await import('@main/store/config')).loadSettings()
+      return session()
+    })
     expect(await relaunched.loadSession()).toMatchObject({ status: 'loaded' })
     expect(relaunched.getBoxes()).toEqual([BOX])
   })
@@ -104,7 +111,7 @@ describe('catalog.json', () => {
     await expect(store.loadSession()).rejects.toMatchObject({ ...NEWER, path: path() })
     expect(await store.persistNow()).toBe(true)
     expect(await readFile(path(), 'utf8')).toBe(text)
-    expect(await readdir(root)).toEqual(['catalog.json'])
+    expect(await readdir(dirname(path()))).toEqual(['catalog.json'])
   })
 })
 

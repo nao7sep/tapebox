@@ -60,14 +60,15 @@ vi.mock('@main/store/library-move', () => ({
   rollbackLibraryRelocation,
 }))
 
-vi.mock('@main/store/session', () => ({ getTapes: vi.fn(() => []) }))
+vi.mock('@main/store/session', () => ({ getTapes: vi.fn(() => []), prepareCollection: vi.fn(async () => {}), bindMovedSession: vi.fn(), bindSession: vi.fn(), loadSessionFile: vi.fn() }))
 vi.mock('@main/services/api-keys', () => ({
   writeApiKey: vi.fn(),
   clearApiKey: vi.fn(),
   hasApiKey: vi.fn(() => false),
 }))
 vi.mock('@main/power-blocker', () => ({ reconcileWakeLock: vi.fn() }))
-vi.mock('@main/paths', () => ({
+vi.mock('@main/paths', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@main/paths')>(),
   paths: { library: '/mock/.tapebox/library' },
 }))
 vi.mock('@main/io/logger', () => ({
@@ -225,7 +226,7 @@ describe('settings:update — relocation refused while library writes run', () =
 
     await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('The operation could not be completed.')
 
-    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [], expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [join('.tapebox', 'catalog.json')], expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(rollbackLibraryRelocation).toHaveBeenCalledWith(files)
     expect(completeLibraryRelocation).not.toHaveBeenCalled()
   })

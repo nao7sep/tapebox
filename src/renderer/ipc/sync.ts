@@ -1,4 +1,8 @@
+import { invalidateTapeActions } from '@renderer/lib/runTapeAction'
+import { useBoxActionResultsStore } from '@renderer/store/boxActionResults'
 import { ipcInvoke, ipcOn } from './client'
+import { useArchiveStore } from '@renderer/store/archive'
+import { useSelectionStore } from '@renderer/store/selection'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useBinariesStore } from '@renderer/store/binaries'
@@ -67,7 +71,7 @@ export type IpcSync = {
 
 /** Own subscriptions and the snapshot-to-live handoff for one mounted App. */
 export function startIpcSync(): IpcSync {
-  type Changes = { tapes: Map<string, Tape | null>; boxes: Box[] | null }
+  type Changes = { tapes: Map<string, Tape | null>; boxes: Box[] | null; replacement: Tape[] | null }
   let pending: Changes | null = null
   let stopped = false
 
@@ -81,6 +85,29 @@ export function startIpcSync(): IpcSync {
   }
 
   const offs = [
+    ipcOn('library:opened', ({ tapes, boxes }) => {
+      if (pending) {
+        pending.replacement = tapes
+        pending.tapes.clear()
+        pending.boxes = boxes
+      }
+      useDownloadLogStore.setState({ entries: {}, trimmed: {} })
+      useMediaStore.setState((media) => ({ collectionRevision: media.collectionRevision + 1 }))
+      invalidateTapeActions()
+      useTapeActionResultsStore.setState({ byTape: {} })
+      useBoxActionResultsStore.setState({ results: {} })
+      useSelectionStore.getState().select(null)
+      useArchiveStore.getState().selectBox(null)
+      // Invalidate replies from the previous collection, including lists that
+      // reuse the same IDs. Advancing counters avoids a new attempt's ABA match.
+      const attempts = useOrderFailuresStore.getState().attempts
+      useOrderFailuresStore.setState({
+        inbox: null, boxes: null, archiveTapes: {}, pending: {},
+        attempts: Object.fromEntries(Object.entries(attempts).map(([key, value]) => [key, value! + 1])),
+      })
+      useTapesStore.setState({ tapes, progress: {}, stalled: {} })
+      useBoxesStore.setState({ collection: {}, boxes, editingId: null, draftName: '', pendingRenames: 0 })
+    }),
     ipcOn('tapes:added',       upsert),
     ipcOn('tapes:updated',     (tape) => upsert([tape])),
     ipcOn('tapes:updatedMany', upsert),
@@ -124,14 +151,14 @@ export function startIpcSync(): IpcSync {
   ]
   return {
     beginHydration() {
-      const changes: Changes = { tapes: new Map(), boxes: null }
+      const changes: Changes = { tapes: new Map(), boxes: null, replacement: null }
       pending = stopped ? null : changes
       return {
         commit(state) {
           if (stopped || pending !== changes) return false
           // Merge before publishing, so even a synchronous store observer sees
           // the current catalog rather than the stale intermediate snapshot.
-          const tapes = new Map(state.tapes.map((tape) => [tape.id, tape]))
+          const tapes = new Map((changes.replacement ?? state.tapes).map((tape) => [tape.id, tape]))
           for (const [id, tape] of changes.tapes) {
             if (tape === null) tapes.delete(id)
             else tapes.set(id, tape)

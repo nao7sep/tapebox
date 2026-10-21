@@ -1,5 +1,5 @@
 import { mkdir, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { linkOrCopyNoOverwrite, unlinkFiles } from '@main/io/atomic-file'
 import { log } from '@main/io/logger'
 import { portableSiblingExists } from '@main/io/portable-directory'
@@ -17,7 +17,7 @@ function shortName(name: string): string {
 }
 
 /**
- * Move the library's flat contents from one folder to another when the user
+ * Move the library's tracked contents from one folder to another when the user
  * changes the library folder. Path-taking and side-effect-localized (no settings,
  * no queue, no app logging) so it is unit-testable against real temp dirs, the way
  * the rest of the I/O layer is. The caller (ipc/settings) resolves the effective
@@ -46,7 +46,7 @@ function shortName(name: string): string {
  *      collisions for the user to clear (accepted: rare).
  *
  * Only the named entries are touched — files the app created and tracks (media,
- * sidecars, thumbnails). Unrelated files the user dropped in the folder are left
+ * sidecars, thumbnails) and the collection catalog. Unrelated files the user dropped in the folder are left
  * alone.
  */
 
@@ -103,8 +103,8 @@ export async function completeLibraryRelocation(files: readonly RelocatedFile[])
 }
 
 /**
- * Publish `entries` (basenames) from `fromDir` to `toDir`. See the module doc for
- * the full contract. `entries` should be deduplicated by the caller; portable
+ * Publish `entries` (managed relative paths) from `fromDir` to `toDir`. See the module doc for
+ * the full contract. `entries` are supplied internally and should be deduplicated by the caller; portable
  * aliases are rejected by preflight before any destination publication.
  */
 export async function relocateLibrary(
@@ -165,6 +165,7 @@ export async function relocateLibrary(
       signal?.throwIfAborted()
       const source = join(fromDir, name)
       const destination = join(toDir, name)
+      await mkdir(dirname(destination), { recursive: true })
       // not recorded: relocation preserves an already-accounted media bundle at
       // a new managed location; it does not author new content.
       const copied = await linkOrCopyNoOverwrite(source, destination, signal)

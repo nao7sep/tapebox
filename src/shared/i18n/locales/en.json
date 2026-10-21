@@ -655,5 +655,8 @@
   "records.arguments": "Arguments",
   "records.output": "Output",
   "records.errorOutput": "Error output",
-  "records.scan": "Scan"
+  "records.scan": "Scan",
+  "settings.openLibrary": "Open an existing library",
+  "settings.openLibraryHint": "On Save, open the selected library with its own tapes and boxes. The current library stays in its folder.",
+  "errors.libraryOpenFailed": "Could not open the library at {path}. Choose a folder containing an existing TapeBox library."
 }

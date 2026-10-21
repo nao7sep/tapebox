@@ -100,7 +100,8 @@ export const SettingsObjectSchema = z.object({
   // path directly in main — always go through getLibraryDir() so an empty value
   // can't become a cwd-relative path. Changing this relocates the existing library:
   // ipc/settings moves every tracked file to the new folder before committing the
-  // new value (refused while any download, import, rename or export is writing).
+  // new value, or explicitly opens an existing collection without moving files.
+  // Both refuse while another collection mutation is in progress.
   libraryDir: z.string(),
   autoStartDownloads: z.boolean(),
   maxConcurrentDownloads: z.number().int().min(MAX_CONCURRENT_DOWNLOADS.min).max(MAX_CONCURRENT_DOWNLOADS.max),

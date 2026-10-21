@@ -7,6 +7,7 @@ import type { Box } from '@shared/domain'
  * the tapes themselves (see tapeOrder); this store also owns the inline rename draft across Archive/Inbox navigation.
  */
 type BoxesState = {
+  collection: object
   boxes: Box[]
   editingId: string | null
   draftName: string
@@ -15,6 +16,7 @@ type BoxesState = {
 }
 
 export const useBoxesStore = create<BoxesState>((set) => ({
+  collection: {},
   boxes: [],
   editingId: null,
   draftName: '',

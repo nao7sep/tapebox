@@ -713,5 +713,8 @@
   "records.arguments": "Аргументы",
   "records.output": "Вывод",
   "records.errorOutput": "Вывод ошибок",
-  "records.scan": "Сканирование"
+  "records.scan": "Сканирование",
+  "settings.openLibrary": "Открыть существующую медиатеку",
+  "settings.openLibraryHint": "При сохранении откроется выбранная медиатека с её кассетами и коробками. Текущая медиатека останется в своей папке.",
+  "errors.libraryOpenFailed": "Не удалось открыть медиатеку в {path}. Выберите папку с существующей медиатекой TapeBox."
 }

@@ -1,3 +1,4 @@
+import { invalidateTapeActions } from '@renderer/lib/runTapeAction'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TapeSchema, type Tape } from '@shared/domain'
 
@@ -56,6 +57,21 @@ beforeEach(() => {
 })
 
 describe('archive and placement settlement', () => {
+  it('does not roll matching copied rows back after a collection change', async () => {
+    let fail!: (reason: Error) => void
+    ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+    const original = tape()
+    useTapesStore.setState({ tapes: [original] })
+    archiveTape(original, 'tape')
+    const copied = { ...useTapesStore.getState().tapes[0]!, title: 'Different collection' }
+    invalidateTapeActions()
+    useTapesStore.setState({ tapes: [copied] })
+    fail(new Error('late archive failure'))
+    await vi.waitFor(() => expect(logError).toHaveBeenCalled())
+    expect(useTapesStore.getState().tapes).toEqual([copied])
+    expect(useTapeActionResultsStore.getState().byTape).toEqual({})
+  })
+
   it('rolls a rejected archive back and keeps a safe result with the tape', async () => {
     const original = tape()
     useTapesStore.setState({ tapes: [original] })

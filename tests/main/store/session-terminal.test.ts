@@ -14,7 +14,8 @@ const catalogMutation = vi.hoisted(() => ({
   failOrdinaryWrites: 0,
 }))
 
-vi.mock('@main/paths', () => ({ paths: { catalog: join(testRoot, 'catalog.json') } }))
+vi.mock('@main/paths', () => ({ paths: { legacyCatalog: join(testRoot, 'legacy.json') }, collectionCatalog: () => join(testRoot, 'catalog.json') }))
+vi.mock('@main/store/config', () => ({ getLibraryDir: () => testRoot }))
 vi.mock('@main/store/backupStore', () => ({ record }))
 vi.mock('@main/io/logger', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -176,6 +177,7 @@ describe('catalog persistence', () => {
 
   it('writes a download in flight as its queued self, so queue steps add no catalog versions', async () => {
     await loadSession()
+    record.mockClear()
     const queued: Tape = {
       ...tape('fly1234567'), state: 'queued', sourceId: null, extractor: null, title: null,
       probedAtUtc: null, filename: null, sidecarFilename: null, downloadedAtUtc: null, name: null,

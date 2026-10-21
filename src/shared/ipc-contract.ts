@@ -94,7 +94,7 @@ export type IpcCalls = {
   'settings:get':          { req: undefined;                         res: Settings }
   // `warning` is main-authored copy (a message descriptor) for a save that committed with a leftover
   // problem (old library copies not removed); null on a clean save.
-  'settings:update':       { req: SettingsSets;                 res: { settings: Settings; warning: Message | null } }
+  'settings:update':       { req: SettingsSets & { libraryAction?: 'open' };                 res: { settings: Settings; warning: Message | null } }
   // Stop a library move started by settings:update; its copies are rolled back and
   // the update rejects with the library still in the old folder.
   'settings:cancelLibraryMove': { req: undefined;                    res: void }
@@ -303,6 +303,8 @@ export type IpcEvents = {
   // main keeps the changes and retries the save.
   'library:saveFailed': null
 
+  // Replace the renderer's collection after an explicitly committed Open.
+  'library:opened': { tapes: Tape[]; boxes: Box[] }
   // The box list changed (created / renamed / deleted / reordered).
   'boxes:changed':    Box[]
 

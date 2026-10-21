@@ -39,10 +39,15 @@ export function tryClaimLibraryWrite(): (() => void) | null {
 
 /** Run `work` under a write claim, with the library folder resolved inside it. */
 export async function withLibraryWrite<T>(work: (libraryDir: string) => Promise<T>): Promise<T> {
+  return withLibraryClaim(() => work(getLibraryDir()))
+}
+
+/** Catalog-only mutations need the same lifetime claim without resolving files. */
+export async function withLibraryClaim<T>(work: () => Promise<T>): Promise<T> {
   const release = tryClaimLibraryWrite()
   if (!release) throw new UserFacingError('refused', WRITE_BLOCKED_MESSAGE)
   try {
-    return await work(getLibraryDir())
+    return await work()
   } finally {
     release()
   }
