@@ -44,6 +44,16 @@ import {
 } from './i18n.js'
 
 
+// Electron keeps its profile, window placement and single-instance lock in
+// userData, set before anything reads it: under the storage root, so a relocated
+// root keeps its own (paths.ts). An unusable override leaves Electron's default;
+// startup's ensureDirs reports it and stops.
+try {
+  app.setPath('userData', paths.electronProfile)
+} catch (error) {
+  console.warn('tapebox: Electron profile stays in its default location:', error)
+}
+
 /**
  * Single-instance lock. If another tapebox instance already holds the lock,
  * focus its window and quit ourselves. Must run before app.whenReady() because

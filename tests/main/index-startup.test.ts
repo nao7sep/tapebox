@@ -42,6 +42,7 @@ vi.mock('electron', () => {
   return {
     app: {
       requestSingleInstanceLock: () => true,
+      setPath: vi.fn(),
       on: (event: string, handler: (...args: unknown[]) => unknown) => { appHandlers.set(event, handler) },
       whenReady: () => Promise.resolve(),
       quit: vi.fn(),
@@ -58,6 +59,7 @@ const step = (name: string) => vi.fn(async () => { order.push(name) })
 vi.mock('@main/paths', () => ({
   ensureDirs: vi.fn(async () => {}), sweepAbandonedStaging: vi.fn(async () => {}),
   binaryPath: () => process.execPath,
+  paths: { electronProfile: '/data-root/electron' },
 }))
 vi.mock('@main/startup-dialog', () => ({ notifyCorruptConfig: vi.fn(), notifyCorruptSession: vi.fn(), notifyStartupFailure: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ initLogger: vi.fn(), isDebugEnabled: () => false, log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))

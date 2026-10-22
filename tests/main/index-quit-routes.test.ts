@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
   working: false,
   minimized: false,
   about: (() => {}) as () => void,
+  boot: [] as string[],
 }))
 
 vi.mock('electron', () => {
@@ -49,7 +50,8 @@ vi.mock('electron', () => {
   }
   return {
     app: {
-      requestSingleInstanceLock: () => true,
+      requestSingleInstanceLock: () => { state.boot.push('lock'); return true },
+      setPath: (name: string, path: string) => { state.boot.push(`setPath ${name} ${path}`) },
       on: (event: string, handler: Handler) => { state.app.set(event, handler) },
       whenReady: () => Promise.resolve(),
       quit: vi.fn(),
@@ -63,7 +65,7 @@ vi.mock('electron', () => {
 })
 
 const step = (name: string) => vi.fn(async () => { state.order.push(name) })
-vi.mock('@main/paths', () => ({ ensureDirs: vi.fn(async () => {}), sweepAbandonedStaging: vi.fn(async () => {}), paths: {} }))
+vi.mock('@main/paths', () => ({ ensureDirs: vi.fn(async () => {}), sweepAbandonedStaging: vi.fn(async () => {}), paths: { electronProfile: '/data-root/electron' } }))
 vi.mock('@main/startup-dialog', () => ({ notifyCorruptConfig: vi.fn(), notifyCorruptSession: vi.fn(), notifySettingsKept: vi.fn(), notifyStartupFailure: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ initLogger: vi.fn(), isDebugEnabled: () => false, log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/io/records', () => ({ closeRecords: step('close-records'), flushRecordsBeforeExit: vi.fn(() => { state.order.push('records-drain') }), onRecordStored: vi.fn(), openRecords: () => 'session' }))
@@ -115,6 +117,7 @@ let processHandlers: Array<[string, (...args: unknown[]) => void]> = []
 async function launch(): Promise<{ handlers: Map<string, Handler> }> {
   state.app.clear()
   state.power.clear()
+  state.boot.length = 0
   state.windows.length = 0
   state.order.length = 0
   vi.resetModules()
@@ -271,5 +274,14 @@ describe('the app menu About', () => {
     const win = await launch() as unknown as { webContents: { send: ReturnType<typeof vi.fn> } }
     state.about()
     expect(win.webContents.send).toHaveBeenCalledWith('app:showAbout', null)
+  })
+})
+
+// Electron's profile, window placement and single-instance lock live under the
+// storage root, set before the lock reads userData, so a relocated root keeps its own.
+describe('the Electron profile', () => {
+  it('moves under the storage root before the single-instance lock', async () => {
+    await launch()
+    expect(state.boot).toEqual(['setPath userData /data-root/electron', 'lock'])
   })
 })

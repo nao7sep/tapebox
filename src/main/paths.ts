@@ -5,9 +5,11 @@ import type { BinaryName } from '@shared/ipc-contract'
 
 /**
  * Machine-local TapeBox files live under ~/.tapebox; the configurable library
- * holds its media and authoritative collection metadata. Electron/Chromium state
- * (cache, cookies, GPU cache, etc.) is left
- * in the OS-default userData location and never mixed in here.
+ * holds its media and authoritative collection metadata. Electron's own profile
+ * (Chromium caches, window placement, the single-instance lock) is machine-local
+ * presentation state and cache too, so it lives under the root in its own
+ * `electron` folder rather than the OS-default userData location: a relocated
+ * root, such as a test's or a second profile's, keeps it apart.
  *
  * 'temp' is our own disposable staging for managed-tool installs in progress —
  * it holds nothing precious and is cleared on launch (an interrupted install
@@ -98,6 +100,9 @@ export const paths = {
   // kept apart from config.json so a settings reset never wipes them and their
   // update-check churn never rewrites the config file (persisted-store-separation).
   get dependencies()  { return join(storageRoot(), 'dependencies.json') },
+  // Electron's userData: Chromium's profile, Electron's window-state store and
+  // the single-instance lock. Electron owns its contents.
+  get electronProfile() { return join(storageRoot(), 'electron') },
   get apiKeys()       { return join(storageRoot(), 'api-keys.json') },
   // The write-through data-backup store (data-backup conventions): one add-only
   // SQLite FILE directly under the root, resolved through the same TAPEBOX_DATA_DIR-
