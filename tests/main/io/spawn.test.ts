@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { collectOutput, killOwnedProcessesNow, spawnStreaming, waitForExit } from '@main/io/spawn'
 import { StopRequest } from '@main/stop-request'
 
@@ -22,21 +22,45 @@ describe('owned subprocess cancellation', () => {
     async () => {
       const descendant =
         `process.on('SIGTERM', () => {}); ` +
-        `setInterval(() => {}, 1000)`
+        `process.send('ready'); setInterval(() => {}, 1000)`
       const parent =
-        // Mutation target: the direct parent exits on SIGTERM while its descendant
-        // ignores it. Resolving on parent close would leave the descendant alive.
+        // The parent obeys SIGTERM; readiness comes from the descendant after its
+        // handler is installed, so cancellation must escalate to stop the group.
         `process.once('SIGTERM', () => process.exit(0)); ` +
-        `const descendant = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: 'ignore' }); ` +
-        `process.stdout.write('ready:' + descendant.pid + '\\n'); setInterval(() => {}, 1000)`
+        `const descendant = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }); ` +
+        `descendant.once('message', () => process.stdout.write('ready:' + descendant.pid + '\\n')); ` +
+        `setInterval(() => {}, 1000)`
       const controller = new AbortController()
       const child = spawnStreaming(process.execPath, ['-e', parent], { signal: controller.signal })
+      const closed = new Promise<void>((resolve) => child.once('close', () => resolve()))
       const exited = waitForExit(child, { command: 'POSIX tree fixture' })
+      // Observe rejection immediately, including a failed fixture startup.
+      void exited.catch(() => {})
+      let output = ''
+      child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString() })
+      let descendantPid: number | undefined
 
-      const descendantPid = await readReadyPid(child)
-      controller.abort()
-      await expect(exited).rejects.toHaveProperty('name', 'AbortError')
-      expect(() => process.kill(descendantPid, 0)).toThrow()
+      try {
+        descendantPid = await vi.waitFor(() => {
+          const match = /ready:(\d+)/.exec(output)
+          expect(match, 'the descendant installed its SIGTERM handler').not.toBeNull()
+          return Number(match![1])
+        })
+        controller.abort()
+        await expect(exited).rejects.toHaveProperty('name', 'AbortError')
+        // Settlement must mean physical death, even though the parent has already
+        // closed and the descendant ignored the group's first signal.
+        expect(() => process.kill(descendantPid!, 0)).toThrow()
+      } finally {
+        // Clean up even when readiness or the escalation assertion fails. Use the
+        // fixture's recorded group, independently of the termination under test.
+        try { process.kill(-child.pid!, 'SIGKILL') } catch { /* the group is gone */ }
+        child.kill('SIGKILL')
+        await closed
+        if (descendantPid !== undefined) {
+          await vi.waitFor(() => expect(() => process.kill(descendantPid!, 0)).toThrow())
+        }
+      }
     },
     15_000,
   )
