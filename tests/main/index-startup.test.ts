@@ -19,6 +19,7 @@ const windows = vi.hoisted(() => [] as Array<{ focus: ReturnType<typeof vi.fn> }
 const order = vi.hoisted(() => [] as string[])
 const language = vi.hoisted(() => ({ release: (() => {}) as () => void }))
 const versionFixture = vi.hoisted(() => ({ script: '' }))
+const exitCalled = vi.hoisted(() => ({ resolve: () => {} }))
 
 vi.mock('electron', () => {
   class BrowserWindow {
@@ -44,7 +45,7 @@ vi.mock('electron', () => {
       on: (event: string, handler: (...args: unknown[]) => unknown) => { appHandlers.set(event, handler) },
       whenReady: () => Promise.resolve(),
       quit: vi.fn(),
-      exit: vi.fn(() => { order.push('app-exit') }),
+      exit: vi.fn(() => { order.push('app-exit'); exitCalled.resolve() }),
       isPackaged: false,
     },
     BrowserWindow,
@@ -186,19 +187,26 @@ describe('the Electron entry', () => {
       playerStarted = true
       await openExternalPlayer(process.execPath, player.script, 'linux')
       await vi.waitFor(() => { playerPid = Number(readFileSync(player.ready, 'utf8')); expect(playerPid).toBeGreaterThan(0) })
+      // The player's first pulse, so its liveness below compares two real pulses.
+      await vi.waitFor(() => expect(Number(readFileSync(player.pulse, 'utf8'))).toBeGreaterThan(0))
       expect(() => process.kill(versionPid, 0)).not.toThrow()
       expect(() => process.kill(playerPid, 0)).not.toThrow()
       order.length = 0
 
+      // Settle on the quit's own exit and the probe's own close rather than on
+      // wall-clock polls, which a loaded machine can outlast.
+      const exited = new Promise<void>((resolve) => { exitCalled.resolve = resolve })
       const event = { preventDefault: vi.fn() }
       appHandlers.get('before-quit')!(event)
       expect(event.preventDefault).toHaveBeenCalledOnce()
-      await vi.waitFor(() => expect(app.exit).toHaveBeenCalledExactlyOnceWith(0))
+      await exited
+      expect(app.exit).toHaveBeenCalledExactlyOnceWith(0)
+      expect(order.slice(-2)).toEqual(['kill-tools', 'app-exit'])
       // Observe the real process, not just an invocation of the sweep. The
       // ordinary exit previously left this signal-less probe running for 30 s.
-      await vi.waitFor(() => expect(() => process.kill(versionPid, 0)).toThrow())
+      // The probe's read settles once the process has closed and been reaped.
       expect(await readingVersion).toBeNull()
-      expect(order.slice(-2)).toEqual(['kill-tools', 'app-exit'])
+      expect(() => process.kill(versionPid, 0)).toThrow()
 
       const before = Number(readFileSync(player.pulse, 'utf8'))
       await vi.waitFor(() => expect(Number(readFileSync(player.pulse, 'utf8'))).toBeGreaterThan(before))
