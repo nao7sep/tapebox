@@ -90,14 +90,30 @@ describe('TapeImportReceiver', () => {
     expect(status.querySelector('button')?.getAttribute('aria-label')).toBe('Close import result')
   })
 
-  it('uses warning styling only for recoverable attention', () => {
-    act(() => useImportResultStore.getState().settle({ operationKey: 'unsupported', entryKey: 'drop' }, {
+  it.each([
+    { severities: ['information'], palette: 'info', role: 'status' },
+    { severities: ['warning'], palette: 'warning', role: 'status' },
+    { severities: ['error'], palette: 'danger', role: 'alert' },
+    { severities: ['information', 'warning'], palette: 'warning', role: 'status' },
+    { severities: ['warning', 'error', 'information'], palette: 'danger', role: 'alert' },
+  ] as const)('uses $palette styling for $severities', ({ severities, palette, role }) => {
+    act(() => useImportResultStore.getState().settle({ operationKey: 'severity', entryKey: 'drop' }, {
       imported: [],
-      issues: [{ path: '/tmp/notes.txt', reason: message('import.unsupportedFile'), severity: 'warning' }],
+      issues: severities.map((severity, index) => ({
+        path: `/tmp/file-${index}.json`, reason: message('import.unsupportedFile'), severity,
+      })),
     }))
 
-    const status = host.querySelector<HTMLElement>('[role="status"]')!
-    expect(status.textContent).not.toContain('Warning')
+    const notice = host.querySelector<HTMLElement>(`[role="${role}"]`)!
+    expect(notice).not.toBeNull()
+    for (const candidate of ['info', 'warning', 'danger']) {
+      const selected = candidate === palette
+      expect(notice.classList.contains(`border-${candidate}-line-hover`)).toBe(selected)
+      expect(notice.classList.contains(`bg-${candidate}-banner`)).toBe(selected)
+      expect(notice.classList.contains(`text-${candidate}-fg-strong`)).toBe(selected)
+      expect(notice.querySelector('ul')!.classList.contains(`text-${candidate}-fg-strong/90`)).toBe(selected)
+      expect(notice.querySelector('button')!.classList.contains(`hover:bg-${candidate}-hover`)).toBe(selected)
+    }
   })
 
   it('announces an import error assertively with structural severity', () => {
