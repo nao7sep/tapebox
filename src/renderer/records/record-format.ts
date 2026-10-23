@@ -4,15 +4,13 @@ import type {
   RecordKind,
   RecordLevel,
   RecordLevelFilter,
-  RecordsPage,
   RecordSummary,
   RunStop,
 } from '@shared/records'
 
 /**
  * The Records window's pure decisions: how a record is named and keyed, how its
- * stored text is shown, where the next page starts, and how a re-read newest
- * page joins the rows already shown.
+ * stored text is shown and where the next page starts.
  */
 
 export function recordKey(record: { kind: RecordKind; id: number }): string {
@@ -92,32 +90,6 @@ export const LEVEL_CLASSES: Readonly<Record<RecordLevel, string>> = {
 export function cursorAfter(records: readonly RecordSummary[]): RecordCursor | null {
   const last = records.at(-1)
   return last === undefined ? null : { time: last.time, kind: last.kind, id: last.id }
-}
-
-// The order the list shows records in, newest first; the database pages them
-// the same way.
-function newestFirst(a: RecordSummary, b: RecordSummary): number {
-  if (a.time !== b.time) return a.time < b.time ? 1 : -1
-  if (a.kind !== b.kind) return a.kind < b.kind ? 1 : -1
-  return b.id - a.id
-}
-
-/**
- * The newest page read again, joined with the rows already shown: a row in both
- * takes the page's copy, and the rows shown beyond the page stay, so the pages
- * already read are kept and a page read out of order loses nothing.
- */
-export function mergeNewestPage(
-  shown: readonly RecordSummary[],
-  shownMore: boolean,
-  page: RecordsPage,
-): { records: RecordSummary[]; more: boolean } {
-  const byKey = new Map(shown.map((record) => [recordKey(record), record]))
-  for (const record of page.records) byKey.set(recordKey(record), record)
-  const records = [...byKey.values()].sort(newestFirst)
-  const last = page.records.at(-1)
-  const beyond = last !== undefined && shown.some((record) => newestFirst(record, last) > 0)
-  return { records, more: beyond ? shownMore : page.more }
 }
 
 /** Within about one screen of the end of what is loaded. */

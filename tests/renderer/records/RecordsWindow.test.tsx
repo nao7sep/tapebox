@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { IpcCallError } from '@shared/ipc-reply'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -88,6 +89,7 @@ const isScroll = (element: HTMLElement) => element.hasAttribute('data-records-sc
 let root: Root | null = null
 
 beforeEach(() => {
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false })
   ipcInvoke.mockReset()
   ipcInvoke.mockImplementation((channel: keyof IpcCalls, req: unknown) => {
     const reply = replies.get(channel)
@@ -525,6 +527,88 @@ describe('RecordsWindow', () => {
     await act(async () => vi.advanceTimersByTime(1000))
     expect(pageCalls()).toHaveLength(2)
     expect(options()).toHaveLength(2)
+    expect(logError).toHaveBeenCalledOnce()
+  })
+
+  it('publishes a slow refresh before coalescing further changes into one follow-up', async () => {
+    await mount()
+    vi.useFakeTimers()
+    const first = deferred<RecordsPage>()
+    const second = deferred<RecordsPage>()
+    answer('records:page', () => first.promise, () => second.promise)
+    await signal()
+    await act(async () => vi.advanceTimersByTime(1000))
+    for (let index = 0; index < 3; index++) {
+      await signal()
+      await act(async () => vi.advanceTimersByTime(1000))
+    }
+    expect(pageCalls()).toHaveLength(2)
+    expect(sourceCalls()).toHaveLength(2)
+    await act(async () => first.resolve({ records: [newer], more: false }))
+    expect(titles()).toEqual(['arrived while open'])
+    await act(async () => vi.advanceTimersByTime(1000))
+    expect(pageCalls()).toHaveLength(3)
+    await act(async () => second.resolve({ records: [newer, call], more: false }))
+    expect(titles()).toEqual(['arrived while open', 'gpt-x'])
+  })
+
+  it('allows a slow source response to publish before another live refresh', async () => {
+    await mount()
+    vi.useFakeTimers()
+    const sources = deferred<{ currentSession: string; sessions: string[]; tapes: { tapeId: string; name: string }[] }>()
+    answer('records:sources', () => sources.promise)
+    await signal()
+    await act(async () => vi.advanceTimersByTime(1000))
+    await signal()
+    await act(async () => vi.advanceTimersByTime(3000))
+    expect(sourceCalls()).toHaveLength(2)
+    await act(async () => sources.resolve({ currentSession: SESSION, sessions: [SESSION], tapes: [{ tapeId: 'new', name: 'New source' }] }))
+    expect(document.querySelectorAll('select')[1]!.textContent).toContain('New source')
+  })
+
+  it('retries a failed read while scrolled down without leaving the failure stuck', async () => {
+    await mount()
+    await scrollTo(300)
+    answer('records:sources', () => Promise.reject(new Error('busy')), { currentSession: SESSION, sessions: [SESSION], tapes: [] })
+    vi.useFakeTimers()
+    await signal()
+    await act(async () => vi.advanceTimersByTime(1000))
+    const retry = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Try again')!
+    await act(async () => retry.click())
+    expect(box.scrollTop).toBe(0)
+    expect(document.body.textContent).not.toContain('The records could not be read.')
+  })
+
+  it('retains one dirty signal while hidden and catches up when visible', async () => {
+    await mount()
+    vi.useFakeTimers()
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    await signal()
+    await signal()
+    await act(async () => vi.advanceTimersByTime(5000))
+    expect(pageCalls()).toHaveLength(1)
+    expect(sourceCalls()).toHaveLength(1)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect(pageCalls()).toHaveLength(2)
+    expect(sourceCalls()).toHaveLength(2)
+  })
+
+  it.each(['records:page', 'records:sources'] as const)('shows and retries a live %s failure without duplicating main diagnostics', async (channel) => {
+    await mount()
+    vi.useFakeTimers()
+    const fallback = channel === 'records:page'
+      ? { records: [newer, call], more: false }
+      : { currentSession: SESSION, sessions: [SESSION], tapes: [] }
+    answer(channel, () => Promise.reject(new IpcCallError(channel, { code: 'internal', userMessage: null })), fallback)
+    await signal()
+    await act(async () => vi.advanceTimersByTime(1000))
+    expect(document.body.textContent).toContain('The records could not be read.')
+    expect(logError).not.toHaveBeenCalled()
+    const retry = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Try again')!
+    await act(async () => retry.click())
+    expect(document.body.textContent).not.toContain('The records could not be read.')
   })
 
   it('stops listening for new records when it closes', async () => {

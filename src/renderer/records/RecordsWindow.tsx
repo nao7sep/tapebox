@@ -11,7 +11,8 @@ import { useRecordPages } from './useRecordPages'
 import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { PassiveScrollRegion } from '@renderer/components/PassiveScrollRegion'
-import { InlineError } from '@renderer/components/ui'
+import { IpcCallError } from '@shared/ipc-reply'
+import { Button, InlineError } from '@renderer/components/ui'
 import { INPUT_LINE_CLASS } from '@renderer/components/ui/input-styles'
 import type { LanguagePreference } from '@shared/i18n/languages'
 import { displayTimeZone, SYSTEM_TIME_ZONE } from '@shared/time-zone'
@@ -47,7 +48,7 @@ import {
 const LIST_WIDTH = LAYOUT_BOUNDS.recordsListWidth
 
 function diagnose(operation: string, error: unknown): void {
-  log.error(operation, { error: describeError(error) })
+  if (!(error instanceof IpcCallError)) log.error(operation, { error: describeError(error) })
 }
 
 /**
@@ -145,7 +146,9 @@ type Selection = { kind: RecordKind; id: number }
 export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth: number; timeZone: string }) {
   const t = useI18n()
   const [sources, setSources] = useState<RecordSources | null>(null)
-  const [sourceReads, setSourceReads] = useState(0)
+  const [sourcesFailed, setSourcesFailed] = useState(false)
+  const sourceFailure = useRef(false)
+  const requestRefresh = useRef<(retry?: boolean) => void>(() => {})
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   const [searchText, setSearchText] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
@@ -192,44 +195,71 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
     return () => clearTimeout(timer)
   }, [searchText])
 
-  useEffect(() => {
-    let cancelled = false
-    void ipcInvoke('records:sources').then(
-      (next) => {
-        if (!cancelled) setSources(next)
-      },
-      (error: unknown) => {
-        liveSuspended.current = true
-        diagnose('record sources read failed', error)
-      },
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [sourceReads])
+  const readNewest = useCallback((): void => requestRefresh.current(), [])
 
-  const readNewest = useCallback((): void => { void pageOwner.current.refresh() }, [])
-
-  // A stored record reaches the list at once while it is scrolled to the top;
-  // otherwise it waits until the list is back there, so the list never moves
-  // under the reader.
+  // One owner coalesces notifications across both live queries. Successful reads
+  // publish before the next read starts, even if notifications never stop.
   useEffect(() => {
+    let disposed = false
+    let running = false
+    let pending = false
     let timer: ReturnType<typeof setTimeout> | null = null
-    const unsubscribe = ipcOn('records:changed', () => {
-      if (timer !== null || liveSuspended.current) return
-      timer = setTimeout(() => {
-        timer = null
-        setSourceReads((count) => count + 1)
-        const scroll = scrollRef.current
-        if (scroll === null || atTop(scroll)) readNewest()
-        else newestPending.current = true
-      }, LIVE_INTERVAL_MS)
-    })
+    const suspended = () => liveSuspended.current || sourceFailure.current
+    const readSources = async () => {
+      try {
+        const next = await ipcInvoke('records:sources')
+        if (disposed) return
+        setSources(next)
+        sourceFailure.current = false
+        setSourcesFailed(false)
+      } catch (error) {
+        if (disposed) return
+        sourceFailure.current = true
+        setSourcesFailed(true)
+        diagnose('record sources read failed', error)
+      }
+    }
+    const schedule = () => {
+      if (disposed || running || timer !== null || !pending || document.hidden || suspended()) return
+      timer = setTimeout(() => { timer = null; void run() }, LIVE_INTERVAL_MS)
+    }
+    const run = async (initial = false) => {
+      if (disposed || running || (!initial && (document.hidden || suspended()))) return
+      running = true
+      pending = false
+      const scroll = scrollRef.current
+      const refreshList = !initial && (scroll === null || atTop(scroll))
+      if (!initial && !refreshList) newestPending.current = true
+      await Promise.all([readSources(), refreshList ? pageOwner.current.refresh() : undefined])
+      running = false
+      schedule()
+    }
+    requestRefresh.current = (retry = false) => {
+      if (retry) {
+        liveSuspended.current = false
+        sourceFailure.current = false
+        if (scrollRef.current) scrollRef.current.scrollTop = 0
+      }
+      pending = true
+      if (timer !== null) { clearTimeout(timer); timer = null }
+      void run()
+    }
+    const unsubscribe = ipcOn('records:changed', () => { pending = true; schedule() })
+    const visibility = () => {
+      if (document.hidden) {
+        if (timer !== null) { clearTimeout(timer); timer = null }
+      } else if (pending) void run()
+    }
+    document.addEventListener('visibilitychange', visibility)
+    void run(true)
     return () => {
+      disposed = true
+      requestRefresh.current = () => {}
       unsubscribe()
+      document.removeEventListener('visibilitychange', visibility)
       if (timer !== null) clearTimeout(timer)
     }
-  }, [readNewest])
+  }, [])
 
   const selectedKey = selected === null ? null : recordKey(selected)
 
@@ -372,6 +402,12 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
               />
             </div>
           </div>
+          {(list.failed || sourcesFailed) && (
+            <div className="m-3 flex items-center gap-2">
+              <InlineError>{t.t('records.loadFailed')}</InlineError>
+              <Button onClick={() => requestRefresh.current(true)}>{t.t('common.tryAgain')}</Button>
+            </div>
+          )}
           <div
             ref={scrollRef}
             data-records-scroll
@@ -379,9 +415,7 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
             aria-busy={list.status === 'loading' || list.pending.size > 0}
             onScroll={onListScroll}
           >
-            {list.status === 'failed' ? (
-              <InlineError className="m-3">{t.t('records.loadFailed')}</InlineError>
-            ) : list.status === 'loading' ? (
+            {list.status === 'failed' ? null : list.status === 'loading' ? (
               <p className="p-4 text-sm text-fg">{t.t('records.loading')}</p>
             ) : list.pages.every((page) => page.count === 0) ? (
               <p className="p-4 text-sm text-fg">{t.t('records.empty')}</p>
@@ -433,9 +467,6 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
             )}
             {list.status === 'ready' && list.pending.size > 0 && (
               <p className="p-4 text-sm text-fg">{t.t('records.loading')}</p>
-            )}
-            {list.status === 'ready' && list.moreFailed && (
-              <InlineError className="m-3">{t.t('records.loadFailed')}</InlineError>
             )}
           </div>
           <ResizeHandle
