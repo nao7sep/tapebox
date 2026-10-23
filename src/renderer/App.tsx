@@ -137,7 +137,7 @@ function HydratedApp() {
   const { requestRemove, confirmModal } = useTapeRemoval(videoRef)
   useAppShortcuts(() => setShowShortcuts(true))
   // Apply the configured UI font; reverts to the @theme default when cleared.
-  useUiFont()
+  useUiFont(useSettingsStore((s) => s.settings?.uiFontFamily ?? ''))
   // The persisted leftPaneWidth is the drag-set INTENT; the displayed width is
   // derived from it and the live content row, narrowing toward the pane min when
   // the window shrinks and returning to the intent when it grows (display-only,

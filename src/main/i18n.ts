@@ -33,6 +33,7 @@ let systemLocale: string | null = null
 let preference: LanguagePreference = 'system'
 // The language main speaks: the effective one once its catalogue has loaded.
 let spoken: Language = 'en'
+let loadedLanguage: Language | null = null
 
 function readConfigText(): string | null {
   try {
@@ -110,12 +111,15 @@ export function mainTranslator(): Translator {
 }
 
 /** Follow the saved choice: at launch once settings load, and on every Save. */
-export async function applyLanguagePreference(next: LanguagePreference): Promise<void> {
-  if (next !== preference) {
+export async function applyLanguagePreference(next: LanguagePreference): Promise<boolean> {
+  const changed = next !== preference
+  if (changed) {
     preference = next
     alignAppKit(next)
   }
+  if (!changed && loadedLanguage === currentLanguage()) return false
   await speakCurrentLanguage()
+  return true
 }
 
 // A catalogue that cannot load leaves main in the language it already speaks.
@@ -124,6 +128,7 @@ async function speakCurrentLanguage(): Promise<void> {
   try {
     await loadCatalogue(language)
     spoken = language
+    loadedLanguage = language
   } catch (error) {
     log.warn('language catalogue could not be loaded', { language, error: describeError(error) })
   }

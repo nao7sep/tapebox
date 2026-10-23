@@ -26,7 +26,7 @@ import { inEnglish } from '../../helpers/i18n'
 
 const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn() }))
-vi.mock('@main/i18n', () => ({ applyLanguagePreference: vi.fn() }))
+vi.mock('@main/i18n', () => ({ applyLanguagePreference: vi.fn(async () => false) }))
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
@@ -111,6 +111,25 @@ describe('settings:update and the display zone', () => {
     const { emit } = await import('@main/ipc/events')
     await update({ timeZone: 'Asia/Tokyo' })
     expect(emit).toHaveBeenCalledWith('settings:timeZoneChanged', 'Asia/Tokyo')
+  })
+})
+
+describe('settings:update effects', () => {
+  it('leaves appearance and window display events alone for unrelated saves', async () => {
+    const { applyThemePreference } = await import('@main/theme')
+    const { emit } = await import('@main/ipc/events')
+    await update({ autoStartDownloads: !base.autoStartDownloads })
+    expect(applyThemePreference).not.toHaveBeenCalled()
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it('publishes a changed font to other documents, including clearing it', async () => {
+    const { emit } = await import('@main/ipc/events')
+    await update({ uiFontFamily: 'Georgia' })
+    expect(emit).toHaveBeenCalledWith('settings:uiFontChanged', 'Georgia')
+    base.uiFontFamily = 'Georgia'
+    await update({ uiFontFamily: '' })
+    expect(emit).toHaveBeenCalledWith('settings:uiFontChanged', '')
   })
 })
 

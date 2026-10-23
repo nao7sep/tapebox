@@ -127,6 +127,30 @@ describe('main-process interface language', () => {
     expect(LANGUAGES.filter(isCatalogueLoaded)).toEqual(['en', 'ja', 'ko'])
   })
 
+  it('keeps the installed menu for unchanged, successfully loaded preferences', async () => {
+    const i18n = await load()
+    await i18n.settleLanguageWhenReady()
+    expect(electron.menus).toHaveLength(1)
+    expect(await i18n.applyLanguagePreference('system')).toBe(false)
+    expect(electron.menus).toHaveLength(1)
+  })
+
+  it('retries an unchanged preference after its catalogue failed', async () => {
+    const i18n = await load()
+    const catalogues = await import('@shared/i18n/catalogues')
+    const read = vi.spyOn(catalogues, 'loadCatalogue').mockRejectedValueOnce(new Error('unavailable'))
+    try {
+      await i18n.settleLanguageWhenReady()
+      expect(i18n.mainTranslator().language).toBe('en')
+      expect(await i18n.applyLanguagePreference('system')).toBe(true)
+      expect(i18n.mainTranslator().language).toBe('ja')
+      expect(await i18n.applyLanguagePreference('system')).toBe(false)
+      expect(read).toHaveBeenCalledTimes(2)
+    } finally {
+      read.mockRestore()
+    }
+  })
+
   it('leaves the defaults alone off macOS', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
     electron.configText = JSON.stringify({ formatVersion: 1, language: 'it' })

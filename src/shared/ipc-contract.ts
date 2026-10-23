@@ -325,6 +325,7 @@ export type IpcEvents = {
   'settings:languageChanged': LanguagePreference
   // Settings saved a display zone; the Records window shows its times in it.
   'settings:timeZoneChanged': string
+  'settings:uiFontChanged': string
   // The OS preference may have changed independently of the app's forced theme.
   'settings:systemAppearanceChanged': null
 

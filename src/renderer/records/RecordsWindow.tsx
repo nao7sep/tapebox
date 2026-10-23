@@ -5,6 +5,7 @@ import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import { I18nProvider, useI18n } from '@renderer/i18n/I18nContext'
 import { initialLanguagePreference, useLanguage } from '@renderer/i18n/useInterfaceLanguage'
+import { useUiFont } from '@renderer/lib/useUiFont'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useRecordPages } from './useRecordPages'
 import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
@@ -59,9 +60,12 @@ export function RecordsApp() {
   const interfaceLanguage = useLanguage(preference)
   const [listWidth, setListWidth] = useState<number | null>(null)
   const [timeZone, setTimeZone] = useState<string | null>(null)
+  const [uiFont, setUiFont] = useState<string | null>(null)
+  useUiFont(uiFont ?? '')
 
   useEffect(() => ipcOn('settings:languageChanged', setPreference), [])
   useEffect(() => ipcOn('settings:timeZoneChanged', setTimeZone), [])
+  useEffect(() => ipcOn('settings:uiFontChanged', setUiFont), [])
 
   // Times show in the saved display zone (timestamp-conventions, Time zones);
   // one that cannot be read leaves System.
@@ -69,11 +73,17 @@ export function RecordsApp() {
     let cancelled = false
     void ipcInvoke('settings:get').then(
       (settings) => {
-        if (!cancelled) setTimeZone((current) => current ?? settings.timeZone)
+        if (!cancelled) {
+          setTimeZone((current) => current ?? settings.timeZone)
+          setUiFont((current) => current ?? settings.uiFontFamily)
+        }
       },
       (error: unknown) => {
-        diagnose('records display zone read failed', error)
-        if (!cancelled) setTimeZone((current) => current ?? SYSTEM_TIME_ZONE)
+        diagnose('records display settings read failed', error)
+        if (!cancelled) {
+          setTimeZone((current) => current ?? SYSTEM_TIME_ZONE)
+          setUiFont((current) => current ?? '')
+        }
       },
     )
     return () => {
@@ -97,7 +107,7 @@ export function RecordsApp() {
     }
   }, [])
 
-  if (!interfaceLanguage || listWidth === null || timeZone === null) {
+  if (!interfaceLanguage || listWidth === null || timeZone === null || uiFont === null) {
     const loading = <RecordsLoading />
     return interfaceLanguage ? (
       <I18nProvider language={interfaceLanguage.language} locale={interfaceLanguage.locale}>{loading}</I18nProvider>

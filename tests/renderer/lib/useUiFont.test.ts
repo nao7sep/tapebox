@@ -12,7 +12,7 @@ import { defaultSettings, type Settings } from '@shared/settings'
 let root: Root | null = null
 
 function Harness(): null {
-  useUiFont()
+  useUiFont(useSettingsStore((s) => s.settings?.uiFontFamily ?? ''))
   return null
 }
 

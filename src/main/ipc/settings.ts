@@ -206,17 +206,19 @@ async function applySettingsPatch(
   }
   // Settings apply on Save, the theme (app-chrome conventions, Theme) and the
   // language (localization-conventions) included.
-  applyThemePreference(next.theme)
-  await applyLanguagePreference(next.language)
-  emit('settings:languageChanged', next.language)
-  emit('settings:timeZoneChanged', next.timeZone)
+  if (next.theme !== previous.theme) applyThemePreference(next.theme)
+  // The language owner also retries a catalogue that previously failed to load.
+  const languageApplied = await applyLanguagePreference(next.language)
+  if (languageApplied || next.language !== previous.language) emit('settings:languageChanged', next.language)
+  if (next.timeZone !== previous.timeZone) emit('settings:timeZoneChanged', next.timeZone)
+  if (next.uiFontFamily !== previous.uiFontFamily) emit('settings:uiFontChanged', next.uiFontFamily)
   // Flipping autostart on should start anything already waiting.
   if (!previous.autoStartDownloads && next.autoStartDownloads) queue.resumePaused()
   else if (next.autoStartDownloads && next.maxConcurrentDownloads > previous.maxConcurrentDownloads) queue.tick()
   // Toggling keep-awake off mid-playback must release the held wake lock now
   // (and toggling it on while a tape plays must acquire it) — reconcile against
   // the new setting rather than waiting for the next play/pause transition.
-  reconcileWakeLock()
+  if (next.keepAwakeWhilePlaying !== previous.keepAwakeWhilePlaying) reconcileWakeLock()
   // The commit above is the outcome: the new folder is authoritative, so a failed
   // cleanup of the old copies is a warning on a successful save, never a failure.
   if (relocation) {

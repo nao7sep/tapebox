@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import { useSettingsStore } from '@renderer/store/settings'
 
 /**
  * Apply the user's configured UI font family to the document.
@@ -12,8 +11,7 @@ import { useSettingsStore } from '@renderer/store/settings'
  * web fonts are engine-resolved, not parsed). Clearing the field reverts to the
  * default by removing the inline override.
  */
-export function useUiFont(): void {
-  const family = useSettingsStore((s) => s.settings?.uiFontFamily ?? '')
+export function useUiFont(family: string): void {
   useEffect(() => {
     const root = document.documentElement
     const value = family.trim()

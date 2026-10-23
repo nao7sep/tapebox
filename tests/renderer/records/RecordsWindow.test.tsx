@@ -111,7 +111,7 @@ beforeEach(() => {
   })
   replies.set('layout:update', async (patch) => ({ ...defaultLayout, ...(patch as object) }))
   answer('layout:get', { ...defaultLayout, recordsListWidth: 512 })
-  answer('settings:get', { timeZone: 'system' })
+  answer('settings:get', { timeZone: 'system', uiFontFamily: '' })
   Object.assign(box, { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000 })
   resizeCallbacks.clear()
   vi.stubGlobal('ResizeObserver', TestResizeObserver)
@@ -585,9 +585,28 @@ describe('RecordsWindow', () => {
 })
 
 describe('RecordsApp', () => {
+  it('applies its saved font and follows changes and clearing in its own document', async () => {
+    answer('settings:get', { timeZone: 'system', uiFontFamily: 'Georgia' })
+    await mount(createElement(RecordsApp))
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toBe('Georgia')
+    await act(async () => listeners.get('settings:uiFontChanged')!('Arial'))
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toBe('Arial')
+    await act(async () => listeners.get('settings:uiFontChanged')!(''))
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toBe('')
+  })
+
+  it('keeps a newer font event when the initial settings read arrives late', async () => {
+    const settings = deferred<{ timeZone: string; uiFontFamily: string }>()
+    answer('settings:get', () => settings.promise)
+    await mount(createElement(RecordsApp))
+    await act(async () => listeners.get('settings:uiFontChanged')!('Arial'))
+    await act(async () => settings.resolve({ timeZone: 'system', uiFontFamily: 'Georgia' }))
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toBe('Arial')
+  })
+
   it('shows localized loading until saved layout and display settings are ready', async () => {
     const layout = deferred<typeof defaultLayout>()
-    const settings = deferred<{ timeZone: string }>()
+    const settings = deferred<{ timeZone: string; uiFontFamily: string }>()
     answer('layout:get', () => layout.promise)
     answer('settings:get', () => settings.promise)
     await mount(createElement(RecordsApp))
@@ -598,7 +617,7 @@ describe('RecordsApp', () => {
     await act(async () => layout.resolve(defaultLayout))
     expect(document.querySelector('[role="status"]')?.textContent).toBe(CATALOGUES.ja['common.loading'])
     expect(pageCalls()).toHaveLength(0)
-    await act(async () => settings.resolve({ timeZone: 'UTC' }))
+    await act(async () => settings.resolve({ timeZone: 'UTC', uiFontFamily: '' }))
     expect(document.querySelector('[role="status"]')?.textContent).not.toBe(CATALOGUES.ja['common.loading'])
     expect(pageCalls()).toHaveLength(1)
   })
@@ -616,7 +635,7 @@ describe('RecordsApp', () => {
 
   // Times show in the display zone saved in Settings (timestamp-conventions).
   it('shows times in the saved display zone, and follows one saved in Settings', async () => {
-    answer('settings:get', { timeZone: 'Asia/Tokyo' })
+    answer('settings:get', { timeZone: 'Asia/Tokyo', uiFontFamily: '' })
     await mount(createElement(RecordsApp))
     // The AI call at 08:01 UTC.
     expect(options()[0]!.textContent).toContain('5:01:00')
