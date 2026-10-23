@@ -1,6 +1,10 @@
 import { withRetry, withRequestTimeout } from './retry'
 import {
   HTTP_RETRY,
+  HttpResponseError,
+  discardResponse,
+  fetchHttp,
+  transportFailure,
   VERSION_CHECK_TIMEOUT_MS,
   assertHttpsUrl,
   fetchHttps,
@@ -19,8 +23,15 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
     () =>
       withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, init?.signal ?? undefined, async (signal) => {
         const res = await fetchHttps(url, { ...init, signal }, 'metadata')
-        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
-        return res.json() as Promise<T>
+        if (!res.ok) {
+          await discardResponse(res)
+          throw new HttpResponseError(res.status, res.statusText, url)
+        }
+        try {
+          return await res.json() as T
+        } catch (err) {
+          throw transportFailure(err, signal)
+        }
       }),
     { signal: init?.signal ?? undefined, isRetryable: isRetryableHttpFailure },
   )
@@ -39,8 +50,15 @@ export async function fetchText(url: string, init?: RequestInit): Promise<string
     () =>
       withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, init?.signal ?? undefined, async (signal) => {
         const res = await fetchHttps(url, { ...init, signal }, 'checksum')
-        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
-        return res.text()
+        if (!res.ok) {
+          await discardResponse(res)
+          throw new HttpResponseError(res.status, res.statusText, url)
+        }
+        try {
+          return await res.text()
+        } catch (err) {
+          throw transportFailure(err, signal)
+        }
       }),
     { signal: init?.signal ?? undefined, isRetryable: isRetryableHttpFailure },
   )
@@ -58,13 +76,20 @@ export async function fetchRedirectLocation(url: string, init?: RequestInit): Pr
     HTTP_RETRY,
     () =>
       withRequestTimeout(VERSION_CHECK_TIMEOUT_MS, init?.signal ?? undefined, async (signal) => {
-        const res = await fetch(url, { ...init, redirect: 'manual', signal })
-        assertHttpsUrl(res.url, 'redirect response')
-        const location = res.headers.get('location')
-        if (!location) {
-          throw new Error(`expected a redirect with a Location header from ${url} (got HTTP ${res.status})`)
+        const res = await fetchHttp(url, { ...init, redirect: 'manual', signal })
+        try {
+          assertHttpsUrl(res.url, 'redirect response')
+          if (res.status < 300 || res.status > 399) {
+            throw new HttpResponseError(res.status, res.statusText, url)
+          }
+          const location = res.headers.get('location')
+          if (!location) {
+            throw new Error(`expected a redirect with a Location header from ${url} (got HTTP ${res.status})`)
+          }
+          return location
+        } finally {
+          await discardResponse(res)
         }
-        return location
       }),
     { signal: init?.signal ?? undefined, isRetryable: isRetryableHttpFailure },
   )

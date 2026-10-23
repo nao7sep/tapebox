@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { Writable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { downloadWithProgress, pumpToFile } from '@main/binaries/http'
+import { isRetryableHttpFailure } from '@main/io/network'
 import { IdleTimeoutError } from '@main/io/spawn'
 
 // pumpToFile is the streaming core of downloadWithProgress, lifted out so the
@@ -193,12 +194,12 @@ describe('pumpToFile', () => {
     expect(Buffer.concat(received)).toEqual(Buffer.from(chunks.map((c) => c[0]!)))
   })
 
-  it('aborts with an IdleTimeoutError when the transfer stalls', async () => {
+  it('aborts with a retryable IdleTimeoutError cause when the transfer stalls', async () => {
     const body = stallingBodyAfter(new Uint8Array([1, 2, 3]))
 
-    await expect(
-      pumpToFile(body, collector([]), { ...OPTS, idleTimeoutMs: 30 }),
-    ).rejects.toBeInstanceOf(IdleTimeoutError)
+    const error = await pumpToFile(body, collector([]), { ...OPTS, idleTimeoutMs: 30 }).catch((err) => err)
+    expect(error.cause).toBeInstanceOf(IdleTimeoutError)
+    expect(isRetryableHttpFailure(error)).toBe(true)
   })
 
   it('does not fire the idle watchdog while a slow-but-alive transfer keeps delivering', async () => {
@@ -285,4 +286,31 @@ it('retains a colliding download file whose exclusive creation failed', async ()
     await expect(downloadWithProgress({ ...OPTS, destPath: path })).rejects.toMatchObject({ code: 'EEXIST' })
     expect(await readFile(path, 'utf8')).toBe('existing contender')
   } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+
+it('discards an unsuccessful download body and keeps its HTTP error', async () => {
+  const cancel = vi.fn().mockRejectedValue(new Error('cleanup failed'))
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    url: OPTS.url, ok: false, status: 404, statusText: 'Not Found',
+    body: { cancel }, headers: new Headers(),
+  }))
+  const error = await downloadWithProgress({ ...OPTS, destPath: 'must-not-be-opened' }).catch((err) => err)
+  expect(error.message).toContain('HTTP 404')
+  expect(isRetryableHttpFailure(error)).toBe(false)
+  expect(cancel).toHaveBeenCalledOnce()
+})
+
+it('classifies a network source failure for retry while destination failures stay terminal', async () => {
+  const sourceError = new TypeError('terminated', { cause: Object.assign(new Error('socket'), { code: 'UND_ERR_SOCKET' }) })
+  const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(sourceError) } })
+  const error = await pumpToFile(body, collector([]), OPTS).catch((err) => err)
+  expect(isRetryableHttpFailure(error)).toBe(true)
+  expect(error.cause).toBe(sourceError)
+
+  const destinationError = Object.assign(new Error('destination failed'), { code: 'EPIPE' })
+  const out = new Writable({ write(_chunk, _enc, cb) { cb(destinationError) } })
+  const failure = await pumpToFile(bodyOf(new Uint8Array([1])), out, OPTS).catch((err) => err)
+  expect(failure).toBe(destinationError)
+  expect(isRetryableHttpFailure(failure)).toBe(false)
 })

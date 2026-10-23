@@ -64,10 +64,57 @@ export class UnsafeUrlError extends Error {
 const HTTPS_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
 const MAX_HTTPS_REDIRECTS = 10
 
-/** A URL-policy failure is deterministic; retrying the same downgrade only
- * delays the refusal. */
+export class HttpResponseError extends Error {
+  readonly status: number
+  constructor(status: number, statusText: string, url: string) {
+    super(`HTTP ${status} ${statusText} for ${url}`)
+    this.name = 'HttpResponseError'
+    this.status = status
+  }
+}
+
+class HttpTransportError extends Error {
+  constructor(cause: Error) {
+    super(cause.message, { cause })
+    this.name = 'HttpTransportError'
+  }
+}
+
+const TRANSIENT_TRANSPORT_CODES = new Set([
+  'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE', 'ETIMEDOUT',
+  'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET',
+])
+
+/** Called only at network edges, so local filesystem and parse errors retain
+ * their original type and cannot accidentally enter the retry schedule. */
+export function transportFailure(err: unknown, signal?: AbortSignal): unknown {
+  if (signal?.aborted && signal.reason?.name !== 'TimeoutError' && signal.reason?.name !== 'IdleTimeoutError') return err
+  if (!(err instanceof Error)) return err
+  const cause = err.cause as NodeJS.ErrnoException | undefined
+  const code = (err as NodeJS.ErrnoException).code ?? cause?.code
+  return (code && TRANSIENT_TRANSPORT_CODES.has(code)) || err.name === 'TimeoutError' || err.name === 'IdleTimeoutError'
+    ? new HttpTransportError(err)
+    : err
+}
+
 export function isRetryableHttpFailure(err: unknown): boolean {
-  return !(err instanceof UnsafeUrlError)
+  return err instanceof HttpTransportError || (err instanceof HttpResponseError
+    && (err.status === 408 || err.status === 429 || (err.status >= 500 && err.status <= 599)))
+}
+
+/** Fetch failures are classified here, before parsing or writing can fail. */
+export async function fetchHttp(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (err) {
+    throw transportFailure(err, init?.signal ?? undefined)
+  }
+}
+
+/** Discard an unused body without replacing the operation's primary result. */
+export async function discardResponse(res: Response): Promise<void> {
+  await res.body?.cancel().catch(() => {})
 }
 
 /**
@@ -105,10 +152,15 @@ export async function fetchHttps(
   let current = url
   for (let redirects = 0; ; redirects += 1) {
     assertHttpsUrl(current, context)
-    const res = await fetch(current, { ...init, redirect: 'manual' })
+    const res = await fetchHttp(current, { ...init, redirect: 'manual' })
     // A manual redirect must leave us on the URL we chose. Keep this check as a
     // defence against runtime/proxy behavior that reports a different effective URL.
-    assertHttpsUrl(res.url, `${context} response`)
+    try {
+      assertHttpsUrl(res.url, `${context} response`)
+    } catch (err) {
+      await discardResponse(res)
+      throw err
+    }
 
     if (!HTTPS_REDIRECT_STATUSES.has(res.status)) return res
     let next: string
@@ -125,7 +177,7 @@ export async function fetchHttps(
     } finally {
       // We do not consume redirect bodies. Explicit cancellation releases their
       // connection/resources before either following or rejecting the next hop.
-      await res.body?.cancel().catch(() => {})
+      await discardResponse(res)
     }
     current = next
   }

@@ -6,7 +6,7 @@ import { Readable, Transform, type Writable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import { pipeline } from 'node:stream/promises'
 import { IdleTimeoutError } from '@main/io/spawn'
-import { assertHttpsUrl, fetchHttps } from '@main/io/network'
+import { assertHttpsUrl, discardResponse, fetchHttps, HttpResponseError, transportFailure } from '@main/io/network'
 
 /**
  * Download a URL to a destination path with progress callbacks.
@@ -37,7 +37,7 @@ export async function downloadWithProgress(opts: DownloadOptions): Promise<void>
 
   // Connect phase: bound the wait for response headers. The watchdog aborts the
   // fetch signal; undici rejects fetch with the abort reason, so a stalled
-  // connect surfaces as the same IdleTimeoutError a stalled transfer does.
+  // connect and transfer stalls retain the IdleTimeoutError as their cause.
   const connect = new AbortController()
   const signal = opts.signal ? AbortSignal.any([opts.signal, connect.signal]) : connect.signal
   const watch = idleWatchdog(opts.url, opts.idleTimeoutMs, (err) => connect.abort(err))
@@ -50,7 +50,10 @@ export async function downloadWithProgress(opts: DownloadOptions): Promise<void>
     watch.clear()
   }
 
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} from ${opts.url}`)
+  if (!res.ok) {
+    await discardResponse(res)
+    throw new HttpResponseError(res.status, res.statusText, opts.url)
+  }
   if (!res.body) throw new Error(`Response body missing from ${opts.url}`)
 
   const contentLength = res.headers.get('content-length')
@@ -91,7 +94,8 @@ export async function downloadWithProgress(opts: DownloadOptions): Promise<void>
  *
  * pipeline propagates an error from any stage as a rejection and destroys every
  * stream, so there is no manual write/drain loop to strand. The idle watchdog
- * destroys the source with an IdleTimeoutError, which pipeline surfaces verbatim.
+ * destroys the source with an IdleTimeoutError. Network source failures are
+ * classified for retry after pipeline settles; destination failures stay terminal.
  *
  * The watchdog is kicked as each chunk is pulled from the source. Under write
  * backpressure a chunk is pulled only once the previous write drains, so a
@@ -119,6 +123,14 @@ export async function pumpToFile(
   // iterator) because it cancels the reader on destroy, which is what lets the idle
   // watchdog and a caller abort interrupt a transfer that is parked mid-read.
   const source = Readable.fromWeb(body as WebReadableStream)
+  let sourceFailure: unknown
+  let failureOrigin: 'source' | 'destination' | undefined
+  const onDestinationError = () => { failureOrigin ??= 'destination' }
+  out.once('error', onDestinationError)
+  source.once('error', (err) => {
+    failureOrigin ??= 'source'
+    sourceFailure = err
+  })
   const watch = idleWatchdog(opts.url, opts.idleTimeoutMs, (err) => source.destroy(err))
 
   let received = 0
@@ -138,7 +150,10 @@ export async function pumpToFile(
   watch.kick() // cover the gap before the first chunk arrives
   try {
     await pipeline(source, counter, out, { signal: opts.signal })
+  } catch (err) {
+    throw failureOrigin === 'source' && err === sourceFailure ? transportFailure(err, opts.signal) : err
   } finally {
+    out.removeListener('error', onDestinationError)
     watch.clear()
   }
 }
