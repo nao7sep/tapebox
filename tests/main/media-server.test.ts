@@ -1,3 +1,6 @@
+import { get as httpGet } from 'node:http'
+import { once } from 'node:events'
+import { setImmediate as nextTurn } from 'node:timers/promises'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,27 +9,48 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 // The real loopback server, driven over real HTTP — the point of this module is
 // what Chromium's media stack receives, so nothing about the request path is
-// substituted. Only the library location and the log sink are.
+// substituted. Library location and logging are stubbed; targeted filesystem
+// gates exercise disconnects during metadata and streaming.
 // `unreadable` names paths whose read fails after the file stats fine — a disk
 // going bad mid-playback, which no fixture can stage honestly.
 const mocks = vi.hoisted(() => ({
   libraryDir: '',
+  server: null as import('node:http').Server | null,
+  statGate: null as (() => Promise<void>) | null,
+  streams: [] as import('node:stream').Readable[],
+  holdStream: false,
   unreadable: new Set<string>(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => mocks.libraryDir }))
 vi.mock('@main/io/logger', () => ({ log: mocks.log }))
+vi.mock('node:http', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:http')>()
+  return { ...actual, createServer: (...args: Parameters<typeof actual.createServer>) => {
+    mocks.server = actual.createServer(...args)
+    return mocks.server
+  } }
+})
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, stat: async (...args: Parameters<typeof actual.stat>) => {
+    const info = await actual.stat(...args)
+    await mocks.statGate?.()
+    return info
+  } }
+})
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   const { Readable } = await import('node:stream')
   return {
     ...actual,
     createReadStream: (path: string, options?: unknown) => {
-      if (!mocks.unreadable.has(String(path))) {
-        return actual.createReadStream(path, options as Parameters<typeof actual.createReadStream>[1])
-      }
-      return new Readable({ read() { this.destroy(new Error('EIO: i/o error')) } })
+      const stream = mocks.holdStream ? new Readable({ read() {} })
+        : mocks.unreadable.has(String(path)) ? new Readable({ read() { this.destroy(new Error('EIO: i/o error')) } })
+        : actual.createReadStream(path, options as Parameters<typeof actual.createReadStream>[1])
+      mocks.streams.push(stream)
+      return stream
     },
   }
 })
@@ -52,6 +76,9 @@ beforeAll(async () => {
 
 afterEach(() => {
   mocks.unreadable.clear()
+  mocks.statGate = null
+  mocks.holdStream = false
+  mocks.streams.length = 0
   vi.clearAllMocks()
 })
 
@@ -80,6 +107,40 @@ describe('the media server lifecycle', () => {
 })
 
 describe('serving a library file', () => {
+  it('does not open a stream after the client disconnects during metadata lookup', async () => {
+    let release!: () => void
+    let entered!: () => void
+    const pending = new Promise<void>(resolve => { release = resolve })
+    const started = new Promise<void>(resolve => { entered = resolve })
+    mocks.statGate = async () => { entered(); await pending }
+    const connection = once(mocks.server!, 'connection')
+    const client = httpGet(`${base}/tape.mp4`)
+    client.on('error', () => {})
+    const [socket] = await connection
+    await started
+    const closed = once(socket, 'close')
+    client.destroy()
+    await closed
+    release()
+    await nextTurn()
+    expect(mocks.streams).toHaveLength(0)
+  })
+
+  it('destroys an opened file stream when the client disconnects', async () => {
+    mocks.holdStream = true
+    const connection = once(mocks.server!, 'connection')
+    const client = httpGet(`${base}/tape.mp4`)
+    client.on('error', () => {})
+    const [socket] = await connection
+    await vi.waitFor(() => expect(mocks.streams).toHaveLength(1))
+    const stream = mocks.streams[0]!
+    const closed = once(stream, 'close')
+    client.destroy()
+    await closed
+    expect(stream.destroyed).toBe(true)
+    socket.destroy()
+  })
+
   it.each([['audio.wav', 'audio/wav'], ['audio.flac', 'audio/flac']])('serves supported passive audio %s', async (path, type) => {
     const response = await get(path!)
     expect(response.status).toBe(200)

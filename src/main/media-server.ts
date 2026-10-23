@@ -1,5 +1,5 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
-import { createReadStream } from 'node:fs'
+import { createReadStream, type ReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { extname, join, normalize, sep } from 'node:path'
 import { nanoid } from 'nanoid'
@@ -101,6 +101,9 @@ export function getMediaBaseUrl(): string {
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let stream: ReadStream | undefined
+  // Response closure, including while metadata is pending, owns the file lifetime.
+  res.once('close', () => stream?.destroy())
   try {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { Allow: 'GET, HEAD' })
@@ -142,6 +145,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     let size: number
     try {
       const info = await stat(full)
+      if (res.destroyed) return
       if (!info.isFile()) {
         res.writeHead(404)
         res.end()
@@ -149,6 +153,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       size = info.size
     } catch {
+      if (res.destroyed) return
       res.writeHead(404)
       res.end()
       return
@@ -189,12 +194,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // teardown (releaseMedia) — destroy the file stream so we don't leak the
     // handle. Our own stream.destroy() emits 'close', not 'error', so the
     // error handler only fires for real I/O failures.
-    const stream = createReadStream(full, { start, end })
+    stream = createReadStream(full, { start, end })
     stream.on('error', (err) => {
       log.error('media-server: read error', { filename, error: describeError(err) })
       res.destroy()
     })
-    req.on('close', () => stream.destroy())
     stream.pipe(res)
   } catch (err) {
     log.error('media-server: request failed', { error: describeError(err) })
