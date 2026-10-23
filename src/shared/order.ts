@@ -4,8 +4,8 @@
  * rendered sorted ascending by it. New tapes are inserted at the FRONT, so they
  * appear on top the moment they're added — like new mail in Thunderbird.
  *
- * Inserts stay O(1): a newcomer takes an order just below the current minimum,
- * never touching the existing tapes. Drag-reordering, which is the only thing
+ * Insertion scans the current orders without rewriting existing tapes. A newcomer
+ * takes an order just below the minimum. Drag-reordering, which is the only thing
  * that needs a clean sequence, reindexes its list to 0..n-1 (see the renderer's
  * drag handlers + the tapes:reorder handler). Orders drifting negative over many
  * inserts is fine — only their relative sort matters.
@@ -19,6 +19,8 @@
  */
 export function frontOrders(existingOrders: number[], count: number): number[] {
   if (count <= 0) return []
-  const base = existingOrders.length === 0 ? 0 : Math.min(...existingOrders) - count
+  let minimum = Infinity
+  for (const order of existingOrders) minimum = Math.min(minimum, order)
+  const base = existingOrders.length === 0 ? 0 : minimum - count
   return Array.from({ length: count }, (_, i) => base + i)
 }
