@@ -1,5 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from 'react'
 import { nextIndex } from '@renderer/lib/nextIndex'
+import { keyEventIsComposing } from '@renderer/lib/useComposing'
 import { isEditableElement } from '@renderer/lib/dom'
 import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
 
@@ -73,7 +74,7 @@ export function useListboxKeyboard<E extends HTMLElement = HTMLElement>(opts: {
   }, [activeId, activeIndex, idPrefix])
 
   function onKeyDown(e: KeyboardEvent): void {
-    if (e.defaultPrevented) return
+    if (e.defaultPrevented || e.target !== e.currentTarget || keyEventIsComposing(e.nativeEvent)) return
     const { itemIds, activeId, onActivate, page, onCommandKey, onReorder } = stateRef.current
 
     const reorder = matchShortcut(SHORTCUTS.reorder, e)

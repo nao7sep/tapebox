@@ -180,3 +180,37 @@ describe('DetailPane media lifecycle', () => {
     expect(host.textContent).not.toContain('stale')
   })
 })
+
+
+describe('selected-tape keyboard ownership', () => {
+  it('leaves Enter activation to every focused detail button', async () => {
+    await render()
+    play.mockClear(); pause.mockClear()
+    const buttons = [...host.querySelectorAll('button')]
+    expect(buttons.some(button => button.textContent === 'Rename')).toBe(true)
+    expect(buttons.some(button => button.textContent === 'Export')).toBe(true)
+    for (const button of buttons) {
+      button.focus()
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+      await act(async () => button.dispatchEvent(event))
+      expect(event.defaultPrevented).toBe(false)
+    }
+    expect(play).not.toHaveBeenCalled()
+    expect(pause).not.toHaveBeenCalled()
+  })
+
+  it('retains background Enter and yields composition', async () => {
+    await render()
+    play.mockClear()
+    for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init })
+      await act(async () => host.dispatchEvent(event))
+      expect(event.defaultPrevented).toBe(false)
+    }
+    expect(play).not.toHaveBeenCalled()
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    await act(async () => host.dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(true)
+    expect(play).toHaveBeenCalledOnce()
+  })
+})

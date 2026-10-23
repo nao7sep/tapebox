@@ -225,3 +225,34 @@ describe('useAutoFocusList', () => {
     expect(document.activeElement).toBe(input)
   })
 })
+
+
+describe('list keyboard ownership', () => {
+  it.each(['Home', 'End', 'ArrowUp', 'ArrowDown', 'PageDown'])('leaves %s and reorder chords to a descendant editor', (key) => {
+    const onCommandKey = vi.fn(() => false)
+    const onReorder = vi.fn()
+    const onActivate = renderListbox('b', { onCommandKey, onReorder })
+    const input = document.createElement('input')
+    lb().append(input)
+    input.focus()
+    for (const modifiers of [{}, { shiftKey: true }, { ctrlKey: true, shiftKey: true }]) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...modifiers })
+      act(() => input.dispatchEvent(event))
+      expect(event.defaultPrevented).toBe(false)
+    }
+    expect(onActivate).not.toHaveBeenCalled()
+    expect(onReorder).not.toHaveBeenCalled()
+    expect(onCommandKey).not.toHaveBeenCalled()
+  })
+
+  it.each([{ isComposing: true }, { keyCode: 229 }])('yields composing keys at the list owner: %j', (init) => {
+    const onCommandKey = vi.fn(() => false)
+    const onReorder = vi.fn()
+    const onActivate = renderListbox('b', { onCommandKey, onReorder })
+    press('ArrowDown', init)
+    press('ArrowDown', { ...init, ctrlKey: true, shiftKey: true })
+    expect(onActivate).not.toHaveBeenCalled()
+    expect(onReorder).not.toHaveBeenCalled()
+    expect(onCommandKey).not.toHaveBeenCalled()
+  })
+})

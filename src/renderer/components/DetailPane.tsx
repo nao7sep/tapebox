@@ -13,6 +13,7 @@ import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { releaseVideo } from '@renderer/lib/video'
 import { archiveTape, openTapeSourceUrl, unarchiveTape } from '@renderer/lib/tapeActions'
 import { useCopyTapeSourceUrl } from '@renderer/lib/useCopyTapeSourceUrl'
+import { keyEventIsComposing } from '@renderer/lib/useComposing'
 import { isShortcutBlocked } from '@renderer/lib/dom'
 import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
 import { log } from '@renderer/ipc/log'
@@ -276,7 +277,7 @@ export function DetailPane({
   keyRef.current = { tape, onScanPage, onRequestRemove }
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
-      if (e.defaultPrevented || isShortcutBlocked(e.target)) return
+      if (e.defaultPrevented || keyEventIsComposing(e) || isShortcutBlocked(e.target)) return
       const { tape, onScanPage, onRequestRemove } = keyRef.current
 
       // Selected-tape commands, so they work regardless of focus. A archives or
@@ -308,6 +309,8 @@ export function DetailPane({
       }
 
       if (matchShortcut(SHORTCUTS.mainAction, e) >= 0) {
+        // Focused controls own native activation before the selected tape does.
+        if (e.target instanceof Element && e.target.closest('button, a[href], input, select, textarea, summary, [role="button"]')) return
         if (tape.state === 'downloaded') {
           const v = videoRef.current
           if (!v) return
