@@ -412,6 +412,15 @@ describe('SettingsModal', () => {
     expect(ipcInvoke.mock.calls.find(([channel]) => channel === 'settings:update')![1]).toEqual({ prompts: { slug: DEFAULT_SLUG_PROMPT } })
   })
 
+  it.each(['absent', 'set'])('names the API key field when its state is %s', async (keyState) => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }), keyState)
+    await render()
+    await click('AI')
+    const input = document.querySelector<HTMLInputElement>('input[type="password"]')!
+    expect(input.labels).toHaveLength(1)
+    expect(input.labels![0].textContent).toBe('API key')
+  })
+
   it('saving only an API key does not write any settings sets', async () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()

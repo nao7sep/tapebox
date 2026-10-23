@@ -756,6 +756,7 @@ function AiTab({
   onClearKey: () => void
 }) {
   const slugPromptId = useId()
+  const apiKeyId = useId()
   const keyIsSet = keyState === 'set' && !wantsClearKey && apiKeyDraft.length === 0
   const willClear = wantsClearKey && apiKeyDraft.length === 0
   const t = useI18n()
@@ -778,11 +779,12 @@ function AiTab({
       </div>
 
       <div>
-        <div className="text-xs font-medium text-fg">{t.t('settings.apiKey')}</div>
+        <label htmlFor={apiKeyId} className="text-xs font-medium text-fg">{t.t('settings.apiKey')}</label>
         {keyIsSet && <div className="mt-0.5 text-xs text-fg">{t.t('settings.apiKeySet')}</div>}
         <div className="mt-1 flex items-center gap-2">
           <input
             type="password"
+            id={apiKeyId}
             value={apiKeyDraft}
             onChange={(e) => onApiKeyChange(e.target.value)}
             placeholder={keyIsSet ? '••••••••' : undefined}
