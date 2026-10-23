@@ -14,13 +14,23 @@ let launch: string | null = null
 export const BACKUP_RECORD_TIMEOUT_MS = 10_000
 const CLOSE_DRAIN_TIMEOUT_MS = 1_000
 
-type Pending = { worker: Worker; settled: Promise<void>; resolve: () => void; timer: NodeJS.Timeout }
+type Pending = { worker: Worker; timer: NodeJS.Timeout }
 let worker: Worker | null = null
 let disabled = false
 let accepting = true
 let nextId = 1
 let closing: Promise<void> | null = null
 const pending = new Map<number, Pending>()
+// Only the latest exact published bytes per waiting file survive supersession.
+// Dispatch one clone at a time, rather than filling the worker message queue.
+const waiting = new Map<string, Buffer>()
+const drains = new Set<() => void>()
+
+function settleDrains(): void {
+  if (pending.size || waiting.size) return
+  for (const resolve of drains) resolve()
+  drains.clear()
+}
 const retirements = new Map<Worker, Promise<void>>()
 
 function retire(current: Worker): Promise<void> {
@@ -40,8 +50,9 @@ function abandon(current: Worker, error: unknown): void {
     if (entry.worker !== current) continue
     pending.delete(id)
     clearTimeout(entry.timer)
-    entry.resolve()
   }
+  waiting.clear()
+  settleDrains()
   log.warn('backup store: worker failed; unfinished record outcomes are unknown', { error: describeError(error) })
   void retire(current)
 }
@@ -59,7 +70,9 @@ function ensureWorker(): Worker {
     clearTimeout(entry.timer)
     if (response.disabled && worker === created) disabled = true
     if (response.warning) log.warn(response.warning.message, response.warning.fields)
-    entry.resolve()
+    if (disabled) waiting.clear()
+    dispatchNext()
+    settleDrains()
   })
   created.on('error', (error: unknown) => abandon(created, error))
   created.on('exit', (code) => {
@@ -70,29 +83,37 @@ function ensureWorker(): Worker {
   return created
 }
 
-function enqueue(absolutePath: string, bytes: Buffer): void {
-  if (disabled) return
+function dispatchNext(): void {
+  if (disabled || pending.size) return
+  const next = waiting.entries().next()
+  if (next.done) return
+  const [absolutePath, bytes] = next.value
+  waiting.delete(absolutePath)
   let current: Worker
   try { current = ensureWorker() } catch (error) {
     disabled = true
     log.warn('backup store: worker could not start; recording disabled', { error: describeError(error) })
+    waiting.clear()
+    settleDrains()
     return
   }
   const id = nextId++
-  let resolve!: () => void
-  const settled = new Promise<void>((done) => { resolve = done })
   const timer = setTimeout(() => abandon(current, new Error(`Backup record did not finish within ${BACKUP_RECORD_TIMEOUT_MS} ms.`)), BACKUP_RECORD_TIMEOUT_MS)
-  pending.set(id, { worker: current, settled, resolve, timer })
+  pending.set(id, { worker: current, timer })
   try { current.postMessage({ id, absolutePath, bytes } satisfies BackupRequest) }
   catch (error) { abandon(current, error) }
 }
 
 export function record(absolutePath: string, bytes: Buffer): void {
-  if (accepting) enqueue(absolutePath, bytes)
+  if (!accepting || disabled) return
+  waiting.delete(absolutePath)
+  waiting.set(absolutePath, bytes)
+  dispatchNext()
 }
 
 export function flushBackupStore(): Promise<void> {
-  return Promise.all([...pending.values()].map((entry) => entry.settled)).then(() => {})
+  if (!pending.size && !waiting.size) return Promise.resolve()
+  return new Promise<void>((resolve) => { drains.add(resolve) })
 }
 
 export function closeBackupStore(): Promise<void> {
@@ -112,10 +133,11 @@ export function closeBackupStore(): Promise<void> {
         if (entry.worker !== current) continue
         pending.delete(id)
         clearTimeout(entry.timer)
-        entry.resolve()
       }
       void retire(current)
     }
+    waiting.clear()
+    settleDrains()
     await Promise.all([...retirements.values()])
   })()
   return closing

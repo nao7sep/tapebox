@@ -71,3 +71,42 @@ it('seals ordinary admission immediately and gives a held quit drain a finite wa
   await closing
   expect(vi.getTimerCount()).toBe(0)
 })
+
+it('dispatches one snapshot at a time and coalesces waiting saves to their latest bytes', async () => {
+  backup.record('/first', Buffer.from('first'))
+  const worker = state.workers[0]!
+  for (let version = 0; version < 100; version += 1) {
+    backup.record('/catalog', Buffer.from(`catalog-${version}`))
+  }
+  backup.record('/settings', Buffer.from([0xff, 0x00, 0x0d, 0x0a]))
+  expect(worker.messages).toHaveLength(1)
+  let drained = false
+  const flush = backup.flushBackupStore().then(() => { drained = true })
+  worker.emit('message', { id: 1 })
+  expect(worker.messages).toHaveLength(2)
+  expect(worker.messages[1]).toMatchObject({ absolutePath: '/catalog', bytes: Buffer.from('catalog-99') })
+  await Promise.resolve()
+  expect(drained).toBe(false)
+  worker.emit('message', { id: 2 })
+  expect(worker.messages[2]).toMatchObject({ absolutePath: '/settings', bytes: Buffer.from([0xff, 0x00, 0x0d, 0x0a]) })
+  worker.emit('message', { id: 3 })
+  await flush
+  expect(drained).toBe(true)
+  expect(state.warn).not.toHaveBeenCalled()
+})
+
+it('drains the latest waiting version at close without admitting a newer save', async () => {
+  backup.record('/file', Buffer.from('initial'))
+  backup.record('/file', Buffer.from('superseded'))
+  backup.record('/file', Buffer.from('latest'))
+  const worker = state.workers[0]!
+  const closing = backup.closeBackupStore()
+  backup.record('/file', Buffer.from('after close'))
+  worker.emit('message', { id: 1 })
+  expect(worker.messages[1]).toMatchObject({ absolutePath: '/file', bytes: Buffer.from('latest') })
+  worker.emit('message', { id: 2 })
+  worker.release()
+  await closing
+  expect(worker.messages).toHaveLength(2)
+  expect(state.warn).not.toHaveBeenCalled()
+})
