@@ -58,6 +58,31 @@ function drag(handle: HTMLElement, fromX: number, toX: number): void {
 }
 
 describe('ResizeHandle intent drag', () => {
+  it.each(['unmount', 'blur', 'mouseup'])('releases the gesture and restores selection on %s', (ending) => {
+    const onResize = vi.fn()
+    const onCommit = vi.fn()
+    document.body.style.userSelect = 'text'
+    const handle = mount({ edge: 'right', size: 300, min: 200, max: 500, onResize, onCommit })
+    act(() => handle.dispatchEvent(new MouseEvent('mousedown', { clientX: 100, bubbles: true })))
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 140 })))
+    expect(document.body.style.userSelect).toBe('none')
+    act(() => {
+      if (ending === 'unmount') { root!.unmount(); root = null }
+      else window.dispatchEvent(new Event(ending))
+    })
+    expect(document.body.style.userSelect).toBe('text')
+    expect(onResize).toHaveBeenCalledExactlyOnceWith(340)
+    expect(onCommit).toHaveBeenCalledTimes(ending === 'unmount' ? 0 : 1)
+    if (ending !== 'unmount') expect(onCommit).toHaveBeenCalledWith(340)
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 200 }))
+      window.dispatchEvent(new MouseEvent('mouseup'))
+      window.dispatchEvent(new Event('blur'))
+    })
+    expect(onResize).toHaveBeenCalledOnce()
+    expect(onCommit).toHaveBeenCalledTimes(ending === 'unmount' ? 0 : 1)
+  })
+
   it('reports the dragged intent capped at the pane max, ignoring the container', () => {
     const onResize = vi.fn()
     const onCommit = vi.fn()

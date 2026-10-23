@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 
 type Edge = 'left' | 'right' | 'top' | 'bottom'
 
@@ -56,6 +56,8 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit, keyboar
   const handleRef = useRef<HTMLDivElement>(null)
   // A keyboard move not yet committed: the intent it reached.
   const pending = useRef<number | null>(null)
+  const cancelDrag = useRef<(() => void) | null>(null)
+  useEffect(() => () => cancelDrag.current?.(), [])
 
   function onKeyDown(e: React.KeyboardEvent) {
     const toward: Record<string, number> = alongY ? { ArrowUp: -1, ArrowDown: 1 } : { ArrowLeft: -1, ArrowRight: 1 }
@@ -80,6 +82,8 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit, keyboar
 
   function onMouseDown(e: React.MouseEvent) {
     e.preventDefault()
+    cancelDrag.current?.()
+    const previousUserSelect = document.body.style.userSelect
     const start = alongY ? e.clientY : e.clientX
     const startSize = size
     // The intent is bounded by the pane's own min/max only; the consumer clamps it
@@ -93,16 +97,23 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit, keyboar
       current = toIntent(startSize + delta)
       onResize(current)
     }
-    function onUp() {
+    function cleanup() {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
-      document.body.style.userSelect = ''
+      window.removeEventListener('blur', onUp)
+      document.body.style.userSelect = previousUserSelect
+      cancelDrag.current = null
+    }
+    function onUp() {
+      cleanup()
       onCommit(current)
     }
 
+    cancelDrag.current = cleanup
     document.body.style.userSelect = 'none'
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    window.addEventListener('blur', onUp)
   }
 
   return (
