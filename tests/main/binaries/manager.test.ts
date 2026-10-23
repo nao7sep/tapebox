@@ -363,7 +363,7 @@ describe('install final-preparation cancellation', () => {
     expect(assertArm64Slice).not.toHaveBeenCalled()
   })
 
-  it('aborts lipo inspection and removes the stage instead of publishing it', async () => {
+  it('aborts architecture inspection and removes the stage instead of publishing it', async () => {
     arrangeInstall()
     execCapture.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
     assertArm64Slice.mockImplementation((_filePath: string, signal: AbortSignal) =>

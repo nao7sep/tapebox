@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { freshBinaryEntry, type Dependencies } from '@shared/dependencies'
 
 // The install's final preparation on macOS with the real tools: xattr strips the
-// quarantine flag and lipo reads the architecture, each on a real file. The other
+// quarantine flag and the header reader checks the architecture, each on a real file. The other
 // manager tests pass the platform in and stub both tools.
 
 const execFileAsync = promisify(execFile)
@@ -84,7 +84,7 @@ vi.mock('@main/binaries/installed-version', () => ({
 
 import { installOrUpdate } from '@main/binaries/manager'
 
-/** A Mach-O 64-bit executable header for one CPU, all that `lipo -archs` reads. */
+/** A Mach-O 64-bit executable header for one CPU, the architecture gate reads this header. */
 function machOHeader(cpuType: number, cpuSubtype: number): Buffer {
   const header = Buffer.alloc(32)
   header.writeUInt32LE(0xfeedfacf, 0)
@@ -116,7 +116,7 @@ afterEach(async () => {
 
 describe('install final preparation on macOS', () => {
   it('publishes an arm64 binary with the quarantine flag stripped', async (ctx) => {
-    ctx.skip(process.platform !== 'darwin', 'macOS only: the quarantine flag, xattr and lipo exist only there')
+    ctx.skip(process.platform !== 'darwin', 'macOS only: the quarantine flag and xattr exist only there')
     fixture.bytes = ARM64
 
     await expect(installOrUpdate('yt-dlp', 'op-arm64')).resolves.toMatchObject({ outcome: 'installed' })
@@ -126,7 +126,7 @@ describe('install final preparation on macOS', () => {
   })
 
   it('rejects an x86_64-only binary and publishes nothing', async (ctx) => {
-    ctx.skip(process.platform !== 'darwin', 'macOS only: lipo and the arm64 gate exist only there')
+    ctx.skip(process.platform !== 'darwin', 'macOS only: the installer applies its arm64 gate only there')
     fixture.bytes = X86_64
 
     await expect(installOrUpdate('yt-dlp', 'op-x86')).resolves.toMatchObject({ outcome: 'failed' })
@@ -134,7 +134,7 @@ describe('install final preparation on macOS', () => {
     expect(await readdir(join(testRoot, 'bin'))).toEqual([])
     expect(await readdir(join(testRoot, 'temp'))).toEqual([])
     expect(log.warn).toHaveBeenCalledWith('binary install failed', expect.objectContaining({
-      error: expect.objectContaining({ message: expect.stringContaining('not arm64-native (lipo reports: x86_64)') }),
+      error: expect.objectContaining({ message: expect.stringContaining('not arm64-native') }),
     }))
   })
 })
