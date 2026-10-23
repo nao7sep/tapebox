@@ -2,7 +2,7 @@ import { useState, type ReactNode, type RefObject } from 'react'
 import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useSettingsStore } from '@renderer/store/settings'
-import { releaseVideo } from '@renderer/lib/video'
+import { withReleasedTapeVideo } from '@renderer/lib/withReleasedTapeVideo'
 import { advanceSelection } from '@renderer/lib/tapeActions'
 import { RemoveTapeConfirmModal } from '@renderer/components/RemoveTapeConfirmModal'
 import { runTapeAction } from '@renderer/lib/runTapeAction'
@@ -28,13 +28,12 @@ export function useTapeRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
 
   async function perform(tape: Tape): Promise<void> {
     const advance = advanceSelection(tape) // captures the neighbor before removal
-    releaseVideo(videoRef.current)
     const outcome = await runTapeAction(
       tape.id,
       'remove',
       'tape removal failed',
       message('tapeActions.removeFailed'),
-      () => ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true }),
+      () => withReleasedTapeVideo(tape, videoRef, () => ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })),
     )
     if (outcome === 'succeeded') advance()
   }

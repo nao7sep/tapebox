@@ -3,7 +3,7 @@ import { useState, type RefObject } from 'react'
 import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useSettingsStore } from '@renderer/store/settings'
-import { releaseVideo } from '@renderer/lib/video'
+import { withReleasedTapeVideo } from '@renderer/lib/withReleasedTapeVideo'
 import { Modal } from '@renderer/components/Modal'
 import { NameEditor } from '@renderer/components/NameEditor'
 import { DiscardChangesPrompt } from '@renderer/components/DiscardChangesPrompt'
@@ -64,9 +64,10 @@ export function ExportModal({ tape, videoRef, onClose }: Props) {
     // Exporting only reads the file, which is safe while it plays — but with
     // "delete after export" the original is then trashed, so release the player
     // first (same precaution Rename and Remove take) so the file isn't in use.
-    if (deleteFromApp) releaseVideo(videoRef.current)
     try {
-      await ipcInvoke('export:files', { tapeId: tape.id, destinationDir: dir, name, deleteFromApp })
+      const exportFiles = () => ipcInvoke('export:files', { tapeId: tape.id, destinationDir: dir, name, deleteFromApp })
+      if (deleteFromApp) await withReleasedTapeVideo(tape, videoRef, exportFiles)
+      else await exportFiles()
       onClose()
     } catch (err) {
       setError(presentFailure(err, message('export.failed'), 'tape export failed'))
