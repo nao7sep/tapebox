@@ -24,18 +24,18 @@ import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
 import { readSidecarFile, sidecarNamespace, SIDECAR_JSON, writeSidecar } from '@main/core/sidecar'
 import { portableFilenameIdentity } from '@main/core/filename'
-import { catalogFilenameOwner, catalogStemOwner, claimManagedFiles, managedFilenameClaimed, nameInStem, tryClaimManagedFiles } from '@main/core/managed-files'
+import { claimManagedFiles, managedFilenameClaimed, tryClaimManagedFiles } from '@main/core/managed-files'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import { withLibraryWrite } from '@main/library-writes'
-import { librarySourceIndex, type SourceRef } from '@shared/source-identity'
+import { type SourceRef } from '@shared/source-identity'
 import { downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import { TRACKED_FILENAME_FIELDS, trackedFilenameIdentities, type Tape } from '@shared/domain'
+import { TRACKED_FILENAME_FIELDS, type Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, RefreshedMetadata, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
@@ -202,7 +202,7 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: s
   // The raw fetch uses a private name under the tape ID; conversion replaces
   // the literal media-stem JPEG. Both stay owned through the catalog settlement.
   const posterFree = stem !== undefined && tape.thumbnailFilename === null &&
-    !catalogStemOwner(session.getTapes(), stem, tapeId) && !catalogStemOwner(session.getTapes(), tapeId, tapeId)
+    !session.stemOwner(stem, tapeId) && !session.stemOwner(tapeId, tapeId)
   const release = posterFree ? tryClaimManagedFiles(dir, { stems: [stem, tapeId] }) : null
   try { return await applyMetadataToTape(tape, metadata, dir, signal, release !== null) } finally { release?.() }
 }
@@ -303,7 +303,7 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
 async function posterStemFree(tape: Tape, dir: string, stem: string): Promise<boolean> {
   const identity = portableFilenameIdentity(stem)
   const stemOf = (name: string) => name.slice(0, name.length - extname(name).length)
-  if (catalogStemOwner(session.getTapes(), stem, tape.id)) return false
+  if (session.stemOwner(stem, tape.id)) return false
   const entries = await readdir(dir)
   return entries.every((name) => stemOf(name) === stem || portableFilenameIdentity(stemOf(name)) !== identity)
 }
@@ -347,6 +347,7 @@ async function writeRefreshedSidecar(
  */
 async function importBundles(paths: string[], libraryDir: string, signal: AbortSignal): Promise<ImportResult> {
   const hardLinks = await directorySupportsHardLinks(libraryDir)
+  const destinationNames = new Set((await readdir(libraryDir)).map(portableFilenameIdentity))
   const imported: Tape[] = []
   const issues: ImportIssue[] = []
   const sidecarPaths = paths.filter((path) => extname(path).toLowerCase() === '.json')
@@ -402,14 +403,13 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // tracked filename before awaiting any of the companion-file work.
     const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
     const bundleNames = [mediaFilename, `${mediaStem}.json`]
-    const admissionTapes = session.getTapes()
-    const conflict = importBundleConflict(admissionTapes, source, bundleNames, sidecarPath, libraryDir)
+    const conflict = importBundleConflict(source, bundleNames, sidecarPath, libraryDir)
     if (conflict) {
       issues.push(conflict)
       continue
     }
     const thumbnailTaken = tbThumb !== null && (
-      catalogFilenameOwner(admissionTapes, tbThumb) || managedFilenameClaimed(libraryDir, tbThumb)
+      session.filenameOwner(tbThumb) || managedFilenameClaimed(libraryDir, tbThumb)
     )
 
     const srcMedia = join(dir, mediaFilename)
@@ -432,18 +432,21 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       // content until exported (developer classification). The new catalog row,
       // the user's library membership, is what is backed up.
       if (srcMedia !== targetMedia) {
-        await assertMissing(targetMedia)
+        assertImportDestination(targetMedia, destinationNames)
         await withImportFileClaim(targetMedia, () => copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal }))
         copied.push(targetMedia)
+        destinationNames.add(portableFilenameIdentity(basename(targetMedia)))
       }
       if (sidecarPath !== targetSidecar) {
-        await assertMissing(targetSidecar)
+        assertImportDestination(targetSidecar, destinationNames)
         await withImportFileClaim(targetSidecar, () => copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal }))
         copied.push(targetSidecar)
+        destinationNames.add(portableFilenameIdentity(basename(targetSidecar)))
       }
     } catch (err) {
       try {
         await rollbackImportCopies(copied)
+        for (const path of copied) if (!session.filenameOwner(basename(path))) destinationNames.delete(portableFilenameIdentity(basename(path)))
         log.error('import bundle copy failed', {
           path: sidecarPath,
           error: describeError(err),
@@ -487,9 +490,10 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       try {
         // not recorded: the imported poster is library content, like its media.
         if (srcThumb !== dstThumb) {
-          await assertMissing(dstThumb)
+          assertImportDestination(dstThumb, destinationNames)
           await withImportFileClaim(dstThumb, () => copyFileNoOverwrite(srcThumb, dstThumb, { hardLinks, signal }))
           copied.push(dstThumb)
+          destinationNames.add(portableFilenameIdentity(basename(dstThumb)))
         }
         thumbnailFilename = tbThumb
       } catch (err) {
@@ -510,11 +514,12 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // Recheck synchronously through upsert; rollback retires only copies that no
     // live row now owns, and never the referenced originals of an in-place import.
     const commitTapes = session.getTapes()
-    const commitConflict = importBundleConflict(commitTapes, source, bundleNames, sidecarPath, libraryDir)
+    const commitConflict = importBundleConflict(source, bundleNames, sidecarPath, libraryDir)
     if (commitConflict) {
       issues.push(commitConflict)
       try {
         await rollbackImportCopies(copied)
+        for (const path of copied) if (!session.filenameOwner(basename(path))) destinationNames.delete(portableFilenameIdentity(basename(path)))
       } catch (cleanupError) {
         log.error('import admission rollback failed', { path: sidecarPath, error: describeError(cleanupError) })
         issues.push({ path: sidecarPath, reason: message('import.copyIncomplete'), severity: 'error' })
@@ -522,7 +527,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       continue
     }
     if (thumbnailFilename && (
-      catalogFilenameOwner(commitTapes, thumbnailFilename) || managedFilenameClaimed(libraryDir, thumbnailFilename)
+      session.filenameOwner(thumbnailFilename) || managedFilenameClaimed(libraryDir, thumbnailFilename)
     )) {
       issues.push({ path: join(dir, thumbnailFilename), reason: message('import.thumbnailNameTaken'), severity: 'warning' })
       thumbnailFilename = null
@@ -576,11 +581,11 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
 }
 
 /** The catalog owns source and portable filename admission, even for missing files. */
-function importBundleConflict(tapes: readonly Tape[], source: SourceRef, names: readonly string[], path: string, libraryDir: string): ImportIssue | null {
-  if (librarySourceIndex(tapes).has(source)) {
+function importBundleConflict(source: SourceRef, names: readonly string[], path: string, libraryDir: string): ImportIssue | null {
+  if (session.sourceOwner(source)) {
     return { path, reason: message(ALREADY_IN_LIBRARY), severity: 'information' }
   }
-  const clash = names.find((name) => catalogFilenameOwner(tapes, name) || managedFilenameClaimed(libraryDir, name))
+  const clash = names.find((name) => session.filenameOwner(name) || managedFilenameClaimed(libraryDir, name))
   return clash ? { path, reason: message('import.nameTaken', { name: clash }), severity: 'warning' } : null
 }
 
@@ -591,7 +596,7 @@ async function rollbackImportCopies(copied: readonly string[]): Promise<void> {
     try {
       const release = claimManagedFiles(dirname(path), { names: [basename(path)] })
       try {
-        if (catalogFilenameOwner(session.getTapes(), basename(path))) continue
+        if (session.filenameOwner(basename(path))) continue
         await unlinkFiles([path])
       } finally { release() }
     } catch (error) {
@@ -604,7 +609,7 @@ async function rollbackImportCopies(copied: readonly string[]): Promise<void> {
 /** Keep adoption out of a copy's visible destination and any primitive cleanup. */
 async function withImportFileClaim(path: string, work: () => Promise<void>): Promise<void> {
   const release = tryClaimManagedFiles(dirname(path), { names: [basename(path)] })
-  if (!release || catalogFilenameOwner(session.getTapes(), basename(path))) {
+  if (!release || session.filenameOwner(basename(path))) {
     release?.()
     throw new UserFacingError('refused', message('errors.tapeBusy'))
   }
@@ -637,7 +642,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   if (plan.status === 'noop') return tape
 
   for (const item of plan.items) {
-    const owner = catalogFilenameOwner(session.getTapes(), item.fresh, tape.id)
+    const owner = session.filenameOwner(item.fresh, tape.id)
     if (owner) throw new UserFacingError('conflict', message('rename.failed'), {
       cause: new Error(`Rename destination ${item.fresh} belongs to catalog tape ${owner}.`),
     })
@@ -703,7 +708,7 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
   const done: string[] = []
   const rollbackBeforeCatalogCommit = async (initiatingError: unknown): Promise<never> => {
     try {
-      await unlinkFiles(done.filter((path) => !catalogFilenameOwner(session.getTapes(), basename(path), tapeId)))
+      await unlinkFiles(done.filter((path) => !session.filenameOwner(basename(path), tapeId)))
     } catch (cleanupError) {
       throw new AggregateError(
         [initiatingError, cleanupError],
@@ -755,7 +760,7 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
   const obsolete = publishing.map((item) => item.old)
   try {
     if (await confirmPublicationDurability([collectionCatalog(libraryDir), ...done])) {
-      await unlinkFiles(obsolete.filter((path) => !catalogFilenameOwner(session.getTapes(), basename(path), tapeId)))
+      await unlinkFiles(obsolete.filter((path) => !session.filenameOwner(basename(path), tapeId)))
     } else {
       postCommitErrors.push(new Error('Rename committed with uncertain directory durability; old files retained.'))
     }
@@ -809,20 +814,15 @@ async function removeTapesFrom(
   const releases: Array<() => void> = [queue.holdFromScheduling(ids)]
 
   try {
+    const selected: Tape[] = []
     for (const id of ids) {
       if (!session.getTape(id)) continue
       const release = claimTapeWrite(id)
       if (!release) { busy.push(id); continue }
       releases.push(release)
-
-      if (queue.isActive(id)) {
-        await queue.cancel(id)
-      }
-      // Reread once the job has settled: a download can finalize and commit while
-      // it is being cancelled, naming files the earlier row did not.
+      if (queue.isActive(id)) await queue.cancel(id)
       const tape = session.getTape(id)
       if (!tape) continue
-
       if (deleteFiles) {
         const releaseFiles = tryClaimManagedFiles(libraryDir, {
           names: TRACKED_FILENAME_FIELDS.flatMap((field) => tape[field] === null ? [] : [tape[field]!]),
@@ -830,18 +830,44 @@ async function removeTapesFrom(
         })
         if (!releaseFiles) { busy.push(id); continue }
         releases.push(releaseFiles)
+      }
+      selected.push(tape)
+    }
+
+    // All selected producers have settled and their namespaces remain claimed.
+    // Enumerate once, retaining only candidates for the selected namespaces.
+    const candidates = new Map<string, string[]>()
+    if (deleteFiles && selected.length) {
+      const stems = new Map(selected.map((tape) => [portableFilenameIdentity(tape.id), tape.id]))
+      try {
+        for (const name of await readdir(libraryDir)) {
+          const identity = portableFilenameIdentity(name)
+          for (let at = identity.indexOf('.'); at !== -1; at = identity.indexOf('.', at + 1)) {
+            const id = stems.get(identity.slice(0, at))
+            if (id === undefined) continue
+            let names = candidates.get(id)
+            if (!names) candidates.set(id, names = [])
+            names.push(name)
+          }
+        }
+      } catch (error) {
+        log.error('library removal listing failed', { error: describeError(error) })
+        failed.push(...selected.map((tape) => tape.id))
+        return { removed, failed, busy }
+      }
+    }
+    for (const tape of selected) {
+      if (deleteFiles) {
         try {
           if (tape.sidecarFilename) await refuseNewerSidecar(join(libraryDir, tape.sidecarFilename))
-          await discardTapeFiles(libraryDir, tape, settings.trashOnRemove)
+          await discardTapeFiles(libraryDir, tape, settings.trashOnRemove, candidates.get(tape.id) ?? [])
         } catch (err) {
-          // The files couldn't be discarded — keep the catalog entry so the tape never
-          // vanishes from the list while its files are left orphaned on disk.
-          log.error('library removal failed', { tapeId: id, error: describeError(err) })
-          failed.push(id)
+          log.error('library removal failed', { tapeId: tape.id, error: describeError(err) })
+          failed.push(tape.id)
           continue
         }
       }
-      removed.push(id)
+      removed.push(tape.id)
     }
 
     if (removed.length > 0) {
@@ -877,26 +903,18 @@ async function refuseNewerSidecar(path: string): Promise<void> {
  * are deleted outright; every other file follows the Trash setting. A name
  * another tape tracks is never touched.
  */
-async function discardTapeFiles(libraryDir: string, tape: Tape, toTrash: boolean): Promise<void> {
+async function discardTapeFiles(libraryDir: string, tape: Tape, toTrash: boolean, candidates: readonly string[]): Promise<void> {
+  const tracked = new Set<string>()
   for (const field of TRACKED_FILENAME_FIELDS) {
     const name = tape[field]
-    const others = session.getTapes().filter((other) => other.id !== tape.id)
-    if (name !== null && !trackedFilenameIdentities(others).has(portableFilenameIdentity(name))) {
-      await discardFile(join(libraryDir, name), toTrash)
-    }
+    if (name === null) continue
+    tracked.add(portableFilenameIdentity(name))
+    if (!session.filenameOwner(name, tape.id)) await discardFile(join(libraryDir, name), toTrash)
   }
-  // Listing can wait. Read live ownership again for each physical deletion;
-  // the held stem claim prevents new import/rename/export adoption meanwhile.
-  for (const name of await readdir(libraryDir)) {
-    if (!nameInStem(name, tape.id)) continue
-    const current = session.getTapes()
-    const taken = trackedFilenameIdentities([...current, tape])
-    if (taken.has(portableFilenameIdentity(name)) || catalogFilenameOwner(current, name, tape.id)) continue
-    if (name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag\d*$/.test(name)) {
-      await discardFile(join(libraryDir, name), false)
-    } else {
-      await discardFile(join(libraryDir, name), toTrash)
-    }
+  for (const name of candidates) {
+    if (tracked.has(portableFilenameIdentity(name)) || session.filenameOwner(name, tape.id)) continue
+    const unfinished = name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag\d*$/.test(name)
+    await discardFile(join(libraryDir, name), unfinished ? false : toTrash)
   }
 }
 
@@ -918,6 +936,10 @@ async function discardFile(path: string, toTrash: boolean): Promise<void> {
   }
   if (!(await fileExists(path))) return
   await shell.trashItem(path)
+}
+
+function assertImportDestination(path: string, names: ReadonlySet<string>): void {
+  if (names.has(portableFilenameIdentity(basename(path)))) throw new Error(`Target already exists (case-insensitive): ${path}`)
 }
 
 async function assertMissing(path: string): Promise<void> {

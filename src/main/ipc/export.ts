@@ -4,7 +4,7 @@ import { handle } from './handle'
 import { removeTapes } from './library'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
-import { catalogFilenameOwner, tryClaimManagedFiles } from '@main/core/managed-files'
+import { tryClaimManagedFiles } from '@main/core/managed-files'
 import { readSidecarFile, sidecarNamespace, SIDECAR_JSON } from '@main/core/sidecar'
 import { serializeStoreJson } from '@main/io/atomic-json'
 import { maskYtdlpOutput, maskUrlCredentials } from '@main/io/mask'
@@ -73,7 +73,7 @@ async function exportTape(
   const managedDestination = resolve(destinationDir) === resolve(libDir) ||
     await realpath(destinationDir) === await realpath(libDir)
   const names = [mediaName, sidecarName, ...(newThumbName ? [newThumbName] : [])]
-  const owned = managedDestination && names.find((file) => catalogFilenameOwner(session.getTapes(), file))
+  const owned = managedDestination && names.find((file) => session.filenameOwner(file))
   if (owned) throw new UserFacingError('conflict', message('errors.exportDestinationExists', { path: join(destinationDir, owned) }))
   const release = managedDestination ? tryClaimManagedFiles(libDir, { names }) : null
   if (managedDestination && !release) throw new UserFacingError('refused', message('errors.tapeBusy'))
@@ -124,7 +124,7 @@ async function exportTape(
     } catch (err) {
       try {
         await unlinkFiles(managedDestination
-          ? committed.filter((path) => !catalogFilenameOwner(session.getTapes(), basename(path)))
+          ? committed.filter((path) => !session.filenameOwner(basename(path)))
           : committed)
       } catch (cleanupError) {
         throw new AggregateError(

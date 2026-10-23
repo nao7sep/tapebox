@@ -4,7 +4,7 @@ import type { Tape } from '@shared/domain'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { readSidecarFile } from '@main/core/sidecar'
 import type { TapeMove } from '@main/core/tape-state'
-import { catalogFilenameOwner, nameInStem } from '@main/core/managed-files'
+import { nameInStem } from '@main/core/managed-files'
 import { SourceIndex, tapeSourceRef } from '@shared/source-identity'
 
 /**
@@ -26,7 +26,7 @@ export type FinishedBundle =
   | { status: 'found'; move: TapeMove }
   | { status: 'unusable'; reason: string }
 
-export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc: string, tapes: readonly Tape[] = [tape]): Promise<FinishedBundle> {
+export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc: string, filenameOwner: (name: string, exceptId?: string) => string | undefined): Promise<FinishedBundle> {
   const stem = tape.id
   const sidecarFilename = `${stem}.json`
   let sidecar: Record<string, unknown>
@@ -48,7 +48,7 @@ export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc:
   })) return { status: 'unusable', reason: 'the sidecar belongs to another source' }
   if (!nameInStem(bundle.mediaFilename, stem)) return { status: 'unusable', reason: 'the sidecar names another stem' }
   const names = [sidecarFilename, bundle.mediaFilename, ...(bundle.thumbnailFilename ? [bundle.thumbnailFilename] : [])]
-  if (names.some((name) => catalogFilenameOwner(tapes, name, tape.id))) {
+  if (names.some((name) => filenameOwner(name, tape.id))) {
     return { status: 'unusable', reason: 'another tape owns a finished filename' }
   }
   if (!(await isFile(join(libraryDir, bundle.mediaFilename)))) return { status: 'none' }

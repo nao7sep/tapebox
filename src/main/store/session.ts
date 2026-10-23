@@ -8,6 +8,8 @@ import { FORMAT_VERSIONS, NewerFormatError } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { portableFilenameIdentity, boxNameIdentity } from '@shared/filename'
+import { CatalogOwnership } from '@main/core/catalog-ownership'
+import type { SourceRef } from '@shared/source-identity'
 import { catalogCodec } from './catalog-codec'
 import { durableTape } from '@shared/durable-tape'
 export { durableTape } from '@shared/durable-tape'
@@ -49,6 +51,7 @@ const decodedBytes = new WeakMap<Session, Buffer>()
 const tapePositions = new Map<string, number>()
 const boxPositions = new Map<string, number>()
 const filenameOwners = new Map<string, string>()
+let ownership = new CatalogOwnership()
 const boxNameOwners = new Map<string, string>()
 /** True from a failed catalog save until the next successful one. */
 let saveFailing = false
@@ -224,6 +227,21 @@ function assertLoaded(): void {
 export function getTapes(): Tape[] {
   assertLoaded()
   return cache.tapes
+}
+
+export function filenameOwner(name: string, exceptId?: string): string | undefined {
+  assertLoaded()
+  return ownership.filenameOwner(name, exceptId)
+}
+
+export function stemOwner(stem: string, exceptId?: string): string | undefined {
+  assertLoaded()
+  return ownership.stemOwner(stem, exceptId)
+}
+
+export function sourceOwner(ref: SourceRef, exceptId?: string): string | undefined {
+  assertLoaded()
+  return ownership.sourceOwner(ref, exceptId)
 }
 
 export function getTape(id: string): Tape | undefined {
@@ -478,6 +496,7 @@ function rebuildIndexes(): void {
   tapePositions.clear()
   boxPositions.clear()
   filenameOwners.clear()
+  ownership = new CatalogOwnership()
   boxNameOwners.clear()
   cache.tapes.forEach((tape, index) => {
     tapePositions.set(tape.id, index)
@@ -505,6 +524,7 @@ function admitTape(value: Tape): Tape {
 }
 
 function replaceFilenameOwner(previous: Tape | undefined, next: Tape): void {
+  ownership.replace(previous, next)
   if (previous) for (const field of TRACKED_FILENAME_FIELDS) {
     const filename = previous[field]
     if (filename !== null) filenameOwners.delete(portableFilenameIdentity(filename))

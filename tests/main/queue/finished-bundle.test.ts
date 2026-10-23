@@ -1,3 +1,4 @@
+import { CatalogOwnership } from '@main/core/catalog-ownership'
 import { mkdtemp, readdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -53,7 +54,9 @@ function deps(tapes: Map<string, Tape>, overrides: { download: JobDeps['ytdlp'][
     findFinishedBundle,
     session: {
       getTape: (id) => tapes.get(id),
-      getTapes: () => [...tapes.values()],
+      filenameOwner: (name, exceptId) => new CatalogOwnership([...tapes.values()]).filenameOwner(name, exceptId),
+      stemOwner: (stem, exceptId) => new CatalogOwnership([...tapes.values()]).stemOwner(stem, exceptId),
+      sourceOwner: (ref, exceptId) => new CatalogOwnership([...tapes.values()]).sourceOwner(ref, exceptId),
       upsertTape: (tape) => { tapes.set(tape.id, tape) },
       persistNow: async () => overrides.committed,
     },
@@ -112,6 +115,7 @@ describe('a download finished before its catalog commit', () => {
 })
 
 describe('findFinishedBundle', () => {
+  const filenameOwner = (tapes: Tape[]) => (name: string, exceptId?: string) => new CatalogOwnership(tapes).filenameOwner(name, exceptId)
   const sidecar = (id: string, fields: Record<string, unknown> = {}) => JSON.stringify({
     formatVersion: 1, id: 'vid1',
     tapebox: { sourceUrl: 'https://example.test/watch', addedAtUtc: ADDED, downloadedAtUtc: FINISHED, mediaFilename: `${id}.mp4`, thumbnailFilename: null, ...fields },
@@ -119,32 +123,32 @@ describe('findFinishedBundle', () => {
 
   it('finds nothing without a sidecar under the tape\'s stem', async () => {
     await writeFile(join(dir, 'Nosidecar1.mp4.part'), 'partial')
-    expect(await findFinishedBundle(dir, queued('Nosidecar1'), LATER)).toEqual({ status: 'none' })
+    expect(await findFinishedBundle(dir, queued('Nosidecar1'), LATER, filenameOwner([queued('Nosidecar1')]))).toEqual({ status: 'none' })
   })
 
   it('finds nothing to protect when the sidecar names no media on disk', async () => {
     await writeFile(join(dir, 'Nomedia001.json'), sidecar('Nomedia001'))
-    expect(await findFinishedBundle(dir, queued('Nomedia001'), LATER)).toEqual({ status: 'none' })
+    expect(await findFinishedBundle(dir, queued('Nomedia001'), LATER, filenameOwner([queued('Nomedia001')]))).toEqual({ status: 'none' })
   })
 
   it('reports a sidecar it cannot adopt, leaving it in place', async () => {
     const text = JSON.stringify({ formatVersion: 99, tapebox: {} })
     await writeFile(join(dir, 'Newer00001.json'), text)
     await writeFile(join(dir, 'Newer00001.mp4'), 'media')
-    expect(await findFinishedBundle(dir, queued('Newer00001'), LATER)).toMatchObject({ status: 'unusable' })
+    expect(await findFinishedBundle(dir, queued('Newer00001'), LATER, filenameOwner([queued('Newer00001')]))).toMatchObject({ status: 'unusable' })
     expect(await readFile(join(dir, 'Newer00001.json'), 'utf8')).toBe(text)
   })
 
   it('refuses a sidecar that names another stem\'s media', async () => {
     await writeFile(join(dir, 'Ownstem001.json'), JSON.stringify({ ...JSON.parse(sidecar('Ownstem001')), tapebox: { ...JSON.parse(sidecar('Other00001')).tapebox } }))
     await writeFile(join(dir, 'Other00001.mp4'), 'media')
-    expect(await findFinishedBundle(dir, queued('Ownstem001'), LATER)).toMatchObject({ status: 'unusable' })
+    expect(await findFinishedBundle(dir, queued('Ownstem001'), LATER, filenameOwner([queued('Ownstem001')]))).toMatchObject({ status: 'unusable' })
   })
 
   it('drops a poster the sidecar names but the library lacks', async () => {
     await writeFile(join(dir, 'Noposter01.json'), sidecar('Noposter01', { thumbnailFilename: 'Noposter01.jpg' }))
     await writeFile(join(dir, 'Noposter01.mp4'), 'media')
-    expect(await findFinishedBundle(dir, queued('Noposter01'), LATER)).toMatchObject({
+    expect(await findFinishedBundle(dir, queued('Noposter01'), LATER, filenameOwner([queued('Noposter01')]))).toMatchObject({
       status: 'found', move: { filename: 'Noposter01.mp4', thumbnailFilename: null, downloadedAtUtc: FINISHED },
     })
   })
@@ -153,7 +157,7 @@ describe('findFinishedBundle', () => {
     const id = 'Foreign001'
     await writeFile(join(dir, `${id}.json`), sidecar(id, { sourceUrl: 'https://example.test/another' }))
     await writeFile(join(dir, `${id}.mp4`), 'foreign media')
-    expect(await findFinishedBundle(dir, queued(id), LATER)).toMatchObject({ status: 'unusable' })
+    expect(await findFinishedBundle(dir, queued(id), LATER, filenameOwner([queued(id)]))).toMatchObject({ status: 'unusable' })
     expect(await readFile(join(dir, `${id}.mp4`), 'utf8')).toBe('foreign media')
   })
 
@@ -162,7 +166,7 @@ describe('findFinishedBundle', () => {
     const tape = { ...queued(id), sourceUrl: 'https://www.youtube.com/watch?v=sourceA' }
     await writeFile(join(dir, `${id}.json`), sidecar(id, { sourceUrl: `${tape.sourceUrl}&si=share` }))
     await writeFile(join(dir, `${id}.mp4`), 'own media')
-    expect(await findFinishedBundle(dir, tape, LATER)).toMatchObject({ status: 'found' })
+    expect(await findFinishedBundle(dir, tape, LATER, filenameOwner([tape]))).toMatchObject({ status: 'found' })
   })
 
   it('uses a valid extractor and source ID pair when recovery URLs differ', async () => {
@@ -172,7 +176,7 @@ describe('findFinishedBundle', () => {
     raw.extractor = 'Example'
     await writeFile(join(dir, `${id}.json`), JSON.stringify(raw))
     await writeFile(join(dir, `${id}.mp4`), 'own media')
-    expect(await findFinishedBundle(dir, tape, LATER)).toMatchObject({ status: 'found' })
+    expect(await findFinishedBundle(dir, tape, LATER, filenameOwner([tape]))).toMatchObject({ status: 'found' })
   })
 
   it('does not use a bare provider ID as recovery source identity', async () => {
@@ -180,7 +184,7 @@ describe('findFinishedBundle', () => {
     const tape = { ...queued(id), sourceId: 'vid1', extractor: 'example' }
     await writeFile(join(dir, `${id}.json`), sidecar(id, { sourceUrl: 'https://example.test/another' }))
     await writeFile(join(dir, `${id}.mp4`), 'foreign media')
-    expect(await findFinishedBundle(dir, tape, LATER)).toMatchObject({ status: 'unusable' })
+    expect(await findFinishedBundle(dir, tape, LATER, filenameOwner([tape]))).toMatchObject({ status: 'unusable' })
   })
 
   it('refuses legacy catalog ownership of any recovered filename', async () => {
@@ -189,7 +193,7 @@ describe('findFinishedBundle', () => {
     await writeFile(join(dir, `${id}.json`), sidecar(id))
     await writeFile(join(dir, `${id}.mp4`), 'other row media')
     const owner: Tape = { ...queued('Owner00001'), state: 'downloaded', filename: `${id}.mp4`, sidecarFilename: 'Owner.json', downloadedAtUtc: FINISHED }
-    expect(await findFinishedBundle(dir, tape, LATER, [tape, owner])).toMatchObject({ status: 'unusable' })
+    expect(await findFinishedBundle(dir, tape, LATER, filenameOwner([tape, owner]))).toMatchObject({ status: 'unusable' })
     expect(await readFile(join(dir, `${id}.mp4`), 'utf8')).toBe('other row media')
   })
 })

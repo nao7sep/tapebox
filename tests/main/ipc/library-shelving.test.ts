@@ -1,3 +1,5 @@
+import { CatalogOwnership } from '@main/core/catalog-ownership'
+import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
@@ -47,6 +49,9 @@ const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), de
 
 const persistNow = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@main/store/session', () => ({
+  filenameOwner: (name: string, exceptId?: string) => new CatalogOwnership(state.tapes).filenameOwner(name, exceptId),
+  stemOwner: (stem: string, exceptId?: string) => new CatalogOwnership(state.tapes).stemOwner(stem, exceptId),
+  sourceOwner: (ref: SourceRef, exceptId?: string) => new CatalogOwnership(state.tapes).sourceOwner(ref, exceptId),
   onCatalogSaveFailure: () => {},
   persistNow,
   getTape: (id: string) => state.tapes.find((tape) => tape.id === id),

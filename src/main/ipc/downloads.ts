@@ -35,7 +35,7 @@ export function registerDownloadHandlers(): void {
     // library's one identity rule, so the same video pasted with tracking junk or a
     // fragment isn't added twice. Any existing tape blocks the add, in any state; a
     // failed one is resumed via Retry, not re-added.
-    if (librarySourceIndex(session.getTapes()).has({ url: trimmed })) {
+    if (session.sourceOwner({ url: trimmed })) {
       throw new UserFacingError('refused', message('errors.urlInLibrary'))
     }
     const [order] = inboxFrontOrders(1)

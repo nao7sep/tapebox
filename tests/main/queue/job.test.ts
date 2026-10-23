@@ -1,3 +1,4 @@
+import { CatalogOwnership } from '@main/core/catalog-ownership'
 import { describe, it, expect } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -90,7 +91,9 @@ function makeDeps(opts: {
     findFinishedBundle: opts.finished ?? (async () => ({ status: 'none' })),
     session: {
       getTape: (id) => tapes.get(id),
-      getTapes: () => [...tapes.values()],
+      filenameOwner: (name, exceptId) => new CatalogOwnership([...tapes.values()]).filenameOwner(name, exceptId),
+      stemOwner: (stem, exceptId) => new CatalogOwnership([...tapes.values()]).stemOwner(stem, exceptId),
+      sourceOwner: (ref, exceptId) => new CatalogOwnership([...tapes.values()]).sourceOwner(ref, exceptId),
       upsertTape: (t) => {
         tapes.set(t.id, t)
       },

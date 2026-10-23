@@ -12,10 +12,9 @@ import { log } from '@main/io/logger'
 import { nowUtcIso } from '@shared/utc'
 import type { Tape } from '@shared/domain'
 import { moveTape, type TapeMove } from '@main/core/tape-state'
-import { librarySourceIndex } from '@shared/source-identity'
 import { StopRequest, type StopCause } from '@main/stop-request'
 import { findFinishedBundle } from '@main/queue/finished-bundle'
-import { catalogFilenameOwner, catalogStemOwner, nameInStem, tryClaimManagedFiles } from '@main/core/managed-files'
+import { nameInStem, tryClaimManagedFiles } from '@main/core/managed-files'
 
 const DOWNLOAD_FAILURE_MESSAGE =
   'The download could not be completed. Check the source and your connection, then try again.'
@@ -41,8 +40,10 @@ export interface JobDeps {
   flushMedia: typeof fsyncFile
   findFinishedBundle: typeof findFinishedBundle
   session: {
+    filenameOwner: typeof session.filenameOwner
+    stemOwner: typeof session.stemOwner
+    sourceOwner: typeof session.sourceOwner
     getTape: typeof session.getTape
-    getTapes: typeof session.getTapes
     upsertTape: typeof session.upsertTape
     persistNow: typeof session.persistNow
   }
@@ -59,8 +60,10 @@ export const defaultJobDeps: JobDeps = {
   flushMedia: fsyncFile,
   findFinishedBundle,
   session: {
+    filenameOwner: session.filenameOwner,
+    stemOwner: session.stemOwner,
+    sourceOwner: session.sourceOwner,
     getTape: session.getTape,
-    getTapes: session.getTapes,
     upsertTape: session.upsertTape,
     persistNow: session.persistNow,
   },
@@ -132,7 +135,7 @@ export class Job {
       // Recovery and a new attempt both own <id>.*, including provider cleanup
       // and raw/JPEG postprocessing. Legacy foreign owners stop the attempt
       // before it can adopt their files or clear the namespace.
-      if (catalogStemOwner(this.d.session.getTapes(), this.tapeId, this.tapeId)) throw new Error('Another tape owns this download namespace')
+      if (this.d.session.stemOwner(this.tapeId, this.tapeId)) throw new Error('Another tape owns this download namespace')
       release = tryClaimManagedFiles(libraryDir, { stems: [this.tapeId] })
       if (!release) throw new Error('This download namespace is still being changed')
       if (await this.adoptFinishedDownload()) return
@@ -182,7 +185,7 @@ export class Job {
   private async adoptFinishedDownload(): Promise<boolean> {
     const cur = this.current()
     if (!cur) return false
-    const found = await this.d.findFinishedBundle(this.d.getLibraryDir(), cur, this.d.now(), this.d.session.getTapes())
+    const found = await this.d.findFinishedBundle(this.d.getLibraryDir(), cur, this.d.now(), this.d.session.filenameOwner)
     if (found.status === 'none') return false
     if (found.status === 'unusable') {
       // Clearing the stem for a new attempt could delete a finished download, so
@@ -194,8 +197,8 @@ export class Job {
     }
     this.controller.signal.throwIfAborted()
     const names = [found.move.filename, found.move.sidecarFilename, found.move.thumbnailFilename].filter((name): name is string => typeof name === 'string')
-    if (catalogStemOwner(this.d.session.getTapes(), this.tapeId, this.tapeId) ||
-      names.some((name) => catalogFilenameOwner(this.d.session.getTapes(), name, this.tapeId))) {
+    if (this.d.session.stemOwner(this.tapeId, this.tapeId) ||
+      names.some((name) => this.d.session.filenameOwner(name, this.tapeId))) {
       throw new Error('Another tape acquired a finished filename during recovery')
     }
     // A valid older sidecar can name an untracked poster outside the ID stem.
@@ -234,11 +237,11 @@ export class Job {
     // canonical page), and we don't want two library rows for one video. The
     // (extractor, id) pair is only known post-probe, so the library's identity
     // rule is checked again here with it.
-    const duplicateOf = librarySourceIndex(this.d.session.getTapes(), this.tapeId).find({
+    const duplicateOf = this.d.session.sourceOwner({
       url: this.current()!.sourceUrl,
       extractor: result.extractor,
       sourceId: result.id,
-    })
+    }, this.tapeId)
     if (duplicateOf) {
       // A terminal outcome that bypasses the runInner() catch, so log it here —
       // otherwise a download that "failed" leaves no trace in the session log.
@@ -271,7 +274,7 @@ export class Job {
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
     const libraryDir = this.d.getLibraryDir()
-    if (catalogStemOwner(this.d.session.getTapes(), cur.id, cur.id)) throw new Error('Another tape owns this download namespace')
+    if (this.d.session.stemOwner(cur.id, cur.id)) throw new Error('Another tape owns this download namespace')
 
     this.update({ state: 'downloading', downloadStartedAtUtc: this.d.now() })
 

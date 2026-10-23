@@ -56,6 +56,9 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
 
 import {
   loadSession,
+  filenameOwner,
+  stemOwner,
+  sourceOwner,
   onCatalogSaveFailure,
   getBoxes,
   getTapes,
@@ -98,6 +101,35 @@ afterEach(async () => {
 })
 
 describe('catalog persistence', () => {
+  it('keeps ownership current through updates, durable rename, removal and collection binding', async () => {
+    await loadSession()
+    const first = { ...tape(), filename: 'First.mp4' }
+    upsertTape(first)
+    expect(filenameOwner('FIRST.MP4')).toBe(first.id)
+    expect(stemOwner('First')).toBe(first.id)
+    expect(filenameOwner(`${first.id}.part`)).toBe(first.id)
+    expect(sourceOwner({ url: first.sourceUrl }, first.id)).toBeUndefined()
+    const changed = { ...first, sourceUrl: 'https://example.test/new', sourceId: 'new' }
+    upsertTape(changed)
+    expect(sourceOwner({ url: first.sourceUrl })).toBeUndefined()
+    expect(sourceOwner({ url: changed.sourceUrl })).toBe(first.id)
+    const renaming = renameTapeDurably({ ...changed, filename: 'Next.mp4' })
+    expect(filenameOwner('First.mp4')).toBe(first.id)
+    await renaming
+    expect(filenameOwner('First.mp4')).toBeUndefined()
+    expect(filenameOwner('Next.mp4')).toBe(first.id)
+    removeTapes([first.id])
+    expect(filenameOwner('Next.mp4')).toBeUndefined()
+    expect(stemOwner(first.id)).toBeUndefined()
+    expect(sourceOwner({ url: changed.sourceUrl })).toBeUndefined()
+    await persistNow()
+    bindSession(join(testRoot, 'other.json'), { tapes: [first], boxes: [] })
+    expect(filenameOwner('First.mp4')).toBe(first.id)
+    bindSession(join(testRoot, 'empty.json'), { tapes: [], boxes: [] })
+    expect(filenameOwner('First.mp4')).toBeUndefined()
+    expect(sourceOwner({ url: first.sourceUrl })).toBeUndefined()
+  })
+
   it('does not publish an in-memory rename until catalog.json names it', async () => {
     await loadSession()
     const original = tape()

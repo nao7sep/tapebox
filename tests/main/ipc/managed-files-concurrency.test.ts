@@ -9,10 +9,12 @@ import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 
 const state = vi.hoisted(() => ({
   libraryDir: '', catalog: '', heldCopy: '', holdCleanup: false, holdListing: false,
+  libraryListings: 0, events: [] as string[],
   started: () => {}, release: null as Promise<void> | null,
 }))
 const emit = vi.hoisted(() => vi.fn())
 const thumbnail = vi.hoisted(() => ({ download: vi.fn(), save: vi.fn() }))
+const queue = vi.hoisted(() => ({ isActive: vi.fn(() => false), cancel: vi.fn(async (_id: string) => {}) }))
 const handlers = new Map<string, (req: unknown) => Promise<unknown>>()
 vi.mock('electron', () => ({
   ipcMain: { handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
@@ -25,12 +27,16 @@ vi.mock('@main/store/config', () => ({ getLibraryDir: () => state.libraryDir, ge
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/ipc/events', () => ({ emit }))
-vi.mock('@main/queue/manager', () => ({ isActive: () => false, cancel: vi.fn(), holdFromScheduling: () => () => {} }))
+vi.mock('@main/queue/manager', () => ({ ...queue, holdFromScheduling: () => () => {} }))
 vi.mock('@main/services/ytdlp', () => ({ downloadThumbnail: thumbnail.download, probe: vi.fn(), download: vi.fn(), findThumbnail: vi.fn() }))
 vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: thumbnail.save, probeMedia: vi.fn() }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return { ...actual, readdir: async (...args: Parameters<typeof actual.readdir>) => {
+    if (args[0] === state.libraryDir) {
+      state.libraryListings += 1
+      state.events.push('listing')
+    }
     const result = await actual.readdir(...args)
     if (state.holdListing && args[0] === state.libraryDir) {
       state.holdListing = false
@@ -121,6 +127,10 @@ beforeEach(async () => {
   state.holdCleanup = false
   state.holdListing = false
   state.release = null
+  state.libraryListings = 0
+  state.events = []
+  queue.isActive.mockReset().mockReturnValue(false)
+  queue.cancel.mockReset().mockResolvedValue(undefined)
   handlers.clear()
   emit.mockClear()
   thumbnail.download.mockReset()
@@ -148,6 +158,60 @@ afterEach(async () => {
 })
 
 describe('managed filename ownership across producers and cleanup', () => {
+  it('lists the library once for multiple removals after every selected producer settles', async () => {
+    const other: Tape = { ...original, id: 'other12345', sourceUrl: 'https://example.test/other', filename: 'Other.mp4', sidecarFilename: 'Other.json', name: 'Other', order: -1 }
+    await stage('Other')
+    session.upsertTape(other)
+    const gate = hold()
+    queue.isActive.mockReturnValue(true)
+    queue.cancel.mockImplementation(async (id) => {
+      expect(state.libraryListings).toBe(0)
+      if (id === other.id) { state.started(); await state.release }
+      // A producer may leave a last fragment while its cancellation settles.
+      await writeFile(join(state.libraryDir, `${id}.mp4.part`), 'late fragment')
+      state.events.push(`settled:${id}`)
+    })
+    state.libraryListings = 0
+    state.events = []
+    const removing = handlers.get('library:remove')!({ tapeIds: [original.id, other.id], deleteFiles: true })
+    try {
+      await gate.started
+      expect(state.libraryListings).toBe(0)
+      expect(await readFile(join(state.libraryDir, 'Original.mp4'), 'utf8')).toBe('video')
+      expect(await readFile(join(state.libraryDir, 'Other.mp4'), 'utf8')).toBe('media:Other')
+    } finally { gate.release() }
+    await removing
+    expect(queue.cancel.mock.calls).toEqual([[original.id], [other.id]])
+    expect(state.libraryListings).toBe(1)
+    expect(state.events).toEqual([`settled:${original.id}`, `settled:${other.id}`, 'listing'])
+    expect(session.getTapes()).toEqual([])
+    expect(await readdir(state.libraryDir)).toEqual([])
+  })
+
+  it.each([
+    ['case', 'TAKEN.mp4', 'taken.mp4'],
+    ['Unicode normalization', 'Cafe\u0301.mp4', 'Caf\u00e9.mp4'],
+  ] as const)('lists the bulk import destination once and refuses a %s alias', async (_kind, existingName, aliasName) => {
+    const sourceDir = join(root, 'source')
+    await mkdir(sourceDir)
+    await writeFile(join(state.libraryDir, existingName), 'existing independent media')
+    const selected: string[] = []
+    for (const [index, name] of ['FreshOne.mp4', aliasName, 'FreshTwo.mp4'].entries()) {
+      await writeFile(join(sourceDir, name), `source media:${index}`)
+      const path = join(sourceDir, `selected-${index}.json`)
+      await writeFile(path, sidecar(`https://example.test/bulk/${index}`, name))
+      selected.push(path)
+    }
+    state.libraryListings = 0
+    const result = await handlers.get('library:import')!({ paths: selected }) as ImportResult
+    expect(state.libraryListings).toBe(1)
+    expect(result.imported.map((tape) => tape.filename)).toEqual(['FreshOne.mp4', 'FreshTwo.mp4'])
+    expect(result.issues).toMatchObject([{ path: selected[1], reason: { key: 'import.copyFailed' }, severity: 'error' }])
+    expect(result.issues).toHaveLength(1)
+    expect(await readFile(join(state.libraryDir, existingName), 'utf8')).toBe('existing independent media')
+    await assertCompleteCatalog()
+  })
+
   it('reports a catalog-owned rename target as a name conflict even when its physical file is missing', async () => {
     const owner: Tape = { ...original, id: 'other12345', sourceUrl: 'https://example.test/owner', filename: 'Renamed.mp4', sidecarFilename: 'Owner.json', name: null, order: -1 }
     await writeFile(join(state.libraryDir, 'Owner.json'), sidecar(owner.sourceUrl, 'Renamed.mp4'))
