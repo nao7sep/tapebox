@@ -27,10 +27,6 @@ export function joinMessages(first: Message, ...rest: MessageValue[]): Message {
   return rest.reduce<Message>((joined, next) => message('common.join', { first: joined, rest: next }), first)
 }
 
-export function isMessage(value: unknown): value is Message {
-  return typeof value === 'object' && value !== null && typeof (value as { key?: unknown }).key === 'string'
-}
-
 const PLACEHOLDER = /\{(\w+)\}/g
 
 type RelativeUnit = 'second' | 'minute' | 'hour' | 'day'

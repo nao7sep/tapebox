@@ -31,14 +31,3 @@ export function utcTimestampForFilename(date: Date = new Date()): string {
   const ss = pad(date.getUTCSeconds(), 2)
   return `${y}${m}${d}-${hh}${mm}${ss}-utc`
 }
-
-/**
- * Millisecond-precision counterpart to {@link utcTimestampForFilename}:
- * 'yyyymmdd-hhmmss-fff-utc', e.g. `20260610-031542-123-utc`. toISOString()'s
- * fields are already zero-padded, so slicing its first 23 characters (date +
- * time + '.' + millis) and reshaping the punctuation is exact — no separate
- * padding needed.
- */
-export function utcTimestampForFilenameMs(date: Date = new Date()): string {
-  return `${date.toISOString().slice(0, 23).replaceAll('-', '').replaceAll(':', '').replace('.', '-').replace('T', '-')}-utc`
-}

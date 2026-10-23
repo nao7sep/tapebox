@@ -81,9 +81,8 @@ export function reconcileWakeLock(): void {
 
 /**
  * Release unconditionally — the window (and its <video>) is gone, or the app is
- * shutting down. The OS would release on process exit anyway; this keeps the
- * assertion from lingering on macOS, where the app stays alive after its last
- * window closes.
+ * shutting down. Closing the main window quits on every platform, including
+ * macOS; releasing here ends the assertion before process shutdown completes.
  */
 export function releaseWakeLock(): void {
   videoPlaying = false

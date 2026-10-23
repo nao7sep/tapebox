@@ -18,7 +18,7 @@ import type { LanguageEnvironment } from '@shared/i18n/languages'
  *
  * isDebugEnabled is main's debug state, read once synchronously at preload time
  * (main registers its IPC handlers before the window loads), so the renderer can
- * skip forwarding debug lines a packaged release would only drop. `=== true`
+ * skip forwarding debug lines a packaged release would only drop. `!== false`
  * keeps it fail-open: an undefined reply leaves debug forwarding on.
  *
  * languageEnvironment is read the same way, so the window's first words are

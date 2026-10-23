@@ -3,8 +3,8 @@ import { app } from 'electron'
 import { showPlainMessageDialog } from '@main/plain-message-dialog'
 import { SESSION_END_LIMIT_MS } from '@main/quit'
 
-// The Electron entry's platform quit routes. Closing the last window quits on
-// Windows and Linux; on macOS the app stays for the Dock to reopen it.
+// The Electron entry's platform quit routes. Closing the main window quits on
+// every platform, including macOS.
 //
 // An OS logout, restart or shutdown delivered into the Electron entry's own
 // handlers, with every store, service and window substituted: macOS and Linux

@@ -1,6 +1,3 @@
-// The lineup research document the rows and defaults rest on.
-export const MODEL_LINEUP = 'ai-model-lineup-20261004'
-
 export type ModelKind = 'text-frontier' | 'text-smart' | 'text-balanced' | 'text-fast'
 export type Provider = 'openai'
 export type SupportedModel = {
