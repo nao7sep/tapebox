@@ -96,6 +96,8 @@ async function createMainWindow(): Promise<BrowserWindow> {
     (error) => log.warn('window minimum could not be updated', { error: describeError(error) }))
   // Windows ends a logoff or shutdown here and never raises a quit event.
   win.on('session-end', quit.endSessionNow)
+  win.webContents.on('render-process-gone', releaseWakeLock)
+  win.webContents.on('destroyed', releaseWakeLock)
   win.once('closed', () => {
     if (mainWindow === win) mainWindow = null
     // A main window gone by any other route still ends the app; the Records
@@ -257,13 +259,13 @@ const quit = createQuit({
     if (startupReady && (!mainWindow || mainWindow.isDestroyed())) void createMainWindow().catch(handleTerminalStartupFailure)
   },
   stopWork: async () => {
-    // The renderer can't report a final pause once we're tearing down.
-    releaseWakeLock()
     log.info('shutdown')
     await Promise.all([shutdownBinaryOperations(), queue.shutdown(), cancelAllScans(), cancelAllWork()])
   },
   saveLayout: () => layout.persistNow(),
   close: async () => {
+    // Every cancellable quit question has settled; playback is now ending.
+    releaseWakeLock()
     await Promise.all([stopMediaServer(), closeBackupStore()])
     await closeRecordsReader()
     await closeRecords()

@@ -20,7 +20,7 @@ type Handler = (...args: unknown[]) => unknown
 const state = vi.hoisted(() => ({
   app: new Map<string, Handler>(),
   power: new Map<string, Handler>(),
-  windows: [] as Array<{ handlers: Map<string, Handler> }>,
+  windows: [] as Array<{ handlers: Map<string, Handler>; renderer: Map<string, Handler> }>,
   order: [] as string[],
   releaseLanguage: (() => {}) as () => void,
   stopStalls: false,
@@ -29,13 +29,16 @@ const state = vi.hoisted(() => ({
   minimized: false,
   about: (() => {}) as () => void,
   boot: [] as string[],
+  blockers: new Set<number>(),
+  nextBlocker: 0,
 }))
 
 vi.mock('electron', () => {
   class BrowserWindow {
     static getFocusedWindow(): unknown { return state.focused }
     readonly handlers = new Map<string, Handler>()
-    readonly webContents = { on: vi.fn(), setWindowOpenHandler: vi.fn(), send: vi.fn(), isDestroyed: () => false }
+    readonly renderer = new Map<string, Handler>()
+    readonly webContents = { on: (event: string, handler: Handler) => { this.renderer.set(event, handler) }, setWindowOpenHandler: vi.fn(), send: vi.fn(), isDestroyed: () => false }
     constructor() { state.windows.push(this) }
     on(event: string, handler: Handler): this { this.handlers.set(event, handler); return this }
     once(event: string, handler: Handler): this { return this.on(event, handler) }
@@ -61,6 +64,11 @@ vi.mock('electron', () => {
     BrowserWindow,
     powerMonitor: { on: (event: string, handler: Handler) => { state.power.set(event, handler) } },
     shell: { openExternal: vi.fn() },
+    powerSaveBlocker: {
+      start: vi.fn(() => { const id = ++state.nextBlocker; state.blockers.add(id); return id }),
+      stop: vi.fn((id: number) => state.blockers.delete(id)),
+      isStarted: (id: number) => state.blockers.has(id),
+    },
   }
 })
 
@@ -71,7 +79,7 @@ vi.mock('@main/io/logger', () => ({ initLogger: vi.fn(), isDebugEnabled: () => f
 vi.mock('@main/io/records', () => ({ closeRecords: step('close-records'), flushRecordsBeforeExit: vi.fn(() => { state.order.push('records-drain') }), onRecordStored: vi.fn(), openRecords: () => 'session' }))
 vi.mock('@main/io/records-read', () => ({ closeRecordsReader: vi.fn(async () => {}) }))
 vi.mock('@main/records-window', () => ({ notifyRecordsChanged: vi.fn() }))
-vi.mock('@main/store/config', () => ({ getSettings: () => ({ language: 'en', theme: 'system' }), loadSettings: vi.fn(async () => ({ status: 'loaded' })) }))
+vi.mock('@main/store/config', () => ({ getSettings: () => ({ language: 'en', theme: 'system', keepAwakeWhilePlaying: true }), loadSettings: vi.fn(async () => ({ status: 'loaded' })) }))
 vi.mock('@main/store/dependencies', () => ({ loadDependencies: vi.fn(async () => {}) }))
 // Every catalog save fails: a user's quit would ask; a session end must not.
 vi.mock('@main/store/session', () => ({ loadSession: vi.fn(async () => ({ status: 'loaded' })), persistNow: vi.fn(async () => { state.order.push('save-library'); return false }) }))
@@ -91,7 +99,6 @@ vi.mock('@main/binaries/manager', () => ({ hasInstalls: () => false }))
 vi.mock('@main/ipc/scan', () => ({ cancelAllScans: vi.fn(async () => {}), resumeScans: vi.fn(), hasActiveScans: () => false }))
 vi.mock('@main/work-registry', () => ({ cancelAllWork: vi.fn(async () => {}), resumeWork: vi.fn(), hasRunningWork: () => false }))
 vi.mock('@main/media-server', () => ({ startMediaServer: vi.fn(async () => {}), stopMediaServer: vi.fn(async () => {}) }))
-vi.mock('@main/power-blocker', () => ({ releaseWakeLock: vi.fn() }))
 vi.mock('@main/window-options', () => ({ windowOptions: () => ({}) }))
 vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn(), followOsThemeChanges: vi.fn(), windowBackground: () => '#000' }))
 vi.mock('@main/window-state-recovery', () => ({ createWindowWithUsablePersistedBounds: (_key: string, make: () => unknown) => make() }))
@@ -114,7 +121,8 @@ vi.mock('@main/i18n', () => ({
 let processHandlers: Array<[string, (...args: unknown[]) => void]> = []
 
 /** A fresh Electron entry, started up to its main window. */
-async function launch(): Promise<{ handlers: Map<string, Handler> }> {
+async function launch(): Promise<{ handlers: Map<string, Handler>; renderer: Map<string, Handler> }> {
+  state.blockers.clear()
   state.app.clear()
   state.power.clear()
   state.boot.length = 0
@@ -299,5 +307,38 @@ describe('the Electron profile', () => {
   it('moves under the storage root before the single-instance lock', async () => {
     await launch()
     expect(state.boot).toEqual(['setPath userData /data-root/electron', 'lock'])
+  })
+})
+
+
+describe('playback assertion lifetime', () => {
+  it('keeps the actual assertion when final-save failure cancels Quit', async () => {
+    await launch()
+    const { setVideoPlaying } = await import('@main/power-blocker')
+    const { persistNow } = await import('@main/store/session')
+    vi.mocked(persistNow).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    setVideoPlaying(true)
+    const ids = [...state.blockers]
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    expect(state.order).toContain('stop-downloads')
+    expect([...state.blockers]).toEqual(ids)
+    expect(state.blockers.size).toBe(1)
+    setVideoPlaying(false)
+    expect(state.blockers.size).toBe(0)
+  })
+
+  it('releases the assertion on renderer failure and can reacquire after recovery', async () => {
+    const window = await launch()
+    const { setVideoPlaying, reconcileWakeLock } = await import('@main/power-blocker')
+    setVideoPlaying(true)
+    expect(state.blockers.size).toBe(1)
+    window.renderer.get('render-process-gone')!()
+    reconcileWakeLock()
+    expect(state.blockers.size).toBe(0)
+    setVideoPlaying(true)
+    expect(state.blockers.size).toBe(1)
+    window.renderer.get('destroyed')!()
+    expect(state.blockers.size).toBe(0)
   })
 })
