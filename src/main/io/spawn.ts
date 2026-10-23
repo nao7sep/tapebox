@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable } from 'node:stream'
+import { StringDecoder } from 'node:string_decoder'
 import type { LoggableError } from '@shared/error'
 import type { RunStop } from '@shared/records'
 import { StopRequest } from '@main/stop-request'
@@ -306,8 +307,10 @@ export async function execCapture(
   })
   const unbindAbort = bindAbort(child, opts.signal)
 
-  child.stdout.on('data', (d: Buffer) => { stdout += d.toString('utf8'); idle.kick() })
-  child.stderr.on('data', (d: Buffer) => { stderr += d.toString('utf8'); idle.kick() })
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (text: string) => { stdout += text; idle.kick() })
+  child.stderr.on('data', (text: string) => { stderr += text; idle.kick() })
 
   return new Promise<CaptureResult>((resolve, reject) => {
     child.on('error', (err) => {
@@ -409,15 +412,17 @@ export function makeLineBuffer(onLine: (line: string) => void): {
   flush: () => void
 } {
   let buf = ''
+  const decoder = new StringDecoder('utf8')
   return {
     feed(chunk) {
-      buf += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+      buf += decoder.write(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
       const parts = buf.split('\n')
       // The last part is the (possibly partial) remainder — keep it buffered.
       buf = parts.pop() ?? ''
       for (const p of parts) onLine(p.replace(/\r$/, ''))
     },
     flush() {
+      buf += decoder.end()
       if (buf.length > 0) {
         onLine(buf.replace(/\r$/, ''))
         buf = ''
