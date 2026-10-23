@@ -1,5 +1,5 @@
 import { collectionCatalog } from '@main/paths'
-import { access, constants, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
+import { access, constants, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
@@ -17,12 +17,12 @@ import {
   unlinkFiles,
   writeFileAtomicNoOverwriteVia,
 } from '@main/io/atomic-file'
-import { serializeStoreJson } from '@main/io/atomic-json'
 import { openExternalPlayer } from '@main/io/external-player'
-import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
+import { FORMAT_VERSIONS, NewerFormatError, checkFormatVersion } from '@main/io/format-version'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
-import { readSidecarFile, sidecarNamespace, SIDECAR_JSON, writeSidecar } from '@main/core/sidecar'
+import { assertSidecarRevision } from '@main/io/sidecar-revision'
+import { readSidecarFile, readSidecarDocument, readSidecarProjection, sidecarNamespacePatch, rewriteSidecar, writeSidecarStage } from '@main/core/sidecar'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { claimManagedFiles, managedFilenameClaimed, tryClaimManagedFiles } from '@main/core/managed-files'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
@@ -219,7 +219,8 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
     return current
   }
   // Refuse a protected sidecar before attempting its optional poster backfill.
-  const sidecar = tape.sidecarFilename ? await readSidecarFile(join(dir, tape.sidecarFilename)) : null
+  const document = tape.sidecarFilename ? await readSidecarDocument(join(dir, tape.sidecarFilename), signal, 'metadata') : null
+  const sidecar = document?.value ?? null
   assertCurrent()
 
   // Backfill a local poster for a downloaded tape that has none — e.g. one
@@ -260,7 +261,7 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
   // the catalog as it was rather than the two disagreeing. A poster fetched for
   // it stays in the library under the tape's own stem, for the next Apply.
   if (tape.sidecarFilename) {
-    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, assertCurrent, sidecar!)
+    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, assertCurrent, sidecar!, document!.stamp, signal)
   }
 
   // Once the sidecar has committed, Apply finishes with its catalog commit even if
@@ -319,6 +320,8 @@ async function writeRefreshedSidecar(
   thumbnailFilename: string | null,
   assertCurrent: () => Tape,
   sidecar: Record<string, unknown>,
+  stamp: string,
+  signal: AbortSignal,
 ): Promise<void> {
   let changed = false
   const fields = { title: metadata.title, uploader: metadata.uploader, description: metadata.description }
@@ -328,16 +331,17 @@ async function writeRefreshedSidecar(
     changed = true
   }
   const tb = sidecar['tapebox']
+  let tapebox: Record<string, unknown> | undefined
   if (tb && typeof tb === 'object' && (tb as Record<string, unknown>)['thumbnailFilename'] !== thumbnailFilename) {
-    sidecar['tapebox'] = { ...sidecarNamespace(sidecar, assertCurrent()), thumbnailFilename }
+    tapebox = sidecarNamespacePatch(sidecar, assertCurrent(), { thumbnailFilename })
     changed = true
   }
   if (!changed) return
   assertCurrent()
   // not recorded: the sidecar is library-directory content, colocated with binary
   // media, so it is excluded (data-backup conventions) and takes the raw
-  // writeJsonAtomic, not the choke point.
-  await writeSidecar(path, sidecar)
+  // atomic-file writer, not the managed-text backup writer.
+  await rewriteSidecar(path, { root: fields, tapebox }, stamp, signal)
 }
 
 /**
@@ -359,28 +363,19 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     if (extname(sidecarPath).toLowerCase() !== '.json') continue
     const dir = dirname(sidecarPath)
 
-    let rawSidecar: string
-    try {
-      rawSidecar = await readFile(sidecarPath, 'utf8')
-    } catch (err) {
-      log.error('import sidecar read failed', { path: sidecarPath, error: describeError(err) })
-      issues.push({
-        path: sidecarPath,
-        reason: message('import.sidecarUnreadable'),
-        severity: 'error',
-      })
-      continue
-    }
-
     let sidecar: Record<string, unknown>
+    let sidecarStamp: string
+    let chapterCount: number | null
     try {
-      sidecar = JSON.parse(rawSidecar)
+      const document = await readSidecarProjection(sidecarPath, signal, 'catalog')
+      sidecar = document.value as Record<string, unknown>
+      sidecarStamp = document.stamp
+      chapterCount = document.chapterCount
     } catch (err) {
-      issues.push({
-        path: sidecarPath,
-        reason: message('import.sidecarInvalidJson'),
-        severity: 'warning',
-      })
+      if (signal.aborted) break
+      const invalid = (err as Error).name === 'SyntaxError' || (err as Error).message.startsWith('Parser ')
+      if (!invalid) log.error('import sidecar read failed', { path: sidecarPath, error: describeError(err) })
+      issues.push({ path: sidecarPath, reason: message(invalid ? 'import.sidecarInvalidJson' : 'import.sidecarUnreadable'), severity: invalid ? 'warning' : 'error' })
       continue
     }
 
@@ -509,6 +504,21 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       }
     }
 
+    try {
+      await assertSidecarRevision(sidecarPath, sidecarStamp)
+    } catch (error) {
+      log.error('import sidecar changed before admission', { path: sidecarPath, error: describeError(error) })
+      issues.push({ path: sidecarPath, reason: message('import.copyFailed'), severity: 'error' })
+      try {
+        await rollbackImportCopies(copied)
+        for (const path of copied) if (!session.filenameOwner(basename(path))) destinationNames.delete(portableFilenameIdentity(basename(path)))
+      } catch (cleanupError) {
+        log.error('changed import rollback failed', { path: sidecarPath, error: describeError(cleanupError) })
+        issues.push({ path: sidecarPath, reason: message('import.copyIncomplete'), severity: 'error' })
+      }
+      continue
+    }
+
     // Another import may have committed while the copies waited, including one
     // that adopted this run's already-published files from inside the library.
     // Recheck synchronously through upsert; rollback retires only copies that no
@@ -534,6 +544,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     }
     const tape = tapeFromSidecar(sidecar, {
       id: nanoid(10),
+      chapterCount: chapterCount ?? 0,
       sourceUrl,
       mediaFilename,
       sidecarFilename: `${mediaStem}.json`,
@@ -685,13 +696,13 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
   const sidecarName = byArtifact('sidecar')!.finalName
   const thumbnailName = byArtifact('thumbnail')?.finalName ?? null
   const sidecarItem = byArtifact('sidecar')!
-  const sidecar = await readSidecarFile(sidecarItem.old)
-  const tb = sidecarNamespace(sidecar, tape)
+  const document = await readSidecarDocument(sidecarItem.old, signal, 'catalog')
+  const sidecar = document.value
+  const tb = sidecarNamespacePatch(sidecar, tape, {})
   tb['name'] = cleanName
   tb['renamedAtUtc'] = nowUtc
   tb['mediaFilename'] = mediaName
   tb['thumbnailFilename'] = thumbnailName
-  sidecar['tapebox'] = tb
 
   const updated = {
     ...tape,
@@ -725,8 +736,7 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
         // not recorded: the sidecar is library content, transient app-owned until
         // exported (developer classification); the tape's catalog row records instead.
         // The renamed sidecar replaces the old one, so it keeps what a replace keeps.
-        const bytes = serializeStoreJson(sidecar, SIDECAR_JSON)
-        await writeFileAtomicNoOverwriteVia(it.fresh, (temp) => writeFile(temp, bytes), (await stat(it.old)).mode & 0o777)
+        await writeFileAtomicNoOverwriteVia(it.fresh, temp => writeSidecarStage(it.old, temp, { tapebox: tb }, document.stamp, signal), (await stat(it.old)).mode & 0o777)
         done.push(it.fresh)
       } else {
         // not recorded: the tape's media and poster gain a second name inside the
@@ -750,7 +760,7 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
   const postCommitErrors: unknown[] = []
   if (sidecarItem.equivalent) {
     try {
-      await writeSidecar(sidecarItem.old, sidecar)
+      await rewriteSidecar(sidecarItem.old, { tapebox: tb }, document.stamp)
     } catch (sidecarError) {
       postCommitErrors.push(
         new AggregateError([sidecarError], `Committed sidecar could not be updated at ${sidecarItem.old}.`),
@@ -890,9 +900,10 @@ async function removeTapesFrom(
  * removal: the user asked for the files to go, and the Trash setting applies.
  */
 async function refuseNewerSidecar(path: string): Promise<void> {
-  let text: string
-  try { text = await readFile(path, 'utf8') } catch { return }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.sidecar)
+  let value: unknown
+  try { value = (await readSidecarProjection(path, undefined, 'version')).value } catch { return }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return
+  const found = checkFormatVersion(value as Record<string, unknown>, FORMAT_VERSIONS.sidecar)
   if (found.status === 'newer') throw new NewerFormatError(path, found.version, FORMAT_VERSIONS.sidecar)
 }
 

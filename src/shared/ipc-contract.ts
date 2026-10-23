@@ -177,10 +177,9 @@ export type BinaryCancelResult =
   | { outcome: 'not-running' }
 
 /**
- * The sidecar JSON on disk: yt-dlp's full info.json (with path fields stripped)
- * plus our 'tapebox' namespace. The yt-dlp portion is intentionally untyped —
- * it's a large, evolving surface. Only consumers that need a specific field
- * cast it locally.
+ * The sidecar fields consumed by the interface, projected while streaming the
+ * file. Opaque source metadata stays on disk and survives rewrites and export.
+ * Consumers cast the provider's optional fields locally.
  */
 export type SidecarRaw = Record<string, unknown> & {
   chapters?: Array<{ start_time: number; end_time: number; title: string }>

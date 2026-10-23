@@ -20,7 +20,7 @@ export function registerAiHandlers(): void {
       tapeId,
       title: include.title ? tape.title : null,
       uploader: include.uploader ? tape.uploader : null,
-      description: include.description ? await readDescription(tape) : null,
+      description: include.description ? await readDescription(tape, signal) : null,
     }, signal), aiRequestKey(requestId))
     return { slug: slugifyAscii(raw) }
   })
@@ -40,9 +40,9 @@ function aiRequestKey(requestId: string): string {
  * downloaded tapes have a sidecar. An absent optional field yields null; a
  * failed read must stop the request before selected input reaches the provider.
  */
-async function readDescription(tape: Tape): Promise<string | null> {
+async function readDescription(tape: Tape, signal: AbortSignal): Promise<string | null> {
   if (!tape.sidecarFilename) return null
-  const data = await readSidecarFile(join(getLibraryDir(), tape.sidecarFilename))
+  const data = await readSidecarFile(join(getLibraryDir(), tape.sidecarFilename), signal, 'description')
   const description = data['description']
   return typeof description === 'string' ? description : null
 }

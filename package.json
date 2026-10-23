@@ -136,6 +136,7 @@
     "openai": "^7.32.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "stream-json": "^3.7.0",
     "unzipper": "^0.12.5",
     "zod": "^4.6.7",
     "zustand": "^5.0.15"

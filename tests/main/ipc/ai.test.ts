@@ -39,7 +39,7 @@ describe('AI name suggestion', () => {
     source.sidecarFilename = 't1.json'
     source.read.mockRejectedValue(new Error(failure))
     await expect(handlers.get('ai:generateSlug')!({ tapeId: 't1', requestId: 'failed-input', include: { title: true, uploader: false, description: true } })).rejects.toThrow()
-    expect(source.read).toHaveBeenCalledWith('/library/t1.json')
+    expect(source.read).toHaveBeenCalledWith('/library/t1.json', expect.any(AbortSignal), 'description')
     expect(seenSignals).toHaveLength(0)
   })
 

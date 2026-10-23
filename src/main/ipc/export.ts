@@ -1,13 +1,11 @@
-import { realpath, writeFile } from 'node:fs/promises'
+import { realpath } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { handle } from './handle'
 import { removeTapes } from './library'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
 import { tryClaimManagedFiles } from '@main/core/managed-files'
-import { readSidecarFile, sidecarNamespace, SIDECAR_JSON } from '@main/core/sidecar'
-import { serializeStoreJson } from '@main/io/atomic-json'
-import { maskYtdlpOutput, maskUrlCredentials } from '@main/io/mask'
+import { readSidecarDocument, sidecarNamespacePatch, writeSidecarStage } from '@main/core/sidecar'
 import { log } from '@main/io/logger'
 import {
   confirmPublicationDurability,
@@ -91,19 +89,17 @@ async function exportTape(
       }
     }
 
-    // Read + rewrite + validate the sidecar's tapebox namespace UP FRONT — before any
+    // Parse and validate the sidecar and its namespace patch before any
     // file is copied out — so a corrupt source sidecar (or a rewrite that would
     // downgrade it below what import accepts) fails the export before it leaves
     // partial files in the user's folder.
-    const original = await readSidecarFile(join(libDir, tape.sidecarFilename))
-    const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
-    const tb = sidecarNamespace(sidecar, tape)
-    // Exporting under another name renames the bundle, so the sidecar records when.
-    if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
-    tb['name'] = cleanName
-    tb['mediaFilename'] = mediaName
-    tb['thumbnailFilename'] = newThumbName
-    sidecar['tapebox'] = tb
+    const sourcePath = join(libDir, tape.sidecarFilename)
+    const document = await readSidecarDocument(sourcePath, signal, 'catalog')
+    const fields = document.value['tapebox'] as Record<string, unknown> | undefined
+    const tb = sidecarNamespacePatch(document.value, tape, {
+      name: cleanName, mediaFilename: mediaName, thumbnailFilename: newThumbName,
+      ...(fields?.['name'] !== cleanName ? { renamedAtUtc: nowUtcIso() } : {}),
+    })
 
     // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
     // written to the user's chosen destination and then forgotten. They are OUTPUT,
@@ -118,8 +114,7 @@ async function exportTape(
         committed.push(thumbDst)
       }
       signal.throwIfAborted()
-      const sidecarBytes = Buffer.from(serializeStoreJson(sidecar, SIDECAR_JSON), 'utf8')
-      await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes))
+      await writeFileAtomicNoOverwriteVia(sidecarDst, temp => writeSidecarStage(sourcePath, temp, { tapebox: tb, mask: true }, document.stamp, signal))
       committed.push(sidecarDst)
     } catch (err) {
       try {
