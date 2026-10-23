@@ -1,6 +1,7 @@
 import { extname } from 'node:path'
 
-import { portableFilenameIdentity, sanitizeFilename } from '@main/core/filename'
+import { collidingPortableFilename } from '@shared/filename'
+import { sanitizeFilename } from '@main/core/filename'
 import { message, type Message } from '@shared/i18n/translate'
 
 // The pure naming/file-op planning behind `library:rename`, lifted out of the IPC
@@ -68,8 +69,7 @@ export function planRename(
   // neither target exists on disk yet — so without this guard the staging build
   // and atomic swap would clobber one file with the other.
   const fresh = items.map((it) => it.fresh)
-  const freshIdentities = fresh.map(portableFilenameIdentity)
-  const collided = fresh.find((_name, index) => freshIdentities.indexOf(freshIdentities[index]!) !== index)
+  const collided = collidingPortableFilename(fresh)
   if (collided) {
     return {
       status: 'error',

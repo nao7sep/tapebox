@@ -1,3 +1,4 @@
+import { collidingPortableFilename } from '@shared/filename'
 import { extname, isAbsolute } from 'node:path'
 
 import { sanitizeFilename } from '@main/core/filename'
@@ -35,7 +36,7 @@ export function planExport(
   // destination name (e.g. media and thumbnail sharing an extension), which the
   // per-file existence checks cannot catch when neither destination exists yet.
   const names = [mediaName, sidecarName, ...(thumbName ? [thumbName] : [])]
-  const collided = names.find((name, index) => names.indexOf(name) !== index)
+  const collided = collidingPortableFilename(names)
   if (collided) {
     return {
       status: 'error',

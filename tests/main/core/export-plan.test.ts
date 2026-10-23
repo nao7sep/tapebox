@@ -29,6 +29,15 @@ describe('planExport', () => {
     if (plan.status === 'error') expect(inEnglish(plan.message)).toMatch(/absolute/)
   })
 
+  it.each([
+    { filename: 'photo.JPG', thumbnailFilename: 'poster.jpg' },
+    { filename: 'media.JSON', thumbnailFilename: null },
+  ])('rejects portable bundle collisions before publication: %j', (tape) => {
+    const plan = planExport(tape, '/out', 'Shared')
+    expect(plan.status).toBe('error')
+    if (plan.status === 'error') expect(inEnglish(plan.message)).toMatch(/same name/)
+  })
+
   it('rejects a collision when media and thumbnail share an extension', () => {
     const plan = planExport({ filename: 'a.jpg', thumbnailFilename: 'thumb.jpg' }, '/out', 'shared')
     expect(plan.status).toBe('error')

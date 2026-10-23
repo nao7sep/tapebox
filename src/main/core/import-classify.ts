@@ -1,6 +1,6 @@
 import { FlatFilenameSchema, ImportableUrlSchema, type Tape } from '@shared/domain'
 import { extname } from 'node:path'
-import { portableFilenameIdentity } from '@main/core/filename'
+import { collidingPortableFilename } from '@shared/filename'
 import { checkFormatVersion, FORMAT_VERSIONS } from '@main/io/format-version'
 import { message, type Message } from '@shared/i18n/translate'
 import { z } from 'zod'
@@ -79,7 +79,7 @@ export function classifyImport(sidecar: unknown): ImportClassification {
   const sidecarName = `${media.slice(0, -mediaExtension.length)}.json`
   const thumbnail = thumbnailFilename === null ? null : thumbnailFilename.data
   const bundleNames = [media, sidecarName, ...(thumbnail ? [thumbnail] : [])]
-  if (new Set(bundleNames.map(portableFilenameIdentity)).size !== bundleNames.length) {
+  if (collidingPortableFilename(bundleNames) !== undefined) {
     return { status: 'reject', reason: message('import.bundleNamesClash') }
   }
   return { status: 'accept', sourceUrl: sourceUrl.data, mediaFilename: media, thumbnailFilename: thumbnail }
