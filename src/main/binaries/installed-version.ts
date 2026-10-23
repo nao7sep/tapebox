@@ -29,18 +29,11 @@ import { sha256OfFile } from './integrity'
  * ffmpeg, whose rolling master build cannot be compared with the release tag BtbN
  * publishes).
  *
- * A probe is a subprocess spawn, so it is cached per process and must never sit on
- * a render path: the renderer derives state from facts main gathered, and main
- * gathers them in the async status handler, not per frame. The cache is dropped
- * after an install, so the next read sees the new binary. A binary placed by hand
- * mid-session is picked up the moment it is present, because nothing is cached
- * while it is absent (callers skip the read then); only a FAILED read is remembered
- * for the process, and the surface offers the re-acquire that clears it.
- *
- * A failure — the binary won't run, exits non-zero, or prints something
- * unrecognized — yields null and is logged. That is NOT the same as absent, and it
- * can never read as up to date: a null installed version has nothing to compare, so
- * the derivation holds at "installed (not checked)".
+ * Successful observations and observed invalid output are cached until install
+ * invalidation. Concurrent readers share one probe. An unavailable probe is
+ * retried on the next deliberate read, never by an automatic retry loop.
+ * Probes stay off renderer paths; main gathers facts asynchronously.
+ * Unknown identity stays installed-not-checked, never assumed up to date.
  */
 
 // A cold first launch of yt-dlp's standalone macOS binary can spend more than ten
@@ -94,11 +87,6 @@ export function forgetInstalledVersion(name: BinaryName): void {
   cache.delete(name)
 }
 
-/** Drop every cached read (tests, and any wholesale reset of the bin directory). */
-export function forgetAllInstalledVersions(): void {
-  cache.clear()
-}
-
 /**
  * The installed version of `name`, or null when it cannot be read. Callers check
  * presence first — an absent binary has no version to read, and skipping the call
@@ -121,7 +109,7 @@ export function readInstalledVersion(name: BinaryName): Promise<string | null> {
 async function resolveInstalledVersion(name: BinaryName): Promise<{ version: string | null; retry: boolean }> {
   const source = binarySpecs[name].installedVersion
   return source.kind === 'probe'
-    ? { version: await probe(name, source.args, source.parse), retry: false }
+    ? probe(name, source.args, source.parse)
     : readSidecar(name, source.parse)
 }
 
@@ -129,7 +117,7 @@ async function probe(
   name: BinaryName,
   args: readonly string[],
   parse: (stdout: string) => string | null,
-): Promise<string | null> {
+): Promise<{ version: string | null; retry: boolean }> {
   const command = binaryPath(name)
   try {
     const { stdout, exitCode } = await execCapture(command, args, {
@@ -138,7 +126,7 @@ async function probe(
     })
     if (exitCode !== 0) {
       log.warn('installed version probe failed', { name, exitCode })
-      return null
+      return { version: null, retry: false }
     }
     const version = parse(stdout)
     if (version === null) {
@@ -147,13 +135,13 @@ async function probe(
         output: stdout,
       })
     }
-    return version
+    return { version, retry: false }
   } catch (err) {
     // The binary is present (the caller scanned for it) but would not run: a wrong
     // architecture, a truncated file, a lost exec bit, or a wedged process the idle
     // watchdog killed. Present-but-unreadable, not absent.
     log.warn('installed version probe could not run', { name, error: describeError(err) })
-    return null
+    return { version: null, retry: true }
   }
 }
 

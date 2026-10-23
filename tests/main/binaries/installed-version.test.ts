@@ -6,8 +6,8 @@
  *    which is the defect this replaced — tapebox's own ~/.tapebox/bin held yt-dlp,
  *    ffmpeg and deno while dependencies.json recorded installedVersion: null for
  *    all three, pinning every tool at "installed (not checked)" forever;
- *  - a probe is a subprocess spawn, so it runs once per process and again only
- *    after an install replaces the binary;
+ *  - concurrent probes share one read; successful observations remain cached,
+ *    while an unavailable probe can recover on the next deliberate read;
  *  - a FAILED read is null, not a version and not silently "current".
  *
  * `paths`/`binaryPath` point at a throwaway bin dir and `execCapture` is stubbed,
@@ -15,6 +15,7 @@
  * platform.
  */
 
+import { execCapture } from '@main/io/spawn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -78,7 +79,6 @@ vi.mock('@main/binaries/registry', async (importOriginal) => {
 })
 
 import {
-  forgetAllInstalledVersions,
   forgetInstalledVersion,
   readInstalledVersion,
   versionSidecarPath,
@@ -92,7 +92,7 @@ beforeEach(() => {
   capture.idleTimeouts = []
   capture.result = null
   capture.error = null
-  forgetAllInstalledVersions()
+  for (const name of ['yt-dlp', 'deno', 'ffmpeg'] as const) forgetInstalledVersion(name)
 })
 
 afterEach(() => {
@@ -140,6 +140,30 @@ describe('probing the binary', () => {
 // the derivation holds the row at installed-unchecked and the surface offers the
 // re-acquire that fixes it.
 describe('a read that fails', () => {
+  it('retries an unavailable probe without requiring a reinstall', async () => {
+    capture.error = new Error('probe timed out')
+    expect(await readInstalledVersion('yt-dlp')).toBeNull()
+    capture.error = null
+    capture.result = { stdout: '2026.08.19', exitCode: 0 }
+    expect(await readInstalledVersion('yt-dlp')).toBe('2026.08.19')
+    expect(await readInstalledVersion('yt-dlp')).toBe('2026.08.19')
+    expect(capture.calls).toHaveLength(2)
+  })
+
+  it('keeps an install generation when an older unavailable probe settles late', async () => {
+    let fail!: (error: Error) => void
+    vi.mocked(execCapture).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+    const old = readInstalledVersion('yt-dlp')
+    expect(readInstalledVersion('yt-dlp')).toBe(old)
+    forgetInstalledVersion('yt-dlp')
+    capture.result = { stdout: '2026.08.19', exitCode: 0 }
+    const current = readInstalledVersion('yt-dlp')
+    expect(await current).toBe('2026.08.19')
+    fail(new Error('old timeout'))
+    expect(await old).toBeNull()
+    expect(readInstalledVersion('yt-dlp')).toBe(current)
+  })
+
   it('is null when the binary cannot be run at all', async () => {
     capture.error = new Error('spawn ENOENT')
     expect(await readInstalledVersion('yt-dlp')).toBeNull()

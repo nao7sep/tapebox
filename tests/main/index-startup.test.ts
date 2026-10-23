@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { forgetAllInstalledVersions, readInstalledVersion } from '@main/binaries/installed-version'
+import { forgetInstalledVersion, readInstalledVersion } from '@main/binaries/installed-version'
 import { openExternalPlayer } from '@main/io/external-player'
 import { killOwnedProcessesNow } from '@main/io/spawn'
 
@@ -180,7 +180,7 @@ describe('the Electron entry', () => {
     let versionPid = 0
     let playerPid = 0
     try {
-      forgetAllInstalledVersions()
+      forgetInstalledVersion('yt-dlp')
       versionFixture.script = version.script
       readingVersion = readInstalledVersion('yt-dlp')
       versionPid = await waitForFixture(directory, () => {
@@ -233,7 +233,7 @@ describe('the Electron entry', () => {
           expect(() => process.kill(pid, 0)).toThrow()
         }, { timeout: task.timeout })
       } finally {
-        forgetAllInstalledVersions()
+        forgetInstalledVersion('yt-dlp')
         versionFixture.script = ''
         rmSync(directory, { recursive: true, force: true })
       }
