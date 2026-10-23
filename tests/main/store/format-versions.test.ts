@@ -6,8 +6,8 @@ import { defaultDependencies } from '@shared/dependencies'
 import { defaultLayout } from '@shared/layout'
 
 // Each JSON store's format version (store-recovery-conventions), through the
-// real store over a throwaway storage root: a file without its marker takes the
-// store's unreadable branch, what the store writes carries 1 and reads back, and
+// real store over a throwaway storage root: current unmarked shapes read,
+// what the store writes carries 1 and reads back, and
 // a newer file is refused and left byte-identical, with nothing written over it.
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
@@ -60,13 +60,13 @@ describe('catalog.json', () => {
   const session = () => import('@main/store/session')
   const path = () => join(root, 'library', '.tapebox', 'catalog.json')
 
-  it('reads a v0.1.0 file, which had no marker and no failure class, and marks it at the next save', async () => {
+  it('reads an unmarked current-shape file and marks it at the next save', async () => {
     const tape = {
       id: 'Tape123456', sourceUrl: 'https://example.test/watch', state: 'failed', addedAtUtc: '2026-07-08T00:00:00.000Z',
       sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: 0,
       probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
       downloadStartedAtUtc: null, downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: null,
-      boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: '2026-07-08T00:00:01.000Z', lastError: 'gone',
+      boxId: null, order: 0, failureCode: null, pausedAtUtc: null, failedAtUtc: '2026-07-08T00:00:01.000Z', lastError: 'gone',
     }
     await writeFile(path(), JSON.stringify({ tapes: [tape], boxes: [BOX] }))
     const store = await session()
@@ -78,15 +78,13 @@ describe('catalog.json', () => {
     expect(await stored(path())).toMatchObject({ formatVersion: 1, tapes: [{ failureCode: null }] })
   })
 
-  it('sets aside a file whose marker is not a version, as it does an unreadable one', async () => {
+  it('reads an unrecognized marker through current-shape validation without rewriting it', async () => {
     const text = JSON.stringify({ formatVersion: 'one', tapes: [], boxes: [BOX] })
     await writeFile(path(), text)
     const store = await session()
-    expect(await store.loadSession()).toMatchObject({ status: 'recovered' })
-    expect(store.getBoxes()).toEqual([])
-    const [aside] = (await readdir(dirname(path()))).filter((name) => name.endsWith('.invalid'))
-    expect(aside).toMatch(/^catalog-\d{8}-\d{6}-utc\.invalid$/)
-    expect(await readFile(join(dirname(path()), aside!), 'utf8')).toBe(text)
+    expect(await store.loadSession()).toMatchObject({ status: 'loaded' })
+    expect(store.getBoxes()).toEqual([BOX])
+    expect(await readFile(path(), 'utf8')).toBe(text)
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -119,7 +117,7 @@ describe('config.json', () => {
   const config = () => import('@main/store/config')
   const path = () => join(root, 'config.json')
 
-  it('reads a v0.1.0 file, which had no marker', async () => {
+  it('reads an unmarked current-shape file', async () => {
     await writeFile(path(), JSON.stringify({ autoplay: false }))
     const store = await config()
     expect(await store.loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
@@ -161,7 +159,7 @@ describe('layout.json', () => {
   const layout = () => import('@main/store/layout')
   const path = () => join(root, 'layout.json')
 
-  it('reads a v0.1.0 file, which had no marker', async () => {
+  it('reads an unmarked current-shape file', async () => {
     await writeFile(path(), JSON.stringify({ leftPaneWidth: 400 }))
     const store = await layout()
     await store.loadLayout()
@@ -199,11 +197,11 @@ describe('dependencies.json', () => {
   const path = () => join(root, 'dependencies.json')
   const FACT = { latestKnownVersion: '2026.09.01', lastCheckedAtUtc: '2026-09-01T00:00:00.000Z' }
 
-  it('uses fresh facts for a file without its marker, as for an unreadable one', async () => {
+  it('reads current-shape facts without a marker', async () => {
     await writeFile(path(), JSON.stringify({ ...defaultDependencies(), ffmpeg: FACT }))
     const store = await dependencies()
     await store.loadDependencies()
-    expect(store.getDependencies()).toEqual(defaultDependencies())
+    expect(store.getDependencies()).toEqual({ ...defaultDependencies(), ffmpeg: FACT })
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -235,7 +233,7 @@ describe('api-keys.json', () => {
   const apiKeys = () => import('@main/services/api-keys')
   const path = () => join(root, 'api-keys.json')
 
-  it('reads a v0.1.0 file, which had no marker', async () => {
+  it('reads an unmarked current-shape file', async () => {
     await writeFile(path(), JSON.stringify({ keys: { openai: 'sk-plain' } }), { mode: 0o600 })
     const store = await apiKeys()
     expect(await store.resolveApiKey('openai')).toBe('sk-plain')

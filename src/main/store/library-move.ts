@@ -1,8 +1,7 @@
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { linkOrCopyNoOverwrite, unlinkFiles } from '@main/io/atomic-file'
 import { log } from '@main/io/logger'
-import { portableSiblingExists } from '@main/io/portable-directory'
 import { portableFilenameIdentity } from '@shared/filename'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
@@ -124,9 +123,10 @@ export async function relocateLibrary(
   // by the same casefold/NFC identity.
   const collisions: string[] = []
   const incoming = new Set<string>()
+  const existing = new Set((await readdir(toDir)).map(portableFilenameIdentity))
   for (const name of entries) {
     const identity = portableFilenameIdentity(name)
-    if (incoming.has(identity) || await portableSiblingExists(join(toDir, name))) collisions.push(name)
+    if (incoming.has(identity) || existing.has(identity)) collisions.push(name)
     incoming.add(identity)
   }
   if (collisions.length > 0) {

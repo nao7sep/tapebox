@@ -8,6 +8,12 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 // must be set BEFORE the module is imported. Point the storage root at a throwaway
 // temp dir — the override is the one path-relocation seam, the same way tests and
 // production relocate the root (storage-path-conventions).
+const openKeyFile = vi.hoisted(() => vi.fn())
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, open: (...args: Parameters<typeof actual.open>) => { openKeyFile(); return actual.open(...args) } }
+})
+
 const root = mkdtempSync(join(tmpdir(), 'tapebox-apikeys-'))
 const prevHome = process.env.TAPEBOX_DATA_DIR
 process.env.TAPEBOX_DATA_DIR = root
@@ -215,5 +221,26 @@ describe('api-keys storage', () => {
     const onDisk = JSON.parse(await readFile(apiKeysPath, 'utf8')) as { keys: Record<string, string> }
     expect(onDisk.keys['openai']).toMatch(/^obf:/)
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBe('sk-round-trips-fine')
+  })
+})
+
+
+describe('apiKeyState reads', () => {
+  it.each(['missing', 'unreadable', 'newer'] as const)('reads a %s store once per status request without caching', async (kind) => {
+    if (kind === 'unreadable') await writeFile(apiKeysPath, '{invalid')
+    if (kind === 'newer') await writeFile(apiKeysPath, '{"formatVersion":2,"keys":{}}')
+    openKeyFile.mockClear()
+    await expect(apiKeys.apiKeyState('openai')).resolves.toBe(kind === 'missing' ? 'absent' : kind)
+    expect(openKeyFile).toHaveBeenCalledOnce()
+    await writeFile(apiKeysPath, '{"formatVersion":1,"keys":{"openai":"new-key"}}')
+    await expect(apiKeys.apiKeyState('openai')).resolves.toBe('set')
+    expect(openKeyFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses an environment key without opening the store', async () => {
+    process.env[OPENAI] = 'environment-key'
+    openKeyFile.mockClear()
+    await expect(apiKeys.apiKeyState('openai')).resolves.toBe('set')
+    expect(openKeyFile).not.toHaveBeenCalled()
   })
 })

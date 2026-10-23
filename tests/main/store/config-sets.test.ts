@@ -232,18 +232,6 @@ describe('settings by set', () => {
     expect(getSettings()['openai.slug']).toBe(defaultSettings()['openai.slug'])
   })
 
-  it('converts a v0.1.0 file: its AI set where the user changed it, dropping state and tool facts', async () => {
-    await writeFile(paths.config, JSON.stringify({
-      libraryDir: '', autoplay: false, volume: 0.4, binaries: { 'yt-dlp': {} },
-      ai: { baseUrl: 'https://api.openai.com/v1', model: 'my-model' }, prompts: { slug: 'my prompt' },
-    }))
-    expect(await loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
-    expect(getSettings()).toMatchObject({ autoplay: false, 'openai.slug': 'my-model', prompts: { slug: 'my prompt' } })
-    expect(getSettings()['openai.endpoint']).toBe(defaultSettings()['openai.endpoint'])
-    await updateSettings({ playSound: false })
-    expect(await savedSets()).toEqual({ autoplay: false, 'openai.slug': 'my-model', prompts: { slug: 'my prompt' }, playSound: false })
-  })
-
   it('masks credentials in the yt-dlp arguments it logs at startup', async () => {
     await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ytdlpArgs: '--password hunter22 -f best', siteProfiles: [
       { id: 'abcdefgh', name: 'Site', urlPattern: 'site.test', isRegex: false, args: '--add-header "Authorization: Bearer tok3n"', comment: '' },

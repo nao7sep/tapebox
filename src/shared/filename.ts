@@ -4,3 +4,7 @@
 export function portableFilenameIdentity(name: string): string {
   return name.normalize('NFC').toLowerCase()
 }
+
+/** Identity shared by live box admission and catalog decoding. */
+export const normalizeBoxName = (name: string): string => name.normalize("NFC").trim()
+export const boxNameIdentity = (name: string): string => normalizeBoxName(name).toLowerCase()

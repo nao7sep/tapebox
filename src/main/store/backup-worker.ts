@@ -10,9 +10,6 @@ export type BackupRequest = { id: number; absolutePath: string; bytes: Uint8Arra
 export type BackupWorkerData = { databasePath: string; session: string }
 export type BackupResponse = { id: number; warning?: { message: string; fields: Record<string, unknown> }; disabled?: boolean }
 
-/** The v0.1.0 and format 1 table, which had no launch column. */
-const COLUMNS = ['id', 'path', 'content', 'content_sha256', 'byte_size', 'written_at_utc']
-
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS backups (
   id             INTEGER PRIMARY KEY,
@@ -27,12 +24,6 @@ CREATE INDEX IF NOT EXISTS idx_backups_path_id ON backups (path, id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_backups_path_session ON backups (path, session_id);
 `
 
-/** Format 1 to 2: add the launch column; earlier rows keep a null launch, which
- *  the unique index allows any number of. */
-function upgrade(store: DatabaseSync, from: number): void {
-  if (from === 1) store.exec('ALTER TABLE backups ADD COLUMN session_id TEXT')
-}
-
 if (!parentPort) throw new Error('The backup worker needs a parent port.')
 const port = parentPort
 const { databasePath, session } = workerData as BackupWorkerData
@@ -44,7 +35,7 @@ port.on('message', (request: BackupRequest) => {
   try {
     if (!initialized) {
       initialized = true
-      try { db = openWritableDatabase(databasePath, FORMAT_VERSIONS.backups, SCHEMA, { adoptUnmarked: isV010BackupStore, upgrade }) }
+      try { db = openWritableDatabase(databasePath, FORMAT_VERSIONS.backups, SCHEMA) }
       catch (error) {
         response.disabled = true
         response.warning = { message: 'backup store: could not open; recording disabled for this session', fields: { file: databasePath, error: describeError(error) } }
@@ -76,11 +67,3 @@ port.on('message', (request: BackupRequest) => {
     port.postMessage(response)
   }
 })
-
-/** TapeBox v0.1.0 created format 1's `backups` table without a format marker. */
-function isV010BackupStore(store: DatabaseSync): number | null {
-  const tables = store.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'").all() as { name: string }[]
-  if (tables.length !== 1 || tables[0]!.name !== 'backups') return null
-  const columns = (store.prepare('PRAGMA table_info(backups)').all() as { name: string }[]).map((column) => column.name)
-  return columns.length === COLUMNS.length && columns.every((name, index) => name === COLUMNS[index]) ? 1 : null
-}

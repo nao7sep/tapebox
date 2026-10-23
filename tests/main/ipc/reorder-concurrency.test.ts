@@ -30,14 +30,14 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
   return {
     ...actual,
-    writeManagedJson: async (...args: Parameters<typeof actual.writeManagedJson>) => {
+    writeManagedJsonBytes: async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
       if (state.holdNext) {
         state.holdNext = false
         state.started()
         await state.release
         if (state.failHeld) { state.failHeld = false; throw new Error('required reorder write failed') }
       }
-      return actual.writeManagedJson(...args)
+      return actual.writeManagedJsonBytes(...args)
     },
   }
 })
@@ -311,8 +311,10 @@ describe('main reorder authority across queued and required writes', () => {
     await rejected
 
     expect(session.getTape(a.id)).toMatchObject({ title: 'metadata while saving', order: 1 })
-    expect(vi.getTimerCount()).toBe(1)
+    const scheduled = holdNextWrite()
     await vi.advanceTimersByTimeAsync(500)
+    await scheduled.held
+    scheduled.release()
     await expectCurrentSaved()
   })
 
@@ -362,11 +364,12 @@ describe('main reorder authority across queued and required writes', () => {
     const obsolete = SessionSchema.parse(JSON.parse(await readFile(state.catalog, 'utf8')))
     expect(obsolete.tapes.find(({ id }) => id === b.id)?.order).toBe(0)
     expect(session.getTape(b.id)?.order).toBe(1)
-    expect(vi.getTimerCount()).toBe(1)
+    const scheduled = holdNextWrite()
     await vi.advanceTimersByTimeAsync(500)
+    await scheduled.held
+    scheduled.release()
     // Join the already-started ordinary save without relying on elapsed I/O.
     await session.persistNow()
-    expect(vi.getTimerCount()).toBe(0)
     await expectCurrentSaved()
   })
 

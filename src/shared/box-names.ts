@@ -5,6 +5,8 @@
  * A box name must be non-empty, not a reserved word, and unique among the other
  * boxes — all compared case-insensitively after NFC normalization and trimming.
  */
+import { normalizeBoxName, boxNameIdentity } from './filename'
+export { normalizeBoxName, boxNameIdentity } from './filename'
 import type { Language } from './i18n/languages'
 import { message, type Message } from './i18n/translate'
 
@@ -30,10 +32,6 @@ export const UNBOXED_LABELS: Readonly<Record<Language, string>> = {
 
 const RESERVED_BOX_NAMES = Object.values(UNBOXED_LABELS)
 
-export const normalizeBoxName = (name: string): string => name.normalize('NFC').trim()
-
-/** One identity used by live validation and durable catalog validation. */
-export const boxNameIdentity = (name: string): string => normalizeBoxName(name).toLowerCase()
 
 /**
  * Validate a candidate box name. `takenNames` is the names of the *other*

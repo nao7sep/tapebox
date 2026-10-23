@@ -3,6 +3,8 @@ import { basename } from 'node:path'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { UserFacingError } from '@main/user-facing-error'
+import { classifyImport } from './import-classify'
+import type { Tape } from '@shared/domain'
 import type { SidecarTapeBox } from '@shared/domain'
 import { message } from '@shared/i18n/translate'
 
@@ -76,7 +78,7 @@ export async function writeSidecar(path: string, sidecar: Record<string, unknown
  * unparseable file throws.
  */
 export async function readSidecarFile(sidecarPath: string): Promise<Record<string, unknown>> {
-  const found = parseStoreJson(await readFile(sidecarPath, 'utf8'), FORMAT_VERSIONS.sidecar, true)
+  const found = parseStoreJson(await readFile(sidecarPath, 'utf8'), FORMAT_VERSIONS.sidecar)
   if (found.status === 'newer') {
     throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(sidecarPath) }))
   }
@@ -95,5 +97,19 @@ export async function readSidecar(sidecarPath: string): Promise<Record<string, u
     return await readSidecarFile(sidecarPath)
   } catch {
     return null
+  }
+}
+
+/** Preserve optional/opaque source metadata while filling managed fields from
+ * the admitted catalog. Sparse external bundles remain editable and exportable. */
+export function sidecarNamespace(sidecar: Record<string, unknown>, tape: Tape): Record<string, unknown> {
+  const admission = classifyImport(sidecar)
+  if (admission.status === 'reject') throw new UserFacingError('invalid', admission.reason)
+  const fields = sidecar['tapebox'] as Record<string, unknown>
+  return {
+    sourceUrl: tape.sourceUrl, name: tape.name, addedAtUtc: tape.addedAtUtc,
+    downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: tape.renamedAtUtc,
+    media: null, mediaFilename: tape.filename, thumbnailFilename: tape.thumbnailFilename,
+    ...fields,
   }
 }

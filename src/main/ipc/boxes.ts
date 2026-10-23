@@ -51,7 +51,6 @@ export function registerBoxHandlers(): void {
   })
 
   handle('boxes:delete', async ({ boxId }) => {
-    session.removeBox(boxId)
     // The deleted box's tapes fall back to Unboxed, landing on top as a block in the
     // order they held inside the box — so their arrangement survives the delete
     // and their orders can't collide with whatever Unboxed already holds.
@@ -67,6 +66,7 @@ export function registerBoxHandlers(): void {
       session.upsertTape(updated)
       changed.push(updated)
     })
+    session.removeBox(boxId)
     emit('boxes:changed', session.getBoxes())
     if (changed.length > 0) emit('tapes:updatedMany', changed)
     log.info('archive: box deleted', { id: boxId, orphaned: changed.length })

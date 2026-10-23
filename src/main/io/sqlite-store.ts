@@ -16,18 +16,12 @@ export function databaseTransaction<T>(db: DatabaseSync, write: boolean, run: ()
   }
 }
 
-/**
- * Open a writable store at format `current`. Only a successful exclusive creation
- * can initialize an unmarked database, apart from one `adoptUnmarked` recognizes
- * as an earlier unmarked form of it, returning the format that form is. A store
- * in an older format is brought up to `current` by `upgrade`, in the same
- * transaction as its new marker, keeping its rows; a newer one is refused.
- */
+/** Open a current writable store, initializing only a file we exclusively created.
+ * Existing unsupported stores remain intact and are refused. */
 export function openWritableDatabase(
   path: string,
   current: number,
   schema: string,
-  options: { adoptUnmarked?: (db: DatabaseSync) => number | null; upgrade?: (db: DatabaseSync, from: number) => void } = {},
 ): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true })
   let created = false
@@ -48,23 +42,13 @@ export function openWritableDatabase(
     if (created) db.exec('PRAGMA journal_mode = WAL')
     db.exec('BEGIN IMMEDIATE')
     try {
-      let from: number | null = null
-      let adopted = false
       if (!created) {
-        const adoptedAs = options.adoptUnmarked && isUnmarkedWithTables(db) ? options.adoptUnmarked(db) : null
-        adopted = adoptedAs !== null
-        if (adoptedAs !== null) from = adoptedAs
-        else {
-          assertDatabaseCurrent(db, path, current)
-          from = databaseFormatVersion(db, path)
-        }
-      }
-      if (from !== null && from < current) {
-        if (!options.upgrade) throw new Error(`${path} is format ${from}; this build has no upgrade from it`)
-        options.upgrade(db, from)
+        assertDatabaseCurrent(db, path, current)
+        const version = databaseFormatVersion(db, path)
+        if (version !== current) throw new Error(`${path} is format ${version}; this build requires format ${current}`)
       }
       db.exec(schema)
-      if (created || adopted || (from !== null && from !== current)) db.exec(`PRAGMA user_version = ${current}`)
+      if (created) db.exec(`PRAGMA user_version = ${current}`)
       db.exec('COMMIT')
     } catch (error) {
       try { db.exec('ROLLBACK') } catch (cleanupError) { console.error('tapebox: SQLite initialization rollback failed', cleanupError) }
@@ -82,11 +66,4 @@ export function openWritableDatabase(
     }
     throw error
   }
-}
-
-function isUnmarkedWithTables(db: DatabaseSync): boolean {
-  const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number }
-  if (version !== 0) return false
-  const { tables } = db.prepare("SELECT count(*) AS tables FROM sqlite_schema WHERE type = 'table'").get() as { tables: number }
-  return tables > 0
 }

@@ -116,6 +116,11 @@ export async function writeManagedJson<S extends z.ZodType>(
   options: StoreJsonOptions<S>,
 ): Promise<void> {
   const bytes = Buffer.from(serializeStoreJson(data, options), 'utf8')
+  await writeManagedJsonBytes(path, bytes)
+}
+
+/** Publish already encoded managed JSON, keeping its exact backup bytes. */
+export async function writeManagedJsonBytes(path: string, bytes: Buffer): Promise<void> {
   await publishJson(path, bytes)
   // After the rename: the file is exactly where it belongs, so record the bytes we
   // just wrote. Best-effort — record() never throws — so a backup problem can never

@@ -49,13 +49,6 @@ export class NewerFormatError extends Error {
   }
 }
 
-/**
- * TapeBox v0.1.0, a public release, wrote every JSON store without a marker. A
- * store that existed then reads an unmarked file as this format, which its owner
- * converts on read; saves then write the current marker.
- */
-export const V0_1_0_FORMAT = 0
-
 export type StoreJson =
   | { status: 'read'; value: Record<string, unknown>; version: number }
   | { status: 'newer'; version: number }
@@ -66,7 +59,7 @@ export type StoreJson =
  * not an object is unreadable. The returned value still holds the marker; each
  * store's own shape ignores it.
  */
-export function parseStoreJson(text: string, current: number, readsV010 = false): StoreJson {
+export function parseStoreJson(text: string, current: number): StoreJson {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -76,22 +69,16 @@ export function parseStoreJson(text: string, current: number, readsV010 = false)
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return { status: 'unreadable', error: new Error('the root is not a JSON object') }
   }
-  return checkFormatVersion(raw as Record<string, unknown>, current, readsV010)
+  return checkFormatVersion(raw as Record<string, unknown>, current)
 }
 
-/**
- * Read a parsed JSON store's marker against `current`. A missing marker is the
- * v0.1.0 format for a store that existed then (`readsV010`), and unreadable
- * otherwise; a marker that is not a positive integer is unreadable.
- */
-export function checkFormatVersion(value: Record<string, unknown>, current: number, readsV010 = false): StoreJson {
+/** Missing or unrecognized markers use the current shape reader. The owning
+ * schema still validates critical fields; only a recognized newer format is
+ * refused before shape validation. Experimental shapes have no migration path. */
+export function checkFormatVersion(value: Record<string, unknown>, current: number): StoreJson {
   const marker = value[FORMAT_VERSION_KEY]
-  if (marker === undefined) {
-    if (readsV010) return { status: 'read', value, version: V0_1_0_FORMAT }
-    return { status: 'unreadable', error: new Error(`${FORMAT_VERSION_KEY} is missing`) }
-  }
   if (typeof marker !== 'number' || !Number.isSafeInteger(marker) || marker < 1) {
-    return { status: 'unreadable', error: new Error(`${FORMAT_VERSION_KEY} is not a positive integer`) }
+    return { status: 'read', value, version: current }
   }
   return marker > current ? { status: 'newer', version: marker } : { status: 'read', value, version: marker }
 }

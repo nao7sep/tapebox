@@ -93,8 +93,6 @@ export const paths = {
   get logs()          { return join(storageRoot(), 'logs') },
   get temp()          { return join(storageRoot(), 'temp') },
   get config()        { return join(storageRoot(), 'config.json') },
-  get legacyCatalog() { return join(storageRoot(), 'catalog.json') },
-  get retainedLegacyCatalog() { return join(storageRoot(), 'catalog-before-portable-library.json') },
   get layout()        { return join(storageRoot(), 'layout.json') },
   // Re-derivable managed-dependency facts (latest versions and last-check time),
   // kept apart from config.json so a settings reset never wipes them and their

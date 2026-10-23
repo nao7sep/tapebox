@@ -24,7 +24,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -295,25 +295,26 @@ describe('format version (store-recovery-conventions)', () => {
     }
   }
 
-  it('adopts the store v0.1.0 created without a marker, keeping its history', async () => {
+  it.each([0, 1])('leaves an unsupported backup schema at marker %s intact and disables recording', async (version) => {
     const file = path.join(root, 'backups.sqlite3')
-    const v010 = new DatabaseSync(file)
-    v010.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
+    const older = new DatabaseSync(file)
+    older.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
       content_sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL, written_at_utc TEXT NOT NULL)`)
-    v010.prepare('INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)')
-      .run(path.join(root, 'config.json'), Buffer.from('v0.1.0'), 'hash', 6, '2026-07-08T00:00:00.000Z')
-    v010.close()
+    older.prepare('INSERT INTO backups (path, content, content_sha256, byte_size, written_at_utc) VALUES (?, ?, ?, ?, ?)')
+      .run(path.join(root, 'config.json'), Buffer.from('history'), 'hash', 7, '2026-07-08T00:00:00.000Z')
+    older.exec(`PRAGMA user_version = ${version}`)
+    older.close()
+    const bytes = readFileSync(file)
     const { record, flushBackupStore, closeBackupStore } = await import('@main/store/backupStore')
-
-    record(path.join(root, 'config.json'), Buffer.from('after the upgrade'))
+    record(path.join(root, 'config.json'), Buffer.from('new bytes'))
+    record(path.join(root, 'config.json'), Buffer.from('newer bytes'))
     await flushBackupStore()
     await closeBackupStore()
-
-    expect(userVersion()).toBe(2)
-    expect(readRows(root).map((row) => [row.session_id, Buffer.from(row.content).toString('utf8')])).toEqual([
-      [null, 'v0.1.0'], ['first-launch', 'after the upgrade'],
-    ])
-    expect(logCalls.warn).toHaveLength(0)
+    expect(readFileSync(file)).toEqual(bytes)
+    expect(readRows(root).map((row) => Buffer.from(row.content).toString('utf8'))).toEqual(['history'])
+    expect(userVersion()).toBe(version)
+    expect(logCalls.warn).toHaveLength(1)
+    expect(logCalls.warn[0]!.message).toMatch(/could not open; recording disabled/)
   })
 
   it('leaves an unmarked store it does not recognize byte-identical, warning once and recording nothing', async () => {
@@ -368,4 +369,74 @@ describe('format version (store-recovery-conventions)', () => {
     expect(logCalls.warn[0]!.fields).toMatchObject({ error: expect.objectContaining({ name: 'NewerFormatError' }) })
   })
 
+})
+
+
+describe('manual recovery from captured managed bytes', () => {
+  it('restores saved config and catalog rows into a clean root through the production readers', async () => {
+    const config = await import('@main/store/config')
+    const session = await import('@main/store/session')
+    const { paths, collectionCatalog } = await import('@main/paths')
+    const backup = await import('@main/store/backupStore')
+    await mkdir(paths.library, { recursive: true })
+    await config.loadSettings()
+    const profile = {
+      id: 'recover1', name: 'Synthetic recovery authorization', urlPattern: 'example.test', isRegex: false,
+      args: '--add-header "Authorization: Bearer synthetic-recovery-secret"', comment: 'Synthetic test value only',
+    }
+    await config.updateSettings({ playSound: false, maxConcurrentDownloads: 4, siteProfiles: [profile] })
+    await session.loadSession()
+    const box = { id: 'restorebox', name: 'Saved collection', order: 2 }
+    const { tapeFromSidecar } = await import('@main/core/import-classify')
+    const tape = {
+      ...tapeFromSidecar({
+        id: 'original-source', extractor: 'synthetic', title: 'Imported recovery tape',
+        tapebox: { downloadedAtUtc: '2026-10-22T12:00:00.000Z', name: 'recovered-tape' },
+      }, {
+        id: 'Recover001', sourceUrl: 'https://example.test/imported', mediaFilename: 'recovered-tape.mp4',
+        sidecarFilename: 'recovered-tape.json', thumbnailFilename: null, order: 7, nowUtc: '2026-10-23T00:00:00.000Z',
+      }),
+      archivedAtUtc: '2026-10-23T00:00:00.000Z', boxId: box.id,
+    }
+    session.upsertBox(box)
+    session.upsertTape(tape)
+    expect(await session.persistNow()).toBe(true)
+    await backup.flushBackupStore()
+    const rows = readRows(root)
+    // The launch's initial empty catalog has been replaced by its final snapshot.
+    expect(rows).toHaveLength(2)
+    const configRow = rows.find((row) => row.path === paths.config)!
+    const catalogRow = rows.find((row) => row.path === collectionCatalog(paths.library))!
+    expect(Buffer.from(configRow.content)).toEqual(readFileSync(paths.config))
+    expect(Buffer.from(configRow.content).toString('utf8')).toContain('synthetic-recovery-secret')
+    expect(Buffer.from(catalogRow.content)).toEqual(readFileSync(collectionCatalog(paths.library)))
+    await backup.closeBackupStore()
+
+    const recoveredRoot = mkdtempSync(path.join(tmpdir(), 'tapebox-recovered-'))
+    try {
+      process.env.TAPEBOX_DATA_DIR = recoveredRoot
+      vi.resetModules()
+      const recoveredPaths = await import('@main/paths')
+      await mkdir(path.dirname(recoveredPaths.collectionCatalog(recoveredPaths.paths.library)), { recursive: true })
+      await writeFile(recoveredPaths.paths.config, configRow.content)
+      await writeFile(recoveredPaths.collectionCatalog(recoveredPaths.paths.library), catalogRow.content)
+      const recoveredConfig = await import('@main/store/config')
+      const recoveredSession = await import('@main/store/session')
+      await expect(recoveredConfig.loadSettings()).resolves.toEqual({ status: 'loaded', settingsKept: false })
+      expect(recoveredConfig.getSettings()).toMatchObject({ playSound: false, maxConcurrentDownloads: 4 })
+      expect(recoveredConfig.getSettings().siteProfiles).toEqual([profile])
+      await expect(recoveredSession.loadSession()).resolves.toMatchObject({ status: 'loaded' })
+      expect(recoveredSession.getBoxes()).toEqual([box])
+      expect(recoveredSession.getTape(tape.id)).toEqual(tape)
+      expect(recoveredSession.getTapes().map(({ id, boxId, order }) => ({ id, boxId, order }))).toEqual([
+        { id: tape.id, boxId: box.id, order: 7 },
+      ])
+      expect(readFileSync(recoveredPaths.paths.config)).toEqual(Buffer.from(configRow.content))
+      expect(readFileSync(recoveredPaths.collectionCatalog(recoveredPaths.paths.library))).toEqual(Buffer.from(catalogRow.content))
+    } finally {
+      await (await import('@main/store/backupStore')).closeBackupStore()
+      process.env.TAPEBOX_DATA_DIR = root
+      await rm(recoveredRoot, { recursive: true, force: true })
+    }
+  })
 })

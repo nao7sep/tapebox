@@ -5,9 +5,9 @@ import { removeTapes } from './library'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
 import { catalogFilenameOwner, tryClaimManagedFiles } from '@main/core/managed-files'
-import { readSidecarFile, SIDECAR_JSON } from '@main/core/sidecar'
+import { readSidecarFile, sidecarNamespace, SIDECAR_JSON } from '@main/core/sidecar'
 import { serializeStoreJson } from '@main/io/atomic-json'
-import { SidecarTapeBoxSchema } from '@shared/domain'
+import { maskYtdlpOutput, maskUrlCredentials } from '@main/io/mask'
 import { log } from '@main/io/logger'
 import {
   copyFileNoOverwrite,
@@ -94,14 +94,15 @@ async function exportTape(
     // file is copied out — so a corrupt source sidecar (or a rewrite that would
     // downgrade it below what import accepts) fails the export before it leaves
     // partial files in the user's folder.
-    const sidecar = await readSidecarFile(join(libDir, tape.sidecarFilename))
-    const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+    const original = await readSidecarFile(join(libDir, tape.sidecarFilename))
+    const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
+    const tb = sidecarNamespace(sidecar, tape)
     // Exporting under another name renames the bundle, so the sidecar records when.
     if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
     tb['name'] = cleanName
     tb['mediaFilename'] = mediaName
     tb['thumbnailFilename'] = newThumbName
-    sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
+    sidecar['tapebox'] = tb
 
     // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
     // written to the user's chosen destination and then forgotten. They are OUTPUT,

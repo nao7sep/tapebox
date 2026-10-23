@@ -25,7 +25,19 @@ vi.mock('electron', () => ({
   shell,
 }))
 
-const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[], trashOnRemove: false }))
+const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[], trashOnRemove: false, statFailurePath: '', statFailureCode: '' }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    stat: (...args: Parameters<typeof actual.stat>) => {
+      if (args[0] === state.statFailurePath) {
+        return Promise.reject(Object.assign(new Error(`${state.statFailureCode}: stat failed`), { code: state.statFailureCode }))
+      }
+      return actual.stat(...args)
+    },
+  }
+})
 const emit = vi.hoisted(() => vi.fn())
 const reorderTapesDurably = vi.hoisted(() => vi.fn())
 const releaseHold = vi.hoisted(() => vi.fn())
@@ -99,6 +111,8 @@ beforeEach(async () => {
   persistNow.mockImplementation(async () => {})
   state.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-library-shelving-'))
   state.trashOnRemove = false
+  state.statFailurePath = ''
+  state.statFailureCode = ''
   state.tapes = []
   registerLibraryHandlers()
 })
@@ -121,7 +135,8 @@ describe('archiving', () => {
 
     expect(listing('unboxed')).toEqual(['inbox-b@-2', 'inbox-a@-1', 'already-filed@0'])
     expect(listing('inbox')).toEqual([])
-    expect(emitted('tapes:updated')).toHaveLength(2)
+    expect(emitted('tapes:updated')).toEqual([])
+    expect(emitted('tapes:updatedMany')).toEqual([[[state.tapes[2], state.tapes[1]]]])
   })
 
   it('leaves an already-archived tape where it is', async () => {
@@ -147,7 +162,8 @@ describe('unarchiving', () => {
 
     expect(listing('inbox')).toEqual(['filed-a@-2', 'filed-b@-1', 'inbox-old@0'])
     expect(state.tapes.every((tape) => tape.boxId === null)).toBe(true)
-    expect(emitted('tapes:updated')).toHaveLength(2)
+    expect(emitted('tapes:updated')).toEqual([])
+    expect(emitted('tapes:updatedMany')).toEqual([[[state.tapes[1], state.tapes[2]]]])
   })
 
   it('leaves a tape that is already in the inbox alone', async () => {
@@ -272,6 +288,25 @@ describe('removing tapes from the library', () => {
       join(state.libraryDir, 'Trashthese.mp4'),
     ])
     expect(state.tapes).toEqual([])
+  })
+
+  it.each(['EACCES', 'EIO'])('keeps the catalog row and files when Trash preflight stat fails with %s', async (code) => {
+    state.trashOnRemove = true
+    const tape = await stageFiles('Statfailed')
+    state.tapes = [tape]
+    state.statFailurePath = join(state.libraryDir, 'Statfailed.mp4')
+    state.statFailureCode = code
+
+    await expect(invoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })).rejects.toMatchObject({
+      userMessage: { key: 'errors.removeFilesKept' },
+    })
+    expect(state.tapes).toEqual([tape])
+    expect((await readdir(state.libraryDir)).sort()).toEqual(['Statfailed.jpg', 'Statfailed.json', 'Statfailed.mp4'])
+    expect(shell.trashItem).not.toHaveBeenCalled()
+    expect(emitted('tapes:removed')).toEqual([])
+    expect(log.error).toHaveBeenCalledWith('library removal failed', expect.objectContaining({
+      tapeId: tape.id, error: expect.objectContaining({ message: expect.stringContaining(code) }),
+    }))
   })
 
   it('stops a running download before the tape goes, with the batch held out of scheduling', async () => {

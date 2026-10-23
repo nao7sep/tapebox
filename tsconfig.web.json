@@ -8,6 +8,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
+    "allowImportingTsExtensions": true,
     "outDir": "./out/tsbuild-web",
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],

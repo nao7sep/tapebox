@@ -145,7 +145,7 @@ async function readAll(): Promise<KeyRead> {
       })
       return 'unreadable'
     }
-    const found = parseStoreJson(text, FORMAT_VERSIONS.apiKeys, true)
+    const found = parseStoreJson(text, FORMAT_VERSIONS.apiKeys)
     if (found.status === 'newer') {
       log.warn('api-keys.json is from a newer TapeBox; treating it as empty and leaving it as it is', {
         path: paths.apiKeys,
@@ -205,19 +205,23 @@ function envValue(id: string): string | null {
  * Resolve a key's plaintext value for the exact id — the environment variable,
  * then the stored value — or null. There is no fallback to any other id.
  */
-export async function resolveApiKey(id: string): Promise<string | null> {
+async function resolveKey(id: string): Promise<{ key: string | null; state: ApiKeyState }> {
   assertKeyId(id)
 
   const fromEnv = envValue(id)
-  if (fromEnv) return fromEnv
+  if (fromEnv) return { key: fromEnv, state: 'set' }
 
   const all = await readAll()
   const stored = typeof all === 'string' ? undefined : all.keys[id]
   if (typeof stored === 'string') {
     const key = decodeApiKey(stored, id)?.trim()
-    if (key) return key
+    if (key) return { key, state: 'set' }
   }
-  return null
+  return { key: null, state: typeof all === 'string' ? all : 'absent' }
+}
+
+export async function resolveApiKey(id: string): Promise<string | null> {
+  return (await resolveKey(id)).key
 }
 
 /** What Settings shows for a key: set (from the environment or the file),
@@ -225,9 +229,7 @@ export async function resolveApiKey(id: string): Promise<string | null> {
 export type ApiKeyState = 'set' | 'absent' | 'unreadable' | 'newer'
 
 export async function apiKeyState(id: string): Promise<ApiKeyState> {
-  if ((await resolveApiKey(id)) !== null) return 'set'
-  const all = await readAll()
-  return typeof all === 'string' ? all : 'absent'
+  return (await resolveKey(id)).state
 }
 
 /** Persist a key (trimmed, obfuscated). A blank key clears it instead. */

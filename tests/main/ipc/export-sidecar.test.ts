@@ -98,3 +98,47 @@ describe('export:files sidecar', () => {
     expect(tb['renamedAtUtc']).toBe(RENAMED_AT)
   })
 })
+
+
+it('masks known credentials in the export copy while preserving sparse and opaque sidecar metadata', async () => {
+  const sourcePath = join(libraryState.dir, 'Take.json')
+  const original = JSON.stringify({
+    formatVersion: 1,
+    title: 'Original title',
+    cookies: 'COOKIE_SENTINEL',
+    http_headers: { Authorization: 'Bearer AUTH_SENTINEL', Cookie: 'HEADER_COOKIE_SENTINEL', 'X-Ordinary': 'keep this' },
+    formats: [{
+      url: 'https://login:password@video.example.test/media?id=42&signature=SIGN_SENTINEL&lsig=LSIG_SENTINEL&pot=POT_SENTINEL&quality=best',
+      http_headers: { 'Proxy-Authorization': 'Basic PROXY_SENTINEL' },
+      future_format_metadata: { codec_notes: ['a', 7, null] },
+    }],
+    opaque_root: { nested: ['untouched', { enabled: true }] },
+    tapebox: {
+      sourceUrl: tape.sourceUrl,
+      mediaFilename: 'Take.mp4',
+      opaque_namespace: { keep: ['opaque', 123] },
+    },
+  })
+  await writeFile(sourcePath, original)
+  await handlers.get('export:files')!({ tapeId: tape.id, destinationDir, name: 'Portable', deleteFromApp: false })
+  const exported = JSON.parse(await readFile(join(destinationDir, 'Portable.json'), 'utf8'))
+
+  expect(await readFile(sourcePath, 'utf8')).toBe(original)
+  expect(exported.cookies).toBe('[REDACTED]')
+  expect(exported.http_headers).toEqual({ Authorization: 'Bearer [REDACTED]', Cookie: '[REDACTED]', 'X-Ordinary': 'keep this' })
+  expect(exported.formats).toEqual([{
+    url: 'https://[REDACTED]@video.example.test/media?id=42&signature=[REDACTED]&lsig=[REDACTED]&pot=[REDACTED]&quality=best',
+    http_headers: { 'Proxy-Authorization': 'Basic [REDACTED]' },
+    future_format_metadata: { codec_notes: ['a', 7, null] },
+  }])
+  expect(exported.opaque_root).toEqual({ nested: ['untouched', { enabled: true }] })
+  expect(exported.tapebox).toMatchObject({
+    sourceUrl: tape.sourceUrl, name: 'Portable', addedAtUtc: tape.addedAtUtc,
+    downloadedAtUtc: tape.downloadedAtUtc, media: null,
+    mediaFilename: 'Portable.mp4', thumbnailFilename: null,
+    opaque_namespace: { keep: ['opaque', 123] },
+  })
+  expect(exported.tapebox.renamedAtUtc).toEqual(expect.any(String))
+  expect(exported.title).toBe('Original title')
+  expect(await readFile(join(destinationDir, 'Portable.mp4'), 'utf8')).toBe('video')
+})

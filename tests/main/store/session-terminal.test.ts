@@ -12,9 +12,10 @@ const catalogMutation = vi.hoisted(() => ({
   failReorderOnce: false,
   failBoxReorderOnce: false,
   failOrdinaryWrites: 0,
+  saved: null as (() => void) | null,
 }))
 
-vi.mock('@main/paths', () => ({ paths: { legacyCatalog: join(testRoot, 'legacy.json') }, collectionCatalog: () => join(testRoot, 'catalog.json') }))
+vi.mock('@main/paths', () => ({ collectionCatalog: () => join(testRoot, 'catalog.json') }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => testRoot }))
 vi.mock('@main/store/backupStore', () => ({ record }))
 vi.mock('@main/io/logger', () => ({
@@ -24,8 +25,8 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
   return {
     ...actual,
-    writeManagedJson: vi.fn(async (...args: Parameters<typeof actual.writeManagedJson>) => {
-      const value = args[1] as { tapes?: Tape[]; boxes?: Box[] }
+    writeManagedJsonBytes: vi.fn(async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
+      const value = JSON.parse(args[1].toString('utf8')) as { tapes?: Tape[]; boxes?: Box[] }
       if (catalogMutation.failRenamedOnce && value.tapes?.some((item) => item.name === 'Renamed')) {
         catalogMutation.failRenamedOnce = false
         throw new Error('catalog disk full')
@@ -42,7 +43,8 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
         catalogMutation.failOrdinaryWrites -= 1
         throw new Error('catalog disk full')
       }
-      return actual.writeManagedJson(...args)
+      await actual.writeManagedJsonBytes(...args)
+      catalogMutation.saved?.()
     }),
   }
 })
@@ -51,6 +53,9 @@ import {
   loadSession,
   onCatalogSaveFailure,
   getBoxes,
+  getTapes,
+  removeTapes,
+  removeBox,
   getTape,
   persistNow,
   upsertBox,
@@ -78,6 +83,7 @@ beforeEach(async () => {
   catalogMutation.failReorderOnce = false
   catalogMutation.failBoxReorderOnce = false
   catalogMutation.failOrdinaryWrites = 0
+  catalogMutation.saved = null
   await mkdir(testRoot, { recursive: true })
 })
 
@@ -233,6 +239,7 @@ describe('catalog persistence', () => {
     await loadSession()
     onCatalogSaveFailure(() => {})
     const finished = tape('ret1234567')
+    const saved = new Promise<void>((resolve) => { catalogMutation.saved = resolve })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       upsertTape(finished)
@@ -241,10 +248,9 @@ describe('catalog persistence', () => {
       await expect(persistNow()).resolves.toBe(false)
       await vi.advanceTimersByTimeAsync(30_000)
     } finally { vi.useRealTimers() }
-    await vi.waitFor(async () => {
-      const onDisk = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8')) as { tapes: Tape[] }
-      expect(onDisk.tapes).toEqual([finished])
-    })
+    await saved
+    const onDisk = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8')) as { tapes: Tape[] }
+    expect(onDisk.tapes).toEqual([finished])
   })
 
   it('leaves a quit-time save failure to the quit to tell, and does not report it again afterwards', async () => {
@@ -261,5 +267,79 @@ describe('catalog persistence', () => {
 
     await expect(persistNow()).resolves.toBe(true)
     onCatalogSaveFailure(() => {})
+  })
+})
+
+
+describe('live catalog admission and derived lookup indexes', () => {
+  it('rejects invalid rows, unknown boxes, and portable filename aliases before changing the cache', async () => {
+    await loadSession()
+    const original = tape()
+    upsertTape(original)
+    expect(() => upsertTape({ ...original, sourceUrl: 'file:///private' })).toThrow()
+    expect(() => upsertTape({ ...original, boxId: 'missingbox' })).toThrow('Unknown box')
+    expect(() => upsertTape({ ...tape('def1234567'), filename: original.filename!.toUpperCase() })).toThrow('already in use')
+    expect(() => upsertTape({ ...original, sidecarFilename: original.filename })).toThrow('already in use')
+    expect(getTape(original.id)).toEqual(original)
+    expect(getTapes()).toHaveLength(1)
+    await expect(persistNow()).resolves.toBe(true)
+  })
+
+  it('updates filename ownership after durable rename and rebuilds positions after removal and rebind', async () => {
+    await loadSession()
+    const first = tape()
+    const second = tape('def1234567')
+    upsertTape(first)
+    upsertTape(second)
+    await expect(renameTapeDurably({ ...first, filename: second.filename })).rejects.toThrow('already in use')
+    await renameTapeDurably({ ...first, filename: 'Renamed.mp4' })
+    upsertTape({ ...second, filename: first.filename })
+    expect(() => upsertTape({ ...second, filename: 'RENAMED.MP4' })).toThrow('already in use')
+    removeTapes([first.id])
+    upsertTape({ ...second, title: 'After removal', filename: 'Renamed.mp4' })
+    expect(getTape(first.id)).toBeUndefined()
+    expect(getTape(second.id)?.title).toBe('After removal')
+    await persistNow()
+    await loadSession()
+    upsertTape({ ...getTape(second.id)!, title: 'After rebind' })
+    expect(getTape(second.id)?.title).toBe('After rebind')
+    expect(getTapes()).toHaveLength(1)
+    await persistNow()
+  })
+
+  it('admits unique boxes and refuses deletion while a tape still references one', async () => {
+    await loadSession()
+    const box = { id: 'box1234567', name: 'Saved', order: 0 }
+    upsertBox(box)
+    expect(() => upsertBox({ ...box, id: 'bad' })).toThrow()
+    expect(() => upsertBox({ ...box, id: 'box7654321', name: ' saved ' })).toThrow('unique')
+    const archived = { ...tape(), archivedAtUtc: '2026-10-23T00:00:00.000Z', boxId: box.id }
+    upsertTape(archived)
+    expect(() => removeBox(box.id)).toThrow('still referenced')
+    upsertTape({ ...archived, boxId: null })
+    removeBox(box.id)
+    upsertBox({ id: 'box7654321', name: box.name, order: 0 })
+    expect(getBoxes()).toEqual([{ id: 'box7654321', name: box.name, order: 0 }])
+    await persistNow()
+  })
+})
+
+
+describe('catalog codec publication', () => {
+  it('encodes outside main and suppresses a redundant save after loading the same catalog', async () => {
+    await loadSession()
+    upsertTape(tape())
+    const stringify = JSON.stringify
+    const mainEncoding = vi.spyOn(JSON, 'stringify').mockImplementation((value, ...args) => {
+      if (value && typeof value === 'object' && 'tapes' in value && 'boxes' in value) throw new Error('main-thread catalog encoding')
+      return stringify(value, ...args)
+    })
+    try {
+      await expect(persistNow()).resolves.toBe(true)
+    } finally { mainEncoding.mockRestore() }
+    await loadSession()
+    record.mockClear()
+    await expect(persistNow()).resolves.toBe(true)
+    expect(record).not.toHaveBeenCalled()
   })
 })

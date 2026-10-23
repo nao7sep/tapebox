@@ -96,6 +96,15 @@ describe('revealing a tape in the file manager', () => {
 })
 
 describe('playing a tape outside the app', () => {
+  it.each(['movie.exe', 'movie.CMD', 'movie.lnk', 'movie.unknown'])('requires an explicit player for %s', async (filename) => {
+    state.tapes[0]!.filename = filename
+    await expect(invoke('library:playExternal', { tapeId: 'Hasafile12' })).rejects.toThrow('Choose an external player')
+    expect(shell.openPath).not.toHaveBeenCalled()
+    state.externalPlayer = 'player'
+    await invoke('library:playExternal', { tapeId: 'Hasafile12' })
+    expect(openExternalPlayer).toHaveBeenCalledWith('player', join('/library', filename))
+  })
+
   it('lets the OS choose the player when none is configured', async () => {
     await invoke('library:playExternal', { tapeId: 'Hasafile12' })
 

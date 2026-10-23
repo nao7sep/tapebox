@@ -86,6 +86,7 @@ function makeDeps(opts: {
       saveThumbnailJpeg: async () => 't1.jpg',
     },
     sidecar: { finalize: async () => {} },
+    flushMedia: async () => {},
     findFinishedBundle: opts.finished ?? (async () => ({ status: 'none' })),
     session: {
       getTape: (id) => tapes.get(id),
@@ -136,6 +137,29 @@ describe('Job lifecycle (driven with fakes)', () => {
     // The downloaded row is durable before success is reported.
     expect(emits.indexOf('persist:downloaded')).toBeGreaterThanOrEqual(0)
     expect(emits.indexOf('persist:downloaded')).toBeLessThan(emits.indexOf('tapes:completed'))
+  })
+
+  it('flushes completed media before publishing the finished sidecar', async () => {
+    const t = tape({ id: 't1' })
+    const { deps, tapes } = makeDeps({ initial: [t], probe: async () => video })
+    const calls: string[] = []
+    deps.flushMedia = async (path) => { expect(path).toBe(join(LIBRARY_DIR, 't1.mp4')); calls.push('flush') }
+    deps.sidecar.finalize = async () => { calls.push('sidecar') }
+    await new Job(t, deps).run()
+    expect(calls).toEqual(['flush', 'sidecar'])
+    expect(tapes.get('t1')!.state).toBe('downloaded')
+  })
+
+  it('does not publish a finished marker or success when the media flush fails', async () => {
+    const t = tape({ id: 't1' })
+    const { deps, tapes, emits } = makeDeps({ initial: [t], probe: async () => video })
+    let finalized = false
+    deps.flushMedia = async () => { throw new Error('flush failed') }
+    deps.sidecar.finalize = async () => { finalized = true }
+    await new Job(t, deps).run()
+    expect(finalized).toBe(false)
+    expect(tapes.get('t1')!.state).toBe('failed')
+    expect(emits).not.toContain('tapes:completed')
   })
 
   it('keeps a finished download as downloaded when the catalog write fails', async () => {

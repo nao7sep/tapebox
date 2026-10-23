@@ -49,6 +49,7 @@ function deps(tapes: Map<string, Tape>, overrides: { download: JobDeps['ytdlp'][
       },
     },
     sidecar: { finalize },
+    flushMedia: async () => {},
     findFinishedBundle,
     session: {
       getTape: (id) => tapes.get(id),

@@ -45,27 +45,27 @@ describe('SQLite store admission', () => {
     expect(console.error).toHaveBeenCalledWith('tapebox: SQLite failed initialization close failed', expect.objectContaining({ message: 'secondary close failure' }))
   })
 
-  it('adopts an unmarked database only when the owner recognizes its earlier form', () => {
+  it.each([0, 1])('refuses an unsupported format %s store without altering its rows', (version) => {
     const file = join(root, 'store.sqlite3')
-    const idempotent = 'CREATE TABLE IF NOT EXISTS entries (value TEXT NOT NULL)'
     const earlier = new DatabaseSync(file)
-    try { earlier.exec(idempotent); earlier.exec("INSERT INTO entries VALUES ('kept')") } finally { earlier.close() }
-    expect(() => openWritableDatabase(file, 1, idempotent, { adoptUnmarked: () => null })).toThrow(/no format version/)
-    const db = openWritableDatabase(file, 1, idempotent, { adoptUnmarked: () => 1 })
-    opened.push(db)
-    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
-    expect(databaseTransaction(db, false, () => db.prepare('SELECT value FROM entries').all())).toEqual([{ value: 'kept' }])
+    try {
+      earlier.exec(schema)
+      earlier.exec("INSERT INTO entries VALUES ('kept')")
+      earlier.exec(`PRAGMA user_version = ${version}`)
+    } finally { earlier.close() }
+    const bytes = readFileSync(file)
+    expect(() => openWritableDatabase(file, 2, schema)).toThrow(/format/)
+    expect(readFileSync(file)).toEqual(bytes)
   })
 
-  it('upgrades an older store in place, keeping its rows, and refuses one it has no upgrade for', () => {
+  it('opens a current store with its existing rows intact', () => {
     const file = join(root, 'store.sqlite3')
-    const older = new DatabaseSync(file)
-    try { older.exec('CREATE TABLE entries (value TEXT NOT NULL)'); older.exec("INSERT INTO entries VALUES ('kept')"); older.exec('PRAGMA user_version = 1') } finally { older.close() }
-    const v2 = 'CREATE TABLE IF NOT EXISTS entries (value TEXT NOT NULL, note TEXT)'
-    expect(() => openWritableDatabase(file, 2, v2)).toThrow(/no upgrade/)
-    const db = openWritableDatabase(file, 2, v2, { upgrade: (store, from) => { if (from === 1) store.exec('ALTER TABLE entries ADD COLUMN note TEXT') } })
-    opened.push(db)
-    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 })
-    expect(db.prepare('SELECT value, note FROM entries').all()).toEqual([{ value: 'kept', note: null }])
+    const idempotent = 'CREATE TABLE IF NOT EXISTS entries (value TEXT NOT NULL)'
+    const first = openWritableDatabase(file, 2, idempotent)
+    first.exec("INSERT INTO entries VALUES ('kept')")
+    first.close()
+    const reopened = openWritableDatabase(file, 2, idempotent)
+    opened.push(reopened)
+    expect(databaseTransaction(reopened, false, () => reopened.prepare('SELECT value FROM entries').all())).toEqual([{ value: 'kept' }])
   })
 })

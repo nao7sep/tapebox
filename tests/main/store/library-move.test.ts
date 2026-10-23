@@ -9,12 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const realFsPromises = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
 const renameSpy = vi.fn(realFsPromises.rename)
+const readdirSpy = vi.fn(realFsPromises.readdir)
 const linkSpy = vi.fn(realFsPromises.link)
 
 vi.mock('node:fs/promises', async () => {
   const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
   return {
     ...actual,
+    readdir: (...args: Parameters<typeof actual.readdir>) => readdirSpy(...args),
     rename: (...args: Parameters<typeof actual.rename>) => renameSpy(...args),
     link: (...args: Parameters<typeof actual.link>) => linkSpy(...args),
   }
@@ -275,5 +277,20 @@ describe('relocateLibrary', () => {
     expect(seen[2]!.bytesDone).toBe(7 + 8)
     expect(await names(toDir)).toEqual([])
     expect(await names(fromDir)).toEqual(['a.mp4', 'b.mp4', 'c.mp4'])
+  })
+})
+
+
+describe('relocation preflight directory scan', () => {
+  it('reads the destination once to reject all portable collisions before publication', async () => {
+    await mkdir(toDir)
+    await seed(toDir, 'EXISTING.mp4', 'existing')
+    await seed(fromDir, 'first.mp4', 'first')
+    await seed(fromDir, 'existing.mp4', 'incoming')
+    readdirSpy.mockClear()
+    linkSpy.mockClear()
+    await expect(relocateLibrary(fromDir, toDir, ['first.mp4', 'existing.mp4'])).rejects.toThrow()
+    expect(readdirSpy).toHaveBeenCalledExactlyOnceWith(toDir)
+    expect(linkSpy).not.toHaveBeenCalled()
   })
 })

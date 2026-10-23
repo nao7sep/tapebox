@@ -1,4 +1,5 @@
 import { basename, join } from 'node:path'
+import { fsyncFile } from '@main/io/atomic-file'
 import { rename } from 'node:fs/promises'
 import * as ytdlp from '@main/services/ytdlp'
 import * as ffmpeg from '@main/services/ffmpeg'
@@ -37,6 +38,7 @@ export interface JobDeps {
     saveThumbnailJpeg: typeof ffmpeg.saveThumbnailJpeg
   }
   sidecar: { finalize: typeof sidecar.finalize }
+  flushMedia: typeof fsyncFile
   findFinishedBundle: typeof findFinishedBundle
   session: {
     getTape: typeof session.getTape
@@ -54,6 +56,7 @@ export const defaultJobDeps: JobDeps = {
   ytdlp: { probe: ytdlp.probe, download: ytdlp.download, findThumbnail: ytdlp.findThumbnail },
   ffmpeg: { probeMedia: ffmpeg.probeMedia, saveThumbnailJpeg: ffmpeg.saveThumbnailJpeg },
   sidecar: { finalize: sidecar.finalize },
+  flushMedia: fsyncFile,
   findFinishedBundle,
   session: {
     getTape: session.getTape,
@@ -333,6 +336,9 @@ export class Job {
     // The sidecar and the catalog row record the same moment.
     const downloadedAtUtc = this.d.now()
 
+    // The sidecar is the finished-bundle marker. Its durable publication must
+    // follow the media flush, including when yt-dlp performed the final rename.
+    await this.d.flushMedia(expectedMediaPath)
     await this.d.sidecar.finalize({
       infoJsonPath: result.infoJsonPath,
       sidecarPath,

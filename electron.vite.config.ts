@@ -25,6 +25,7 @@ const MAIN_WORKERS = [
   'src/main/io/records-worker.ts',
   'src/main/io/records-write-worker.ts',
   'src/main/store/backup-worker.ts',
+  'src/main/store/catalog-worker.ts',
 ]
 
 export default defineConfig({

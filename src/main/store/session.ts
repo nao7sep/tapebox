@@ -1,14 +1,15 @@
-import { mkdir, readFile, rename, stat } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { paths, collectionCatalog } from '@main/paths'
+import { collectionCatalog } from '@main/paths'
 import { getLibraryDir } from './config'
-import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
-import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
+import { quarantineFile, writeManagedJsonBytes } from '@main/io/atomic-json'
 import { StoreAccessError } from '@main/io/store-access'
-import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson, V0_1_0_FORMAT } from '@main/io/format-version'
+import { FORMAT_VERSIONS, NewerFormatError } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { SessionSchema, type Box, type Tape, type Session } from '@shared/domain'
+import { portableFilenameIdentity, boxNameIdentity } from '@shared/filename'
+import { catalogCodec } from './catalog-codec'
+import { TapeSchema, BoxSchema, TRACKED_FILENAME_FIELDS, type Box, type Tape, type Session } from '@shared/domain'
 
 /**
  * In-memory session cache, debounced atomic persistence to the library catalog.
@@ -39,7 +40,12 @@ let loaded = false
 let catalogPath: string | null = null
 let persistChain: Promise<void> = Promise.resolve()
 /** Serialized durable content last written or loaded, to skip unchanged writes. */
-let lastWritten: string | null = null
+let lastWritten: Buffer | null = null
+const decodedBytes = new WeakMap<Session, Buffer>()
+const tapePositions = new Map<string, number>()
+const boxPositions = new Map<string, number>()
+const filenameOwners = new Map<string, string>()
+const boxNameOwners = new Map<string, string>()
 /** True from a failed catalog save until the next successful one. */
 let saveFailing = false
 let saveFailureListener: (() => void) | null = null
@@ -49,9 +55,6 @@ let saveFailureListener: (() => void) | null = null
  * metadata and other lists remain independent. No history survives settlement. */
 const tapeReorderIntents = new Map<string, Set<object>>()
 const boxReorderIntents = new Set<object>()
-
-/** How catalog.json is written. */
-const CATALOG_JSON = { formatVersion: FORMAT_VERSIONS.catalog, schema: SessionSchema }
 
 const IN_FLIGHT_STATES: ReadonlySet<Tape['state']> = new Set(['probing', 'ready', 'downloading'])
 
@@ -65,18 +68,15 @@ export function durableTape(tape: Tape): Tape {
   return { ...tape, state: 'queued', downloadStartedAtUtc: null }
 }
 
-function durableSession(session: Session): Session {
-  return { tapes: session.tapes.map(durableTape), boxes: [...session.boxes] }
-}
-
-/** Write the durable form of `session` unless it matches what is already on disk. */
+/** Write one worker-encoded durable buffer, reusing its exact bytes for backup. */
 async function writeCatalog(session: Session): Promise<void> {
-  const durable = durableSession(session)
-  const key = JSON.stringify(durable)
-  if (key === lastWritten) return
+  const encoded = await catalogCodec({ op: 'encode', session })
+  if (encoded.kind !== 'encoded') throw new Error(`Catalog encoding failed: ${'detail' in encoded ? encoded.detail : encoded.kind}`)
+  const bytes = Buffer.from(encoded.bytes.buffer, encoded.bytes.byteOffset, encoded.bytes.byteLength)
+  if (lastWritten?.equals(bytes)) { saveFailing = false; return }
   if (catalogPath === null) throw new Error('Catalog location is not loaded')
-  await writeManagedJson(catalogPath, durable, CATALOG_JSON)
-  lastWritten = key
+  await writeManagedJsonBytes(catalogPath, bytes)
+  lastWritten = bytes
   saveFailing = false
 }
 
@@ -117,28 +117,20 @@ export async function loadSessionFile(
   sessionPath: string,
   options: { requireExisting?: boolean } = {},
 ): Promise<{ result: SessionLoadResult; session: Session }> {
-  let text: string
-  try {
-    text = await readFile(sessionPath, 'utf8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !options.requireExisting) {
+  const found = await catalogCodec({ op: 'decode', path: sessionPath })
+  if (found.kind === 'error') {
+    if (found.code === 'ENOENT' && !options.requireExisting) {
       return { result: { status: 'empty' }, session: emptySession() }
     }
-    // Unexpected read failure (permissions, I/O): the caller leaves the session
-    // unloaded and startup names the file, instead of silently starting empty.
-    throw new StoreAccessError(sessionPath, err)
+    throw new StoreAccessError(sessionPath, Object.assign(new Error(found.detail), { code: found.code }))
   }
-
-  const found = parseStoreJson(text, FORMAT_VERSIONS.catalog, true)
-  if (found.status === 'newer') throw new NewerFormatError(sessionPath, found.version, FORMAT_VERSIONS.catalog)
-  const parsed = found.status === 'read'
-    ? SessionSchema.safeParse(found.version === V0_1_0_FORMAT ? catalogFromV010(found.value) : found.value)
-    : null
-  if (parsed?.success) {
-    return { result: { status: 'loaded', tapeCount: parsed.data.tapes.length }, session: parsed.data }
+  if (found.kind === 'newer') throw new NewerFormatError(sessionPath, found.version, FORMAT_VERSIONS.catalog)
+  if (found.kind === 'decoded') {
+    decodedBytes.set(found.session, Buffer.from(found.bytes.buffer, found.bytes.byteOffset, found.bytes.byteLength))
+    return { result: { status: 'loaded', tapeCount: found.session.tapes.length }, session: found.session }
   }
   if (options.requireExisting) throw new StoreAccessError(sessionPath, new Error('Invalid library catalog'))
-  const parseErr = found.status === 'unreadable' ? found.error : parsed?.error
+  const parseErr = new Error(found.kind === 'invalid' ? found.detail : 'Unexpected catalog codec response')
   let quarantinePath: string
   try {
     quarantinePath = await quarantineFile(sessionPath)
@@ -150,16 +142,6 @@ export async function loadSessionFile(
     )
   }
   return { result: { status: 'recovered', quarantinePath }, session: emptySession() }
-}
-
-/** v0.1.0's catalog had no failure class on its tapes; every row reads as having none. */
-function catalogFromV010(value: Record<string, unknown>): Record<string, unknown> {
-  const tapes = Array.isArray(value['tapes'])
-    ? value['tapes'].map((tape: unknown) => tape !== null && typeof tape === 'object' && !Array.isArray(tape) && !('failureCode' in tape)
-      ? { ...tape, failureCode: null }
-      : tape)
-    : value['tapes']
-  return { ...value, tapes }
 }
 
 /**
@@ -175,26 +157,6 @@ export async function loadSession(): Promise<SessionLoadResult> {
   })
   if (!directory.isDirectory()) throw new StoreAccessError(getLibraryDir(), new Error('Not a directory'))
   await mkdir(dirname(target), { recursive: true })
-  // One location transition, retaining the old bytes under an inert name. Once a
-  // collection has its own catalog it always wins; a settings reset cannot revive
-  // an obsolete machine-root catalog after a later move.
-  let legacy = false
-  try { await stat(paths.legacyCatalog); legacy = true } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new StoreAccessError(paths.legacyCatalog, error)
-  }
-  if (legacy) {
-    try { await stat(target) } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      // Validate without modifying the source before publishing the same bytes.
-      await loadSessionFile(paths.legacyCatalog, { requireExisting: true })
-      await linkOrCopyNoOverwrite(paths.legacyCatalog, target)
-    }
-    const retained = paths.retainedLegacyCatalog
-    try { await stat(retained); throw new Error(`Retained catalog already exists: ${retained}`) } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
-    await rename(paths.legacyCatalog, retained)
-  }
   const { result, session } = await loadSessionFile(target)
   bindSession(target, session)
   if (result.status !== 'loaded') {
@@ -226,7 +188,8 @@ export function bindSession(target: string, session: Session): void {
   cache = session
   tapeReorderIntents.clear()
   boxReorderIntents.clear()
-  lastWritten = JSON.stringify(durableSession(session))
+  lastWritten = decodedBytes.get(session) ?? null
+  rebuildIndexes()
   loaded = true
   saveFailing = false
 }
@@ -255,19 +218,25 @@ export function getTapes(): Tape[] {
 
 export function getTape(id: string): Tape | undefined {
   assertLoaded()
-  return cache.tapes.find((i) => i.id === id)
+  const index = tapePositions.get(id)
+  return index === undefined ? undefined : cache.tapes[index]
 }
 
 export function upsertTape(tape: Tape): void {
   assertLoaded()
-  const idx = cache.tapes.findIndex((i) => i.id === tape.id)
+  tape = admitTape(tape)
+  const idx = tapePositions.get(tape.id) ?? -1
   const previous = cache.tapes[idx]
   if (!previous || tapeListKey(previous) !== tapeListKey(tape) || previous.order !== tape.order) {
     if (previous) tapeReorderIntents.delete(tapeListKey(previous))
     tapeReorderIntents.delete(tapeListKey(tape))
   }
+  replaceFilenameOwner(previous, tape)
   if (idx >= 0) cache.tapes[idx] = tape
-  else cache.tapes.push(tape)
+  else {
+    tapePositions.set(tape.id, cache.tapes.length)
+    cache.tapes.push(tape)
+  }
   scheduleSave()
 }
 
@@ -362,10 +331,10 @@ export async function renameTapeDurably(tape: Tape): Promise<Tape> {
   // settling slip in ahead and make candidate paths durable before this transaction.
   let committed = tape
   await enqueueCatalogWrite(async () => {
-    const idx = cache.tapes.findIndex((item) => item.id === tape.id)
+    const idx = tapePositions.get(tape.id) ?? -1
     if (idx < 0) throw new Error(`Tape not found during durable rename: ${tape.id}`)
     const tapes = [...cache.tapes]
-    tapes[idx] = applyRenameFields(tapes[idx]!, tape)
+    tapes[idx] = admitTape(applyRenameFields(tapes[idx]!, tape))
     const candidate = { ...cache, tapes }
 
     await writeCatalog(candidate)
@@ -373,9 +342,10 @@ export async function renameTapeDurably(tape: Tape): Promise<Tape> {
     // The durable rename is now authoritative. Preserve unrelated fields changed
     // by queue/progress work while the write was in flight, and let its already-
     // scheduled ordinary persist serialize the combined current state afterward.
-    const currentIdx = cache.tapes.findIndex((item) => item.id === tape.id)
+    const currentIdx = tapePositions.get(tape.id) ?? -1
     if (currentIdx >= 0) {
       committed = applyRenameFields(cache.tapes[currentIdx]!, tape)
+      replaceFilenameOwner(cache.tapes[currentIdx], committed)
       cache.tapes[currentIdx] = committed
     }
   })
@@ -400,6 +370,7 @@ export function removeTapes(ids: string[]): void {
     if (set.has(tape.id)) tapeReorderIntents.delete(tapeListKey(tape))
   }
   cache.tapes = cache.tapes.filter((i) => !set.has(i.id))
+  rebuildIndexes()
   scheduleSave()
 }
 
@@ -410,10 +381,19 @@ export function getBoxes(): Box[] {
 
 export function upsertBox(box: Box): void {
   assertLoaded()
-  const idx = cache.boxes.findIndex((g) => g.id === box.id)
+  box = BoxSchema.parse(box)
+  const name = boxNameIdentity(box.name)
+  const owner = boxNameOwners.get(name)
+  if (!name || (owner !== undefined && owner !== box.id)) throw new Error('Box names must be non-empty and unique')
+  const idx = boxPositions.get(box.id) ?? -1
+  if (idx >= 0) boxNameOwners.delete(boxNameIdentity(cache.boxes[idx]!.name))
+  boxNameOwners.set(name, box.id)
   if (idx < 0 || cache.boxes[idx]!.order !== box.order) boxReorderIntents.clear()
   if (idx >= 0) cache.boxes[idx] = box
-  else cache.boxes.push(box)
+  else {
+    boxPositions.set(box.id, cache.boxes.length)
+    cache.boxes.push(box)
+  }
   scheduleSave()
 }
 
@@ -465,12 +445,56 @@ export async function reorderBoxesDurably(orderedIds: readonly string[]): Promis
 
 export function removeBox(id: string): void {
   assertLoaded()
-  if (cache.boxes.some((box) => box.id === id)) {
+  if (cache.tapes.some((tape) => tape.boxId === id)) throw new Error(`Box is still referenced: ${id}`)
+  if (boxPositions.has(id)) {
     boxReorderIntents.clear()
     tapeReorderIntents.delete(`box:${id}`)
   }
   cache.boxes = cache.boxes.filter((g) => g.id !== id)
+  rebuildIndexes()
   scheduleSave()
+}
+
+/** Indexes are derived from the authoritative arrays, never a second catalog. */
+function rebuildIndexes(): void {
+  tapePositions.clear()
+  boxPositions.clear()
+  filenameOwners.clear()
+  boxNameOwners.clear()
+  cache.tapes.forEach((tape, index) => {
+    tapePositions.set(tape.id, index)
+    replaceFilenameOwner(undefined, tape)
+  })
+  cache.boxes.forEach((box, index) => {
+    boxPositions.set(box.id, index)
+    boxNameOwners.set(boxNameIdentity(box.name), box.id)
+  })
+}
+
+function admitTape(value: Tape): Tape {
+  const tape = TapeSchema.parse(value)
+  if (tape.boxId !== null && !boxPositions.has(tape.boxId)) throw new Error(`Unknown box: ${tape.boxId}`)
+  const own = new Set<string>()
+  for (const field of TRACKED_FILENAME_FIELDS) {
+    const filename = tape[field]
+    if (filename === null) continue
+    const identity = portableFilenameIdentity(filename)
+    const owner = filenameOwners.get(identity)
+    if (own.has(identity) || (owner !== undefined && owner !== tape.id)) throw new Error(`Tracked filename is already in use: ${filename}`)
+    own.add(identity)
+  }
+  return tape
+}
+
+function replaceFilenameOwner(previous: Tape | undefined, next: Tape): void {
+  if (previous) for (const field of TRACKED_FILENAME_FIELDS) {
+    const filename = previous[field]
+    if (filename !== null) filenameOwners.delete(portableFilenameIdentity(filename))
+  }
+  for (const field of TRACKED_FILENAME_FIELDS) {
+    const filename = next[field]
+    if (filename !== null) filenameOwners.set(portableFilenameIdentity(filename), next.id)
+  }
 }
 
 function scheduleSave(delayMs = SAVE_DEBOUNCE_MS): void {

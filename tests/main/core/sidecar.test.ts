@@ -25,11 +25,11 @@ describe('sidecar format version', () => {
     await expect(readSidecarFile(path)).resolves.toEqual({ id: 'source', tapebox: { name: 'Take' } })
   })
 
-  it('reads a sidecar whose marker is not a version as unreadable', async () => {
+  it('reads an unrecognized marker through current shape admission', async () => {
     const path = join(dir, 'Take.json')
     await writeFile(path, JSON.stringify({ formatVersion: 'one', id: 'source' }))
-    await expect(readSidecarFile(path)).rejects.toThrow(/positive integer/)
-    expect(await readSidecar(path)).toBeNull()
+    await expect(readSidecarFile(path)).resolves.toEqual({ formatVersion: 'one', id: 'source' })
+    expect(await readSidecar(path)).toEqual({ formatVersion: 'one', id: 'source' })
   })
 
   it('writes format 1 first and reads it back', async () => {

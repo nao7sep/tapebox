@@ -86,13 +86,13 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
   return {
     ...actual,
-    writeManagedJson: async (...args: Parameters<typeof actual.writeManagedJson>) => {
+    writeManagedJsonBytes: async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
       if (args[0] === state.heldCatalog) {
         state.heldCatalog = ''
         state.held()
         await state.release
       }
-      return actual.writeManagedJson(...args)
+      return actual.writeManagedJsonBytes(...args)
     },
   }
 })
@@ -165,6 +165,30 @@ afterEach(async () => {
 })
 
 describe('concurrent bundle admission at the catalog boundary', () => {
+  it('publishes a batch in selection order ahead of inbox tapes added during its copy waits', async () => {
+    const firstPath = await stageBundle(sourceDir, 'first', 'https://example.test/first')
+    const secondPath = await stageBundle(sourceDir, 'second', 'https://example.test/second')
+    const concurrentPath = await stageBundle(sourceDir, 'concurrent', 'https://example.test/concurrent')
+    const gate = hold('heldCopy', join(state.libraryDir, 'second.mp4'))
+    const batch = handlers.get('library:import')!({ paths: [firstPath, secondPath] })
+    let concurrent!: ImportResult
+    try {
+      await gate.started
+      // The first batch row has been admitted while the second is still copying.
+      expect(session.getTapes().map((tape) => tape.name)).toEqual(['first'])
+      concurrent = await importBundle(concurrentPath)
+    } finally { gate.release() }
+    const result = await batch as ImportResult
+    expect(result.imported.map((tape) => tape.name)).toEqual(['first', 'second'])
+    const inbox = session.getTapes().filter((tape) => !tape.archivedAtUtc).sort((a, b) => a.order - b.order)
+    expect(inbox.map((tape) => tape.name)).toEqual(['first', 'second', 'concurrent'])
+    expect(new Set(inbox.map((tape) => tape.order)).size).toBe(inbox.length)
+    expect(inbox.at(-1)?.id).toBe(concurrent.imported[0]?.id)
+    const batchAnnouncement = emit.mock.calls.filter(([channel]) => channel === 'tapes:added').at(-1)![1] as Tape[]
+    expect(batchAnnouncement).toEqual(inbox.slice(0, 2))
+    expect(await savedTapes()).toEqual(session.getTapes())
+  })
+
   it('keeps one row for the same source and removes only the refused import\'s created bundle, including its poster', async () => {
     const firstPath = await stageBundle(sourceDir, 'first', 'https://www.youtube.com/watch?v=shared&si=tracking', true)
     const secondPath = await stageBundle(sourceDir, 'second', 'https://www.youtube.com/watch?v=shared')

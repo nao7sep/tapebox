@@ -35,14 +35,14 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
   return {
     ...actual,
-    writeManagedJson: async (...args: Parameters<typeof actual.writeManagedJson>) => {
-      const candidate = args[1] as { tapes: Tape[] }
+    writeManagedJsonBytes: async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
+      const candidate = JSON.parse(args[1].toString('utf8')) as { tapes: Tape[] }
       if (state.holdRename && candidate.tapes.some((tape) => tape.name === 'Renamed')) {
         state.holdRename = false
         state.started()
         await state.release
       }
-      return actual.writeManagedJson(...args)
+      return actual.writeManagedJsonBytes(...args)
     },
   }
 })

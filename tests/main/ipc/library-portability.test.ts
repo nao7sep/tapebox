@@ -30,15 +30,25 @@ vi.mock('@main/ipc/events', () => ({ emit: (channel: string, payload: unknown) =
 } }))
 vi.mock('@main/io/atomic-json', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
-  return { ...actual, writeManagedJson: async (...args: Parameters<typeof actual.writeManagedJson>) => {
-    if (args[0].endsWith('catalog.json')) await state.beforeCatalog?.()
-    if (state.cancelOnCatalog && args[0].endsWith('catalog.json')) {
+  const beforeWrite = async (file: string): Promise<void> => {
+    if (file.endsWith('catalog.json')) await state.beforeCatalog?.()
+    if (state.cancelOnCatalog && file.endsWith('catalog.json')) {
       state.cancelOnCatalog = false
       await state.handlers.get('settings:cancelLibraryMove')!(undefined)
     }
-    if (state.failConfig && args[0].endsWith('config.json')) throw new Error('config storage unavailable')
-    return actual.writeManagedJson(...args)
-  } }
+    if (state.failConfig && file.endsWith('config.json')) throw new Error('config storage unavailable')
+  }
+  return {
+    ...actual,
+    writeManagedJson: async (...args: Parameters<typeof actual.writeManagedJson>) => {
+      await beforeWrite(args[0])
+      return actual.writeManagedJson(...args)
+    },
+    writeManagedJsonBytes: async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
+      await beforeWrite(args[0])
+      return actual.writeManagedJsonBytes(...args)
+    },
+  }
 })
 
 let root: string
@@ -246,49 +256,30 @@ describe('portable collection through settings and the actual catalog owner', ()
   })
 })
 
-describe('one-time legacy location adoption', () => {
-  async function legacyPaths() {
-    const paths = (await import('@main/paths')).paths
-    await mkdir(paths.library, { recursive: true })
-    return paths
-  }
-  it('retains the old catalog bytes inert and adopts its organization into the library', async () => {
-    const paths = await legacyPaths()
-    const bytes = JSON.stringify({ formatVersion: 1, tapes: [tape()], boxes: [{ id: 'Box1234567', name: 'Legacy box', order: 9 }] })
-    await writeFile(paths.legacyCatalog, bytes)
-    const app = await start()
-    expect(app.session.getBoxes()[0]!.name).toBe('Legacy box')
-    expect(await readFile(app.collectionCatalog(paths.library), 'utf8')).toBe(bytes)
-    expect(await readFile(join(paths.root, 'catalog-before-portable-library.json'), 'utf8')).toBe(bytes)
-    await expect(readFile(paths.legacyCatalog)).rejects.toMatchObject({ code: 'ENOENT' })
-    // A later fresh default location cannot re-adopt the old catalog.
-    await rm(app.collectionCatalog(paths.library))
-    vi.resetModules()
-    const fresh = await start()
-    expect(fresh.session.getTapes()).toEqual([])
-    expect(fresh.session.getBoxes()).toEqual([])
-  })
-  it('prefers an existing collection and preserves a different legacy catalog', async () => {
-    const paths = await legacyPaths()
-    const { collectionCatalog } = await import('@main/paths')
-    const bytes = JSON.stringify({ formatVersion: 1, tapes: [], boxes: [{ id: 'Box1234567', name: 'Stale', order: 0 }] })
-    await writeFile(paths.legacyCatalog, bytes)
+describe('obsolete machine-root catalogs', () => {
+  it('uses the collection catalog and leaves unrelated old catalog bytes in place', async () => {
+    const { paths, collectionCatalog } = await import('@main/paths')
     await mkdir(dirname(collectionCatalog(paths.library)), { recursive: true })
+    const obsolete = join(paths.root, 'catalog.json')
+    const oldBytes = JSON.stringify({ tapes: [], boxes: [{ id: 'Box1234567', name: 'Old', order: 0 }] })
+    await writeFile(obsolete, oldBytes)
     const current = JSON.stringify({ formatVersion: 1, tapes: [], boxes: [{ id: 'Box7654321', name: 'Current', order: 1 }] })
     await writeFile(collectionCatalog(paths.library), current)
     const app = await start()
     expect(app.session.getBoxes()[0]!.name).toBe('Current')
     expect(await readFile(collectionCatalog(paths.library), 'utf8')).toBe(current)
-    expect(await readFile(join(paths.root, 'catalog-before-portable-library.json'), 'utf8')).toBe(bytes)
+    expect(await readFile(obsolete, 'utf8')).toBe(oldBytes)
   })
-  it('never overwrites a retained catalog on an archive-name collision', async () => {
-    const paths = await legacyPaths()
-    const bytes = JSON.stringify({ formatVersion: 1, tapes: [], boxes: [] })
-    await writeFile(paths.legacyCatalog, bytes)
-    const retained = join(paths.root, 'catalog-before-portable-library.json')
-    await writeFile(retained, 'different preserved bytes')
-    await expect(start()).rejects.toThrow('Retained catalog already exists')
-    expect(await readFile(retained, 'utf8')).toBe('different preserved bytes')
-    expect(await readFile(paths.legacyCatalog, 'utf8')).toBe(bytes)
+
+  it('starts an empty collection when only an obsolete machine-root catalog exists', async () => {
+    const { paths } = await import('@main/paths')
+    await mkdir(paths.library, { recursive: true })
+    const obsolete = join(paths.root, 'catalog.json')
+    const oldBytes = JSON.stringify({ tapes: [], boxes: [{ id: 'Box1234567', name: 'Old', order: 0 }] })
+    await writeFile(obsolete, oldBytes)
+    const app = await start()
+    expect(app.session.getTapes()).toEqual([])
+    expect(app.session.getBoxes()).toEqual([])
+    expect(await readFile(obsolete, 'utf8')).toBe(oldBytes)
   })
 })

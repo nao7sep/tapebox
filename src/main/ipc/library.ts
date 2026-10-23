@@ -20,7 +20,7 @@ import { openExternalPlayer } from '@main/io/external-player'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
-import { readSidecarFile, SIDECAR_JSON, writeSidecar } from '@main/core/sidecar'
+import { readSidecarFile, sidecarNamespace, SIDECAR_JSON, writeSidecar } from '@main/core/sidecar'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { catalogFilenameOwner, catalogStemOwner, claimManagedFiles, managedFilenameClaimed, nameInStem, tryClaimManagedFiles } from '@main/core/managed-files'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
@@ -33,11 +33,13 @@ import { downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import { SidecarTapeBoxSchema, TRACKED_FILENAME_FIELDS, trackedFilenameIdentities, type Tape } from '@shared/domain'
+import { TRACKED_FILENAME_FIELDS, trackedFilenameIdentities, type Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, RefreshedMetadata, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
 import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
+
+const PASSIVE_MEDIA_EXTENSIONS = new Set(['.mp4', '.m4v', '.mkv', '.webm', '.mov', '.avi', '.mpg', '.mpeg', '.ogv', '.flv', '.wmv', '.3gp', '.mp3', '.m4a', '.aac', '.flac', '.wav', '.ogg', '.opus', '.aiff'])
 
 const tapeWrites = new Set<string>()
 
@@ -71,8 +73,8 @@ export function registerLibraryHandlers(): void {
     archivable.forEach((tape, i) => {
       const updated = { ...tape, archivedAtUtc: at, boxId: null, order: orders[i] }
       session.upsertTape(updated)
-      emit('tapes:updated', updated)
     })
+    emit('tapes:updatedMany', archivable.map((tape) => session.getTape(tape.id)!))
   })
 
   handle('library:unarchive', async ({ tapeIds }) => {
@@ -87,8 +89,8 @@ export function registerLibraryHandlers(): void {
     restorable.forEach((tape, i) => {
       const updated = { ...tape, archivedAtUtc: null, boxId: null, order: orders[i] }
       session.upsertTape(updated)
-      emit('tapes:updated', updated)
     })
+    emit('tapes:updatedMany', restorable.map((tape) => session.getTape(tape.id)!))
   })
 
   // Reindex one list (the inbox, a box, or Unboxed) to the caller's sequence after
@@ -140,6 +142,10 @@ export function registerLibraryHandlers(): void {
     const player = getSettings().externalPlayer.trim()
 
     if (!player) {
+      // Imported names are untrusted: OS-active files must never be launched as media.
+      if (!PASSIVE_MEDIA_EXTENSIONS.has(extname(tape.filename).toLowerCase())) {
+        throw new UserFacingError('refused', message('errors.externalPlayerRequired'))
+      }
       const error = await shell.openPath(full) // '' on success, message on failure
       if (error) throw new Error(error)
       return
@@ -207,7 +213,7 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
     return current
   }
   // Refuse a protected sidecar before attempting its optional poster backfill.
-  if (tape.sidecarFilename) await readSidecarFile(join(dir, tape.sidecarFilename))
+  const sidecar = tape.sidecarFilename ? await readSidecarFile(join(dir, tape.sidecarFilename)) : null
   assertCurrent()
 
   // Backfill a local poster for a downloaded tape that has none — e.g. one
@@ -248,7 +254,7 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
   // the catalog as it was rather than the two disagreeing. A poster fetched for
   // it stays in the library under the tape's own stem, for the next Apply.
   if (tape.sidecarFilename) {
-    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, assertCurrent)
+    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, assertCurrent, sidecar!)
   }
 
   // Once the sidecar has committed, Apply finishes with its catalog commit even if
@@ -306,8 +312,8 @@ async function writeRefreshedSidecar(
   metadata: RefreshedMetadata,
   thumbnailFilename: string | null,
   assertCurrent: () => Tape,
+  sidecar: Record<string, unknown>,
 ): Promise<void> {
-  const sidecar = await readSidecarFile(path)
   let changed = false
   const fields = { title: metadata.title, uploader: metadata.uploader, description: metadata.description }
   for (const [key, value] of Object.entries(fields)) {
@@ -317,7 +323,7 @@ async function writeRefreshedSidecar(
   }
   const tb = sidecar['tapebox']
   if (tb && typeof tb === 'object' && (tb as Record<string, unknown>)['thumbnailFilename'] !== thumbnailFilename) {
-    sidecar['tapebox'] = SidecarTapeBoxSchema.parse({ ...tb, thumbnailFilename })
+    sidecar['tapebox'] = { ...sidecarNamespace(sidecar, assertCurrent()), thumbnailFilename }
     changed = true
   }
   if (!changed) return
@@ -339,13 +345,6 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
   const issues: ImportIssue[] = []
   const sidecarPaths = paths.filter((path) => extname(path).toLowerCase() === '.json')
   const claimedCompanionPaths: string[] = []
-
-  // Reserve a front-of-inbox order window for the whole selection up front, then
-  // hand them out one per successful import, so the batch lands on top in the
-  // order chosen even when some entries are rejected mid-loop.
-  const inbox = session.getTapes().filter((t) => !t.archivedAtUtc)
-  const orderWindow = frontOrders(inbox.map((t) => t.order), sidecarPaths.length)
-  let orderCursor = 0
 
   for (const sidecarPath of sidecarPaths) {
     if (signal.aborted) break
@@ -528,7 +527,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       mediaFilename,
       sidecarFilename: `${mediaStem}.json`,
       thumbnailFilename,
-      order: orderWindow[orderCursor++],
+      order: frontOrders(commitTapes.filter((t) => !t.archivedAtUtc).map((t) => t.order), 1)[0]!,
       nowUtc: nowUtcIso(),
     })
     session.upsertTape(tape)
@@ -536,6 +535,16 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
   }
 
   if (imported.length > 0) {
+    // Allocate the final block at publication, after all copy waits. Other batches
+    // and URL additions may have joined the inbox while these files were copied.
+    const importedIds = new Set(imported.map((tape) => tape.id))
+    const currentInbox = session.getTapes().filter((tape) => !tape.archivedAtUtc)
+    const members = imported.map((tape) => session.getTape(tape.id)).filter((tape): tape is Tape => !!tape && !tape.archivedAtUtc)
+    const orders = frontOrders(currentInbox.filter((tape) => !importedIds.has(tape.id)).map((tape) => tape.order), members.length)
+    members.forEach((tape, index) => session.upsertTape({ ...tape, order: orders[index]! }))
+    // The receipt describes what this import accepted; later removal must not
+    // erase that outcome, while its assigned order reflects publication time.
+    imported.splice(0, imported.length, ...imported.map((tape) => session.getTape(tape.id) ?? tape))
     // The copied files are in the library; commit their rows before reporting,
     // so a crash now cannot leave them unlisted and blocking a re-import. The rows
     // are in the library either way; a failed write is the session store's to
@@ -665,12 +674,12 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
   const thumbnailName = byArtifact('thumbnail')?.finalName ?? null
   const sidecarItem = byArtifact('sidecar')!
   const sidecar = await readSidecarFile(sidecarItem.old)
-  const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
+  const tb = sidecarNamespace(sidecar, tape)
   tb['name'] = cleanName
   tb['renamedAtUtc'] = nowUtc
   tb['mediaFilename'] = mediaName
   tb['thumbnailFilename'] = thumbnailName
-  sidecar['tapebox'] = SidecarTapeBoxSchema.parse(tb)
+  sidecar['tapebox'] = tb
 
   const updated = {
     ...tape,
@@ -846,7 +855,7 @@ async function removeTapesFrom(
 async function refuseNewerSidecar(path: string): Promise<void> {
   let text: string
   try { text = await readFile(path, 'utf8') } catch { return }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.sidecar, true)
+  const found = parseStoreJson(text, FORMAT_VERSIONS.sidecar)
   if (found.status === 'newer') throw new NewerFormatError(path, found.version, FORMAT_VERSIONS.sidecar)
 }
 
@@ -868,11 +877,12 @@ async function discardTapeFiles(libraryDir: string, tape: Tape, toTrash: boolean
   // Listing can wait. Read live ownership again for each physical deletion;
   // the held stem claim prevents new import/rename/export adoption meanwhile.
   for (const name of await readdir(libraryDir)) {
+    if (!nameInStem(name, tape.id)) continue
     const current = session.getTapes()
     const taken = trackedFilenameIdentities([...current, tape])
-    if (!nameInStem(name, tape.id) || taken.has(portableFilenameIdentity(name)) || catalogFilenameOwner(current, name, tape.id)) continue
+    if (taken.has(portableFilenameIdentity(name)) || catalogFilenameOwner(current, name, tape.id)) continue
     if (name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag\d*$/.test(name)) {
-      await unlink(join(libraryDir, name)).catch(() => {})
+      await discardFile(join(libraryDir, name), false)
     } else {
       await discardFile(join(libraryDir, name), toTrash)
     }
@@ -909,7 +919,8 @@ async function fileExists(p: string): Promise<boolean> {
   try {
     await stat(p)
     return true
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     return false
   }
 }

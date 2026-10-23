@@ -38,7 +38,7 @@ export async function loadLayout(): Promise<void> {
     }
     return
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.layout, true)
+  const found = parseStoreJson(text, FORMAT_VERSIONS.layout)
   if (found.status === 'newer') {
     // Intact, from a newer build: used as defaults and never written this session.
     newerOnDisk = true

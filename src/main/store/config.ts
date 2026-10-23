@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { FORMAT_VERSION_KEY, FORMAT_VERSIONS, NewerFormatError, parseStoreJson, V0_1_0_FORMAT } from '@main/io/format-version'
+import { FORMAT_VERSION_KEY, FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { LibraryFolderSettingError, StoreAccessError } from '@main/io/store-access'
 import { maskCredentials, maskYtdlpArgs } from '@main/io/mask'
 import { tokenizeArgs } from '@main/services/ytdlp-args'
@@ -68,16 +68,6 @@ export type ConfigLoadResult =
   | { status: 'missing' }
   | { status: 'recovered'; quarantinePath: string }
 
-/** Read an explicit path, preserving corrupt bytes and resolving absent sets. A
- *  file in a newer format throws {@link NewerFormatError} and is left untouched;
- *  one that cannot be read throws {@link StoreAccessError} and is left in place. */
-export async function readSettingsFile(
-  configPath: string,
-): Promise<{ settings: Settings } | { quarantinePath: string } | null> {
-  const found = await readSettingsStore(configPath)
-  return found !== null && 'sets' in found ? { settings: effectiveSettings(found.sets) } : found
-}
-
 async function readSettingsStore(
   configPath: string,
 ): Promise<{ sets: SettingsSets; kept: Record<string, unknown>; rejected: string[] } | { quarantinePath: string } | null> {
@@ -88,37 +78,16 @@ async function readSettingsStore(
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw new StoreAccessError(configPath, err)
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.config, true)
+  const found = parseStoreJson(text, FORMAT_VERSIONS.config)
   if (found.status === 'newer') throw new NewerFormatError(configPath, found.version, FORMAT_VERSIONS.config)
   if (found.status === 'unreadable') {
     log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(found.error) })
     return { quarantinePath: await quarantineFile(configPath) }
   }
-  const value = found.version === V0_1_0_FORMAT ? configFromV010(found.value) : found.value
-  const { [FORMAT_VERSION_KEY]: _marker, ...written } = value
+  const { [FORMAT_VERSION_KEY]: _marker, ...written } = found.value
   const read = readSettingsSets(written)
   for (const key of read.rejected) log.warn('settings set invalid; kept in the file, using the built-in', { key })
   return read
-}
-
-/** The v0.1.0 AI built-ins: a copy equal to them was the built-in written out,
- *  not the user's choice. */
-const V010_AI = { baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' }
-
-/**
- * v0.1.0 wrote every setting, built-ins included. Its `ai` set became the
- * `openai.*` sets, carried over where the user had changed them; `volume` is now
- * layout state and `binaries` now dependency facts, so both are dropped. Every
- * other set is the user's copy (config-sets-conventions, Adoption).
- */
-function configFromV010(value: Record<string, unknown>): Record<string, unknown> {
-  const { ai, volume: _volume, binaries: _binaries, ...rest } = value
-  if (ai === null || typeof ai !== 'object' || Array.isArray(ai)) return ai === undefined ? rest : { ...rest, ai }
-  const { baseUrl, model } = ai as Record<string, unknown>
-  const converted: Record<string, unknown> = { ...rest }
-  if (baseUrl !== V010_AI.baseUrl) converted['openai.endpoint'] = baseUrl
-  if (model !== V010_AI.model) converted['openai.slug'] = model
-  return converted
 }
 
 export function getSettings(): Settings {

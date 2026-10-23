@@ -66,14 +66,13 @@ describe('classifyImport', () => {
     })
   })
 
-  it('rejects a sidecar in a newer format, saying so, and one whose marker is not a version', () => {
+  it('refuses newer formats and validates unrecognized markers by current shape', () => {
     const tapebox = { sourceUrl: 'http://x', mediaFilename: 'v.mp4' }
     const newer = classifyImport({ formatVersion: 2, tapebox })
     expect(newer).toMatchObject({ status: 'reject', reason: { key: 'import.sidecarNewer' } })
     if (newer.status === 'reject') expect(inEnglish(newer.reason)).toMatch(/newer version of TapeBox/)
     expect(classifyImport({ formatVersion: 'one', tapebox })).toMatchObject({
-      status: 'reject',
-      reason: { key: 'import.sidecarInvalidJson' },
+      status: 'accept',
     })
   })
 

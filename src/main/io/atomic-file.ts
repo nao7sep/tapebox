@@ -285,7 +285,7 @@ function defaultTempPath(destPath: string): string {
  * requires write access to the handle; the producer has already closed its own
  * writer, so fsync here flushes the inode's dirty pages to disk.
  */
-async function fsyncFile(path: string): Promise<void> {
+export async function fsyncFile(path: string): Promise<void> {
   const handle = await open(path, 'r+')
   try {
     await handle.sync()

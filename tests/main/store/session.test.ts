@@ -1,8 +1,9 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadSessionFile } from '@main/store/session'
+import { SessionSchema } from '@shared/domain'
 
 // Real filesystem (a temp dir) so the read → parse → quarantine path is exercised
 // end to end. loadSessionFile is the path-taking seam the app singleton wraps.
@@ -16,7 +17,7 @@ function catalogTape(id: string, sourceUrl: string, filename: string): Record<st
     chapterCount: 0, probedAtUtc: '2026-01-01T00:00:00.000Z', filename,
     sidecarFilename: `${id}.json`, thumbnailFilename: null, downloadStartedAtUtc: null,
     downloadedAtUtc: '2026-01-01T00:00:00.000Z', name: null, renamedAtUtc: null,
-    archivedAtUtc: null, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, lastError: null,
+    archivedAtUtc: null, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
 }
 
@@ -75,7 +76,7 @@ describe('loadSessionFile', () => {
     expect(files.some((f) => f.startsWith('catalog-') && f.endsWith('.invalid'))).toBe(true)
   })
 
-  it('sets aside a legacy catalog whose tape bundles contain portable filename aliases', async () => {
+  it('sets aside a catalog whose tape bundles contain portable filename aliases', async () => {
     const path = join(dir, 'catalog.json')
     const legacy = JSON.stringify({
       formatVersion: 1,
@@ -94,5 +95,26 @@ describe('loadSessionFile', () => {
     const quarantined = (await readdir(dir)).find((name) => name.endsWith('.invalid'))
     expect(quarantined).toBeDefined()
     expect(await readFile(join(dir, quarantined!), 'utf8')).toBe(legacy)
+  })
+})
+
+
+describe('catalog worker decoding', () => {
+  it('reads a valid current unmarked shape without main-thread JSON parsing or catalog validation', async () => {
+    const path = join(dir, 'catalog.json')
+    const tape = catalogTape('abc1234567', 'https://example.test/video', 'video.mp4')
+    const bytes = JSON.stringify({ tapes: [tape], boxes: [] })
+    await writeFile(path, bytes)
+    const parse = vi.spyOn(JSON, 'parse').mockImplementation(() => { throw new Error('main-thread JSON parse') })
+    const validate = vi.spyOn(SessionSchema, 'safeParse').mockImplementation(() => { throw new Error('main-thread catalog validation') })
+    try {
+      const loaded = await loadSessionFile(path)
+      expect(loaded.result).toEqual({ status: 'loaded', tapeCount: 1 })
+      expect(loaded.session.tapes).toEqual([tape])
+    } finally {
+      parse.mockRestore()
+      validate.mockRestore()
+    }
+    expect(await readFile(path, 'utf8')).toBe(bytes)
   })
 })
