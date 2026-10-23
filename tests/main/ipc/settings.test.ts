@@ -294,6 +294,19 @@ describe('settings:update — relocation refused while library writes run', () =
 })
 
 describe('settings:update — library move control', () => {
+  it.each(['disk', 'rollback'])('keeps a %s failure distinct from a concurrent Stop request', async (kind) => {
+    relocateLibrary.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(kind === 'disk'
+        ? new Error('disk failed')
+        : new AggregateError([options.signal.reason, new Error('rollback failed')], 'rollback incomplete')), { once: true })
+    }))
+    const pending = update({ libraryDir: '/data/new-library' })
+    await vi.waitFor(() => expect(relocateLibrary).toHaveBeenCalledOnce())
+    await handlers.get('settings:cancelLibraryMove')!(undefined)
+    await expect(pending).rejects.toMatchObject({ code: 'internal' })
+    expect(updateSettings).not.toHaveBeenCalled()
+  })
+
   it('holds off library writes while the move runs, and Stop Move aborts it without committing', async () => {
     const seenDuringMove: Array<{ moving: boolean; claim: boolean }> = []
     relocateLibrary.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => {
@@ -301,7 +314,7 @@ describe('settings:update — library move control', () => {
       seenDuringMove.push({ moving: isLibraryMoving(), claim: claim !== null })
       claim?.()
       return new Promise((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => reject(new Error('relocation aborted')), { once: true })
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
       })
     })
 
@@ -309,7 +322,7 @@ describe('settings:update — library move control', () => {
     await vi.waitFor(() => expect(relocateLibrary).toHaveBeenCalledTimes(1))
     await handlers.get('settings:cancelLibraryMove')!(undefined)
 
-    await expect(pending).rejects.toThrow('The operation could not be completed.')
+    await expect(pending).rejects.toMatchObject({ code: 'cancelled' })
     expect(seenDuringMove).toEqual([{ moving: true, claim: false }])
     expect(isLibraryMoving()).toBe(false)
     // The queue catches up once the move has settled.

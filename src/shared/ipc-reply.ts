@@ -23,9 +23,10 @@ import { createTranslator, type Message } from './i18n/translate'
  * - invalid: the request's own input is unusable; the copy says what to fix.
  * - conflict: something on disk is in the way; the copy names it.
  * - provider: a third-party service answered with an error; the copy carries its reason.
+ * - cancelled: the operation stopped and its required cleanup settled.
  * - internal: anything else. No copy crosses; the renderer shows its operation's own.
  */
-export type IpcFailureCode = 'refused' | 'invalid' | 'conflict' | 'provider' | 'internal'
+export type IpcFailureCode = 'refused' | 'invalid' | 'conflict' | 'provider' | 'cancelled' | 'internal'
 
 export type IpcFailure =
   | { code: Exclude<IpcFailureCode, 'internal'>; userMessage: Message }

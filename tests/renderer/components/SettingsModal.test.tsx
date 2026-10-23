@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { IpcCallError } from '@shared/ipc-reply'
+import { message, createTranslator } from '@shared/i18n/translate'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -81,6 +83,27 @@ afterEach(() => {
 })
 
 describe('SettingsModal', () => {
+  it.each(['cancelled', 'internal'] as const)('shows the confirmed %s outcome after Stop Move', async (code) => {
+    let rejectSave!: (error: unknown) => void
+    const pending = new Promise((_resolve, reject) => { rejectSave = reject })
+    stubMain(() => pending)
+    await render()
+    await type(document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!, '/new-library')
+    await click('Save')
+    await act(async () => {
+      const progress = events.get('settings:libraryMoveProgress') as unknown as (value: unknown) => void
+      progress({ filesDone: 0, filesTotal: 1, bytesDone: 0, bytesTotal: 100 })
+    })
+    await click('Stop Move')
+    await act(async () => rejectSave(new IpcCallError('settings:update', code === 'cancelled'
+      ? { code, userMessage: message('settings.moveStopped') }
+      : { code, userMessage: null })))
+    const t = createTranslator('en')
+    expect(document.body.textContent).toContain(t.text(message(code === 'cancelled' ? 'settings.moveStopped' : 'settings.saveFailed')))
+    if (code === 'internal') expect(document.body.textContent).not.toContain(t.text(message('settings.moveStopped')))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('keeps an unsaved box name when opening is cancelled and asks before discarding it', async () => {
     useBoxesStore.setState({ editingId: 'box1', draftName: 'Unsaved box', boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))

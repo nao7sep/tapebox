@@ -1,3 +1,4 @@
+import { IpcCallError } from '@shared/ipc-reply'
 import { useWindowCloseGuard } from '@renderer/lib/windowClose'
 import { useEffect, useState, useRef, useId, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
@@ -75,8 +76,6 @@ export function SettingsModal({ onClose }: Props) {
   const [confirmMove, setConfirmMove] = useState<{ count: number } | null>(null)
   const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null)
   const [stoppingMove, setStoppingMove] = useState(false)
-  // Read by save() after the rejected update, so a requested stop is not reported as a failure.
-  const stopRequested = useRef(false)
   // The last listed row the slug model field held, so passing through ids with no row keeps the thinking choice.
   const lastSlugRow = useRef<SupportedModel | undefined>(undefined)
   const [loadError, setLoadError] = useState<Message | null>(null)
@@ -108,7 +107,6 @@ export function SettingsModal({ onClose }: Props) {
   useEffect(() => ipcOn('settings:libraryMoveProgress', setMoveProgress), [])
 
   function stopMove() {
-    stopRequested.current = true
     setStoppingMove(true)
     void ipcInvoke('settings:cancelLibraryMove')
       .catch((err) => log.debug('library move cancel failed', { error: describeError(err) }))
@@ -193,7 +191,6 @@ export function SettingsModal({ onClose }: Props) {
     setError(null)
     setMoveProgress(null)
     setStoppingMove(false)
-    stopRequested.current = false
     let settingsSaved = false
     try {
       const patch: SettingsSets = changedSettings(pickEditable(original), pickEditable(draft))
@@ -214,7 +211,7 @@ export function SettingsModal({ onClose }: Props) {
       }
       onClose()
     } catch (err) {
-      if (stopRequested.current && !settingsSaved) {
+      if (err instanceof IpcCallError && err.code === 'cancelled' && !settingsSaved) {
         setError(message('settings.moveStopped'))
         return
       }

@@ -130,7 +130,18 @@ export function registerSettingsHandlers(): void {
     // after. Stop (settings:cancelLibraryMove) or quitting aborts the copy and rolls
     // back every file already published.
     const apply = () => runCancellable(
-      (signal) => applySettingsPatch(normalized, signal, libraryAction),
+      async (signal) => {
+        try {
+          return await applySettingsPatch(normalized, signal, libraryAction)
+        } catch (error) {
+          // Only the actual abort reason proves a clean stop. A filesystem or
+          // rollback failure remains a failure even if Stop was also requested.
+          if (signal.aborted && error === signal.reason) {
+            throw new UserFacingError('cancelled', message('settings.moveStopped'))
+          }
+          throw error
+        }
+      },
       LIBRARY_MOVE_KEY,
     )
     if (!movesLibrary(normalized)) return withLibraryClaim(apply)
