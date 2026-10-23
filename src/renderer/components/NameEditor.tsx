@@ -1,3 +1,4 @@
+import { useSidecarPreview } from '@renderer/lib/useSidecarPreview'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -57,40 +58,19 @@ export function NameEditor({
   const requestRef = useRef<string | null>(null)
   const [error, setError] = useState<Message | null>(null)
   const t = useI18n()
-  const [descriptionLoad, setDescriptionLoad] = useState<{
-    tapeId: string; description: string | null; error: Message | null
-  }>({ tapeId: tape.id, description: null, error: null })
-  const [descriptionAttempt, setDescriptionAttempt] = useState(0)
-  const description = descriptionLoad.tapeId === tape.id ? descriptionLoad.description : null
-  const descriptionError = descriptionLoad.tapeId === tape.id ? descriptionLoad.error : null
+  const preview = useSidecarPreview(tape)
+  const rawDescription = preview.data?.['description']
+  const description = typeof rawDescription === 'string' && rawDescription.trim() ? rawDescription : null
+  const descriptionError = preview.status === 'failed' ? preview.userMessage ?? message('nameEditor.descriptionLoadFailed') : null
   const [include, setInclude] = useState<Record<SourceField, boolean>>({
     title: !!tape.title,
     uploader: !!tape.uploader,
     description: false,
   })
 
-  // Pull the description from the sidecar so its row can preview the value and tick
-  // on once available (title/uploader are already on the tape, so they tick on
-  // synchronously above).
   useEffect(() => {
-    let cancelled = false
-    setDescriptionLoad({ tapeId: tape.id, description: null, error: null })
-    ipcInvoke('library:getSidecar', { tapeId: tape.id })
-      .then((s) => {
-        if (cancelled) return
-        const d = (s as Record<string, unknown>)['description']
-        const desc = typeof d === 'string' && d.trim() ? d : null
-        setDescriptionLoad({ tapeId: tape.id, description: desc, error: null })
-        if (desc) setInclude((prev) => ({ ...prev, description: true }))
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setDescriptionLoad({ tapeId: tape.id, description: null,
-          error: presentFailure(err, message('nameEditor.descriptionLoadFailed'), 'sidecar preview load failed'),
-        })
-      })
-    return () => { cancelled = true }
-  }, [tape.id, descriptionAttempt])
+    if (description) setInclude((previous) => ({ ...previous, description: true }))
+  }, [description, preview.key])
 
   const sourceValue: Record<SourceField, string | null> = {
     title: tape.title,
@@ -100,7 +80,7 @@ export function NameEditor({
   // A replacement tape starts with its own source choices and abandons any
   // suggestion for the old tape; late responses cannot replace this draft.
   useEffect(() => {
-    setInclude({ title: !!tape.title, uploader: !!tape.uploader, description: false })
+    setInclude({ title: !!tape.title, uploader: !!tape.uploader, description: !!description })
     setGenerating(false)
     setError(null)
     return () => {
@@ -176,7 +156,7 @@ export function NameEditor({
       {descriptionError && (
         <InlineError>
           <p>{t.text(descriptionError)}</p>
-          <Button variant="secondary" size="sm" className="mt-2" disabled={busy} onClick={() => setDescriptionAttempt((attempt) => attempt + 1)}>
+          <Button variant="secondary" size="sm" className="mt-2" disabled={busy} onClick={preview.retry}>
             {t.t('common.tryAgain')}
           </Button>
         </InlineError>

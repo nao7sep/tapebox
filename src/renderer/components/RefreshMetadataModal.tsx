@@ -1,3 +1,4 @@
+import { useSidecarPreview } from '@renderer/lib/useSidecarPreview'
 import { useEffect, useRef, useState } from 'react'
 import type { Tape } from '@shared/domain'
 import type { RefreshedMetadata } from '@shared/ipc-contract'
@@ -33,8 +34,7 @@ type DescriptionLoad = { tapeId: string } & (
  */
 export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: () => void }) {
   const [candidate, setCandidate] = useState<RefreshedMetadata | null>(null)
-  const [descriptionLoad, setDescriptionLoad] = useState<DescriptionLoad>({ tapeId: tape.id, status: 'loading' })
-  const [loadAttempt, setLoadAttempt] = useState(0)
+  const preview = useSidecarPreview(tape)
   const [error, setError] = useState<Message | null>(null)
   const [probing, setProbing] = useState(false)
   const t = useI18n()
@@ -58,29 +58,14 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   }, [tape.id])
 
   const probed = candidate !== null
-  const currentLoad: DescriptionLoad = descriptionLoad.tapeId === tape.id
-    ? descriptionLoad
-    : { tapeId: tape.id, status: 'loading' }
+  const rawDescription = preview.data?.['description']
+  const currentLoad: DescriptionLoad = preview.status === 'loaded'
+    ? { tapeId: tape.id, status: 'loaded', description: typeof rawDescription === 'string' ? nv(rawDescription) : null }
+    : preview.status === 'failed'
+      ? { tapeId: tape.id, status: 'failed', error: preview.userMessage ?? message('refresh.loadFailed') }
+      : { tapeId: tape.id, status: 'loading' }
   const descriptionKnown = currentLoad.status === 'loaded'
   const currentDescription = currentLoad.status === 'loaded' ? currentLoad.description : null
-
-  // The current description lives in the sidecar, not on the tape — load it so the
-  // "Current" column can show it (and decide whether the row appears at all).
-  useEffect(() => {
-    let cancelled = false
-    setDescriptionLoad({ tapeId: tape.id, status: 'loading' })
-    ipcInvoke('library:getSidecar', { tapeId: tape.id })
-      .then((s) => {
-        if (cancelled) return
-        const d = (s as Record<string, unknown>)['description']
-        setDescriptionLoad({ tapeId: tape.id, status: 'loaded', description: typeof d === 'string' ? nv(d) : null })
-      })
-      .catch((err) => {
-        const failure = presentFailure(err, message('refresh.loadFailed'), 'saved metadata description load failed')
-        if (!cancelled) setDescriptionLoad({ tapeId: tape.id, status: 'failed', error: failure })
-      })
-    return () => { cancelled = true }
-  }, [tape.id, loadAttempt])
 
   async function checkSource() {
     if (probeRequest.current) return
@@ -188,7 +173,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
               probing={probing}
               currentLoad={currentLoad}
               next={newDescription}
-              onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
+              onRetry={preview.retry}
               retryDisabled={applying}
             />
           )}

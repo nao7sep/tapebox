@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { z } from 'zod'
 import type { Tape, TapeState } from '@shared/domain'
 import type { SidecarRaw } from '@shared/ipc-contract'
+import { SidecarPreviewContext, useSidecarPreview } from '@renderer/lib/useSidecarPreview'
 import { LAYOUT_BOUNDS, detailPaneWidth } from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
@@ -32,8 +33,7 @@ import { RefreshMetadataModal } from './RefreshMetadataModal'
 import { ExportModal } from './ExportModal'
 import { ResizeHandle } from './ResizeHandle'
 import { MoveToBoxButton } from './MoveToBoxButton'
-import { CaptionedPanel } from './ui'
-import { presentFailure } from '@renderer/lib/presentFailure'
+import { Button, CaptionedPanel } from './ui'
 import { downloadFailurePresentation } from '@renderer/lib/downloadFailure'
 import { runTapeAction } from '@renderer/lib/runTapeAction'
 import { TapeActionResults } from './TapeActionResults'
@@ -69,8 +69,9 @@ export function DetailPane({
   onRequestRemove: (tape: Tape) => void
   onScanPage: (url: string) => void
 }) {
-  const [sidecar, setSidecar] = useState<SidecarRaw | null>(null)
-  const [sidecarError, setSidecarError] = useState<Message | null>(null)
+  const preview = useSidecarPreview(tape)
+  const sidecar = preview.data
+  const sidecarError = preview.status === 'failed' ? preview.userMessage ?? message('detail.sidecarLoadFailed') : null
   const [playbackError, setPlaybackError] = useState<Message | null>(null)
   // Each editor is opened for one tape and stays bound to it: should the pane be
   // handed another tape while one is open, that editor closes rather than carry
@@ -90,7 +91,6 @@ export function DetailPane({
   const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
   const logEntries = useDownloadLogStore((s) => s.entries[tape.id]) ?? NO_ENTRIES
   const logTrimmed = useDownloadLogStore((s) => s.trimmed[tape.id] === true)
-  const collectionRevision = useMediaStore((s) => s.collectionRevision)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
   // Persisted chaptersPaneWidth is the drag-set INTENT; the displayed width is
@@ -108,17 +108,6 @@ export function DetailPane({
       max: LAYOUT_BOUNDS.chaptersPaneWidth.max,
     },
   )
-
-  useEffect(() => {
-    setSidecar(null)
-    setSidecarError(null)
-    if (tape.state !== 'downloaded') return
-    let cancelled = false
-    ipcInvoke('library:getSidecar', { tapeId: tape.id })
-      .then((s) => { if (!cancelled) setSidecar(s) })
-      .catch((err) => { if (!cancelled) setSidecarError(presentFailure(err, message('detail.sidecarLoadFailed'), 'tape sidecar load failed')) })
-    return () => { cancelled = true }
-  }, [tape.id, tape.state, tape.sidecarFilename, tape.probedAtUtc, collectionRevision])
 
   // Memoized so its reference is stable across renders: useCurrentChapter keys an
   // effect on it, and the chapter set only changes when the sidecar does.
@@ -342,6 +331,7 @@ export function DetailPane({
   }, [])
 
   return (
+    <SidecarPreviewContext.Provider value={preview}>
     <div ref={detailRowRef} className="flex h-full">
       {/* Left column: title, video (or status panel), and action buttons stacked
           full height. Chapters sit alongside as a sibling so they run the whole
@@ -600,6 +590,7 @@ export function DetailPane({
               className="min-h-0 flex-1 overflow-y-auto"
             >
               <p className="text-xs text-danger-fg">{t.text(sidecarError)}</p>
+              <Button variant="secondary" size="sm" onClick={preview.retry}>{t.t('common.tryAgain')}</Button>
             </PassiveScrollRegion>
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -623,6 +614,7 @@ export function DetailPane({
         <ExportModal key={tape.id} tape={tape} videoRef={videoRef} onClose={() => setExportFor(null)} />
       )}
     </div>
+    </SidecarPreviewContext.Provider>
   )
 }
 

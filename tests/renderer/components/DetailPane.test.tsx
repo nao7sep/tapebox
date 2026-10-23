@@ -265,3 +265,39 @@ it('logs tape identity and masks the local media credential in browser diagnosti
   expect(JSON.stringify(logError.mock.calls)).not.toContain('SECRET_MEDIA_TOKEN')
   expect(logError.mock.calls[0]![1]).not.toHaveProperty('source')
 })
+
+describe('shared sidecar preview', () => {
+  const reads = () => ipcInvoke.mock.calls.filter(([channel]) => channel === 'library:getSidecar')
+
+  it('shares the settled preview with Rename and invalidates it on accepted metadata and collection changes', async () => {
+    ipcInvoke.mockImplementation(async (channel: string) => channel === 'library:getSidecar' ? { description: 'Saved description' } : undefined)
+    await render()
+    await click('Rename')
+    expect(reads()).toHaveLength(1)
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain('Saved description')
+    const descriptionToggle = [...document.querySelectorAll<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')].at(-1)!
+    expect(descriptionToggle.checked).toBe(true)
+    await click('Cancel', true)
+    await render({ ...tape, probedAtUtc: '2026-10-24T00:00:00Z' })
+    expect(reads()).toHaveLength(2)
+    await act(async () => useMediaStore.setState({ collectionRevision: 1 }))
+    expect(reads()).toHaveLength(3)
+  })
+
+  it('shares an unfinished read and lets a tool retry the shared failure once', async () => {
+    const pending = deferred<Record<string, unknown>>()
+    ipcInvoke.mockImplementation((channel: string) => channel === 'library:getSidecar' ? pending.promise : Promise.resolve())
+    await render()
+    await click('Rename')
+    expect(reads()).toHaveLength(1)
+    await act(async () => pending.reject(new Error('unavailable')))
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog.querySelector('[role="alert"]')).not.toBeNull()
+    ipcInvoke.mockImplementation(async (channel: string) => channel === 'library:getSidecar' ? { description: 'Recovered preview' } : undefined)
+    await click('Try again', true)
+    expect(reads()).toHaveLength(2)
+    expect(dialog.textContent).toContain('Recovered preview')
+    expect(dialog.querySelector('[role="alert"]')).toBeNull()
+    expect(host.querySelector('[aria-label="Chapter load error"]')).toBeNull()
+  })
+})

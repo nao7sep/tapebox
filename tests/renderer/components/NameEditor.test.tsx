@@ -17,7 +17,7 @@ let host: HTMLDivElement
 const onChange = vi.fn()
 const onGeneratingChange = vi.fn()
 
-const tape = { id: 't1', title: 'A Title', uploader: null } as Tape
+const tape = { id: 't1', title: 'A Title', uploader: null, state: 'downloaded', sidecarFilename: 't1.json' } as Tape
 
 beforeEach(async () => {
   ipcInvoke.mockReset()
