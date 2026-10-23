@@ -158,12 +158,11 @@ export function DetailPane({
   // A new source clears any prior playback error (and a fresh load may succeed).
   useEffect(() => { setPlaybackError(null) }, [mediaUrl])
 
-  useEnforcedMute(videoRef, !playSound, mediaUrl)
-
   // Key on whether the <video> is actually mounted (an in-progress rename or a
   // playback error replaces it), so the wake-lock and volume hooks re-attach when
   // the player reappears rather than going silent until the next tape.
   const playerSrc = tape.state === 'downloaded' && !renaming && !playbackError ? mediaUrl : null
+  useEnforcedMute(videoRef, !playSound, playerSrc)
   useKeepAwake(videoRef, playerSrc)
   useVolume(videoRef, playerSrc)
 
@@ -501,7 +500,7 @@ export function DetailPane({
                   posterSrc={posterSrc}
                   autoPlay={resumeRef.current?.play ?? autoplay}
                   muted={!playSound}
-                  onError={(v) => setPlaybackError(describeMediaError(v))}
+                  onError={(v) => setPlaybackError(describeMediaError(v, tape))}
                   onLoadedMetadata={restorePlayback}
                 />
               ) : null}
@@ -788,7 +787,7 @@ function ActionButton({
 }
 
 /** Present stable playback copy while preserving browser diagnostics in the log. */
-function describeMediaError(v: HTMLVideoElement): Message {
+function describeMediaError(v: HTMLVideoElement, tape: Pick<Tape, 'id' | 'filename'>): Message {
   const labels: Record<number, MessageKey> = {
     1: 'detail.mediaAborted',
     2: 'detail.mediaNetwork',
@@ -796,10 +795,13 @@ function describeMediaError(v: HTMLVideoElement): Message {
     4: 'detail.mediaUnsupported',
   }
   const err = v.error
+  const token = useMediaStore.getState().baseUrl?.split('/').at(-1)
+  const browserMessage = err?.message ?? null
   log.error('media playback failed', {
     code: err?.code ?? null,
-    message: err?.message ?? null,
-    source: v.currentSrc || v.src,
+    browserMessage: token ? browserMessage?.replaceAll(token, '[REDACTED]') ?? null : browserMessage,
+    tapeId: tape.id,
+    mediaFilename: tape.filename,
     networkState: v.networkState,
     readyState: v.readyState,
   })

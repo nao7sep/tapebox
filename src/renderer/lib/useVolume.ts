@@ -49,8 +49,19 @@ export function useVolume(videoRef: RefObject<HTMLVideoElement | null>, srcKey: 
         void patchLayout({ volume: v }, true)
       }, PERSIST_DELAY_MS)
     }
+    // Store settlement (including rollback) must reach the surviving element.
+    // Update the comparison value first so its volumechange cannot echo a write.
+    const unsubscribe = useLayoutStore.subscribe((state) => {
+      const volume = state.layout?.volume
+      if (volume == null || volume === video.volume) return
+      clearTimeout(timer)
+      timer = undefined
+      last = volume
+      video.volume = volume
+    })
     video.addEventListener('volumechange', onVolumeChange)
     return () => {
+      unsubscribe()
       video.removeEventListener('volumechange', onVolumeChange)
       // Flush a still-pending debounced write so the final level reaches disk.
       if (timer) {

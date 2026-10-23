@@ -10,9 +10,9 @@ import { useLayoutStore } from '@renderer/store/layout'
 import { useSettingsStore } from '@renderer/store/settings'
 import { releaseVideo } from '@renderer/lib/video'
 
-const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
+const { ipcInvoke, logError } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), logError: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
-vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
+vi.mock('@renderer/ipc/log', () => ({ log: { error: logError, debug: vi.fn(), warn: vi.fn() } }))
 
 import { DetailPane } from '@renderer/components/DetailPane'
 
@@ -213,4 +213,55 @@ describe('selected-tape keyboard ownership', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(play).toHaveBeenCalledOnce()
   })
+})
+
+
+it('reasserts enforced mute on the replacement player after a failed rename', async () => {
+  useSettingsStore.setState({ settings: { ...defaultSettings(), playSound: false } })
+  await render()
+  const old = video()
+  ipcInvoke.mockImplementation(async (channel: string) => {
+    if (channel === 'library:rename') throw new Error('rename failed')
+    return {}
+  })
+  await click('Rename')
+  await click('Rename', true)
+  const restored = video()
+  expect(restored).not.toBe(old)
+  await act(async () => { restored.muted = false; restored.dispatchEvent(new Event('volumechange')) })
+  expect(restored.muted).toBe(true)
+})
+
+it('applies rejected volume rollback to the live element without an echo save', async () => {
+  vi.useFakeTimers()
+  try {
+    await render()
+    const current = video()
+    ipcInvoke.mockImplementation(async (channel: string) => {
+      if (channel === 'layout:update') throw new Error('volume rejected')
+      return {}
+    })
+    await act(async () => { current.volume = 0.2; current.dispatchEvent(new Event('volumechange')) })
+    expect(useLayoutStore.getState().layout?.volume).toBe(0.2)
+    await act(async () => vi.advanceTimersByTimeAsync(500))
+    expect(useLayoutStore.getState().layout?.volume).toBe(0.7)
+    expect(current.volume).toBe(0.7)
+    await act(async () => current.dispatchEvent(new Event('volumechange')))
+    await act(async () => vi.advanceTimersByTimeAsync(500))
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'layout:update')).toHaveLength(1)
+  } finally { vi.useRealTimers() }
+})
+
+it('logs tape identity and masks the local media credential in browser diagnostics', async () => {
+  useMediaStore.setState({ baseUrl: 'http://localhost/SECRET_MEDIA_TOKEN' })
+  await render()
+  const current = video()
+  Object.defineProperty(current, 'error', { value: { code: 3, message: `Decode failed for ${current.src}` } })
+  logError.mockClear()
+  await act(async () => current.dispatchEvent(new Event('error')))
+  expect(logError).toHaveBeenCalledWith('media playback failed', expect.objectContaining({
+    tapeId: tape.id, mediaFilename: 'old.mp4', browserMessage: expect.stringContaining('[REDACTED]'),
+  }))
+  expect(JSON.stringify(logError.mock.calls)).not.toContain('SECRET_MEDIA_TOKEN')
+  expect(logError.mock.calls[0]![1]).not.toHaveProperty('source')
 })
