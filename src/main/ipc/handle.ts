@@ -7,6 +7,7 @@ import { log } from '@main/io/logger'
 import { UserFacingError } from '@main/user-facing-error'
 import { withLibraryClaim } from '@main/library-writes'
 import { ipcRequestSchemas } from './schemas'
+import { isTrustedApplicationSender } from './trust'
 
 // These catalog-only mutations also hold the collection claim across awaits.
 // Filesystem writers already claim at their owning operation; reads stay usable.
@@ -19,7 +20,8 @@ const CATALOG_WRITERS = new Set<keyof IpcCalls>([
 /**
  * Typed wrapper around ipcMain.handle.
  *
- * Every request is first validated against the channel's runtime schema (see
+ * Only registered application documents may call. Each authorized request is
+ * validated against the channel's runtime schema (see
  * schemas.ts) — the type-only IpcCalls contract checks the wire shape at compile
  * time, but this is the boundary where a malformed payload from a compromised
  * renderer is actually rejected before it reaches privileged code. A rejected
@@ -38,6 +40,10 @@ export function handle<K extends keyof IpcCalls>(
   // outputs exactly IpcCalls[K]['req'].
   const schema = ipcRequestSchemas[channel] as z.ZodType<IpcCalls[K]['req']>
   ipcMain.handle(channel, async (_event, rawReq: unknown): Promise<IpcReply<IpcCalls[K]['res']>> => {
+    if (!isTrustedApplicationSender(_event)) {
+      log.warn('ipc sender rejected', { channel })
+      return { ok: false, failure: { code: 'internal', userMessage: null } }
+    }
     let req: IpcCalls[K]['req']
     try {
       req = schema.parse(rawReq)

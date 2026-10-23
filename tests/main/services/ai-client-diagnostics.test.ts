@@ -1,3 +1,4 @@
+vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import OpenAI from 'openai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/settings'

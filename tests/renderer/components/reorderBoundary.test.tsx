@@ -1,3 +1,4 @@
+vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 // @vitest-environment jsdom
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

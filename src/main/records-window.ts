@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url'
+import { trustApplicationDocument } from './ipc/trust'
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from '@shared/layout'
@@ -76,12 +78,10 @@ export async function openRecordsWindow(): Promise<void> {
   // The page never navigates or opens a window of its own; a same-page reload
   // (a development full reload) is left alone.
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  window.webContents.on('will-navigate', (event, url) => {
-    if (url !== window.webContents.getURL()) event.preventDefault()
-  })
   window.once('ready-to-show', () => window.show())
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
+  trustApplicationDocument(window.webContents, devUrl ? `${devUrl}/records.html` : pathToFileURL(join(import.meta.dirname, '../renderer/records.html')).href)
   try {
     if (devUrl) await window.loadURL(`${devUrl}/records.html`)
     else await window.loadFile(join(import.meta.dirname, '../renderer/records.html'))

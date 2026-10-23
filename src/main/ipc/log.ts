@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { isTrustedApplicationSender } from './trust'
 import { parseLogMessage } from '@shared/log'
 import { LOG_DEBUG_ENABLED_CHANNEL, LOG_WRITE_CHANNEL } from '@shared/log-channels'
 import { getDebugEnabled, log } from '@main/io/logger'
@@ -17,12 +18,13 @@ import { getDebugEnabled, log } from '@main/io/logger'
  */
 export function registerLogHandlers(): void {
   ipcMain.on(LOG_WRITE_CHANNEL, (_event, payload: unknown) => {
+    if (!isTrustedApplicationSender(_event)) return
     const msg = parseLogMessage(payload)
     if (!msg) return
     log[msg.level](msg.message, { ...msg.fields, source: 'renderer' })
   })
 
   ipcMain.on(LOG_DEBUG_ENABLED_CHANNEL, (event) => {
-    event.returnValue = getDebugEnabled()
+    event.returnValue = isTrustedApplicationSender(event) ? getDebugEnabled() : false
   })
 }

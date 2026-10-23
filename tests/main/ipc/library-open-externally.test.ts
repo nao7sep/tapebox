@@ -1,3 +1,4 @@
+vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

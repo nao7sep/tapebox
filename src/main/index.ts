@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url'
+import { trustApplicationDocument } from './ipc/trust'
 import { app, BrowserWindow, powerMonitor, shell } from 'electron'
 import { join } from 'node:path'
 import { ensureDirs, paths, sweepAbandonedStaging } from './paths.js'
@@ -114,6 +116,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
+  trustApplicationDocument(win.webContents, devUrl ? devUrl : pathToFileURL(join(import.meta.dirname, '../renderer/index.html')).href)
   try {
     if (devUrl) await win.loadURL(devUrl)
     else await win.loadFile(join(import.meta.dirname, '../renderer/index.html'))

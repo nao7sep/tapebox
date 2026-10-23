@@ -24,7 +24,7 @@ const exitCalled = vi.hoisted(() => ({ resolve: () => {} }))
 
 vi.mock('electron', () => {
   class BrowserWindow {
-    readonly webContents = { setWindowOpenHandler: vi.fn() }
+    readonly webContents = { on: vi.fn(), setWindowOpenHandler: vi.fn() }
     readonly focus = vi.fn()
     constructor() {
       order.push('window')

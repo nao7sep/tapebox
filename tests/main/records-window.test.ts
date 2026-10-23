@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url'
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RECORDS_WINDOW_MIN_HEIGHT, RECORDS_WINDOW_MIN_WIDTH } from '@shared/layout'
@@ -167,7 +168,7 @@ describe('Records window', () => {
     contents.emit('will-navigate', away, 'https://example.com')
     expect(away.preventDefault).toHaveBeenCalled()
     const reload = { preventDefault: vi.fn() }
-    contents.emit('will-navigate', reload, 'file:///records.html')
+    contents.emit('will-navigate', reload, pathToFileURL(windows()[0]!.loadFile.mock.calls[0]![0]).href)
     expect(reload.preventDefault).not.toHaveBeenCalled()
   })
 })

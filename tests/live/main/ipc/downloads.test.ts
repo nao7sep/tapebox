@@ -1,3 +1,4 @@
+vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 // The download path end to end, driven through the real IPC handlers the
 // renderer calls, with nothing substituted but Electron's window glue: the

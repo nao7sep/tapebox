@@ -1,3 +1,4 @@
+import { isTrustedApplicationSender } from './ipc/trust'
 import { app, ipcMain, systemPreferences } from 'electron'
 import { readFileSync } from 'node:fs'
 import {
@@ -136,6 +137,6 @@ export function languageEnvironment(): LanguageEnvironment {
 /** A window's preload reads the environment synchronously, before it draws. */
 export function registerLanguageHandlers(): void {
   ipcMain.on(LANGUAGE_ENVIRONMENT_CHANNEL, (event) => {
-    event.returnValue = languageEnvironment()
+    event.returnValue = isTrustedApplicationSender(event) ? languageEnvironment() : null
   })
 }

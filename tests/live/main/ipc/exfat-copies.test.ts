@@ -1,3 +1,4 @@
+vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 // Every path that copies a file onto another volume, driven through the real IPC
 // handlers onto a real exFAT disk image: import from it, export to it, move the

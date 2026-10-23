@@ -1,3 +1,6 @@
+import { EventEmitter } from 'node:events'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
+import { trustApplicationDocument } from '@main/ipc/trust'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +17,13 @@ import { UserFacingError } from '@main/user-facing-error'
 import { IpcCallError, unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { message } from '@shared/i18n/translate'
 
+function trustedEvent(): IpcMainInvokeEvent {
+  const senderFrame = { url: 'file:///app/index.html' }
+  const sender = Object.assign(new EventEmitter(), { isDestroyed: () => false, mainFrame: senderFrame }) as unknown as WebContents
+  trustApplicationDocument(sender, senderFrame.url)
+  return { sender, senderFrame } as IpcMainInvokeEvent
+}
+
 type Callback = (_event: unknown, request: unknown) => Promise<IpcReply<unknown>>
 
 function registered(): Callback {
@@ -23,13 +33,22 @@ function registered(): Callback {
 describe('IPC failure boundary', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('refuses an unregistered document before invoking privileged code', async () => {
+    const handler = vi.fn(async () => 'set' as const)
+    handle('settings:apiKeyState', handler)
+    const event = trustedEvent()
+    Object.assign(event.senderFrame!, { url: 'https://foreign.example/' })
+    expect(await registered()(event, undefined)).toMatchObject({ ok: false })
+    expect(handler).not.toHaveBeenCalled()
+  })
+
   it('logs hostile diagnostics but replies with no copy of its own', async () => {
     const hostile = new Error('EACCES Error invoking remote method IPC /private/tmp/HOSTILE-SENTINEL', {
       cause: new TypeError('root cause'),
     })
     handle('settings:get', async () => { throw hostile })
 
-    const reply = await registered()({}, undefined)
+    const reply = await registered()(trustedEvent(), undefined)
     expect(reply).toEqual({ ok: false, failure: { code: 'internal', userMessage: null } })
     expect(JSON.stringify(reply)).not.toContain('HOSTILE-SENTINEL')
     expect(() => unwrapIpcReply('settings:get', reply)).toThrow('The operation could not be completed.')
@@ -45,7 +64,7 @@ describe('IPC failure boundary', () => {
       })
     })
 
-    const reply = await registered()({}, undefined)
+    const reply = await registered()(trustedEvent(), undefined)
     expect(reply).toEqual({ ok: false, failure: { code: 'refused', userMessage: { key: 'errors.libraryMoveBlocked' } } })
     expect(JSON.stringify(reply)).not.toContain('HOSTILE-SENTINEL')
     expect(JSON.stringify(mocks.logWarn.mock.calls)).toContain('HOSTILE-SENTINEL')
@@ -58,13 +77,13 @@ describe('IPC failure boundary', () => {
 
   it('wraps a successful result as its value', async () => {
     handle('settings:apiKeyState', async () => 'set' as const)
-    const reply = await registered()({}, undefined)
+    const reply = await registered()(trustedEvent(), undefined)
     expect(unwrapIpcReply('settings:apiKeyState', reply)).toBe('set')
   })
 
   it('replies internal for a request that fails its schema', async () => {
     handle('downloads:add', async () => [])
-    const reply = await registered()({}, { url: 42 })
+    const reply = await registered()(trustedEvent(), { url: 42 })
     expect(reply).toEqual({ ok: false, failure: { code: 'internal', userMessage: null } })
     expect(mocks.logError).toHaveBeenCalledWith('ipc request rejected', expect.anything())
   })
