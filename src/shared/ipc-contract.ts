@@ -46,7 +46,8 @@ export type IpcCalls = {
   // returns the candidate WITHOUT writing; the user reviews current-vs-new and,
   // only if they accept, applyMetadata persists exactly what they saw. Both live
   // behind an explicit button — never an automatic path.
-  'library:probeMetadata':   { req: { tapeId: string };                              res: RefreshedMetadata }
+  'library:probeMetadata':   { req: { tapeId: string; requestId: string };                              res: RefreshedMetadata }
+  'library:cancelMetadataProbe': { req: { requestId: string }; res: void }
   'library:applyMetadata':   { req: { tapeId: string; metadata: RefreshedMetadata }; res: Tape }
 
   // ── Tape ordering (manual position within a list) ────────────────────────

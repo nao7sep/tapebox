@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
-import { cancelAllWork, resumeWork } from '@main/work-registry'
+import { cancelAllWork, hasRunningWork, resumeWork } from '@main/work-registry'
 
 // Re-probing a tape and accepting the result. The catalog fields and the
 // sidecar's description are written for real; only the network-facing services
@@ -98,12 +98,36 @@ afterEach(async () => {
 })
 
 describe('re-probing a tape', () => {
+  it('cancels only the named probe and retains ownership through physical settlement', async () => {
+    state.tapes = [makeTape({ id: 'Reprobethi' })]
+    const signals: AbortSignal[] = []
+    const finishes: Array<() => void> = []
+    probe.mockImplementation((_id, _url, signal: AbortSignal) => {
+      signals.push(signal)
+      return new Promise((resolve) => finishes.push(() => resolve({ kind: 'video', title: null, uploader: null, description: null })))
+    })
+    const first = invoke('library:probeMetadata', { tapeId: 'Reprobethi', requestId: 'closed-editor' })
+    const second = invoke('library:probeMetadata', { tapeId: 'Reprobethi', requestId: 'reopened-editor' })
+    await invoke('library:cancelMetadataProbe', { requestId: 'closed-editor' })
+    expect(signals[0]!.aborted).toBe(true)
+    expect(signals[1]!.aborted).toBe(false)
+    expect(hasRunningWork()).toBe(true)
+    finishes[1]!()
+    await second
+    expect(hasRunningWork()).toBe(true)
+    finishes[0]!()
+    await first
+    expect(hasRunningWork()).toBe(false)
+    await invoke('library:cancelMetadataProbe', { requestId: 'closed-editor' })
+    expect(signals[1]!.aborted).toBe(false)
+  })
+
   it('reports what the source says now, writing nothing', async () => {
     const tape = makeTape({ id: 'Reprobethi' })
     state.tapes = [tape]
     probe.mockResolvedValue({ kind: 'video', title: 'Fresh', uploader: 'Channel', description: 'Fresh notes', sourceId: 'x' })
 
-    await expect(invoke('library:probeMetadata', { tapeId: 'Reprobethi' })).resolves.toEqual({
+    await expect(invoke('library:probeMetadata', { tapeId: 'Reprobethi', requestId: 'probe-test' })).resolves.toEqual({
       title: 'Fresh',
       uploader: 'Channel',
       description: 'Fresh notes',
@@ -118,13 +142,13 @@ describe('re-probing a tape', () => {
     state.tapes = [makeTape({ id: 'Nowaplayli' })]
     probe.mockResolvedValue({ kind: 'page', entries: [] })
 
-    await expect(invoke('library:probeMetadata', { tapeId: 'Nowaplayli' })).rejects.toThrow(
+    await expect(invoke('library:probeMetadata', { tapeId: 'Nowaplayli', requestId: 'probe-test' })).rejects.toThrow(
       'This link now points to a list of videos, not a single video.',
     )
   })
 
   it('refuses for a tape the catalog does not hold', async () => {
-    await expect(invoke('library:probeMetadata', { tapeId: 'not-a-tape' })).rejects.toThrow(
+    await expect(invoke('library:probeMetadata', { tapeId: 'not-a-tape', requestId: 'probe-test' })).rejects.toThrow(
       'The operation could not be completed.',
     )
     expect(probe).not.toHaveBeenCalled()

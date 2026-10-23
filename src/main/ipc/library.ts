@@ -28,7 +28,7 @@ import { catalogFilenameOwner, catalogStemOwner, claimManagedFiles, managedFilen
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
-import { runCancellable } from '@main/work-registry'
+import { cancelWork, runCancellable } from '@main/work-registry'
 import { withLibraryWrite } from '@main/library-writes'
 import { librarySourceIndex, type SourceRef } from '@shared/source-identity'
 import { downloadThumbnail, probe } from '@main/services/ytdlp'
@@ -158,14 +158,14 @@ export function registerLibraryHandlers(): void {
   handle('library:rename', ({ tapeId, name }) => runCancellable((signal) =>
     withLibraryWrite((libraryDir) => withTapeWrite(tapeId, () => renameTape(tapeId, name, libraryDir, signal)))))
 
-  handle('library:probeMetadata', async ({ tapeId }) => {
+  handle('library:probeMetadata', async ({ tapeId, requestId }) => {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
 
     // One deliberate re-probe, read-only. The probe's own idle watchdog guards a
     // stall, and it is never auto-retried — re-hammering the source is the user's
     // call. Nothing is written here: the caller reviews this and decides.
-    const result = await runCancellable((signal) => probe(tape.id, tape.sourceUrl, signal))
+    const result = await runCancellable((signal) => probe(tape.id, tape.sourceUrl, signal), `metadata-probe:${requestId}`)
     const probedAtUtc = nowUtcIso()
     if (result.kind === 'page') {
       throw new UserFacingError('refused', message('errors.linkNowList'))
@@ -176,6 +176,10 @@ export function registerLibraryHandlers(): void {
       description: result.description,
       probedAtUtc,
     }
+  })
+
+  handle('library:cancelMetadataProbe', async ({ requestId }) => {
+    cancelWork(`metadata-probe:${requestId}`)
   })
 
   // Writes the sidecar and may save a poster into the library, so it holds a write claim.

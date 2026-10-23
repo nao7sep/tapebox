@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Tape } from '@shared/domain'
 import type { RefreshedMetadata } from '@shared/ipc-contract'
 import { ipcInvoke } from '@renderer/ipc/client'
+import { log } from '@renderer/ipc/log'
+import { describeError } from '@shared/error'
 import { Modal } from './Modal'
 import { Button, InlineError, Spinner } from './ui'
 import { CheckIcon } from './Icon'
@@ -38,6 +40,23 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   const t = useI18n()
   const [applying, setApplying] = useState(false)
 
+  const probeRequest = useRef<string | null>(null)
+  function cancelProbe() {
+    const requestId = probeRequest.current
+    probeRequest.current = null
+    if (requestId) void ipcInvoke('library:cancelMetadataProbe', { requestId })
+      .catch((err) => log.debug('metadata probe cancellation failed', { error: describeError(err) }))
+  }
+  function close() {
+    cancelProbe()
+    onClose()
+  }
+  useEffect(() => {
+    setCandidate(null)
+    setProbing(false)
+    return cancelProbe
+  }, [tape.id])
+
   const probed = candidate !== null
   const currentLoad: DescriptionLoad = descriptionLoad.tapeId === tape.id
     ? descriptionLoad
@@ -64,14 +83,21 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   }, [tape.id, loadAttempt])
 
   async function checkSource() {
+    if (probeRequest.current) return
+    const requestId = crypto.randomUUID()
+    probeRequest.current = requestId
     setProbing(true)
     setError(null)
     try {
-      setCandidate(await ipcInvoke('library:probeMetadata', { tapeId: tape.id }))
+      const result = await ipcInvoke('library:probeMetadata', { tapeId: tape.id, requestId })
+      if (probeRequest.current === requestId) setCandidate(result)
     } catch (err) {
-      setError(presentFailure(err, message('refresh.checkFailed'), 'metadata source check failed'))
+      if (probeRequest.current === requestId) setError(presentFailure(err, message('refresh.checkFailed'), 'metadata source check failed'))
     } finally {
-      setProbing(false)
+      if (probeRequest.current === requestId) {
+        probeRequest.current = null
+        setProbing(false)
+      }
     }
   }
 
@@ -112,7 +138,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   // in-flight check, so the check buttons just disable — no redundant button spinner.
   const footer = (
     <>
-      <Button variant="ghost" onClick={onClose} disabled={applying}>{t.t('common.cancel')}</Button>
+      <Button variant="ghost" onClick={close} disabled={applying}>{t.t('common.cancel')}</Button>
       {probed && (
         <Button variant="secondary" onClick={() => void checkSource()} disabled={probing || applying}>
           {t.t('refresh.checkAgain')}
@@ -131,7 +157,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   )
 
   return (
-    <Modal title={t.t('refresh.title')} onClose={onClose} size="4xl" footer={footer} closeDisabled={applying}>
+    <Modal title={t.t('refresh.title')} onClose={close} size="4xl" footer={footer} closeDisabled={applying}>
       <div className="space-y-3">
         {probed && descriptionKnown && !dirty ? (
           // A successful check that found nothing new. Said warmly, with a check

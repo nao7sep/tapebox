@@ -123,3 +123,41 @@ describe('RefreshMetadataModal saved description comparison', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+
+it('cancels a closing editor probe and ignores its late reply after reopening', async () => {
+  let finish!: (value: RefreshedMetadata) => void
+  ipcInvoke.mockImplementation((channel) => {
+    if (channel === 'library:getSidecar') return Promise.resolve({})
+    if (channel === 'library:probeMetadata') return new Promise((resolve) => { finish = resolve })
+    return Promise.resolve()
+  })
+  await mount()
+  await act(async () => button('Check source').click())
+  const firstRequest = ipcInvoke.mock.calls.find(([channel]) => channel === 'library:probeMetadata')![1]
+  await act(async () => root!.unmount())
+  root = null
+  expect(ipcInvoke).toHaveBeenCalledWith('library:cancelMetadataProbe', { requestId: firstRequest.requestId })
+  await mount()
+  await act(async () => { finish(candidate) })
+  expect(host.textContent).not.toContain(candidate.title)
+  expect(button('Check source').disabled).toBe(false)
+  await act(async () => button('Check source').click())
+  const probes = ipcInvoke.mock.calls.filter(([channel]) => channel === 'library:probeMetadata')
+  expect(probes[1]![1].requestId).not.toBe(firstRequest.requestId)
+})
+
+it('still closes when the cancellation request fails', async () => {
+  const onClose = vi.fn()
+  ipcInvoke.mockImplementation((channel) => {
+    if (channel === 'library:getSidecar') return Promise.resolve({})
+    if (channel === 'library:probeMetadata') return new Promise(() => {})
+    if (channel === 'library:cancelMetadataProbe') return Promise.reject(new Error('closed IPC'))
+    return Promise.resolve()
+  })
+  await mount(onClose)
+  await act(async () => button('Check source').click())
+  await act(async () => button('Cancel').click())
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'library:cancelMetadataProbe')).toHaveLength(1)
+})

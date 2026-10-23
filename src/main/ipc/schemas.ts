@@ -64,7 +64,8 @@ export const ipcRequestSchemas = {
   'library:getSidecar':    z.object({ tapeId: z.string() }),
   'library:reveal':        z.object({ tapeId: z.string() }),
   'library:playExternal':  z.object({ tapeId: z.string() }),
-  'library:probeMetadata': z.object({ tapeId: z.string() }),
+  'library:probeMetadata': z.object({ tapeId: z.string(), requestId: z.string().min(1) }),
+  'library:cancelMetadataProbe': z.object({ requestId: z.string().min(1) }),
   'library:applyMetadata': z.object({ tapeId: z.string(), metadata: RefreshedMetadataSchema }),
 
   // ── Tape ordering ──────────────────────────────────────────────────────────
