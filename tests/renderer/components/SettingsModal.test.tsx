@@ -12,8 +12,11 @@ vi.hoisted(() => {
     value: { languageEnvironment: { preference: 'en', systemLanguage: 'ja', systemLocale: 'ja-JP' } },
   })
 })
-const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
-vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
+const { ipcInvoke, events } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), events: new Map<string, () => void>() }))
+vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: (channel: string, listener: () => void) => {
+  events.set(channel, listener)
+  return () => events.delete(channel)
+} }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
 
 import { SettingsModal } from '@renderer/components/SettingsModal'
@@ -448,4 +451,43 @@ describe('SettingsModal', () => {
     expect(onClose).toHaveBeenCalledOnce()
     expect(useToastStore.getState().toasts).toEqual([expect.objectContaining({ text: warning, kind: 'error' })])
   })
+})
+
+
+it('refreshes the System label while a fixed theme stays selected', async () => {
+  saved.theme = 'light'
+  stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+  await render()
+  expect(host.textContent).toContain('System (Dark)')
+  const original = ipcInvoke.getMockImplementation()!
+  ipcInvoke.mockImplementation((channel: string, request: unknown) =>
+    channel === 'settings:systemAppearance' ? Promise.resolve('light') : original(channel, request))
+  await act(async () => events.get('settings:systemAppearanceChanged')!())
+  expect(host.textContent).toContain('System (Light)')
+  expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'settings:update')).toBe(false)
+  ipcInvoke.mockImplementation((channel: string, request: unknown) =>
+    channel === 'settings:systemAppearance' ? Promise.reject(new Error('unavailable')) : original(channel, request))
+  await act(async () => window.dispatchEvent(new Event('focus')))
+  expect(host.textContent).toContain('System (—)')
+})
+
+
+it('coalesces OS appearance notifications during a pending read', async () => {
+  let finish!: (value: string) => void
+  const held = new Promise<string>(resolve => { finish = resolve })
+  stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+  const original = ipcInvoke.getMockImplementation()!
+  let reads = 0
+  ipcInvoke.mockImplementation((channel: string, request: unknown) => {
+    if (channel !== 'settings:systemAppearance') return original(channel, request)
+    return ++reads === 1 ? held : Promise.resolve('light')
+  })
+  await render()
+  await act(async () => {
+    for (let i = 0; i < 5; i++) events.get('settings:systemAppearanceChanged')!()
+  })
+  expect(reads).toBe(1)
+  await act(async () => finish('dark'))
+  expect(reads).toBe(2)
+  expect(host.textContent).toContain('System (Light)')
 })

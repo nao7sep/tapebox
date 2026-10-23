@@ -46,6 +46,8 @@ export type CaptureResult = {
 }
 
 export type CaptureOptions = SpawnOptions & {
+  /** Hide a Windows console for a background-only query. */
+  windowsHide?: boolean
   /** If false, resolve with non-zero exit codes instead of throwing. */
   reject?: boolean
 }
@@ -294,6 +296,7 @@ export async function execCapture(
   const child = own(spawn(command, args as string[], {
     env: opts.env,
     cwd: opts.cwd,
+    ...(opts.windowsHide === undefined ? {} : { windowsHide: opts.windowsHide }),
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
   }) as StreamingChild)

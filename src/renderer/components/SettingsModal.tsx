@@ -504,18 +504,41 @@ function GeneralTab({
   // Every System choice names what it resolves to now, in the interface language;
   // a zone name appears as is (localization-conventions, Translation). Main knows
   // the OS appearance even while Light or Dark is forced.
-  const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>('light')
+  const [systemTheme, setSystemTheme] = useState<'light' | 'dark' | null>(null)
   useEffect(() => {
     let current = true
-    void ipcInvoke('settings:systemAppearance').then(
-      (appearance) => { if (current) setSystemTheme(appearance) },
-      (error: unknown) => log.debug('system appearance read failed', { error: describeError(error) }),
-    )
-    return () => { current = false }
+    let running = false
+    let pending = false
+    async function refresh() {
+      pending = true
+      if (running) return
+      running = true
+      try {
+        while (current && pending) {
+          pending = false
+          try {
+            const appearance = await ipcInvoke('settings:systemAppearance')
+            if (current) setSystemTheme(appearance)
+          } catch (error) {
+            if (current) setSystemTheme(null)
+            log.debug('system appearance read failed', { error: describeError(error) })
+          }
+        }
+      } finally { running = false }
+    }
+    const request = () => { void refresh() }
+    const unsubscribe = ipcOn('settings:systemAppearanceChanged', request)
+    window.addEventListener('focus', request)
+    request()
+    return () => {
+      current = false
+      unsubscribe()
+      window.removeEventListener('focus', request)
+    }
   }, [])
   const systemChoice = (value: string) => t.t('settings.systemChoice', { value })
   const themeLabel = (value: ThemePreference) =>
-    value === 'system' ? systemChoice(t.t(THEME_LABELS[systemTheme])) : t.t(THEME_LABELS[value])
+    value === 'system' ? systemChoice(systemTheme === null ? '—' : t.t(THEME_LABELS[systemTheme])) : t.t(THEME_LABELS[value])
 
   async function chooseExportDir() {
     setPickerError(null)
