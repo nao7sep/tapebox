@@ -102,9 +102,9 @@ export const paths = {
   // the single-instance lock. Electron owns its contents.
   get electronProfile() { return join(storageRoot(), 'electron') },
   get apiKeys()       { return join(storageRoot(), 'api-keys.json') },
-  // The write-through data-backup store (data-backup conventions): one add-only
-  // SQLite FILE directly under the root, resolved through the same TAPEBOX_DATA_DIR-
-  // aware resolver as everything else. Its `-wal`/`-shm` sidecars sit beside it.
+  // The write-through data-backup store keeps the latest snapshot per path per
+  // launch, skipping a launch's first snapshot if it matches the latest kept one.
+  // Its SQLite file uses the TAPEBOX_DATA_DIR-aware root; `-wal`/`-shm` sit beside it.
   get backupsDb()     { return join(storageRoot(), 'backups.sqlite3') },
   // Log lines and AI calls (data-lifecycle conventions); see io/records.ts.
   get records()       { return join(storageRoot(), 'records.sqlite3') },

@@ -158,9 +158,9 @@ export function SettingsModal({ onClose }: Props) {
     return useTapesStore.getState().tapes.filter((t) => t.filename).length
   }
 
-  // The library folder effectively changed when its resolved value differs — blank
-  // means the default folder, so blank↔default and any custom↔custom edit count,
-  // while a whitespace-only tweak that still resolves to the same folder does not.
+  // Compare effective strings: blank or whitespace-only values mean the default
+  // folder; nonblank values are compared as entered. Switching between blank and
+  // the explicit default is unchanged.
   function libraryDirChanged(): boolean {
     if (!original || !draft) return false
     const effective = (v: string) => v.trim() ? v : defaultLibraryDir

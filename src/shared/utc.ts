@@ -4,8 +4,7 @@
  * Filename timestamp formats follow the playbook:
  *   - 'yyyymmdd-hhmmss-utc' for UTC moments
  *   - 'yyyymmdd-hhmmss-fff-utc' for UTC moments needing millisecond precision
- *     (a filename that can otherwise collide within the same second — a session
- *     log, a backup archive stamp, a quarantine name)
+ *     (for filenames that need to distinguish moments within the same second)
  *   - 'yyyymmdd-utc' for UTC date-only
  * All lowercase; hyphens are the only separator.
  *
@@ -22,6 +21,7 @@ export function nowUtcIso(): string {
   return new Date().toISOString()
 }
 
+/** Format a UTC moment to seconds as `yyyymmdd-hhmmss-utc`. */
 export function utcTimestampForFilename(date: Date = new Date()): string {
   const y = date.getUTCFullYear()
   const m = pad(date.getUTCMonth() + 1, 2)

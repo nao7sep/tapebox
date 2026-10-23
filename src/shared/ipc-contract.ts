@@ -20,7 +20,7 @@ import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery
  */
 export type IpcCalls = {
   // ── Downloads (URL → Tape lifecycle) ─────────────────────────────────────
-  'downloads:add':         { req: { url: string };                  res: Tape[] }   // 1+ Tapes: a page may expand into many
+  'downloads:add':         { req: { url: string };                  res: Tape[] }   // One queued tape; page expansion uses scan and bulk add
   'downloads:addBulk':     { req: { urls: string[] };               res: Tape[] }
   'downloads:cancel':      { req: { tapeId: string };               res: void }
   'downloads:retry':       { req: { tapeId: string };               res: void }
@@ -69,9 +69,9 @@ export type IpcCalls = {
   'boxes:place':   { req: { tapeIds: string[]; boxId: string | null }; res: void }
 
   // ── Export (copy out of the library) ─────────────────────────────────────
-  // Copy a tape's files verbatim — media, thumbnail (if any), and sidecar — into
-  // destinationDir, renaming all three to `name`. No transcoding: TapeBox is a
-  // wrapper, not a converter. When deleteFromApp is true the tape is removed from
+  // Copy media and thumbnail (if any) byte-for-byte into destinationDir under
+  // `name`. Rewrite the sidecar with credentials masked and the exported bundle's
+  // names, then reserialize it. No transcoding. When deleteFromApp is true the tape is removed from
   // the library afterwards (its files trashed/deleted per the trash setting), so
   // export doubles as "move out". Returns the paths written.
   'export:files': {

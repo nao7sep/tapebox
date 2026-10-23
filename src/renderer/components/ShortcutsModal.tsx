@@ -5,9 +5,9 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 import { SHORTCUT_GROUPS, shortcutKeys } from '@renderer/lib/shortcuts'
 
 export function ShortcutsModal({ onClose }: { onClose: () => void }) {
-  // Both Cmd and Ctrl trigger the modifier shortcuts everywhere; show the word for
-  // this platform ("Cmd" on macOS, "Ctrl" elsewhere) — the ⌘ glyph reads as noise
-  // to anyone who isn't on a Mac.
+  // Both Cmd and Ctrl trigger modifier shortcuts, except Ctrl while typing on
+  // macOS belongs to the text system. Show this platform's word ("Cmd" on macOS,
+  // "Ctrl" elsewhere) — the ⌘ glyph reads as noise to anyone who isn't on a Mac.
   const mod = useModifierWord()
   const t = useI18n()
 

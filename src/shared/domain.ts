@@ -176,7 +176,7 @@ export function trackedFilenameIdentities(tapes: readonly Tape[]): Set<string> {
 }
 
 /**
- * Session file shape — persisted in ~/.tapebox/catalog.json.
+ * Session file shape — persisted in <library>/.tapebox/catalog.json.
  * Live progress data (percent, speed, ETA) is intentionally absent;
  * it's rebuilt by the queue at runtime.
  */

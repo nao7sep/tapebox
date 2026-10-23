@@ -46,7 +46,7 @@ export type CaptureResult = {
 }
 
 export type CaptureOptions = SpawnOptions & {
-  /** If true, resolve with non-zero exit codes instead of throwing. */
+  /** If false, resolve with non-zero exit codes instead of throwing. */
   reject?: boolean
 }
 

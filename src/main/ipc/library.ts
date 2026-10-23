@@ -606,9 +606,10 @@ async function withImportFileClaim(path: string, work: () => Promise<void>): Pro
 }
 
 /**
- * Rename a downloaded tape's media, sidecar and thumbnail together. New names are
- * published with hard links (a copy only where the library cannot link), so the
- * cost does not grow with the video. Quitting aborts it before the catalog commit,
+ * Rename a downloaded tape's media, sidecar and thumbnail together. Media and
+ * thumbnail names are published with hard links where supported, whose cost does
+ * not grow with the video; the copy fallback scales with file size. The sidecar
+ * is rewritten with the new names. Quitting aborts it before the catalog commit,
  * which rolls the new names back.
  */
 async function renameTape(tapeId: string, name: string, libraryDir: string, signal: AbortSignal): Promise<Tape> {

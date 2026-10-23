@@ -21,8 +21,8 @@ export const FORMAT_VERSIONS = {
   sidecar: 1,
   /** `bin/<name>.json`, the installed version beside a managed binary. */
   binaryVersion: 1,
-  /** backups.sqlite3. 2: one row per file per launch (`session_id`); format 1 rows
-   *  keep a null launch. */
+  /** backups.sqlite3. One row per file per launch (`session_id`); existing stores
+   *  must have this exact format version. */
   backups: 2,
   /** records.sqlite3 */
   records: 1,

@@ -50,7 +50,7 @@ describe('loadSettings recovery', () => {
     expect(result).toMatchObject({ status: 'recovered', quarantinePath: expect.stringContaining('.invalid') })
     expect(config.getSettings()).toEqual(defaultSettings())
 
-    // The corrupt bytes survive as a `config-<yyyymmdd-hhmmss-fff-utc>.invalid` neighbour; the original
+    // The corrupt bytes survive as a `config-<yyyymmdd-hhmmss-utc>.invalid` neighbour; the original
     // is moved.
     const files = await readdir(dir)
     const quarantined = files.find((f) => f.startsWith('config-') && f.endsWith('.invalid'))

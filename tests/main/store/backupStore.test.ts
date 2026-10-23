@@ -6,8 +6,8 @@
  *    non-UTF-8 byte, with a correct SHA-256, a correct byte_size, the FULL absolute path, and an
  *    ISO-8601-ms `written_at_utc` in the serialized form (`2026-07-06T04:05:12.345Z`) — asserted to be
  *    that shape and explicitly NOT the `yyyymmdd-hhmmss-fff-utc` filename stamp.
- *  - dedup: an unchanged re-save of the same path writes no new row; a changed save writes one; a revert
- *    to earlier content writes one (it differs from the immediately-preceding row).
+ *  - snapshots: each path keeps at most one row per launch, updated to the latest save, including reverts.
+ *    A launch's first save adds no row if its content matches the newest snapshot kept for that path.
  *  - best-effort: an injected insert failure never throws out of record, logs exactly one warn, and
  *    leaves prior rows untouched (the save it follows is unaffected). An unopenable store logs one warn
  *    and disables recording for the session (no repeat warn per save).
