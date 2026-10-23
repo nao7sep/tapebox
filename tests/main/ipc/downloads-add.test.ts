@@ -113,3 +113,32 @@ describe('retrying a download', () => {
   })
 
 })
+
+describe('adding a paged scan selection', () => {
+  it('delivers bounded batches in source order and skips live duplicates', async () => {
+    const { addScannedUrls } = await import('@main/ipc/downloads')
+    const { emit } = await import('@main/ipc/events')
+    async function* urls() {
+      for (let i = 0; i < 600; i++) yield `https://example.test/${i}`
+      yield 'https://example.test/0'
+      yield 'file:///private'
+    }
+    expect(await addScannedUrls(urls(), 602, new AbortController().signal)).toBe(600)
+    expect(tapes.map(t => t.order)).toEqual(Array.from({ length: 600 }, (_, i) => i))
+    expect(tapes.at(-1)?.sourceUrl).toBe('https://example.test/599')
+    expect(vi.mocked(emit).mock.calls.filter(([channel]) => channel === 'tapes:added').map(([, entries]) => (entries as Tape[]).length)).toEqual([256, 256, 88])
+  })
+  it('keeps and announces accepted rows when cancellation interrupts the next page', async () => {
+    const { addScannedUrls } = await import('@main/ipc/downloads')
+    const { emit } = await import('@main/ipc/events')
+    const ctl = new AbortController()
+    async function* urls() {
+      yield 'https://example.test/first'
+      ctl.abort(new Error('stopped'))
+      yield 'https://example.test/second'
+    }
+    await expect(addScannedUrls(urls(), 2, ctl.signal)).rejects.toThrow('stopped')
+    expect(tapes).toHaveLength(1)
+    expect(emit).toHaveBeenCalledWith('tapes:added', [tapes[0]])
+  })
+})

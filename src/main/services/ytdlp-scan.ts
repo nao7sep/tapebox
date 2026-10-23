@@ -1,8 +1,8 @@
+import { StringDecoder } from 'node:string_decoder'
 import { binaryPath } from '@main/paths'
 import { log } from '@main/io/logger'
 import { YTDLP_PROBE_IDLE_TIMEOUT_MS } from '@main/io/network'
 import {
-  makeLineBuffer,
   spawnStreaming,
   SubprocessError,
   waitForExit,
@@ -68,7 +68,7 @@ const SCAN_COMMAND = 'yt-dlp enum'
 export function startScan(
   url: string,
   scanId: string,
-  onEntry: (entry: ScannedEntry) => void,
+  onEntry: (entry: ScannedEntry) => void | Promise<void>,
 ): ScanHandle {
   const ctl = new AbortController()
   const args = [...resolveYtdlpArgs(url), '--flat-playlist', '-j', '--no-warnings', url]
@@ -81,43 +81,52 @@ export function startScan(
 
   let total = 0
 
-  const lineBuffer = makeLineBuffer((line) => {
+  let stopped = false
+  // Register exit ownership before consuming output: a fast child can close
+  // while its final entry is still being written to the result store.
+  const exited = waitForExit(child, { reject: false, command: SCAN_COMMAND })
+    .then(code => ({ code, error: null }), error => ({ code: null, error }))
+  const consume = async (line: string): Promise<void> => {
     if (!line) return
-    try {
-      const info = JSON.parse(line) as Record<string, unknown>
-      const entry = parseEntry(info)
-      if (entry) {
-        onEntry(entry)
-        total++
-      }
-    } catch (err) {
-      // A non-JSON line in yt-dlp's streamed output is an expected branch (it
-      // interleaves status lines), not an incident — a systemic failure still
-      // surfaces as an empty scan result. Developer-only detail; keep it cheap on
-      // this per-line path by logging the message only (no stack materialization).
+    let info: Record<string, unknown>
+    try { info = JSON.parse(line) as Record<string, unknown> }
+    catch (err) {
       log.debug('scan: bad json line', { reason: errorMessage(err) })
+      return
     }
-  })
-
-  child.stdout.on('data', lineBuffer.feed)
-
+    if (!info || typeof info !== 'object' || Array.isArray(info)) return
+    const entry = parseEntry(info)
+    if (entry) { await onEntry(entry); total++ }
+  }
   const complete = (async (): Promise<ScanOutcome> => {
-    let exitCode: number | null = null
     let failure: unknown = null
+    const decoder = new StringDecoder('utf8')
+    let remainder = ''
     try {
-      exitCode = await waitForExit(child, { reject: false, command: SCAN_COMMAND })
-    } catch (err) {
-      failure = err
-    } finally {
-      lineBuffer.flush()
-      run.record()
+      // Await each stored entry before reading again. The pipe supplies physical
+      // backpressure even when the window is hidden or has stopped polling.
+      for await (const chunk of child.stdout) {
+        remainder += decoder.write(chunk as Buffer)
+        let end: number
+        while ((end = remainder.indexOf('\n')) !== -1) {
+          const line = remainder.slice(0, end).replace(/\r$/, '')
+          remainder = remainder.slice(end + 1)
+          await consume(line)
+        }
+      }
+      remainder += decoder.end()
+      if (remainder) await consume(remainder.replace(/\r$/, ''))
+    } catch (error) {
+      failure = error
+      ctl.abort(error)
     }
-    // yt-dlp states why it failed on stderr.
-    return scanOutcome({ aborted: ctl.signal.aborted, failure, exitCode, totalCount: total, stderr: run.stderr(), outputKey: run.outputKey })
+    const ended = await exited
+    run.record()
+    return scanOutcome({ aborted: stopped, failure: failure ?? ended.error, exitCode: ended.code, totalCount: total, stderr: run.stderr(), outputKey: run.outputKey })
   })()
 
   return {
-    cancel: (by) => ctl.abort(new StopRequest(by)),
+    cancel: (by) => { stopped = true; ctl.abort(new StopRequest(by)) },
     complete,
   }
 }

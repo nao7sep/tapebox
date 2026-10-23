@@ -17,7 +17,7 @@ import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import { resumeBinaryOperations, shutdownBinaryOperations } from './ipc/binaries.js'
 import * as queue from './queue/manager.js'
-import { cancelAllScans, hasActiveScans, resumeScans } from './ipc/scan.js'
+import { cancelAllScans, closeScanStores, hasActiveScans, resumeScans } from './ipc/scan.js'
 import { cancelAllWork, hasRunningWork, resumeWork } from './work-registry.js'
 import { startMediaServer, stopMediaServer } from './media-server.js'
 import { releaseWakeLock } from './power-blocker.js'
@@ -280,7 +280,7 @@ const quit = createQuit({
   close: async () => {
     // Every cancellable quit question has settled; playback is now ending.
     releaseWakeLock()
-    await Promise.all([stopMediaServer(), closeBackupStore()])
+    await Promise.all([stopMediaServer(), closeBackupStore(), closeScanStores()])
     await closeRecordsReader()
     await closeRecords()
   },

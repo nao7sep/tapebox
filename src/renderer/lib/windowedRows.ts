@@ -12,7 +12,7 @@ export function visibleRowRange(
 ): { start: number; end: number } {
   const viewport = viewportHeight > 0 ? viewportHeight : rowHeight * 20
   const first = Math.floor(Math.max(0, scrollTop) / rowHeight)
-  const start = Math.max(0, first - overscan)
+  const start = Math.min(count, Math.max(0, first - overscan))
   const end = Math.min(count, first + Math.ceil(viewport / rowHeight) + overscan)
   return { start, end: Math.max(start, end) }
 }

@@ -120,6 +120,10 @@ export const ipcRequestSchemas = {
   // ── Scan ──────────────────────────────────────────────────────────────────
   'scan:start':            z.object({ url: z.string() }),
   'scan:cancel':           z.object({ sessionId: z.string() }),
+  'scan:release': z.object({ sessionId: z.string() }),
+  'scan:page': z.object({ sessionId: z.string(), search: z.string(), start: z.number().int().nonnegative() }),
+  'scan:select': z.object({ sessionId: z.string(), selected: z.boolean(), sourceUrl: z.string().optional(), search: z.string().optional() }),
+  'scan:add': z.object({ sessionId: z.string() }),
 
   // ── Native dialogs ──────────────────────────────────────────────────────
   'dialog:pickDirectory':  z.object({ title: z.string().optional(), initialDirectory: z.string().optional() }),
