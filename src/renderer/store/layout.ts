@@ -17,7 +17,7 @@ export type LayoutField = Exclude<keyof Layout, 'recordsListWidth'>
 
 type LayoutState = {
   layout: Layout | null
-  persistedLayout: Layout | null
+  appliedLayout: Layout | null
   writeErrors: Partial<Record<LayoutField, Message>>
   setHydratedLayout: (layout: Layout) => void
   setWriteError: (field: LayoutField, message: Message | null) => void
@@ -25,9 +25,9 @@ type LayoutState = {
 
 export const useLayoutStore = create<LayoutState>((set) => ({
   layout: null,
-  persistedLayout: null,
+  appliedLayout: null,
   writeErrors: {},
-  setHydratedLayout: (layout) => set({ layout, persistedLayout: layout, writeErrors: {} }),
+  setHydratedLayout: (layout) => set({ layout, appliedLayout: layout, writeErrors: {} }),
   setWriteError: (field, message) => set((state) => {
     const writeErrors = { ...state.writeErrors }
     if (message === null) delete writeErrors[field]
@@ -52,7 +52,7 @@ const FAILURE_COPY: Record<LayoutField, Message> = {
  */
 export async function patchLayout(patch: Partial<Pick<Layout, LayoutField>>, persist: boolean): Promise<void> {
   const state = useLayoutStore.getState()
-  if (!state.layout || !state.persistedLayout) return
+  if (!state.layout || !state.appliedLayout) return
   const fields = Object.keys(patch) as LayoutField[]
   const versions = new Map<LayoutField, number>()
   for (const field of fields) {
@@ -67,7 +67,7 @@ export async function patchLayout(patch: Partial<Pick<Layout, LayoutField>>, per
   try {
     const confirmed = await ipcInvoke('layout:update', patch)
     const current = useLayoutStore.getState()
-    if (!current.layout || !current.persistedLayout) return
+    if (!current.layout || !current.appliedLayout) return
     const confirmedPatch: Partial<Pick<Layout, LayoutField>> = {}
     for (const field of fields) {
       if (revisions[field] === versions.get(field)) {
@@ -77,16 +77,16 @@ export async function patchLayout(patch: Partial<Pick<Layout, LayoutField>>, per
     if (Object.keys(confirmedPatch).length > 0) {
       useLayoutStore.setState({
         layout: { ...current.layout, ...confirmedPatch },
-        persistedLayout: { ...current.persistedLayout, ...confirmedPatch },
+        appliedLayout: { ...current.appliedLayout, ...confirmedPatch },
       })
     }
   } catch (error) {
     const current = useLayoutStore.getState()
-    if (!current.layout || !current.persistedLayout) return
+    if (!current.layout || !current.appliedLayout) return
     const rollback: Partial<Pick<Layout, LayoutField>> = {}
     for (const field of fields) {
       if (revisions[field] !== versions.get(field)) continue
-      Object.assign(rollback, { [field]: current.persistedLayout[field] })
+      Object.assign(rollback, { [field]: current.appliedLayout[field] })
       useLayoutStore.getState().setWriteError(
         field,
         presentFailure(error, FAILURE_COPY[field], `${field} layout save failed`),

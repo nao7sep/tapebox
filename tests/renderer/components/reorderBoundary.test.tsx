@@ -35,14 +35,14 @@ vi.mock('@main/services/ytdlp', () => ({ downloadThumbnail: vi.fn(), probe: vi.f
 vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: vi.fn() }))
 vi.mock('@main/io/atomic-json', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
-  return { ...actual, writeManagedJson: async (...args: Parameters<typeof actual.writeManagedJson>) => {
+  return { ...actual, writeManagedJsonBytes: async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
     const gate = bridge.gates.shift()
     if (gate) {
       gate.started()
       await gate.release
       if (gate.fail) throw new Error('required reorder write failed')
     }
-    return actual.writeManagedJson(...args)
+    return actual.writeManagedJsonBytes(...args)
   } }
 })
 vi.mock('@renderer/ipc/client', () => ({
@@ -127,7 +127,7 @@ beforeEach(async () => {
   useFilterStore.setState({ filter: 'inbox' })
   useLayoutStore.getState().setHydratedLayout(defaultLayout)
   HTMLElement.prototype.scrollIntoView = vi.fn()
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   const host = document.createElement('div'); document.body.append(host); root = createRoot(host)
   sync = startIpcSync()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })

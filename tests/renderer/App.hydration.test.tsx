@@ -21,7 +21,6 @@ vi.mock('@renderer/lib/useUiFont', () => ({ useUiFont: () => {} }))
 vi.mock('@renderer/components/ResizeHandle', () => ({ ResizeHandle: () => null }))
 vi.mock('@renderer/components/PassiveScrollRegion', () => ({ PassiveScrollRegion: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@renderer/components/BinariesModal', () => ({ BinariesModal: () => null }))
-vi.mock('@renderer/components/TopBar', () => ({ TopBar: () => null }))
 vi.mock('@renderer/components/TapeList', () => ({ TapeList: () => createElement('div', { 'data-hydrated-shell': true }) }))
 vi.mock('@renderer/components/ArchiveOrganizer', () => ({ ArchiveOrganizer: () => null }))
 vi.mock('@renderer/components/DetailPane', () => ({ DetailPane: () => null }))
@@ -100,7 +99,7 @@ beforeEach(() => {
   useBinariesStore.setState({ statuses: [], progress: {}, active: {}, modalOpen: false })
   useRuntimeStore.setState({ info: null })
   useMediaStore.setState({ baseUrl: null })
-  useLayoutStore.setState({ layout: null, persistedLayout: null, writeErrors: {} })
+  useLayoutStore.setState({ layout: null, appliedLayout: null, writeErrors: {} })
   useSettingsStore.setState({ settings: null, writeErrors: {}, saving: {} })
   useDownloadLogStore.setState({ entries: {} })
 })
@@ -146,11 +145,40 @@ describe('App hydration and live IPC handoff', () => {
     expect(useDownloadLogStore.getState().entries).toEqual({})
   })
 
-  // The window minimum reserves the header's height, which the header takes.
-  it('gives the header the height the window minimum reserves', async () => {
+  it('reserves normal header height while allowing inline results to grow it', async () => {
     await mount()
     await vi.waitFor(() => expect(shellMounted()).toBe(true))
-    expect(document.querySelector<HTMLElement>('main > header')!.style.height).toBe(`${HEADER_HEIGHT}px`)
+    const header = document.querySelector<HTMLElement>('main > header')!
+    expect(header.style.minHeight).toBe(`${HEADER_HEIGHT}px`)
+    expect(header.style.height).toBe('')
+    expect(header.classList.contains('shrink-0')).toBe(true)
+    expect(header.classList.contains('py-3')).toBe(true)
+    expect(header.nextElementSibling?.classList.contains('flex-1')).toBe(true)
+  })
+
+  it('keeps Add URL failures inside the growing header above the panes', async () => {
+    answers.set('binaries:status', [
+      { name: 'yt-dlp', present: true, installedVersion: '1', latestKnownVersion: '1', lastCheckedAtUtc: null },
+      { name: 'ffmpeg', present: true, installedVersion: '1', latestKnownVersion: '1', lastCheckedAtUtc: null },
+    ])
+    answers.set('downloads:add', () => Promise.reject(new Error('Add URL failed')))
+    await mount()
+    const header = document.querySelector<HTMLElement>('main > header')!
+    const input = header.querySelector<HTMLInputElement>('input[type="url"]')!
+    expect(header.querySelector('[role="alert"]')).toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'https://example.test/watch')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => header.querySelector<HTMLButtonElement>('button')!.click())
+    expect(header.querySelector('[role="alert"]')?.textContent).toContain('The URL could not be added.')
+    expect(header.style.height).toBe('')
+    expect(header.style.minHeight).toBe(`${HEADER_HEIGHT}px`)
+    expect(header.classList.contains('shrink-0')).toBe(true)
+    expect(header.nextElementSibling?.contains(document.querySelector('[data-hydrated-shell]'))).toBe(true)
+    await act(async () => header.querySelector<HTMLButtonElement>('[aria-label="Close Add URL result"]')!.click())
+    expect(header.querySelector('[role="alert"]')).toBeNull()
+    expect(header.style.minHeight).toBe(`${HEADER_HEIGHT}px`)
   })
 
   it('replays additions, latest bulk updates, removals and boxes over the initial snapshot', async () => {

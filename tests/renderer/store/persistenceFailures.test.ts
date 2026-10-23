@@ -17,7 +17,7 @@ beforeEach(() => {
   logError.mockReset()
   useLayoutStore.setState({
     layout: defaultLayout,
-    persistedLayout: defaultLayout,
+    appliedLayout: defaultLayout,
     writeErrors: {},
   })
   useSettingsStore.setState({
@@ -34,7 +34,7 @@ describe('truthful renderer persistence', () => {
 
     const state = useLayoutStore.getState()
     expect(state.layout?.leftPaneWidth).toBe(defaultLayout.leftPaneWidth)
-    expect(state.persistedLayout?.leftPaneWidth).toBe(defaultLayout.leftPaneWidth)
+    expect(state.appliedLayout?.leftPaneWidth).toBe(defaultLayout.leftPaneWidth)
     expect(inEnglish(state.writeErrors.leftPaneWidth)).toBe(
       'The library pane size was not saved. Its previous size is back; try resizing it again.',
     )

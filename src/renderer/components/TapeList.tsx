@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import type { Tape } from '@shared/domain'
+import { useVirtualRows } from '@renderer/lib/useVirtualRows'
+import { useEffect, useMemo, useState, type RefObject } from 'react'
 import type { DragEndEvent } from '@dnd-kit/react'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
@@ -6,9 +8,8 @@ import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
-import { ListboxDragProvider, planTapeListDrop } from '@renderer/lib/dnd'
+import { ListboxDragProvider, planTapeListDrop, useTapeDragPreview, useTapeDragSourceId } from '@renderer/lib/dnd'
 import { isInSameTapeList, moveArrayItem, rollbackOptimisticOrder, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
-import { selectTape } from '@renderer/lib/selectTape'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
@@ -24,7 +25,6 @@ import { message } from '@shared/i18n/translate'
  * and removal all lives in lib/tapeOrder so they agree on which tape is next.
  */
 export function TapeList() {
-  const progress = useTapesStore((s) => s.progress)
   const selectedId = useSelectionStore((s) => s.selectedId)
   const filter = useFilterStore((s) => s.filter)
   const visible = useVisibleTapes()
@@ -37,11 +37,7 @@ export function TapeList() {
     reorderTape(from, from + offset)
   })
 
-  // Scroll the newly-added tape into view. New tapes land at the top, so a top
-  // sentinel + scrollIntoView('nearest') reveals them when the list is scrolled
-  // down and does nothing when the top is already showing. Adds come in over the
-  // tapes:added event; the tick defers the scroll to after the new row renders.
-  const topRef = useRef<HTMLDivElement>(null)
+  // Adds arrive over IPC; scroll the viewport after the new rows are committed.
   const [addTick, setAddTick] = useState(0)
   useEffect(
     () =>
@@ -51,11 +47,11 @@ export function TapeList() {
     [],
   )
   useEffect(() => {
-    if (addTick > 0) topRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    if (addTick > 0) kb.ref.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }, [addTick])
 
-  function onDragEnd(event: DragEndEvent) {
-    const plan = planTapeListDrop(event)
+  function onDragEnd(event: DragEndEvent, previewTargetId?: string) {
+    const plan = planTapeListDrop(event, visible.map((tape) => tape.id), previewTargetId)
     if (plan) {
       // Resolve the source by stable identity at commit time in case an IPC
       // update changed the visible collection during the pointer session.
@@ -89,34 +85,58 @@ export function TapeList() {
           {t.text(orderError)}
         </InlineError>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col">
         {visible.length === 0 ? (
           <div className="p-6 text-sm text-fg">{t.t(filter === 'archived' ? 'tapes.emptyArchived' : 'tapes.emptyInbox')}</div>
         ) : (
           <ListboxDragProvider onDragEnd={onDragEnd}>
-            <div ref={topRef} />
             <ul
               ref={kb.ref}
               {...kb.listboxProps}
               role="listbox"
               aria-label={t.t('tapes.label')}
-              className="space-y-1.5 p-3 outline-none"
+              className="relative min-h-0 flex-1 overflow-y-auto outline-none"
             >
-              {visible.map((tape, index) => (
-                <SortableTape key={tape.id} id={tape.id} index={index}>
-                  <TapeRow
-                    tape={tape}
-                    progress={progress[tape.id]}
-                    selected={tape.id === selectedId}
-                    id={kb.optionId(tape.id)}
-                    onSelect={() => selectTape(tape.id)}
-                  />
-                </SortableTape>
-              ))}
+              <TapeListItems tapes={visible} selectedId={selectedId} listRef={kb.ref} optionId={kb.optionId} />
             </ul>
           </ListboxDragProvider>
         )}
       </div>
     </div>
+  )
+}
+
+function TapeListItems({ tapes: original, selectedId, listRef, optionId }: {
+  tapes: Tape[]
+  selectedId: string | null
+  listRef: RefObject<HTMLUListElement | null>
+  optionId: (id: string) => string
+}) {
+  const visible = useTapeDragPreview(original)
+  const draggedId = useTapeDragSourceId()
+  const originalIndices = useMemo(() => new Map(original.map((tape, index) => [tape.id, index])), [original])
+  const virtualRows = useMemo(() => visible.map((tape, index) => ({ id: tape.id, estimate: 68, gap: index === visible.length - 1 ? 0 : 6 })), [visible])
+  const virtual = useVirtualRows(virtualRows, listRef, selectedId, 12, draggedId)
+
+  return (
+    <li role="presentation" style={{ height: virtual.total, position: 'relative' }}>
+      <ul role="presentation">
+        {virtual.mounted.map((index) => {
+          const tape = visible[index]!
+          return (
+            <SortableTape
+              key={tape.id}
+              id={tape.id}
+              index={originalIndices.get(tape.id)!}
+              style={{ position: 'absolute', top: virtual.offsets[index], left: 12, right: 12 }}
+              measureRef={virtual.rowRef(tape.id)}
+              onDragSource={virtual.onDragSource}
+            >
+              <TapeRow tape={tape} selected={tape.id === selectedId} id={optionId(tape.id)} />
+            </SortableTape>
+          )
+        })}
+      </ul>
+    </li>
   )
 }

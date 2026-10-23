@@ -159,3 +159,66 @@ describe('a long box name', () => {
     expect(option.className.split(/\s+/)).toContain('truncate')
   })
 })
+
+
+describe('selected box actions', () => {
+  async function selectBox() {
+    await act(async () => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    const list = document.querySelector<HTMLElement>('[role="listbox"]')!
+    await act(async () => {
+      list.focus()
+      list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    return list
+  }
+  const actions = () => document.querySelector<HTMLButtonElement>('[aria-label="Box actions"]')!
+  const key = async (element: HTMLElement, value: string, shiftKey = false) => {
+    await act(async () => element.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true })))
+  }
+
+  it('keeps a visible command trigger outside the single-tab-stop list and preserves hover actions', async () => {
+    const list = await selectBox()
+    expect(actions().disabled).toBe(false)
+    expect(list.contains(actions())).toBe(false)
+    expect(actions().classList.contains('hidden')).toBe(false)
+    expect(list.tabIndex).toBe(0)
+    expect([...list.querySelectorAll('button')].every((button) => button.tabIndex === -1)).toBe(true)
+    expect(list.querySelectorAll('.group-hover\\:inline-flex')).toHaveLength(2)
+    await key(list, 'ArrowUp')
+    expect(actions().disabled).toBe(true)
+    await key(list, 'ContextMenu')
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+  })
+
+  it.each(['ContextMenu', 'F10'])('opens selected commands with %s and restores focus on Escape', async (value) => {
+    const list = await selectBox()
+    await key(list, value, value === 'F10')
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!
+    expect(menu.parentElement).toBe(document.body)
+    expect(document.activeElement?.textContent).toBe('Rename box')
+    await key(menu, 'ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Delete box')
+    await key(menu, 'Escape')
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(document.activeElement).toBe(actions())
+  })
+
+  it('uses the existing rename and delete confirmation paths for the selected box', async () => {
+    await selectBox()
+    await act(async () => actions().click())
+    await key(document.querySelector<HTMLElement>('[role="menu"]')!, 'Enter')
+    expect(input().value).toBe('Original')
+    expect(document.activeElement).toBe(input())
+    await key(input(), 'Escape')
+    await act(async () => actions().click())
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!
+    await key(menu, 'ArrowDown')
+    await key(menu, 'Enter')
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    expect(bridge.invoke).not.toHaveBeenCalled()
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent === 'Delete box')!
+    await act(async () => confirm.click())
+    expect(bridge.invoke).toHaveBeenCalledWith('boxes:delete', { boxId: 'box1' })
+  })
+})

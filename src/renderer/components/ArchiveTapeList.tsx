@@ -1,7 +1,8 @@
-import { useTapesStore } from '@renderer/store/tapes'
+import { useTapeDragPreview, useTapeDragSourceId } from '@renderer/lib/dnd'
+import { useVirtualRows } from '@renderer/lib/useVirtualRows'
+import { useMemo } from 'react'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
-import { selectTape } from '@renderer/lib/selectTape'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
 import { SortableTape } from './SortableTape'
@@ -24,11 +25,15 @@ export function ArchiveTapeList({
   orderError: Message | null
   onDismissOrderError: () => void
 }) {
-  const tapes = useVisibleTapes()
-  const progress = useTapesStore((s) => s.progress)
+  const original = useVisibleTapes()
+  const tapes = useTapeDragPreview(original)
+  const draggedId = useTapeDragSourceId()
+  const originalIndices = useMemo(() => new Map(original.map((tape, index) => [tape.id, index])), [original])
   const selectedId = useSelectionStore((s) => s.selectedId)
   const kb = useTapeListboxKeyboard<HTMLUListElement>(tapes, selectedId, onReorder)
   const t = useI18n()
+  const virtualRows = useMemo(() => tapes.map((tape, index) => ({ id: tape.id, estimate: 68, gap: index === tapes.length - 1 ? 0 : 6 })), [tapes])
+  const virtual = useVirtualRows(virtualRows, kb.ref, selectedId, 12, draggedId)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -45,19 +50,27 @@ export function ArchiveTapeList({
           {...kb.listboxProps}
           role="listbox"
           aria-label={t.t('archive.boxTapes')}
-          className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3 outline-none"
+          className="relative min-h-0 flex-1 overflow-y-auto outline-none"
         >
-          {tapes.map((tape, index) => (
-            <SortableTape key={tape.id} id={tape.id} index={index}>
-              <TapeRow
-                tape={tape}
-                progress={progress[tape.id]}
-                selected={tape.id === selectedId}
-                id={kb.optionId(tape.id)}
-                onSelect={() => selectTape(tape.id)}
-              />
-            </SortableTape>
-          ))}
+          <li role="presentation" style={{ height: virtual.total, position: 'relative' }}>
+            <ul role="presentation">
+              {virtual.mounted.map((index) => {
+                const tape = tapes[index]!
+                return (
+                  <SortableTape
+                    key={tape.id}
+                    id={tape.id}
+                    index={originalIndices.get(tape.id)!}
+                    style={{ position: 'absolute', top: virtual.offsets[index], left: 12, right: 12 }}
+                    measureRef={virtual.rowRef(tape.id)}
+                    onDragSource={virtual.onDragSource}
+                  >
+                    <TapeRow tape={tape} selected={tape.id === selectedId} id={kb.optionId(tape.id)} />
+                  </SortableTape>
+                )
+              })}
+            </ul>
+          </li>
         </ul>
       )}
     </div>

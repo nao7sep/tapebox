@@ -104,7 +104,7 @@ beforeEach(() => {
   ipcInvoke.mockReset().mockResolvedValue(undefined)
   logError.mockReset()
   HTMLElement.prototype.scrollIntoView = vi.fn()
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   useTapesStore.setState({ tapes: [], progress: {}, stalled: {} })
   useBoxesStore.setState({ boxes: [], editingId: null, draftName: '', pendingRenames: 0 })
   useSelectionStore.setState({ selectedId: null })

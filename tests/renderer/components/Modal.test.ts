@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import React, { act, type ReactNode } from 'react'
+import React, { act, useState, StrictMode, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { Modal } from '@renderer/components/Modal'
+import { ConfirmModal } from '@renderer/components/ConfirmModal'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -174,5 +175,85 @@ describe('Modal Escape handling', () => {
     // A plain Escape (no active composition) still closes.
     dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+
+describe('confirmation focus restoration', () => {
+  it('captures the opener before the Cancel button autofocus commits', async () => {
+    const trigger = document.createElement('button')
+    document.body.append(trigger)
+    trigger.focus()
+    const host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    await act(async () => root!.render(React.createElement(StrictMode, null,
+      React.createElement(ConfirmModal, {
+        message: 'Remove this item?', confirmLabel: 'Remove', danger: true,
+        onCancel: () => {}, onConfirm: () => {},
+      }),
+    )))
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    await unmount()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it.each(['disabled', 'inert'])('falls back to the parent when the opener becomes %s', async (ineligible) => {
+    function Editor() {
+      const [asking, setAsking] = useState(false)
+      return React.createElement(Modal, { title: 'Editor', onClose: () => {}, children:
+        React.createElement(React.Fragment, null,
+          React.createElement('textarea', { autoFocus: true, onKeyDown: (event: React.KeyboardEvent) => {
+            if (event.key === 'Escape') { event.stopPropagation(); setAsking(true) }
+          } }),
+          asking && React.createElement(ConfirmModal, { message: 'Discard edits?', confirmLabel: 'Discard', danger: true,
+            onCancel: () => setAsking(false), onConfirm: () => {},
+          }),
+        ),
+      })
+    }
+    const host = document.createElement('div'); document.body.append(host); root = createRoot(host)
+    await act(async () => root!.render(React.createElement(Editor)))
+    const editor = document.querySelector('textarea')!
+    await act(async () => editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    if (ineligible === 'disabled') editor.disabled = true
+    else editor.setAttribute('inert', '')
+    await act(async () => (document.activeElement as HTMLButtonElement).click())
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(document.activeElement).toBe(dialog())
+  })
+
+  it.each([false, true])('returns to the exact editor after nested discard (remove opener: %s)', async (removeOpener) => {
+    function Editor() {
+      const [asking, setAsking] = useState(false)
+      const [removed, setRemoved] = useState(false)
+      return React.createElement(Modal, { title: 'Editor', onClose: () => {}, children:
+        React.createElement(React.Fragment, null,
+          !removed && React.createElement('textarea', {
+            autoFocus: true,
+            onKeyDown: (event: React.KeyboardEvent) => {
+              if (event.key === 'Escape') { event.stopPropagation(); setAsking(true); setRemoved(removeOpener) }
+            },
+          }),
+          asking && React.createElement(ConfirmModal, {
+            message: 'Discard edits?', confirmLabel: 'Discard', danger: true,
+            onCancel: () => setAsking(false), onConfirm: () => {},
+          }),
+        ),
+      })
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    await act(async () => root!.render(React.createElement(Editor)))
+    const editor = document.querySelector('textarea')!
+    expect(document.activeElement).toBe(editor)
+    await act(async () => editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(2)
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    const cancel = document.activeElement as HTMLButtonElement
+    await act(async () => cancel.click())
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(document.activeElement).toBe(removeOpener ? dialog() : editor)
   })
 })

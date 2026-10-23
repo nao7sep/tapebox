@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { trapTabFocus } from '@renderer/lib/focusTrap'
 import { acquireScrollLock, releaseScrollLock } from '@renderer/lib/scrollLock'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
@@ -65,6 +65,7 @@ const SIZE_CLASS: Record<ModalSize, string> = {
 export function Modal({ title,
   titleHidden = false, onClose, children, footer, size = 'md', fitContent = false, closeDisabled = false }: ModalProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const openerRef = useRef<Element | null | undefined>(undefined)
   const titleId = useId()
   const t = useI18n()
 
@@ -74,7 +75,7 @@ export function Modal({ title,
   // adds focus-on-open, the focusin safety net, the scroll lock, and restore.
   useLayoutEffect(() => {
     const panel = panelRef.current
-    const previouslyFocused = document.activeElement
+    const previouslyFocused = openerRef.current
     // Only claim focus if a child hasn't already (a confirm's Cancel button carries
     // `autoFocus`, which commits before this effect runs). Otherwise the panel would
     // pull focus straight back off it and no action would answer Enter.
@@ -93,9 +94,21 @@ export function Modal({ title,
     return () => {
       document.removeEventListener('focusin', onFocusIn)
       releaseScrollLock()
-      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
-        previouslyFocused.focus()
-      }
+      // StrictMode replays effects while the surface stays connected. Restore
+      // only after a real removal, so the replay preserves child autofocus.
+      queueMicrotask(() => {
+        if (panel?.isConnected) return
+        if (previouslyFocused instanceof HTMLElement && previouslyFocused !== document.body &&
+          previouslyFocused.isConnected && !previouslyFocused.matches(':disabled') &&
+          !previouslyFocused.closest('[inert], [hidden]')) {
+          previouslyFocused.focus()
+          if (document.activeElement === previouslyFocused) return
+        }
+        // A removed or ineligible opener cannot receive focus. A still-open
+        // parent modal is the nearest fallback when a nested decision closes.
+        const remaining = document.querySelectorAll<HTMLElement>('[data-dialog-surface]')
+        remaining.item(remaining.length - 1)?.focus()
+      })
     }
   }, [])
 
@@ -127,6 +140,9 @@ export function Modal({ title,
       }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-backdrop backdrop-blur-sm"
     >
+      {/* Capture in the first child's layout phase, before later descendants'
+          autofocus commits. The shell's own effect runs after those descendants. */}
+      <ModalOpenerCapture openerRef={openerRef} />
       <div
         ref={panelRef}
         role="dialog"
@@ -180,4 +196,12 @@ function isTopmost(panel: HTMLElement | null): boolean {
   if (!panel) return false
   const surfaces = document.querySelectorAll('[data-dialog-surface]')
   return surfaces[surfaces.length - 1] === panel
+}
+
+/** A lifecycle-only sibling; it must precede every autofocus descendant. */
+function ModalOpenerCapture({ openerRef }: { openerRef: RefObject<Element | null | undefined> }) {
+  useLayoutEffect(() => {
+    if (openerRef.current === undefined) openerRef.current = document.activeElement
+  }, [openerRef])
+  return null
 }

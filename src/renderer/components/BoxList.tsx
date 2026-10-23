@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useDroppable } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -15,6 +15,7 @@ import {
 } from '@renderer/lib/dnd'
 import { boxNameError } from '@shared/box-names'
 import { ConfirmModal } from './ConfirmModal'
+import { Menu, MenuItem } from './Menu'
 import { PlusIcon } from './Icon'
 import { InlineError } from './ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
@@ -63,6 +64,8 @@ export function BoxList({
   const setActionResult = useBoxActionResultsStore((state) => state.setResult)
   const { composingRef, handlers: composing } = useComposing()
   const t = useI18n()
+  const actionsRef = useRef<HTMLButtonElement | null>(null)
+  const selectedBox = boxes.find((box) => box.id === selectedBoxId)
 
   const sorted = [...boxes].sort((a, b) => a.order - b.order)
   const archived = tapes.filter((i) => !!i.archivedAtUtc)
@@ -77,6 +80,13 @@ export function BoxList({
     activeId: selectedBoxId ?? UNBOXED_DROP_ID,
     onActivate: (id) => selectBox(id === UNBOXED_DROP_ID ? null : id),
     idPrefix: 'box',
+    onCommandKey: (event) => {
+      if (event.target !== event.currentTarget || editingId !== null || !selectedBox || isComposingKeyboardEvent(composingRef, event)) return false
+      if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey)) return false
+      event.preventDefault()
+      actionsRef.current?.click()
+      return true
+    },
     onReorder: (id, offset) => {
       if (id !== UNBOXED_DROP_ID) onReorder(id, offset)
     },
@@ -160,10 +170,37 @@ export function BoxList({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between px-3 py-2">
         <span className="text-xs font-medium uppercase tracking-wide text-fg-muted">{t.t('boxes.heading')}</span>
-        <button onClick={() => void newBox()} className="-mr-2 flex h-7 items-center whitespace-nowrap rounded px-2 text-xs text-fg transition hover:bg-raised hover:text-fg-strong">
-          <PlusIcon className="mr-1" />
-          {t.t('boxes.newBox')}
-        </button>
+        <div className="flex items-center gap-2">
+          <Menu
+            label={t.t('boxes.actions')}
+            trigger={({ ref, ...props }) => (
+              <button
+                {...props}
+                ref={(element) => { ref(element); actionsRef.current = element }}
+                disabled={!selectedBox || editingId !== null}
+                aria-label={t.t('boxes.actions')}
+                className="grid h-7 w-7 place-items-center rounded text-fg-muted hover:bg-raised hover:text-fg-strong disabled:opacity-40"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="8" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="13" cy="8" r="1.5" />
+                </svg>
+              </button>
+            )}
+          >
+            <MenuItem onSelect={() => {
+              if (!selectedBox) return
+              setDraftName(selectedBox.name)
+              setEditingId(selectedBox.id)
+            }}>{t.t('boxes.rename')}</MenuItem>
+            <MenuItem onSelect={() => { if (selectedBox) setConfirmDeleteId(selectedBox.id) }}>
+              {t.t('boxes.delete')}
+            </MenuItem>
+          </Menu>
+          <button onClick={() => void newBox()} className="-mr-2 flex h-7 items-center whitespace-nowrap rounded px-2 text-xs text-fg transition hover:bg-raised hover:text-fg-strong">
+            <PlusIcon className="mr-1" />
+            {t.t('boxes.newBox')}
+          </button>
+        </div>
       </div>
 
       {orderError && (

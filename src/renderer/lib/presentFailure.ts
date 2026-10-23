@@ -9,7 +9,7 @@ import type { Message } from '@shared/i18n/translate'
  * caller's stable operation copy. No other error text ever reaches a surface.
  */
 export function presentFailure(error: unknown, userMessage: Message, operation: string): Message {
-  log.error(operation, { error: describeError(error) })
+  if (!(error instanceof IpcCallError)) log.error(operation, { error: describeError(error) })
   if (error instanceof IpcCallError && error.userMessage !== null) return error.userMessage
   return userMessage
 }

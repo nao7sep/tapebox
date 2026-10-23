@@ -89,6 +89,7 @@ export function DetailPane({
   const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
   const logEntries = useDownloadLogStore((s) => s.entries[tape.id]) ?? NO_ENTRIES
   const logTrimmed = useDownloadLogStore((s) => s.trimmed[tape.id] === true)
+  const collectionRevision = useMediaStore((s) => s.collectionRevision)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
   const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
   // Persisted chaptersPaneWidth is the drag-set INTENT; the displayed width is
@@ -116,7 +117,7 @@ export function DetailPane({
       .then((s) => { if (!cancelled) setSidecar(s) })
       .catch((err) => { if (!cancelled) setSidecarError(presentFailure(err, message('detail.sidecarLoadFailed'), 'tape sidecar load failed')) })
     return () => { cancelled = true }
-  }, [tape.id, tape.state, tape.sidecarFilename])
+  }, [tape.id, tape.state, tape.sidecarFilename, tape.probedAtUtc, collectionRevision])
 
   // Memoized so its reference is stable across renders: useCurrentChapter keys an
   // effect on it, and the chapter set only changes when the sidecar does.
@@ -495,7 +496,7 @@ export function DetailPane({
                   ref={videoRef}
                   src={mediaUrl}
                   posterSrc={posterSrc}
-                  autoPlay={autoplay}
+                  autoPlay={resumeRef.current?.play ?? autoplay}
                   muted={!playSound}
                   onError={(v) => setPlaybackError(describeMediaError(v))}
                   onLoadedMetadata={restorePlayback}
@@ -746,7 +747,7 @@ function mediaMetaLine(sidecar: SidecarRaw | null, t: UiTranslator): string | nu
   if (w !== null && h !== null) parts.push(`${w}×${h}`)
   const fps = num(pick('fps'))
   if (fps !== null) parts.push(`${Math.round(fps)} fps`)
-  const duration = num(pick('duration'))
+  const duration = num(media?.['durationSeconds']) ?? num(sidecar['duration'])
   if (duration !== null) parts.push(formatTime(duration))
   const size = num(sidecar['filesize']) ?? num(sidecar['filesize_approx'])
   if (size !== null) parts.push(t.bytes(size))

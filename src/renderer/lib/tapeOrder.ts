@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { Box, Tape } from '@shared/domain'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
@@ -73,5 +74,5 @@ export function useVisibleTapes(): Tape[] {
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
   const query = useArchiveStore((s) => s.query)
   const boxes = useBoxesStore((s) => s.boxes)
-  return visibleTapes(tapes, filter, selectedBoxId, query, boxes)
+  return useMemo(() => visibleTapes(tapes, filter, selectedBoxId, query, boxes), [tapes, filter, selectedBoxId, query, boxes])
 }

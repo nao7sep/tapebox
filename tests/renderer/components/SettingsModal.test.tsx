@@ -392,6 +392,15 @@ describe('SettingsModal', () => {
     })
   })
 
+  it('associates the AI slug prompt label with its editable field', async () => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    await click('AI')
+    const prompt = document.querySelector('textarea')!
+    expect(prompt.labels).toHaveLength(1)
+    expect(prompt.labels![0].textContent).toBe('Slug prompt')
+  })
+
   it('Reset slug prompt fills the draft with the built-in and saves it as the whole set', async () => {
     saved.prompts = { slug: 'my custom prompt' }
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))

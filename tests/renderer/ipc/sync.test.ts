@@ -43,7 +43,7 @@ beforeEach(() => {
   useBinariesStore.setState({ statuses: [] })
   useRuntimeStore.setState({ info: null })
   useMediaStore.setState({ baseUrl: null, collectionRevision: 0 })
-  useLayoutStore.setState({ layout: null, persistedLayout: null, writeErrors: {} })
+  useLayoutStore.setState({ layout: null, appliedLayout: null, writeErrors: {} })
   useSettingsStore.setState({ settings: null, writeErrors: {}, saving: {} })
 })
 
@@ -88,7 +88,7 @@ describe('required renderer hydration', () => {
 
     expect(useMediaStore.getState().baseUrl).toBe('http://127.0.0.1:1234')
     expect(useLayoutStore.getState().layout).toEqual(defaultLayout)
-    expect(useLayoutStore.getState().persistedLayout).toEqual(defaultLayout)
+    expect(useLayoutStore.getState().appliedLayout).toEqual(defaultLayout)
     expect(useSettingsStore.getState().settings).toEqual(settings)
     expect(useRuntimeStore.getState().info?.platform).toBe('darwin')
   })

@@ -1,5 +1,5 @@
 import { useWindowCloseGuard } from '@renderer/lib/windowClose'
-import { useEffect, useState, useRef, type KeyboardEvent } from 'react'
+import { useEffect, useState, useRef, useId, type KeyboardEvent } from 'react'
 import { nanoid } from 'nanoid'
 import type { Settings, SettingsSets, SiteProfile, ThemePreference } from '@shared/settings'
 import { changedSettings, DEFAULT_AI_MODEL, DEFAULT_SLUG_PROMPT } from '@shared/settings'
@@ -42,9 +42,9 @@ type Tab = 'general' | 'ai' | 'ytdlp'
 
 /**
  * Settings is a draft form: every edit lives in local state, the footer Save
- * button persists everything in one IPC roundtrip, and closing with unsaved
- * changes prompts a shared ConfirmModal to discard. The AI tab folds the API
- * key into the same save (no separate "Save key" button).
+ * button commits changed settings first, then any API key change in a separate
+ * IPC call. A credential failure leaves the settings saved and the dialog open
+ * for retry. Closing with unsaved changes prompts a shared ConfirmModal to discard.
  *
  * The library folder is a picker-backed field on the General tab, grouped with the
  * download settings. Leaving it blank uses the default folder (shown as the
@@ -755,6 +755,7 @@ function AiTab({
   onApiKeyChange: (v: string) => void
   onClearKey: () => void
 }) {
+  const slugPromptId = useId()
   const keyIsSet = keyState === 'set' && !wantsClearKey && apiKeyDraft.length === 0
   const willClear = wantsClearKey && apiKeyDraft.length === 0
   const t = useI18n()
@@ -857,8 +858,9 @@ function AiTab({
       )}
 
       <div className="border-t border-line pt-4">
-        <Field label={t.t('settings.slugPrompt')}>
+        <Field label={t.t('settings.slugPrompt')} htmlFor={slugPromptId}>
           <textarea
+            id={slugPromptId}
             value={prompts.slug}
             rows={7}
             spellCheck={false}

@@ -42,6 +42,15 @@ describe('truncate', () => {
     expect(truncate('one two three', 5)).toEqual({ text: 'one t', truncated: true })
   })
 
+  it('keeps a pending separator and its grapheme within the budget', () => {
+    expect(truncate('a b', 2)).toEqual({ text: 'a', truncated: true })
+    expect(truncate('a b', 3)).toEqual({ text: 'a b', truncated: false })
+    expect(truncate('a b c', 4)).toEqual({ text: 'a b', truncated: true })
+    expect(truncate('a \n\t\u{1F600}', 2)).toEqual({ text: 'a', truncated: true })
+    expect(truncate('a \n\t\u{1F600}', 3)).toEqual({ text: 'a \u{1F600}', truncated: false })
+    expect(truncate('a \n\t', 2)).toEqual({ text: 'a', truncated: false })
+  })
+
   it('never splits a grapheme', () => {
     expect(truncate('\u{1F600}x', 1)).toEqual({ text: '\u{1F600}', truncated: true })
     expect(truncate('\u{1F468}\u200D\u{1F469}\u200D\u{1F467}x', 1)).toEqual({ text: '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}', truncated: true })

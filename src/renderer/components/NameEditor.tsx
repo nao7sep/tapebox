@@ -3,7 +3,7 @@ import type { Tape } from '@shared/domain'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
-import { Button, Field, INPUT_LINE_CLASS } from '@renderer/components/ui'
+import { Button, Field, InlineError, INPUT_LINE_CLASS } from '@renderer/components/ui'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
 import { useI18n } from '@renderer/i18n/I18nContext'
@@ -57,7 +57,12 @@ export function NameEditor({
   const requestRef = useRef<string | null>(null)
   const [error, setError] = useState<Message | null>(null)
   const t = useI18n()
-  const [description, setDescription] = useState<string | null>(null)
+  const [descriptionLoad, setDescriptionLoad] = useState<{
+    tapeId: string; description: string | null; error: Message | null
+  }>({ tapeId: tape.id, description: null, error: null })
+  const [descriptionAttempt, setDescriptionAttempt] = useState(0)
+  const description = descriptionLoad.tapeId === tape.id ? descriptionLoad.description : null
+  const descriptionError = descriptionLoad.tapeId === tape.id ? descriptionLoad.error : null
   const [include, setInclude] = useState<Record<SourceField, boolean>>({
     title: !!tape.title,
     uploader: !!tape.uploader,
@@ -69,35 +74,55 @@ export function NameEditor({
   // synchronously above).
   useEffect(() => {
     let cancelled = false
+    setDescriptionLoad({ tapeId: tape.id, description: null, error: null })
     ipcInvoke('library:getSidecar', { tapeId: tape.id })
       .then((s) => {
         if (cancelled) return
         const d = (s as Record<string, unknown>)['description']
         const desc = typeof d === 'string' && d.trim() ? d : null
-        setDescription(desc)
+        setDescriptionLoad({ tapeId: tape.id, description: desc, error: null })
         if (desc) setInclude((prev) => ({ ...prev, description: true }))
       })
-      .catch((err) => log.debug('sidecar preview load failed', { tapeId: tape.id, error: describeError(err) }))
+      .catch((err) => {
+        if (cancelled) return
+        setDescriptionLoad({ tapeId: tape.id, description: null,
+          error: presentFailure(err, message('nameEditor.descriptionLoadFailed'), 'sidecar preview load failed'),
+        })
+      })
     return () => { cancelled = true }
-  }, [tape.id])
+  }, [tape.id, descriptionAttempt])
 
   const sourceValue: Record<SourceField, string | null> = {
     title: tape.title,
     uploader: tape.uploader,
     description,
   }
-  // Closing the dialog mid-suggestion cancels the request in main.
-  useEffect(() => () => {
-    const requestId = requestRef.current
-    requestRef.current = null
-    if (requestId) cancelSuggestion(requestId)
-  }, [])
+  // A replacement tape starts with its own source choices and abandons any
+  // suggestion for the old tape; late responses cannot replace this draft.
+  useEffect(() => {
+    setInclude({ title: !!tape.title, uploader: !!tape.uploader, description: false })
+    setGenerating(false)
+    setError(null)
+    return () => {
+      const requestId = requestRef.current
+      requestRef.current = null
+      if (requestId) {
+        cancelSuggestion(requestId)
+        onGeneratingChange?.(false)
+      }
+    }
+  }, [tape.id])
 
-  const canSuggest = include.title || include.uploader || include.description
   const busy = disabled || generating
   // A field with no value contributes nothing, so it's dropped from the list
   // entirely rather than shown as an empty "none" row.
   const availableFields = SOURCE_FIELDS.filter(({ key }) => !!sourceValue[key]?.trim())
+  const includedFields = {
+    title: !!sourceValue.title?.trim() && include.title,
+    uploader: !!sourceValue.uploader?.trim() && include.uploader,
+    description: !!description?.trim() && include.description,
+  }
+  const canSuggest = Object.values(includedFields).some(Boolean)
 
   async function suggest() {
     const requestId = crypto.randomUUID()
@@ -106,7 +131,7 @@ export function NameEditor({
     setGenerating(true)
     onGeneratingChange?.(true)
     try {
-      const result = await ipcInvoke('ai:generateSlug', { tapeId: tape.id, include, requestId })
+      const result = await ipcInvoke('ai:generateSlug', { tapeId: tape.id, include: includedFields, requestId })
       if (requestRef.current === requestId) onChange(result.slug)
     } catch (err) {
       // A stopped or abandoned request is the user's choice, not a failure.
@@ -147,6 +172,15 @@ export function NameEditor({
         </Field>
         {hint && <p className="mt-1.5 text-xs text-fg-muted">{hint}</p>}
       </div>
+
+      {descriptionError && (
+        <InlineError>
+          <p>{t.text(descriptionError)}</p>
+          <Button variant="secondary" size="sm" className="mt-2" disabled={busy} onClick={() => setDescriptionAttempt((attempt) => attempt + 1)}>
+            {t.t('common.tryAgain')}
+          </Button>
+        </InlineError>
+      )}
 
       {availableFields.length > 0 && (
         <div>

@@ -1,0 +1,182 @@
+// @vitest-environment jsdom
+import { act, createElement, createRef } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Tape } from '@shared/domain'
+import { defaultLayout } from '@shared/layout'
+import { defaultSettings } from '@shared/settings'
+import { useMediaStore } from '@renderer/store/media'
+import { useLayoutStore } from '@renderer/store/layout'
+import { useSettingsStore } from '@renderer/store/settings'
+import { releaseVideo } from '@renderer/lib/video'
+
+const { ipcInvoke } = vi.hoisted(() => ({ ipcInvoke: vi.fn() }))
+vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
+vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn(), debug: vi.fn(), warn: vi.fn() } }))
+
+import { DetailPane } from '@renderer/components/DetailPane'
+
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+let root: Root | null
+let host: HTMLDivElement
+let tape: Tape
+let videoRef = createRef<HTMLVideoElement>()
+const states = new WeakMap<HTMLMediaElement, { paused: boolean; ended: boolean }>()
+const play = vi.fn(function (this: HTMLMediaElement) {
+  states.set(this, { paused: false, ended: false })
+  this.dispatchEvent(new Event('play'))
+  return Promise.resolve()
+})
+const pause = vi.fn(function (this: HTMLMediaElement) {
+  states.set(this, { paused: true, ended: false })
+  this.dispatchEvent(new Event('pause'))
+})
+const load = vi.fn(function (this: HTMLMediaElement) { this.dispatchEvent(new Event('emptied')) })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+async function render(next = tape) {
+  tape = next
+  await act(async () => root!.render(createElement(DetailPane, {
+    tape, videoRef, onRequestRemove: () => {}, onScanPage: () => {},
+  })))
+}
+
+function video() {
+  if (!videoRef.current) throw new Error('No video mounted')
+  return videoRef.current
+}
+
+async function click(label: string, dialog = false) {
+  const scope = dialog ? document.querySelector('[role="dialog"]')! : host
+  const button = [...scope.querySelectorAll('button')].find((b) => b.textContent?.trim() === label)
+  if (!button) throw new Error(`No button labelled ${label}`)
+  await act(async () => button.click())
+}
+
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(play)
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(pause)
+  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(load)
+  vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(function (this: HTMLMediaElement) { return states.get(this)?.paused ?? true })
+  vi.spyOn(HTMLMediaElement.prototype, 'ended', 'get').mockImplementation(function (this: HTMLMediaElement) { return states.get(this)?.ended ?? false })
+  play.mockClear(); pause.mockClear(); load.mockClear()
+  ipcInvoke.mockReset().mockImplementation(async (channel: string, req: unknown) => {
+    if (channel === 'library:getSidecar') return {}
+    if (channel === 'layout:update') return { ...useLayoutStore.getState().layout, ...req as object }
+    return undefined
+  })
+  useMediaStore.setState({ baseUrl: 'http://localhost/media', collectionRevision: 0 })
+  useLayoutStore.getState().setHydratedLayout({ ...defaultLayout, volume: 0.7 })
+  useSettingsStore.setState({ settings: { ...defaultSettings(), autoplay: true } })
+  tape = { id: 'Tape000001', title: 'Title', sourceUrl: 'https://example.com/video', state: 'downloaded', filename: 'old.mp4', sidecarFilename: 'old.info.json', name: 'Old', probedAtUtc: '2026-10-23T00:00:00Z' } as Tape
+  videoRef = createRef<HTMLVideoElement>()
+  host = document.createElement('div'); document.body.append(host); root = createRoot(host)
+})
+
+afterEach(async () => {
+  if (root) await act(async () => root!.unmount())
+  root = null
+  document.body.innerHTML = ''
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+describe('DetailPane media lifecycle', () => {
+  it.each([
+    { playing: true, ended: false, fails: false },
+    { playing: false, ended: false, fails: false },
+    { playing: true, ended: false, fails: true },
+    { playing: false, ended: false, fails: true },
+    { playing: false, ended: true, fails: false },
+    { playing: false, ended: true, fails: true },
+  ])('restores rename position and play intent: %j', async ({ playing, ended, fails }) => {
+    // An opposite global preference proves the rename snapshot owns this remount.
+    useSettingsStore.setState({ settings: { ...defaultSettings(), autoplay: !playing } })
+    const rename = deferred<void>()
+    ipcInvoke.mockImplementation((channel: string) => channel === 'library:rename' ? rename.promise : Promise.resolve({}))
+    await render()
+    expect(video().autoplay).toBe(!playing)
+    const old = video()
+    old.currentTime = 37
+    states.set(old, { paused: !playing, ended })
+    await click('Rename')
+    await click('Rename', true)
+    expect(videoRef.current).toBeNull()
+    expect(old.hasAttribute('src')).toBe(false)
+    expect(pause.mock.contexts).toContain(old)
+    expect(load.mock.contexts).toContain(old)
+    expect(ipcInvoke).toHaveBeenCalledWith('app:setVideoPlaying', { playing: false })
+    await act(async () => {
+      if (fails) rename.reject(new Error('rename rejected'))
+      else {
+        tape = { ...tape, filename: 'new.mp4' }
+        await render()
+        rename.resolve()
+      }
+    })
+    const restored = video()
+    expect(restored).not.toBe(old)
+    expect(restored.autoplay).toBe(playing)
+    expect(restored.src).toContain(fails ? 'old.mp4' : 'new.mp4')
+    play.mockClear()
+    await act(async () => restored.dispatchEvent(new Event('loadedmetadata', { bubbles: true })))
+    expect(restored.currentTime).toBe(37)
+    expect(play).toHaveBeenCalledTimes(playing ? 1 : 0)
+    if (fails) expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    else expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('releases playback and flushes the final volume on source switch and unmount', async () => {
+    await render()
+    const first = video()
+    expect(first.volume).toBe(0.7)
+    await act(async () => { await first.play(); first.volume = 0.4; first.dispatchEvent(new Event('volumechange')) })
+    expect(useLayoutStore.getState().layout?.volume).toBe(0.4)
+    await act(async () => releaseVideo(first))
+    expect(ipcInvoke).toHaveBeenLastCalledWith('app:setVideoPlaying', { playing: false })
+    await render({ ...tape, id: 'Tape000002', filename: 'second.mp4' })
+    expect(video().volume).toBe(0.4)
+    expect(ipcInvoke).toHaveBeenCalledWith('layout:update', { volume: 0.4 })
+    ipcInvoke.mockClear()
+    await act(async () => first.dispatchEvent(new Event('play')))
+    expect(ipcInvoke).not.toHaveBeenCalled()
+    const second = video()
+    await act(async () => { await second.play(); second.volume = 0.2; second.dispatchEvent(new Event('volumechange')) })
+    await act(async () => root!.unmount()); root = null
+    expect(ipcInvoke).toHaveBeenCalledWith('layout:update', { volume: 0.2 })
+    expect(ipcInvoke).toHaveBeenCalledWith('app:setVideoPlaying', { playing: false })
+  })
+
+  it('reloads accepted metadata and prefers the probed durationSeconds', async () => {
+    ipcInvoke.mockImplementation(async (channel: string) => channel === 'library:getSidecar'
+      ? { duration: 60, tapebox: { media: { durationSeconds: tape.probedAtUtc?.endsWith('01Z') ? 135 : 90 } } }
+      : undefined)
+    await render()
+    expect(host.textContent).toContain('1:30')
+    await render({ ...tape, probedAtUtc: '2026-10-23T00:00:01Z' })
+    expect(host.textContent).toContain('2:15')
+    expect(ipcInvoke.mock.calls.filter(([c]) => c === 'library:getSidecar')).toHaveLength(2)
+  })
+
+  it('ignores sidecar replies after tape or collection replacement', async () => {
+    const requests = [deferred<object>(), deferred<object>(), deferred<object>()]
+    let index = 0
+    ipcInvoke.mockImplementation((channel: string) => channel === 'library:getSidecar' ? requests[index++].promise : Promise.resolve())
+    await render()
+    await render({ ...tape, id: 'Tape000002' })
+    await act(async () => useMediaStore.setState({ collectionRevision: 1 }))
+    await act(async () => requests[2].resolve({ ext: 'current' }))
+    expect(host.textContent).toContain('current')
+    await act(async () => { requests[0].resolve({ ext: 'stale tape' }); requests[1].resolve({ ext: 'stale collection' }) })
+    expect(host.textContent).toContain('current')
+    expect(host.textContent).not.toContain('stale')
+  })
+})

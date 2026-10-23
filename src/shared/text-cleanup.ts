@@ -71,6 +71,12 @@ export function truncate(text: string, n: number): { text: string; truncated: bo
         if (out.length > 0) pendingSpace = true
         continue
       }
+      // A separator is useful only with its following visible grapheme. Keep
+      // both out when they cannot fit, so the result never ends with a space.
+      if (pendingSpace && out.length + 2 > n) {
+        truncated = true
+        break
+      }
       if (pendingSpace) { out.push(' '); pendingSpace = false }
       out.push(segment)
       if (out.length >= n) budgetMet = true

@@ -1,3 +1,5 @@
+import { memo } from 'react'
+import { selectTape } from '@renderer/lib/selectTape'
 import type { Tape, TapeState } from '@shared/domain'
 import { useTapesStore, type ProgressEntry } from '@renderer/store/tapes'
 import { chapterCountLabel, formatTime } from '@renderer/lib/format'
@@ -9,9 +11,9 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 
 type Props = {
   tape: Tape
-  progress: ProgressEntry | undefined
+  progress?: ProgressEntry
   selected: boolean
-  onSelect: () => void
+  onSelect?: () => void
   /** DOM id of this option, so its listbox's aria-activedescendant can target it. */
   id?: string
 }
@@ -30,7 +32,9 @@ type Props = {
  * already filtered to one side (Inbox or Archived), so the flag would be the same on
  * every row.
  */
-export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
+export const TapeRow = memo(function TapeRow({ tape, progress: explicitProgress, selected, onSelect, id }: Props) {
+  const ownProgress = useTapesStore((s) => s.progress[tape.id])
+  const progress = explicitProgress ?? ownProgress
   const palette = paletteFor(tape, selected)
   const stalled = useTapesStore((s) => s.stalled[tape.id] === true)
   const t = useI18n()
@@ -41,7 +45,7 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
       id={id}
       role="option"
       aria-selected={selected}
-      onClick={onSelect}
+      onClick={onSelect ?? (() => selectTape(tape.id))}
       className={
         'listbox-item tape-row block w-full cursor-pointer rounded-md border px-3 py-2 text-left transition ' +
         palette
@@ -81,7 +85,7 @@ export function TapeRow({ tape, progress, selected, onSelect, id }: Props) {
       {!selected && <TapeActionResults tapeId={tape.id} className="mt-2" />}
     </div>
   )
-}
+})
 
 function paletteFor(tape: Tape, selected: boolean): string {
   const state = tape.state

@@ -28,26 +28,54 @@ export function useClipboardUrl(enabled: boolean, initial = '') {
 
   useEffect(() => {
     if (!enabled) return
-    async function sync() {
-      let text: string
-      try {
-        text = (await navigator.clipboard.readText()).trim()
-      } catch {
-        return // permission denied / empty / non-text
-      }
+    let alive = true
+    let focused = false
+    let generation = 0
+    let reading = false
+    let interval: ReturnType<typeof setInterval> | null = null
+    const userOwned = () => {
       const field = urlRef.current.trim()
-      const owned = field !== '' && field !== autoFilledRef.current
-      if (isImportableUrl(text) && text !== autoFilledRef.current && !owned) {
-        setUrl(text)
-        autoFilledRef.current = text
+      return field !== '' && field !== autoFilledRef.current
+    }
+    async function sync() {
+      if (!alive || !focused || reading || userOwned()) return
+      const started = generation
+      reading = true
+      try {
+        const text = (await navigator.clipboard.readText()).trim()
+        // The read can settle after blur, disable, unmount or a user edit.
+        if (!alive || !focused || started !== generation || userOwned()) return
+        if (isImportableUrl(text) && text !== autoFilledRef.current) {
+          setUrl(text)
+          autoFilledRef.current = text
+        }
+      } catch {
+        // Permission denied / empty / non-text clipboard.
+      } finally {
+        if (started === generation) reading = false
       }
     }
-    void sync()
-    window.addEventListener('focus', sync)
-    const id = setInterval(sync, CLIPBOARD_POLL_MS)
+    function pause() {
+      focused = false
+      generation += 1
+      reading = false
+      if (interval !== null) clearInterval(interval)
+      interval = null
+    }
+    function resume() {
+      pause()
+      focused = true
+      void sync()
+      interval = setInterval(sync, CLIPBOARD_POLL_MS)
+    }
+    if (document.hasFocus()) resume()
+    window.addEventListener('focus', resume)
+    window.addEventListener('blur', pause)
     return () => {
-      window.removeEventListener('focus', sync)
-      clearInterval(id)
+      alive = false
+      pause()
+      window.removeEventListener('focus', resume)
+      window.removeEventListener('blur', pause)
     }
   }, [enabled])
 

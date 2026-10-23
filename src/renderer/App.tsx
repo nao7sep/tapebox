@@ -234,7 +234,7 @@ function HydratedApp() {
       onDragOver={denyUnhandledExternalDrop}
       onDrop={denyUnhandledExternalDrop}
     >
-        <header className="flex shrink-0 items-center gap-4 border-b border-line px-4" style={{ height: HEADER_HEIGHT }}>
+        <header className="flex shrink-0 items-center gap-4 border-b border-line px-4 py-3" style={{ minHeight: HEADER_HEIGHT }}>
           <h1 className="shrink-0 text-xl font-medium tracking-tight">TapeBox</h1>
           <div className="flex min-w-0 flex-1 justify-center">
             <div className="w-full max-w-5xl">
