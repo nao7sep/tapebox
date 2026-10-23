@@ -3,6 +3,7 @@
 // Run by `npm run check:package`, which `npm run dist` calls after packaging.
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { assertRequiredPackageEntries } from './package-entries.mjs'
 import { listPackage } from '@electron/asar'
 
 const distDir = resolve('dist')
@@ -27,19 +28,7 @@ const entries = listPackage(archive, { isPack: false })
   .map((entry) => entry.replaceAll('\\', '/').replace(/^\/+/, ''))
 
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
-const required = [
-  'package.json',
-  'out/main/index.js',
-  'out/preload/index.cjs',
-  'out/renderer/index.html',
-  ...Object.keys(packageJson.dependencies).map((name) => `node_modules/${name}/package.json`),
-]
-
-for (const path of required) {
-  if (!entries.includes(path)) {
-    throw new Error(`Packaged app is missing ${path}`)
-  }
-}
+assertRequiredPackageEntries(entries, packageJson.dependencies)
 
 const allowedRoots = new Set(['node_modules', 'out', 'package.json'])
 const unexpected = entries.filter((entry) => !allowedRoots.has(entry.split('/')[0]))

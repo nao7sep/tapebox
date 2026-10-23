@@ -1,0 +1,14 @@
+{
+  "main": {
+    "index": "src/main/index.ts",
+    "records-worker": "src/main/io/records-worker.ts",
+    "records-write-worker": "src/main/io/records-write-worker.ts",
+    "backup-worker": "src/main/store/backup-worker.ts",
+    "catalog-worker": "src/main/store/catalog-worker.ts"
+  },
+  "preload": { "index": "src/preload/index.ts" },
+  "renderer": {
+    "index": "src/renderer/index.html",
+    "records": "src/renderer/records.html"
+  }
+}

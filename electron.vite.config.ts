@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { basename, resolve } from 'node:path'
+import runtimeEntries from './runtime-entries.json'
+import { resolve } from 'node:path'
 import { aliasMap } from './aliases.config'
 
 /**
@@ -20,13 +21,7 @@ import { aliasMap } from './aliases.config'
 // so an unpackaged run reported Electron's version as the app's.
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
-// The main process's worker threads: the records reader and writer, and the backups.
-const MAIN_WORKERS = [
-  'src/main/io/records-worker.ts',
-  'src/main/io/records-write-worker.ts',
-  'src/main/store/backup-worker.ts',
-  'src/main/store/catalog-worker.ts',
-]
+const inputs = (entries: Record<string, string>) => Object.fromEntries(Object.entries(entries).map(([name, source]) => [name, resolve(source)]))
 
 export default defineConfig({
   main: {
@@ -37,10 +32,7 @@ export default defineConfig({
       rollupOptions: {
         // Each worker thread runs from its own entry beside index.js, named after
         // its source file, which is the name the code that starts it uses.
-        input: {
-          index: resolve('src/main/index.ts'),
-          ...Object.fromEntries(MAIN_WORKERS.map((source) => [basename(source, '.ts'), resolve(source)])),
-        },
+        input: inputs(runtimeEntries.main),
         output: { format: 'es', entryFileNames: '[name].js' },
       },
     },
@@ -50,7 +42,8 @@ export default defineConfig({
     resolve: { alias: aliasMap('@shared') },
     build: {
       rollupOptions: {
-        output: { format: 'cjs' },
+        input: inputs(runtimeEntries.preload),
+        output: { format: 'cjs', entryFileNames: '[name].cjs' },
       },
     },
   },
@@ -69,10 +62,7 @@ export default defineConfig({
       // transfer cost. 2000 keeps a runaway bundle loud.
       chunkSizeWarningLimit: 2000,
       rollupOptions: {
-        input: {
-          index: resolve('src/renderer/index.html'),
-          records: resolve('src/renderer/records.html'),
-        },
+        input: inputs(runtimeEntries.renderer),
       },
     },
   },
