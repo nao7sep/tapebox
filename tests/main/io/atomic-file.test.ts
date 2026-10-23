@@ -175,29 +175,41 @@ describe('writeFileAtomicVia', () => {
     const dest = join(dir, 'binary')
     await writeFile(dest, 'original')
     let temp = ''
-    let checks = 0
-    // Abort precisely on the second check: the first follows produce, while the
-    // second is the required post-fsync/pre-rename commit gate.
-    // A real signal, since keeping the original's attributes hands it on.
-    const signal = new AbortController().signal
-    signal.throwIfAborted = () => {
-      checks += 1
-      if (checks === 2) throw new DOMException('cancel before publish', 'AbortError')
-    }
+    const controller = new AbortController()
+    let syncStarted!: () => void
+    let releaseSync!: () => void
+    const syncing = new Promise<void>((resolve) => { syncStarted = resolve })
+    const resumeSync = new Promise<void>((resolve) => { releaseSync = resolve })
+    const open = fileIo.open
+    vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args)
+      if (args[0] === temp && args[1] === 'r+') {
+        const sync = handle.sync.bind(handle)
+        vi.spyOn(handle, 'sync').mockImplementation(async () => {
+          await sync()
+          syncStarted()
+          await resumeSync
+        })
+      }
+      return handle
+    })
 
-    await expect(
-      writeFileAtomicVia(
-        dest,
-        async (tmp) => {
-          temp = tmp
-          await writeFile(tmp, 'replacement')
-        },
-        undefined,
-        signal,
-      ),
-    ).rejects.toMatchObject({ name: 'AbortError' })
+    const run = writeFileAtomicVia(
+      dest,
+      async (tmp) => {
+        temp = tmp
+        await writeFile(tmp, 'replacement')
+      },
+      undefined,
+      controller.signal,
+    )
+    const rejected = expect(run).rejects.toMatchObject({ name: 'AbortError' })
+    try {
+      await syncing
+      controller.abort()
+    } finally { releaseSync() }
+    await rejected
 
-    expect(checks).toBe(2)
     expect(await readFile(dest, 'utf8')).toBe('original')
     expect(await exists(temp)).toBe(false)
   })

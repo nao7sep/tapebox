@@ -32,23 +32,6 @@ function stallingBodyAfter(chunk: Uint8Array): ReadableStream<Uint8Array> {
   })
 }
 
-/** A web ReadableStream that emits one chunk every gapMs, then closes — a
- *  slow-but-alive transfer that should keep re-kicking the idle watchdog. */
-function dripBody(chunks: Uint8Array[], gapMs: number): ReadableStream<Uint8Array> {
-  let i = 0
-  return new ReadableStream<Uint8Array>({
-    pull(controller) {
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          if (i < chunks.length) controller.enqueue(chunks[i++]!)
-          else controller.close()
-          resolve()
-        }, gapMs)
-      })
-    },
-  })
-}
-
 /** A Writable that records every chunk it is handed. */
 function collector(chunks: Buffer[], opts: { delayMs?: number; highWaterMark?: number } = {}): Writable {
   return new Writable({
@@ -202,15 +185,49 @@ describe('pumpToFile', () => {
     expect(isRetryableHttpFailure(error)).toBe(true)
   })
 
-  it('does not fire the idle watchdog while a slow-but-alive transfer keeps delivering', async () => {
-    // Chunks arrive every 10ms against a 250ms idle window: each one re-kicks the
-    // watchdog well inside the deadline, so a healthy-but-slow transfer completes.
+  it('refreshes the idle watchdog during a long active transfer, then expires on an idle gap', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const controller = new AbortController()
+    let source!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({ start(stream) { source = stream } })
     const received: Buffer[] = []
-    const chunks = [1, 2, 3, 4].map((n) => new Uint8Array([n]))
+    let progress!: () => void
+    let outcome: 'pending' | 'completed' | 'failed' = 'pending'
+    const run = pumpToFile(body, collector(received), {
+      ...OPTS,
+      signal: controller.signal,
+      idleTimeoutMs: 100,
+      onProgress: () => progress(),
+    })
+    const settled = run.then(
+      () => { outcome = 'completed'; return undefined },
+      (error: unknown) => { outcome = 'failed'; return error },
+    )
+    try {
+      // Total activity spans 240ms, beyond the initial 100ms deadline. Each
+      // 60ms gap is shorter than the idle window; real progress rearms it.
+      for (const byte of [1, 2, 3, 4]) {
+        await vi.advanceTimersByTimeAsync(60)
+        expect(outcome).toBe('pending')
+        const delivered = new Promise<void>((resolve) => { progress = resolve })
+        source.enqueue(new Uint8Array([byte]))
+        await Promise.race([delivered, settled])
+        expect(outcome).toBe('pending')
+      }
+      expect(Buffer.concat(received)).toEqual(Buffer.from([1, 2, 3, 4]))
 
-    await pumpToFile(dripBody(chunks, 10), collector(received), { ...OPTS, idleTimeoutMs: 250 })
-
-    expect(Buffer.concat(received)).toEqual(Buffer.from([1, 2, 3, 4]))
+      // Silence now reaches the deadline measured from the last chunk.
+      await vi.advanceTimersByTimeAsync(99)
+      expect(outcome).toBe('pending')
+      await vi.advanceTimersByTimeAsync(1)
+      const error = await settled
+      expect(error).toHaveProperty('cause', expect.any(IdleTimeoutError))
+      expect(isRetryableHttpFailure(error)).toBe(true)
+    } finally {
+      controller.abort()
+      await settled
+      vi.useRealTimers()
+    }
   })
 
   it('rejects with an AbortError (and does not hang) when the caller aborts mid-stream', async () => {
