@@ -43,14 +43,14 @@ const newer: RecordSummary = {
 }
 const callDetail: RecordDetail = {
   kind: 'ai-call', id: 4, session: SESSION, tapeId: 't1', startedAt: '2026-10-04T08:01:00.000Z',
-  endedAt: '2026-10-04T08:01:02.500Z', level: 'error', endpoint: 'https://api.openai.com/v1', model: 'gpt-x',
+  endedAt: '2026-10-04T08:01:02.500Z', elapsedMs: null, level: 'error', endpoint: 'https://api.openai.com/v1', model: 'gpt-x',
   request: JSON.stringify({ input: 'say hello', apiKey: 'sk-test' }), status: 429, response: 'null',
   error: JSON.stringify({ name: 'RateLimitError', message: 'quota' }),
 }
 const runDetail: RecordDetail = {
   kind: 'ytdlp-run', id: 2, session: SESSION, tapeId: null, scanId: 's1', run: 'scan', url: 'https://example.com/list',
-  args: JSON.stringify(['--flat-playlist']), startedAt: '2026-10-04T08:00:00.000Z', endedAt: '2026-10-04T08:00:01.000Z',
-  level: 'error', exitCode: 1, signal: null, stopReason: null, stdout: 'partial', stderr: 'ERROR: boom',
+  args: JSON.stringify(['--flat-playlist']), startedAt: '2026-10-04T08:00:00.000Z', endedAt: '2026-10-04T08:00:01.000Z', elapsedMs: null,
+  level: 'error', exitCode: 1, signal: null, stopReason: null, stdout: 'partial', stderr: 'ERROR: boom', stdoutMore: false, stderrMore: false,
 }
 
 type Handler = (req: unknown) => Promise<unknown>
@@ -77,13 +77,11 @@ function answer(channel: keyof IpcCalls, ...values: Array<unknown | (() => Promi
 const box = { scrollTop: 0, scrollHeight: 1000, clientHeight: 200, shellWidth: 2000 }
 const resizeCallbacks = new Set<() => void>()
 class TestResizeObserver {
-  constructor(private readonly callback: () => void) {}
-  observe(): void {
-    resizeCallbacks.add(this.callback)
-  }
-  disconnect(): void {
-    resizeCallbacks.delete(this.callback)
-  }
+  private readonly notify: () => void
+  constructor(callback: ResizeObserverCallback) { this.notify = () => callback([], this as unknown as ResizeObserver) }
+  observe(): void { resizeCallbacks.add(this.notify) }
+  unobserve(): void {}
+  disconnect(): void { resizeCallbacks.delete(this.notify) }
 }
 const isScroll = (element: HTMLElement) => element.hasAttribute('data-records-scroll')
 
@@ -255,8 +253,8 @@ describe('RecordsWindow', () => {
     answer('records:page', { records: [{ ...call, kind: 'ffmpeg-run', id: 3, title: 'ffmpeg probe', level: 'info' }], more: false })
     answer('records:detail', {
       kind: 'ffmpeg-run', id: 3, session: SESSION, tapeId: null, run: 'probe', args: '[]',
-      startedAt: runDetail.startedAt, endedAt: runDetail.endedAt, level: 'info', exitCode: 0, signal: null, stopReason: null,
-      stdout: '{"streams":[]}', stderr: ' \n',
+      startedAt: runDetail.startedAt, endedAt: runDetail.endedAt, elapsedMs: null, level: 'info', exitCode: 0, signal: null, stopReason: null,
+      stdout: '{"streams":[]}', stderr: ' \n', stdoutMore: false, stderrMore: false,
     } satisfies RecordDetail)
     await mount()
     await act(async () => options()[0]!.click())
@@ -495,6 +493,25 @@ describe('RecordsWindow', () => {
     expect(detailCalls()).toHaveLength(1)
   })
 
+  it('keeps selected detail stable when its summary page leaves the viewport cache', async () => {
+    const pages: RecordsPage[] = Array.from({ length: 10 }, (_, index) => ({
+      records: [{ ...line, id: 100 + index, title: `Older record ${index}` }], more: index < 9,
+    }))
+    answer('records:page', { records: [call, line], more: true }, ...pages)
+    await mount()
+    await act(async () => options()[0]!.click())
+    const detail = document.querySelector('[data-records-detail]')!
+    expect(detail.textContent).toContain('gpt-x')
+    await scrollTo(700)
+    expect(options().some((option) => option.dataset.recordKey === 'ai-call:4')).toBe(false)
+    expect(Number(options()[0]!.getAttribute('aria-posinset'))).toBeGreaterThan(1)
+    expect(options()[0]!.getAttribute('aria-setsize')).toBe('12')
+    expect(listbox().getAttribute('aria-activedescendant')).toBeNull()
+    expect(document.querySelector('[data-records-detail]')).toBe(detail)
+    expect(detail.textContent).toContain('gpt-x')
+    expect(detailCalls()).toHaveLength(1)
+  })
+
   it('stops reading on new-record signals after a failed read, so a logged failure cannot start the next read', async () => {
     await mount()
     vi.useFakeTimers()
@@ -568,6 +585,24 @@ describe('RecordsWindow', () => {
 })
 
 describe('RecordsApp', () => {
+  it('shows localized loading until saved layout and display settings are ready', async () => {
+    const layout = deferred<typeof defaultLayout>()
+    const settings = deferred<{ timeZone: string }>()
+    answer('layout:get', () => layout.promise)
+    answer('settings:get', () => settings.promise)
+    await mount(createElement(RecordsApp))
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('Loading…')
+    expect(pageCalls()).toHaveLength(0)
+    await act(async () => listeners.get('settings:languageChanged')!('ja'))
+    expect(document.querySelector('[role="status"]')?.textContent).toBe(CATALOGUES.ja['common.loading'])
+    await act(async () => layout.resolve(defaultLayout))
+    expect(document.querySelector('[role="status"]')?.textContent).toBe(CATALOGUES.ja['common.loading'])
+    expect(pageCalls()).toHaveLength(0)
+    await act(async () => settings.resolve({ timeZone: 'UTC' }))
+    expect(document.querySelector('[role="status"]')?.textContent).not.toBe(CATALOGUES.ja['common.loading'])
+    expect(pageCalls()).toHaveLength(1)
+  })
+
   it('opens the list at its saved width, and follows a language saved in Settings', async () => {
     await mount(createElement(RecordsApp))
 

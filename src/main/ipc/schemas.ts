@@ -137,5 +137,6 @@ export const ipcRequestSchemas = {
   'records:open':          z.undefined(),
   'records:page':          RecordsQuerySchema,
   'records:detail':        z.object({ kind: RecordKindSchema, id: z.number().int() }),
+  'records:output':        z.object({ kind: z.enum(['ytdlp-run', 'ffmpeg-run']), id: z.number().int(), stream: z.enum(['stdout', 'stderr']), page: z.number().int().nonnegative() }),
   'records:sources':       z.undefined(),
 } satisfies { [K in keyof IpcCalls]: z.ZodType<IpcCalls[K]['req']> }

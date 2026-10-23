@@ -6,7 +6,6 @@ import {
   jsonBlock,
   mergeNewestPage,
   nearEnd,
-  prettyJson,
   recordKey,
   textBlock,
 } from '@renderer/records/record-format'
@@ -56,11 +55,6 @@ describe('mergeNewestPage', () => {
 describe('record format', () => {
   it('keys a record by its kind and id, since ids repeat across tables', () => {
     expect(recordKey({ kind: 'ai-call', id: 3 })).not.toBe(recordKey({ kind: 'log', id: 3 }))
-  })
-
-  it('indents stored JSON and shows other text as it is', () => {
-    expect(prettyJson('{"a":[1]}')).toBe('{\n  "a": [\n    1\n  ]\n}')
-    expect(prettyJson('not json {')).toBe('not json {')
   })
 
   it('gives no block for stored JSON that holds nothing', () => {

@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, describe, expect, it } from 'vitest'
-import { readPage } from '@main/io/records-query'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readPage, readSources, readDetail, readOutput } from '@main/io/records-query'
 import type { RecordKind, RecordsQuery, RecordSummary } from '@shared/records'
 import { createRecordsDatabase, growRecords, pageQueryPlan, recordsQuery } from '../../helpers/records-query-growth'
 
@@ -89,10 +89,11 @@ describe('Records chronological page queries', () => {
     }
   })
 
-  it('adds chronological indexes to an existing current store while preserving its facts', async () => {
+  it('adds chronological indexes and execution facts to an existing current store while preserving its history', async () => {
     const { db, path } = await freshDatabase()
     growRecords(db, 0, 40)
     const before = readPage(db, recordsQuery())
+    db.exec('DROP TABLE execution_facts')
     for (const table of ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']) {
       db.exec(`DROP INDEX IF EXISTS idx_${table}_time_id`)
     }
@@ -178,5 +179,121 @@ describe('Records chronological page queries', () => {
         expect(readPage(db, query), JSON.stringify(query)).toEqual(referencePage(facts, query))
       }
     }
+  })
+})
+
+
+it('refreshes source choices by new IDs while preserving complete sorted options across reads', async () => {
+  const { db, path } = await freshDatabase()
+  growRecords(db, 0, 40)
+  const tables = ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']
+  const cursors = tables.map((table) => Number((db.prepare(`SELECT MAX(id) AS id FROM ${table}`).get() as { id: number }).id))
+  const originalPrepare = db.prepare.bind(db)
+  const observed: Array<{ sql: string; cursor: unknown }> = []
+  const prepare = vi.spyOn(db, 'prepare').mockImplementation((sql) => {
+    const statement = originalPrepare(sql)
+    if (sql.includes('WHERE id > ?')) {
+      const iterate = statement.iterate.bind(statement)
+      statement.iterate = ((...params: Parameters<typeof iterate>) => {
+        observed.push({ sql, cursor: params[0] })
+        return iterate(...params)
+      }) as typeof statement.iterate
+    }
+    return statement
+  })
+  const oracle = () => {
+    const sources = tables.map((table) => `SELECT session, tape_id, ${table === 'logs' ? 'time' : 'started_at_utc'} AS time FROM ${table}`).join(' UNION ALL ')
+    const sessions = db.prepare(`SELECT DISTINCT session FROM (${sources}) ORDER BY session DESC`).all() as { session: string }[]
+    const tapes = db.prepare(`SELECT tape_id AS tapeId, MAX(time) AS last FROM (${sources}) WHERE tape_id IS NOT NULL GROUP BY tape_id ORDER BY last DESC, tape_id ASC`).all() as { tapeId: string }[]
+    return { sessions: sessions.map((row) => row.session), tapeIds: tapes.map((row) => row.tapeId) }
+  }
+  try {
+    expect(readSources(db)).toEqual(oracle())
+    expect(observed.map((entry) => entry.cursor)).toEqual([0, 0, 0, 0])
+    observed.length = 0
+    growRecords(db, 40, 80)
+    db.prepare("INSERT INTO logs (session, time, level, message, tape_id, fields) VALUES ('new-session', '2026-10-23T00:00:00.000Z', 'info', 'new fact', 'new-tape', '{}')").run()
+    const expected = oracle()
+    expect(readSources(db)).toEqual(expected)
+    expect(observed.map((entry) => entry.cursor)).toEqual(cursors)
+    for (const [index, table] of tables.entries()) {
+      expect(observed[index]!.sql).toContain(`FROM ${table} WHERE id > ?`)
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${observed[index]!.sql}`).all(cursors[index]!) as { detail: string }[]
+      expect(plan.some((row) => row.detail.includes('USING INTEGER PRIMARY KEY (rowid>?)'))).toBe(true)
+    }
+    const reopened = new DatabaseSync(path)
+    databases.push(reopened)
+    expect(readSources(reopened)).toEqual(expected)
+    expect(readSources(db)).toEqual(expected)
+  } finally { prepare.mockRestore() }
+})
+
+describe('bounded run output history', () => {
+  const run = (db: DatabaseSync, kind: 'ytdlp-run' | 'ffmpeg-run', stdout: string, stderr = ''): number => {
+    const table = kind === 'ytdlp-run' ? 'ytdlp_runs' : 'ffmpeg_runs'
+    const columns = kind === 'ytdlp-run' ? 'session, kind, url, args, started_at_utc, ended_at_utc, stdout, stderr' : 'session, kind, args, started_at_utc, ended_at_utc, stdout, stderr'
+    const values = kind === 'ytdlp-run' ? ['output-session', 'probe', 'https://example.test', '[]', '2026-10-23T00:00:00.000Z', '2026-10-23T00:00:01.000Z', stdout, stderr] : ['output-session', 'probe', '[]', '2026-10-23T00:00:00.000Z', '2026-10-23T00:00:01.000Z', stdout, stderr]
+    return Number(db.prepare(`INSERT INTO ${table} (${columns}) VALUES (${values.map(() => '?').join(',')})`).run(...values).lastInsertRowid)
+  }
+
+  it.each(['ytdlp-run', 'ffmpeg-run'] as const)('retrieves complete Unicode legacy %s output in bounded pages, without new tables', async (kind) => {
+    const { db } = await freshDatabase()
+    db.exec('DROP TABLE IF EXISTS run_outputs; DROP TABLE IF EXISTS run_output_chunks; DROP TABLE IF EXISTS execution_facts')
+    const text = 'x'.repeat(32767) + '\u{1F600}' + 'e\u0301'.repeat(20000) + 'tail'
+    const id = run(db, kind, text)
+    const detail = readDetail(db, kind, id)
+    expect(detail).toMatchObject({ stdout: 'x'.repeat(32767) + '\u{1F600}', stdoutMore: true, stderr: '', stderrMore: false, elapsedMs: null })
+    let recovered = ''
+    for (let page = 0; ; page++) {
+      const output = readOutput(db, { kind, id, stream: 'stdout', page })
+      expect(Array.from(output.text).length).toBeLessThanOrEqual(32768)
+      recovered += output.text
+      if (!output.more) break
+    }
+    expect(recovered).toBe(text)
+    expect(readOutput(db, { kind, id, stream: 'stderr', page: 0 })).toEqual({ text: '', more: false })
+    expect(readOutput(db, { kind, id, stream: 'stdout', page: 100 })).toEqual({ text: '', more: false })
+    expect(readOutput(db, { kind, id: id + 1, stream: 'stdout', page: 0 })).toEqual({ text: '', more: false })
+    expect(readPage(db, recordsQuery({ kind, search: 'tail' })).records.map((row) => row.id)).toEqual([id])
+  })
+
+  it.each(['ytdlp-run', 'ffmpeg-run'] as const)('reads mapped %s chunks exactly and searches later output while isolating session and stream', async (kind) => {
+    const { db } = await freshDatabase()
+    const id = run(db, kind, 'legacy stdout must be replaced', 'legacy stderr must be replaced')
+    const table = kind === 'ytdlp-run' ? 'ytdlp_runs' : 'ffmpeg_runs'
+    db.prepare('INSERT INTO run_outputs (record_table, record_id, run_key) VALUES (?, ?, ?)').run(table, id, 'output-key')
+    const chunk = db.prepare('INSERT INTO run_output_chunks (session, run_key, stream, sequence, content) VALUES (?, ?, ?, ?, ?)')
+    const pages = ['a'.repeat(32766) + '\u{1F600}', 'e\u0301'.repeat(16384), 'find-me-on-last-page']
+    pages.forEach((text, sequence) => chunk.run('output-session', 'output-key', 'stdout', sequence, text))
+    chunk.run('output-session', 'output-key', 'stderr', 0, 'warning')
+    chunk.run('different-session', 'output-key', 'stdout', 0, 'other session secret')
+    expect(readDetail(db, kind, id)).toMatchObject({ stdout: pages[0], stdoutMore: true, stderr: 'warning', stderrMore: false })
+    const read = pages.map((text, page) => {
+      const output = readOutput(db, { kind, id, stream: 'stdout', page })
+      expect(output).toEqual({ text, more: page < pages.length - 1 })
+      expect(output.text.length).toBeLessThanOrEqual(32768)
+      return output.text
+    })
+    expect(read.join('')).toBe(pages.join(''))
+    expect(readOutput(db, { kind, id, stream: 'stdout', page: 3 })).toEqual({ text: '', more: false })
+    expect(readPage(db, recordsQuery({ kind, search: 'find-me-on-last-page' })).records.map((row) => row.id)).toEqual([id])
+    expect(readPage(db, recordsQuery({ kind, search: 'other session secret' })).records).toEqual([])
+    // Literal and ASCII case-insensitive matching survives page boundaries.
+    expect(readPage(db, recordsQuery({ kind, search: '\u{1F600}e\u0301' })).records.map((row) => row.id)).toEqual([id])
+    expect(readPage(db, recordsQuery({ kind, search: 'e\u0301FIND-ME' })).records.map((row) => row.id)).toEqual([id])
+    expect(readPage(db, recordsQuery({ kind, search: 'last-pagewarning' })).records).toEqual([])
+    expect(readPage(db, recordsQuery({ kind, search: 'warningaaa' })).records).toEqual([])
+    // An arbitrarily long query may span more than two small persisted chunks.
+    chunk.run('output-session', 'long-key', 'stdout', 0, 'First%_')
+    chunk.run('output-session', 'long-key', 'stdout', 1, 'Middle')
+    chunk.run('output-session', 'long-key', 'stdout', 2, 'Last')
+    db.prepare('UPDATE run_outputs SET run_key = ? WHERE record_table = ? AND record_id = ?').run('long-key', table, id)
+    expect(readPage(db, recordsQuery({ kind, search: 'FIRST%_MIDDLELAST' })).records.map((row) => row.id)).toEqual([id])
+    expect(readPage(db, recordsQuery({ kind, search: 'firstanythingmiddlelast' })).records).toEqual([])
+    db.prepare("DELETE FROM run_output_chunks WHERE run_key = 'long-key' AND sequence = 0").run()
+    expect(readOutput(db, { kind, id, stream: 'stdout', page: 0 })).toEqual({ text: '', more: true })
+    expect(readOutput(db, { kind, id, stream: 'stdout', page: 1 })).toEqual({ text: 'Middle', more: true })
+    expect(readOutput(db, { kind, id, stream: 'stdout', page: 2 })).toEqual({ text: 'Last', more: false })
+
   })
 })

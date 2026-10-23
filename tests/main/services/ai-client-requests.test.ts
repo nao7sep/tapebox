@@ -62,9 +62,9 @@ describe('slug request routing', () => {
     await expect(generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)).resolves.toBe('morning-walk')
   })
 
-  it('honours the capped Retry-After and stops after three attempts', async () => {
+  it('honours Retry-After within the automatic wait budget and stops after three attempts', async () => {
     vi.useFakeTimers()
-    const error = new OpenAI.APIError(503, { message: 'busy' }, undefined, new Headers({ 'retry-after': '90' }))
+    const error = new OpenAI.APIError(503, { message: 'busy' }, undefined, new Headers({ 'retry-after': '30' }))
     create.mockRejectedValue(error)
     const outcome = generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal).catch((error) => error)
     await vi.advanceTimersByTimeAsync(0)
@@ -76,6 +76,25 @@ describe('slug request routing', () => {
     await vi.advanceTimersByTimeAsync(30_000)
     expect(create).toHaveBeenCalledTimes(3)
     expect((await outcome).message).toContain('busy')
+  })
+
+  it.each(['90', new Date(Date.now() + 120_000).toUTCString()])('returns the provider error without an early resend for Retry-After %s', async (value) => {
+    vi.useFakeTimers()
+    create.mockRejectedValue(new OpenAI.APIError(429, { message: 'busy' }, undefined, new Headers({ 'retry-after': value })))
+    await expect(generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)).rejects.toThrow('busy')
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(create).toHaveBeenCalledOnce()
+  })
+
+  it('uses ordinary backoff for an invalid Retry-After', async () => {
+    vi.useFakeTimers()
+    create.mockRejectedValueOnce(new OpenAI.APIError(503, { message: 'busy' }, undefined, new Headers({ 'retry-after': 'invalid' })))
+    const outcome = generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(create).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(outcome).resolves.toBe('a-name')
+    expect(create).toHaveBeenCalledTimes(2)
   })
 
   it('records each attempt whole, the request as sent with its headers masked and the provider\'s error body', async () => {
@@ -108,6 +127,23 @@ describe('slug request routing', () => {
     expect(sent.body).toMatchObject({ model: 'gpt-6-luna', messages: [expect.objectContaining({ role: 'user' })] })
     expect(JSON.parse(rows[1]!.row.response)).toEqual(answer)
     expect(rows[1]!.row).toMatchObject({ status: null, error: null })
+  })
+
+  it('records monotonic attempt duration when the wall clock moves backwards', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-23T10:00:00Z'))
+    let monotonic = 100
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => monotonic)
+    create.mockImplementationOnce(async () => {
+      vi.setSystemTime(new Date('2026-10-23T09:00:00Z'))
+      monotonic = 350
+      return { choices: [{ finish_reason: 'stop', message: { content: '{"slug":"a-name"}' } }] }
+    })
+    try {
+      await generateSlug({ tapeId: 't1', title: 'Title' }, new AbortController().signal)
+      expect(writeRecord.mock.calls[0]![5]).toEqual({ elapsedMs: 250, succeeded: true })
+      expect(writeRecord.mock.calls[0]![1]).toMatchObject({ started_at_utc: '2026-10-23T10:00:00.000Z', ended_at_utc: '2026-10-23T09:00:00.000Z' })
+    } finally { now.mockRestore() }
   })
 
   it('records the parameters the app built, without headers or the key, for an attempt that never left', async () => {

@@ -92,3 +92,19 @@ describe('records IPC', () => {
     expect(await invoke('records:page', query)).toEqual({ ok: false, failure: { code: 'internal', userMessage: null } })
   })
 })
+
+
+describe('records output IPC', () => {
+  it('reads one output page through the reader worker', async () => {
+    readRecords.mockResolvedValueOnce({ text: 'next page', more: true })
+    const request = { kind: 'ffmpeg-run', id: 4, stream: 'stderr', page: 2 }
+    expect(await invoke('records:output', request)).toEqual({ ok: true, value: { text: 'next page', more: true } })
+    expect(readRecords).toHaveBeenCalledExactlyOnceWith({ op: 'output', ...request })
+  })
+
+  it.each([{ page: -1 }, { page: 0.5 }, { kind: 'log' }, { stream: 'other' }])('refuses an invalid output page before querying (%j)', async (invalid) => {
+    const reply = await invoke('records:output', { kind: 'ytdlp-run', id: 1, stream: 'stdout', page: 0, ...invalid })
+    expect(reply).toMatchObject({ ok: false })
+    expect(readRecords).not.toHaveBeenCalled()
+  })
+})

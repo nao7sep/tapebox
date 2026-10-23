@@ -235,10 +235,58 @@ describe('records reads', () => {
     })
   })
 
+  it('stores execution facts beside their unchanged rows and uses semantic run success', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    records.openRecords()
+    const row = {
+      tape_id: 't1', kind: 'probe', args: '[]', started_at_utc: '2026-10-04T10:00:07.000Z',
+      ended_at_utc: '2026-10-04T09:00:00.000Z', exit_code: 1, signal: null, stop_reason: null,
+      stdout: '', stderr: 'Duration: 00:00:01.00',
+    }
+    records.writeRecord('ffmpeg_runs', row, () => 'probe', 'info', false, { elapsedMs: 1250, succeeded: true })
+    records.writeRecord('ffmpeg_runs', { ...row, stop_reason: 'cancel' }, () => 'cancel', 'info', false, { elapsedMs: 50, succeeded: false })
+    records.writeRecord('ffmpeg_runs', { ...row, stderr: 'Invalid data found' }, () => 'failed', 'info', false, { elapsedMs: 20, succeeded: false })
+    records.writeRecord('ffmpeg_runs', row, () => 'historical')
+    await records.flushRecords()
+    const page = await reader.readRecords({ op: 'page', query: query({ kind: 'ffmpeg-run' }) })
+    expect(page.records.map((record) => record.level)).toEqual(['error', 'error', 'warn', 'info'])
+    const good = page.records.at(-1)!
+    expect(await reader.readRecords({ op: 'detail', kind: 'ffmpeg-run', id: good.id })).toMatchObject({
+      elapsedMs: 1250, level: 'info', exitCode: 1, endedAt: row.ended_at_utc,
+    })
+    expect((await reader.readRecords({ op: 'page', query: query({ level: 'error' }) })).records).toHaveLength(2)
+    const db = new DatabaseSync(paths.records, { readOnly: true })
+    try {
+      expect(db.prepare('SELECT elapsed_ms, succeeded FROM execution_facts WHERE record_table = ? AND record_id = ?').get('ffmpeg_runs', good.id))
+        .toMatchObject({ elapsed_ms: 1250, succeeded: 1 })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM execution_facts').get()).toMatchObject({ count: 3 })
+    } finally { db.close() }
+  })
+
+  it('rolls back the record when its execution facts cannot be stored', async () => {
+    const { records, reader } = await freshApp()
+    const { paths } = await import('@main/paths')
+    records.openRecords()
+    await records.waitForRecordsInitialization()
+    const db = new DatabaseSync(paths.records)
+    try {
+      db.exec("CREATE TRIGGER reject_execution_facts BEFORE INSERT ON execution_facts BEGIN SELECT RAISE(ABORT, 'fixture refused facts'); END")
+      records.writeRecord('ai_calls', {
+        tape_id: 't1', started_at_utc: '2026-10-04T10:00:00.000Z', ended_at_utc: '2026-10-04T10:00:01.000Z',
+        endpoint: 'https://example.test', model: 'fixture', request: null, status: null, response: null, error: null,
+      }, () => 'fixture failed write', 'info', false, { elapsedMs: 1000, succeeded: true })
+      await records.flushRecords()
+      expect((await reader.readRecords({ op: 'page', query: query() })).records).toEqual([])
+      expect(db.prepare('SELECT COUNT(*) AS count FROM execution_facts').get()).toMatchObject({ count: 0 })
+    } finally { db.close() }
+  })
+
   it('stamps format 1 on a database it creates, and reads it back', async () => {
     const { records, reader } = await freshApp()
     const { paths } = await import('@main/paths')
     records.openRecords()
+    await records.waitForRecordsInitialization()
     logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'kept')
     await records.closeRecords()
     const check = new DatabaseSync(paths.records, { readOnly: true })
@@ -330,7 +378,7 @@ describe('records reads', () => {
 
     expect(await reader.readRecords({ op: 'detail', kind: 'ai-call', id: idOf('ai-call') })).toEqual({
       kind: 'ai-call', id: idOf('ai-call'), session, tapeId: 't1',
-      startedAt: '2026-10-04T10:00:03.000Z', endedAt: '2026-10-04T10:00:04.250Z', level: 'error',
+      startedAt: '2026-10-04T10:00:03.000Z', endedAt: '2026-10-04T10:00:04.250Z', elapsedMs: null, level: 'error',
       endpoint: 'https://api.openai.com/v1', model: 'gpt-x', request: JSON.stringify({ input: 'slug 100%' }),
       status: 429, response: JSON.stringify({ message: 'quota' }), error: JSON.stringify({ name: 'RateLimitError' }),
     })

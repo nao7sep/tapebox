@@ -5,7 +5,7 @@ export type StopCause = Extract<RunStop, 'cancel' | 'quit'>
 
 /**
  * The abort reason of every controller whose work runs yt-dlp or ffmpeg, so a run
- * the abort ended records which it was (io/spawn.ts collectOutput) and the
+ * the abort ended records which it was (io/spawn.ts collectRunFacts) and the
  * Records window reads a cancel apart from a failure. It is still an AbortError.
  */
 export class StopRequest extends DOMException {

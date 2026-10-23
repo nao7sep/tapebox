@@ -3,7 +3,7 @@ import type { Settings, SettingsSets } from './settings'
 import type { Layout } from './layout'
 import type { Message } from './i18n/translate'
 import type { LanguagePreference } from './i18n/languages'
-import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery } from './records'
+import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery, RunOutputQuery, RunOutputPage } from './records'
 
 /**
  * Request/response contract for ipcMain.handle / ipcRenderer.invoke channels.
@@ -154,6 +154,7 @@ export type IpcCalls = {
   'records:open':          { req: undefined;                         res: void }
   'records:page':          { req: RecordsQuery;                      res: RecordsPage }
   'records:detail':        { req: { kind: RecordKind; id: number };  res: RecordDetail | null }
+  'records:output':        { req: RunOutputQuery;                    res: RunOutputPage }
   'records:sources':       { req: undefined;                         res: RecordSources }
 }
 
@@ -186,7 +187,8 @@ export type SidecarRaw = Record<string, unknown> & {
  * (@shared/binary-status), which the renderer calls to compute the displayed
  * lifecycle/currency/role. This carries facts, not a pre-derived state, so every
  * surface derives through the one shared rule. `present` is re-probed by main per
- * snapshot; the rest mirror the persisted BinaryEntry. Transient operation status
+ * snapshot, and `installedVersion` is read from the artifact. The latest-known
+ * version and successful-check time mirror the persisted BinaryEntry. Transient operation status
  * (in-flight progress, a just-failed action) is NOT here — it lives in the renderer
  * store and is layered over the derived state.
  */

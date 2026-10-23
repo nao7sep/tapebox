@@ -18,8 +18,8 @@ import { message } from '@shared/i18n/translate'
  *
  * Events:
  *   scan:entry  — per video as it arrives
- *   scan:done   — stream finished, possibly with partial results after a yt-dlp error
- *   scan:error  — yt-dlp failed before listing anything
+ *   scan:done   — stream completed successfully
+ *   scan:error  — yt-dlp failed; already delivered entries remain available
  * A stopped scan emits neither.
  */
 

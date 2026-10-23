@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SubprocessError } from '@main/io/spawn'
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
-const { writeRecord } = vi.hoisted(() => ({ writeRecord: vi.fn() }))
-vi.mock('@main/io/records', () => ({ writeRecord }))
+const { writeRecord, writeOutputChunk } = vi.hoisted(() => ({ writeRecord: vi.fn(), writeOutputChunk: vi.fn() }))
+vi.mock('@main/io/records', () => ({ writeRecord, writeOutputChunk }))
 // The scan's "yt-dlp" is Node waiting until it is stopped; its own flags follow `--`.
 vi.mock('@main/paths', () => ({ binaryPath: () => process.execPath, paths: { bin: '/bin' } }))
 vi.mock('@main/services/ytdlp-args', () => ({ resolveYtdlpArgs: () => ['-e', 'setInterval(() => {}, 1000)', '--'] }))
@@ -23,9 +23,9 @@ describe('scanOutcome', () => {
   })
 
   it('keeps the entries a scan listed before yt-dlp failed', () => {
-    expect(scanOutcome({ ...ended, exitCode: 1, totalCount: 12 })).toEqual({ kind: 'done', totalCount: 12 })
+    expect(scanOutcome({ ...ended, exitCode: 1, totalCount: 12 })).toMatchObject({ kind: 'failed' })
     expect(scanOutcome({ ...ended, failure: new Error('idle'), exitCode: null, totalCount: 3 }))
-      .toEqual({ kind: 'done', totalCount: 3 })
+      .toMatchObject({ kind: 'failed' })
   })
 
   it('reports a failed exit with nothing listed as a failure carrying yt-dlp reason', () => {
@@ -41,6 +41,7 @@ describe('scanOutcome', () => {
 describe('stopping a scan', () => {
   it.each(['cancel', 'quit'] as const)('records a scan stopped for %s with that reason', async (by) => {
     writeRecord.mockClear()
+    writeOutputChunk.mockClear()
     const scan = startScan('https://example.com/list', 's1', () => {})
     scan.cancel(by)
 

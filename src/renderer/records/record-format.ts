@@ -19,15 +19,6 @@ export function recordKey(record: { kind: RecordKind; id: number }): string {
   return `${record.kind}:${record.id}`
 }
 
-/** Stored JSON, indented for reading; text that is not JSON is shown as it is. */
-export function prettyJson(text: string): string {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2)
-  } catch {
-    return text
-  }
-}
-
 function holdsNothing(value: unknown): boolean {
   if (value === null) return true
   if (typeof value === 'string') return value.trim() === ''

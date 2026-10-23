@@ -8,13 +8,36 @@ import { databaseTransaction, openWritableDatabase } from './sqlite-store.ts'
 
 export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
 export type RecordRow = Record<string, SQLInputValue>
-export type RecordWriteRequest = { id: number; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer }
+export type ExecutionFacts = { elapsedMs?: number | null; succeeded?: boolean | null; outputKey?: string }
+export type RecordWriteRequest = { facts?: ExecutionFacts; id: number; chunk?: { runKey: string; stream: 'stdout' | 'stderr'; sequence: number; content: string }; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer }
 export type RecordWriteResponse = { id: number; stored: boolean; console?: string; diagnostics: string[] }
 /** `textOnly`: the replacement for a writer that stalled, which writes only the
  *  text file and never opens the database that stalled it. */
 export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; responsePort?: MessagePort; textOnly?: boolean }
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS run_output_chunks (
+  session TEXT NOT NULL,
+  run_key TEXT NOT NULL,
+  stream TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  PRIMARY KEY (session, run_key, stream, sequence)
+);
+CREATE TABLE IF NOT EXISTS run_outputs (
+  record_table TEXT NOT NULL,
+  record_id INTEGER NOT NULL,
+  run_key TEXT NOT NULL,
+  PRIMARY KEY (record_table, record_id)
+);
+
+CREATE TABLE IF NOT EXISTS execution_facts (
+  record_table TEXT NOT NULL,
+  record_id INTEGER NOT NULL,
+  elapsed_ms REAL,
+  succeeded INTEGER,
+  PRIMARY KEY (record_table, record_id)
+);
 CREATE TABLE IF NOT EXISTS logs (
   id      INTEGER PRIMARY KEY,
   session TEXT NOT NULL,
@@ -123,7 +146,16 @@ port.on('message', (request: RecordWriteRequest) => {
           const sql = `INSERT INTO ${request.table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`
           let statement = statements.get(sql)
           if (!statement) { statement = store.prepare(sql); statements.set(sql, statement) }
-          statement.run(data.session, ...Object.values(row))
+          const inserted = statement.run(data.session, ...Object.values(row))
+          if (request.facts?.outputKey) {
+            store.prepare('INSERT INTO run_outputs (record_table, record_id, run_key) VALUES (?, ?, ?)')
+              .run(request.table!, inserted.lastInsertRowid, request.facts.outputKey)
+          }
+          if (request.facts) {
+            store.prepare('INSERT INTO execution_facts (record_table, record_id, elapsed_ms, succeeded) VALUES (?, ?, ?, ?)')
+              .run(request.table!, inserted.lastInsertRowid, request.facts.elapsedMs ?? null,
+                request.facts.succeeded == null ? null : Number(request.facts.succeeded))
+          }
         })
         response.stored = true
         failing = false
@@ -133,6 +165,21 @@ port.on('message', (request: RecordWriteRequest) => {
       }
     }
     if (!response.stored) fallback(request.text ?? '', response)
+  }
+  if (request.chunk) {
+    let stored = false
+    if (db) try {
+      const chunk = request.chunk
+      db.prepare('INSERT INTO run_output_chunks (session, run_key, stream, sequence, content) VALUES (?, ?, ?, ?, ?)')
+        .run(data.session, chunk.runKey, chunk.stream, chunk.sequence, chunk.content)
+      stored = true
+      failing = false
+    } catch (error) {
+      if (!failing) fallback(failureNote('records output write failed; writing to a text file', error), response, true)
+      failing = true
+    }
+    if (!stored) fallback(request.text ?? '', response)
+    // Chunks are invisible until their completed metadata row is published.
   }
   // Publish the acknowledgement before releasing a terminal waiter.
   replyPort.postMessage(response)

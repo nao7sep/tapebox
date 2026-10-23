@@ -7,7 +7,7 @@ import { utcTimestampForFilename } from '@shared/utc'
 import { toJson } from './log-format'
 import type { RecordWriteData, RecordWriteRequest, RecordWriteResponse } from './records-write-worker'
 export type { RecordTable, RecordRow } from './records-write-worker'
-import type { RecordTable, RecordRow } from './records-write-worker'
+import type { RecordTable, RecordRow, ExecutionFacts } from './records-write-worker'
 
 /** Records SQLite and fallback filesystem work belong to the writer thread.
  * Main owns admission, acknowledgements, deadlines and commit notifications. */
@@ -138,11 +138,18 @@ function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: L
 }
 
 /** Whether this call already printed its fallback to the console. */
-export function writeRecord(table: RecordTable, row: RecordRow, text: () => string, level: LogLevel = 'info', mirrored = false): boolean {
+export function writeRecord(table: RecordTable, row: RecordRow, text: () => string, level: LogLevel = 'info', mirrored = false, facts?: ExecutionFacts): boolean {
   if (session === null || closed || !worker || pending.size >= RECORD_PENDING_LIMIT) { toConsole(level, text()); return true }
   const line = text()
-  enqueue({ table, row, text: line }, line, level, mirrored)
+  enqueue({ table, row, text: line, facts }, line, level, mirrored)
   return false
+}
+
+/** Bounded best-effort admission shares the same writer and fallback as metadata. */
+export function writeOutputChunk(runKey: string, stream: 'stdout' | 'stderr', sequence: number, content: string): void {
+  const text = toJson({ record: 'run output', session, runKey, stream, sequence, content })
+  if (session === null || closed || !worker || pending.size >= RECORD_PENDING_LIMIT) { toConsole('info', text); return }
+  enqueue({ chunk: { runKey, stream, sequence, content }, text }, text, 'info', false)
 }
 
 export function flushRecords(): Promise<void> {

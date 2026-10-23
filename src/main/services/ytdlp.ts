@@ -7,10 +7,10 @@ import { watchForStall } from './download-stall'
 import { YTDLP_PROBE_IDLE_TIMEOUT_MS } from '@main/io/network'
 import { toJson } from '@main/io/log-format'
 import { writeRecord } from '@main/io/records'
+import { createRunCapture } from '@main/io/run-capture'
 import { maskCredentials, maskYtdlpArgs, maskYtdlpOutput } from '@main/io/mask'
 import { nowUtcIso } from '@shared/utc'
 import {
-  collectOutput,
   makeLineBuffer,
   spawnStreaming,
   SubprocessError,
@@ -48,28 +48,21 @@ export type YtdlpRun = {
   args: readonly string[]
 }
 
-/**
- * Collect everything a yt-dlp run writes, both streams whole, and record it as a
- * `ytdlp_runs` row once the run has ended (data-lifecycle conventions).
- * Attach it right after the spawn, before any output can arrive.
- *
- * The record, and the stderr callers put in errors and logs, hold the run with
- * its credentials masked: the user's arguments can carry a password, a cookie or
- * an Authorization header, and yt-dlp can echo them (io/mask.ts). `stdout()`
- * stays as yt-dlp wrote it, for parsing.
- */
+/** Stream safe diagnostics as the child runs; only the JSON probe retains raw stdout. */
 export function collectRun(
-  child: Parameters<typeof collectOutput>[0],
+  child: Parameters<typeof createRunCapture>[0],
   run: YtdlpRun,
-): { stdout: () => string; stderr: () => string; mask: (text: string) => string; record: () => void } {
-  const output = collectOutput(child)
+): { stdout: () => string; stderr: () => string; outputKey: string; mask: (text: string) => string; record: () => void } {
   const { args, credentials } = maskYtdlpArgs(run.args)
+  const output = createRunCapture(child, { credentials, rawStdout: run.kind === 'probe', dropProgress: true })
   const mask = (text: string): string => maskYtdlpOutput(maskCredentials(text, credentials))
   return {
     stdout: output.stdout,
-    stderr: () => mask(output.stderr()),
+    stderr: output.stderr,
+    outputKey: output.outputKey,
     mask,
     record: () => {
+      output.finish()
       const exit = output.exit()
       const row = {
         tape_id: run.tapeId,
@@ -82,10 +75,10 @@ export function collectRun(
         exit_code: exit.code,
         signal: exit.signal,
         stop_reason: output.stop(),
-        stdout: mask(withoutProgressLines(output.stdout())),
-        stderr: mask(output.stderr()),
+        stdout: '',
+        stderr: '',
       }
-      writeRecord('ytdlp_runs', row, () => toJson({ record: 'yt-dlp run', ...row }))
+      writeRecord('ytdlp_runs', row, () => toJson({ record: 'yt-dlp run', outputKey: output.outputKey, ...row }), 'info', false, { elapsedMs: output.elapsedMs(), succeeded: exit.code === 0, outputKey: output.outputKey })
     },
   }
 }
@@ -174,7 +167,7 @@ async function runToEnd(
     await waitForExit(child, { command: `yt-dlp ${kind}` })
   } catch (err) {
     if (err instanceof SubprocessError) {
-      throw new SubprocessError(err.command, err.exitCode, run.stderr())
+      throw new SubprocessError(err.command, err.exitCode, run.stderr(), run.outputKey)
     }
     throw err
   } finally {
@@ -216,12 +209,6 @@ const FINAL_PATH_MARKER = 'tapebox-final-filepath:'
  * fragmented HLS/DASH where byte totals are unknown).
  */
 const PROGRESS_MARKER = 'tapebox-progress:'
-
-/** A download's stored output without our own progress-template lines: they are
- *  TapeBox's echo of the transfer, one per tick, not yt-dlp's evidence. */
-function withoutProgressLines(text: string): string {
-  return text.split('\n').filter((line) => !line.startsWith(PROGRESS_MARKER)).join('\n')
-}
 
 /** Parse a --progress-template number; its 'NA' placeholder becomes undefined. */
 function finiteOrUndefined(raw: string | undefined): number | undefined {
@@ -330,7 +317,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     // SubprocessError carries an empty stderr since the stream was parsed live, so
     // it is re-thrown carrying yt-dlp's own stderr, the real error text.
     if (err instanceof SubprocessError) {
-      throw new SubprocessError(err.command, err.exitCode, run.stderr())
+      throw new SubprocessError(err.command, err.exitCode, run.stderr(), run.outputKey)
     }
     throw err
   } finally {

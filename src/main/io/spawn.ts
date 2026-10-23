@@ -54,16 +54,16 @@ export class SubprocessError extends Error implements LoggableError {
     public readonly command: string,
     public readonly exitCode: number | null,
     public readonly stderr: string,
+    public readonly outputKey?: string,
   ) {
     super(`${command} exited with code ${exitCode}`)
     this.name = 'SubprocessError'
   }
 
-  // Discrete, machine-parseable fields for describeError — exitCode as a number
-  // to filter on, and the complete stderr, which the message leaves out rather
-  // than carrying a shortened copy.
+  // Streamed runs keep a safe stderr tail here and reference their full retained
+  // output by key. One-shot calls can still supply their complete stderr.
   toLogFields(): Record<string, unknown> {
-    return { command: this.command, exitCode: this.exitCode, stderr: this.stderr }
+    return { command: this.command, exitCode: this.exitCode, stderr: this.stderr, ...(this.outputKey ? { outputKey: this.outputKey } : {}) }
   }
 }
 
@@ -396,11 +396,13 @@ export function waitForExit(
  * report a final file path' on successful downloads — fix at the source.
  *
  * Usage:
- *   const lb = makeLineBuffer((line) => parse(line))
- *   child.stdout.on('data', lb.feed)
- *   child.stderr.on('data', lb.feed)
+ *   const stdout = makeLineBuffer((line) => parse(line))
+ *   const stderr = makeLineBuffer((line) => parse(line))
+ *   child.stdout.on('data', stdout.feed)
+ *   child.stderr.on('data', stderr.feed)
  *   await waitForExit(child)
- *   lb.flush()  // emit any trailing line without a newline
+ *   stdout.flush()  // emit each pipe's trailing line without joining remainders
+ *   stderr.flush()
  */
 export function makeLineBuffer(onLine: (line: string) => void): {
   feed: (chunk: Buffer | string) => void
@@ -424,44 +426,38 @@ export function makeLineBuffer(onLine: (line: string) => void): {
   }
 }
 
-export type CollectedOutput = {
+export type RunFacts = {
   startedAtUtc: string
-  stdout: () => string
-  stderr: () => string
+  /** Monotonic execution time, captured at close; unknown while still running. */
+  elapsedMs: () => number | null
   /** The exit code and signal once the child has closed; both null before. */
   exit: () => { code: number | null; signal: NodeJS.Signals | null }
   /** Why TapeBox ended the run early, or null when it did not. */
   stop: () => RunStop | null
 }
 
-/**
- * Collect everything a child writes, both streams whole, with its start time,
- * its exit and why TapeBox ended it early, for a run record (data-lifecycle
- * conventions). Attach it right after the spawn, before any output can arrive.
- */
-export function collectOutput(child: {
+/** A child whose execution facts remain owned until close. */
+export type OutputChild = {
   stdout: Readable
   stderr: Readable
   once(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown
   idleError?: IdleTimeoutError | null
   abortError?: Error | null
-}): CollectedOutput {
+}
+
+export function collectRunFacts(child: OutputChild): RunFacts {
   const startedAtUtc = nowUtcIso()
-  const stdout: Buffer[] = []
-  const stderr: Buffer[] = []
+  const started = performance.now()
+  let elapsedMs: number | null = null
   let exit: { code: number | null; signal: NodeJS.Signals | null } = { code: null, signal: null }
-  child.stdout.on('data', (chunk: Buffer | string) => stdout.push(Buffer.from(chunk)))
-  child.stderr.on('data', (chunk: Buffer | string) => stderr.push(Buffer.from(chunk)))
   child.once('close', (code, signal) => {
+    elapsedMs = performance.now() - started
     exit = { code, signal }
   })
-  const text = (chunks: Buffer[]) => Buffer.concat(chunks).toString('utf8')
   return {
     startedAtUtc,
-    stdout: () => text(stdout),
-    stderr: () => text(stderr),
+    elapsedMs: () => elapsedMs,
     exit: () => exit,
-    // The same precedence as waitForExit's: an idle kill is the cause it reports.
     stop: () => {
       if (child.idleError) return 'idle'
       return child.abortError instanceof StopRequest ? child.abortError.by : null

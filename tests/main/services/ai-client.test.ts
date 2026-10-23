@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { aiRequestFailure, completionSlug, completionText, isRetryableAiError, aiRetryAfterMs } from '@main/services/ai-client'
 import { UserFacingError } from '@main/user-facing-error'
 
@@ -95,11 +95,19 @@ describe('AI resend policy', () => {
     expect(isRetryableAiError(new OpenAI.APIConnectionTimeoutError())).toBe(false)
     expect(isRetryableAiError(new TypeError('internal'))).toBe(false)
   })
-  it('honours Retry-After seconds or dates with a 30-second cap', () => {
+  it('preserves Retry-After seconds or dates and refuses automatic waits over 30 seconds', () => {
     const error = (value: string) => new OpenAI.APIError(429, undefined, undefined, new Headers({ 'retry-after': value }))
-    expect(aiRetryAfterMs(error('4'))).toBe(4000)
-    expect(aiRetryAfterMs(error('90'))).toBe(30_000)
-    expect(aiRetryAfterMs(error(new Date(Date.now() + 120_000).toUTCString()))).toBe(30_000)
-    expect(aiRetryAfterMs(error('invalid'))).toBeUndefined()
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-23T00:00:00Z'))
+    try {
+      expect(aiRetryAfterMs(error('4'))).toBe(4000)
+      expect(aiRetryAfterMs(error('30'))).toBe(30_000)
+      expect(isRetryableAiError(error('30'))).toBe(true)
+      expect(isRetryableAiError(error('30.001'))).toBe(false)
+      expect(aiRetryAfterMs(error('90'))).toBe(90_000)
+      expect(isRetryableAiError(error('90'))).toBe(false)
+      expect(aiRetryAfterMs(error('Fri, 23 Oct 2026 00:00:04 GMT'))).toBe(4_000)
+      expect(isRetryableAiError(error('Fri, 23 Oct 2026 00:02:00 GMT'))).toBe(false)
+      for (const value of ['invalid', '-1', ' ', '1e2']) expect(aiRetryAfterMs(error(value))).toBeUndefined()
+    } finally { vi.restoreAllMocks() }
   })
 })

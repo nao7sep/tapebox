@@ -34,8 +34,8 @@ export type ScannedEntry = {
 
 /**
  * How a scan ended. `stopped` is a cancel (the user's Stop, closing the dialog, or
- * quitting), never a failure. A scan that listed entries before yt-dlp failed keeps
- * them as `done`; one that failed with nothing listed is `failed`.
+ * quitting), never a failure. A failed scan remains failed even when entries were already delivered;
+ * the caller keeps those entries usable.
  */
 export type ScanOutcome =
   | { kind: 'done'; totalCount: number }
@@ -55,11 +55,12 @@ export function scanOutcome(ended: {
   exitCode: number | null
   totalCount: number
   stderr: string
+  outputKey?: string
 }): ScanOutcome {
   const { aborted, failure, exitCode, totalCount } = ended
   if (aborted) return { kind: 'stopped', totalCount }
-  if ((failure === null && exitCode === 0) || totalCount > 0) return { kind: 'done', totalCount }
-  return { kind: 'failed', error: failure ?? new SubprocessError(SCAN_COMMAND, exitCode, ended.stderr) }
+  if (failure === null && exitCode === 0) return { kind: 'done', totalCount }
+  return { kind: 'failed', error: failure ?? new SubprocessError(SCAN_COMMAND, exitCode, ended.stderr, ended.outputKey) }
 }
 
 const SCAN_COMMAND = 'yt-dlp enum'
@@ -112,7 +113,7 @@ export function startScan(
       run.record()
     }
     // yt-dlp states why it failed on stderr.
-    return scanOutcome({ aborted: ctl.signal.aborted, failure, exitCode, totalCount: total, stderr: run.stderr() })
+    return scanOutcome({ aborted: ctl.signal.aborted, failure, exitCode, totalCount: total, stderr: run.stderr(), outputKey: run.outputKey })
   })()
 
   return {

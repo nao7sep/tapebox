@@ -162,3 +162,20 @@ it('bounds the terminal barrier, seals writes and preserves the unknown outcome 
   expect(worker.requests).toHaveLength(requestCount)
   expect(records.writeRecord('logs', { message: 'late' }, () => 'late')).toBe(true)
 })
+
+it('shares chunk admission and fallback without publishing an incomplete run', async () => {
+  const stored = vi.fn()
+  records.onRecordStored(stored)
+  records.openRecords()
+  const worker = state.workers[0]!
+  records.writeOutputChunk('run-key', 'stderr', 3, 'evidence')
+  const request = worker.requests.at(-1)!
+  expect(request.chunk).toEqual({ runKey: 'run-key', stream: 'stderr', sequence: 3, content: 'evidence' })
+  expect(JSON.parse(request.text!)).toMatchObject({ session: records.currentSession(), runKey: 'run-key', stream: 'stderr', sequence: 3, content: 'evidence' })
+  for (const queued of worker.requests) worker.emit('message', { id: queued.id, stored: false, diagnostics: [] })
+  await records.flushRecords()
+  expect(stored).not.toHaveBeenCalled()
+  for (let index = 0; index < records.RECORD_PENDING_LIMIT; index++) records.writeOutputChunk('run-key', 'stdout', index, 'chunk')
+  records.writeOutputChunk('run-key', 'stdout', records.RECORD_PENDING_LIMIT, 'overflow')
+  expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"content":"overflow"'))
+})

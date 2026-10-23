@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { writeRecord, spawnStreaming } = vi.hoisted(() => ({ writeRecord: vi.fn(), spawnStreaming: vi.fn() }))
-vi.mock('@main/io/records', () => ({ writeRecord }))
+const { writeRecord, writeOutputChunk, spawnStreaming } = vi.hoisted(() => ({ writeRecord: vi.fn(), writeOutputChunk: vi.fn(), spawnStreaming: vi.fn() }))
+vi.mock('@main/io/records', () => ({ writeRecord, writeOutputChunk }))
 vi.mock('@main/paths', () => ({ binaryPath: () => '/bin/yt-dlp', paths: { bin: '/bin' } }))
 vi.mock('@main/services/ytdlp-args', () => ({ resolveYtdlpArgs: () => [] }))
 vi.mock('@main/io/spawn', async (original) => ({ ...await original<object>(), spawnStreaming }))
@@ -21,6 +21,7 @@ beforeEach(async () => {
   child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() })
   spawnStreaming.mockReset().mockReturnValue(child)
   writeRecord.mockClear()
+    writeOutputChunk.mockClear()
 })
 
 afterEach(async () => {
@@ -47,10 +48,11 @@ describe('download output lines', () => {
     expect(onProgress).toHaveBeenCalledExactlyOnceWith({ percent: 50, speedBps: 12, etaSec: 3 })
     expect(onLog.mock.calls.map(([line]) => line)).toEqual(['[download] stdout tail', '[download] stderr tail'])
     expect(writeRecord.mock.calls[0]![1]).toMatchObject({
-      stdout: `tapebox-final-filepath:${mediaPath}\n[download] stdout tail`,
-      stderr: 'tapebox-progress:50.0%|12|3\n[download] stderr tail',
+      stdout: '',
+      stderr: '',
       exit_code: 0,
     })
+    expect(writeOutputChunk.mock.calls.filter((call) => call[1] === 'stderr').map((call) => call[3]).join('')).toBe('[download] stderr tail')
   })
 
   it('keeps a partial stdout final path separate from a complete stderr progress line', async () => {
@@ -70,9 +72,10 @@ describe('download output lines', () => {
     expect(onProgress).toHaveBeenCalledExactlyOnceWith({ percent: 75, speedBps: 20, etaSec: 1 })
     expect(onLog).toHaveBeenCalledExactlyOnceWith('[download] stderr tail')
     expect(writeRecord.mock.calls[0]![1]).toMatchObject({
-      stdout: `tapebox-final-filepath:${mediaPath}`,
-      stderr: 'tapebox-progress:75.0%|20|1\n[download] stderr tail',
+      stdout: '',
+      stderr: '',
       exit_code: 0,
     })
+    expect(writeOutputChunk.mock.calls.filter((call) => call[1] === 'stderr').map((call) => call[3]).join('')).toBe('[download] stderr tail')
   })
 })

@@ -6,7 +6,8 @@ import { log } from '@main/io/logger'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
 import { toJson } from '@main/io/log-format'
 import { writeRecord } from '@main/io/records'
-import { collectOutput, spawnStreaming, SubprocessError, waitForExit } from '@main/io/spawn'
+import { createRunCapture } from '@main/io/run-capture'
+import { spawnStreaming, SubprocessError, waitForExit } from '@main/io/spawn'
 import type { SidecarMedia } from '@shared/domain'
 import { nowUtcIso } from '@shared/utc'
 
@@ -34,19 +35,18 @@ export type FfmpegRun = {
   args: readonly string[]
 }
 
-/**
- * Collect everything an ffmpeg run writes, both streams whole, and record it as
- * an `ffmpeg_runs` row once the run has ended (data-lifecycle conventions).
- * Attach it right after the spawn, before any output can arrive.
- */
+/** Stream safe ffmpeg diagnostics and retain a bounded tail for media parsing. */
 export function collectRun(
-  child: Parameters<typeof collectOutput>[0],
+  child: Parameters<typeof createRunCapture>[0],
   run: FfmpegRun,
-): { stderr: () => string; record: () => void } {
-  const output = collectOutput(child)
+  onStderr?: (text: string) => void,
+): { stderr: () => string; outputKey: string; record: (succeeded?: boolean) => void } {
+  const output = createRunCapture(child, { onStderr })
   return {
     stderr: output.stderr,
-    record: () => {
+    outputKey: output.outputKey,
+    record: (succeeded = output.exit().code === 0) => {
+      output.finish()
       const exit = output.exit()
       const row = {
         tape_id: run.tapeId,
@@ -57,10 +57,10 @@ export function collectRun(
         exit_code: exit.code,
         signal: exit.signal,
         stop_reason: output.stop(),
-        stdout: output.stdout(),
-        stderr: output.stderr(),
+        stdout: '',
+        stderr: '',
       }
-      writeRecord('ffmpeg_runs', row, () => toJson({ record: 'ffmpeg run', ...row }))
+      writeRecord('ffmpeg_runs', row, () => toJson({ record: 'ffmpeg run', outputKey: output.outputKey, ...row }), 'info', false, { elapsedMs: output.elapsedMs(), succeeded, outputKey: output.outputKey })
     },
   }
 }
@@ -127,7 +127,7 @@ export async function saveThumbnailJpeg(
         // waitForExit's SubprocessError carries an empty stderr, so it is re-thrown
         // carrying ffmpeg's own stderr, where it says why it failed.
         if (err instanceof SubprocessError) {
-          throw new SubprocessError(err.command, err.exitCode, run.stderr())
+          throw new SubprocessError(err.command, err.exitCode, run.stderr(), run.outputKey)
         }
         throw err
       } finally {
@@ -155,13 +155,34 @@ export async function saveThumbnailJpeg(
 export async function probeMedia(tapeId: string, mediaPath: string, signal?: AbortSignal): Promise<SidecarMedia> {
   const args = ['-hide_banner', '-i', mediaPath]
   const child = spawnStreaming(binaryPath('ffmpeg'), args, { signal, idleTimeoutMs: PROBE_IDLE_TIMEOUT_MS })
-  const run = collectRun(child, { kind: 'probe', tapeId, args })
-  try {
-    await waitForExit(child, { reject: false })
-  } finally {
-    run.record()
+  let info = parseFfmpegInfo('')
+  let metadataWindow = ''
+  const acceptMetadata = (text: string) => {
+    const parsed = parseFfmpegInfo(text)
+    info = Object.fromEntries(Object.entries(info).map(([key, value]) => [key, value ?? parsed[key as keyof SidecarMedia]])) as SidecarMedia
   }
-  return parseFfmpegInfo(run.stderr())
+  const run = collectRun(child, { kind: 'probe', tapeId, args }, (text) => {
+    // Keep parsed facts when later warnings push their lines out of the error
+    // tail. Parse complete lines so a split number cannot become a partial fact.
+    metadataWindow += text
+    const end = Math.max(metadataWindow.lastIndexOf('\n'), metadataWindow.lastIndexOf('\r'))
+    if (end >= 0) { acceptMetadata(metadataWindow.slice(0, end + 1)); metadataWindow = metadataWindow.slice(end + 1) }
+    metadataWindow = metadataWindow.slice(-32_768)
+  })
+  let succeeded = false
+  try {
+    const exitCode = await waitForExit(child, { reject: false })
+    acceptMetadata(metadataWindow)
+    if (Object.values(info).every((value) => value === null)) {
+      throw new Error('ffmpeg did not recognize the media', { cause: new SubprocessError('ffmpeg probe', exitCode, run.stderr(), run.outputKey) })
+    }
+    succeeded = true
+    return info
+  } finally {
+    // ffmpeg -i normally exits 1 after reporting its input: parsing, rather than
+    // that expected exit code, determines whether this probe succeeded.
+    run.record(succeeded)
+  }
 }
 
 function parseFfmpegInfo(text: string): SidecarMedia {

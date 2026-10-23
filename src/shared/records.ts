@@ -1,7 +1,7 @@
 /**
  * What the Records window reads from records.sqlite3 (io/records.ts): a filtered
- * page of summaries, newest first, and one record whole. Fields the database
- * holds as JSON text arrive as that text; the window decides how to show them.
+ * page of summaries, newest first, and one record detail. Tool output is paged;
+ * other stored JSON text arrives whole for the window to format.
  */
 
 /** One per table: log lines, AI calls, yt-dlp runs and ffmpeg runs. */
@@ -18,7 +18,7 @@ export type RecordLevel = (typeof RECORD_LEVELS)[number]
  * record at `warn` or `error`, labelled "Warnings and errors": a recovered
  * problem need not mean outstanding work (logging-conventions). Only a log line has a level of its own; an AI call
  * reads as `error` when it failed. A yt-dlp or ffmpeg run reads as `warn` when the
- * user cancelled it or TapeBox quit during it, `info` when it exited 0, and
+ * user cancelled it or TapeBox quit during it, `info` when it succeeded, and
  * `error` otherwise, including a run a signal ended for any other reason.
  */
 export const RECORD_LEVEL_FILTERS = ['attention', ...RECORD_LEVELS] as const
@@ -88,6 +88,8 @@ export type AiCallRecordDetail = {
   tapeId: string | null
   startedAt: string
   endedAt: string
+  /** Measured monotonic execution time, or unknown for historical records. */
+  elapsedMs: number | null
   level: RecordLevel
   endpoint: string
   model: string
@@ -109,12 +111,16 @@ export type YtdlpRunRecordDetail = {
   args: string
   startedAt: string
   endedAt: string
+  /** Measured monotonic execution time, or unknown for historical records. */
+  elapsedMs: number | null
   level: RecordLevel
   exitCode: number | null
   signal: string | null
   stopReason: RunStop | null
   stdout: string
   stderr: string
+  stdoutMore: boolean
+  stderrMore: boolean
 }
 
 export type FfmpegRunRecordDetail = {
@@ -127,12 +133,16 @@ export type FfmpegRunRecordDetail = {
   args: string
   startedAt: string
   endedAt: string
+  /** Measured monotonic execution time, or unknown for historical records. */
+  elapsedMs: number | null
   level: RecordLevel
   exitCode: number | null
   signal: string | null
   stopReason: RunStop | null
   stdout: string
   stderr: string
+  stdoutMore: boolean
+  stderrMore: boolean
 }
 
 export type RecordDetail = LogRecordDetail | AiCallRecordDetail | YtdlpRunRecordDetail | FfmpegRunRecordDetail
@@ -144,3 +154,14 @@ export type RecordSources = {
   /** A tape still in the library carries its title. */
   tapes: { tapeId: string; name: string | null }[]
 }
+
+
+export type RunOutputQuery = {
+  kind: 'ytdlp-run' | 'ffmpeg-run'
+  id: number
+  stream: 'stdout' | 'stderr'
+  page: number
+}
+
+/** One bounded output page, without retaining preceding pages. */
+export type RunOutputPage = { text: string; more: boolean }

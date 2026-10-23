@@ -1,25 +1,40 @@
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { collectOutput, killOwnedProcessesNow, spawnStreaming, waitForExit } from '@main/io/spawn'
+import { collectRunFacts, killOwnedProcessesNow, spawnStreaming, waitForExit } from '@main/io/spawn'
 import { StopRequest } from '@main/stop-request'
 
-function readReadyPid(child: ReturnType<typeof spawnStreaming>): Promise<number> {
-  return new Promise((resolve) => {
+function readReadyPid(child: ReturnType<typeof spawnStreaming>, signal?: AbortSignal): Promise<number> {
+  return new Promise((resolve, reject) => {
     let output = ''
-    const onData = (chunk: Buffer): void => {
+    function cleanup() {
+      child.stdout.off('data', onData)
+      child.off('close', onClose)
+      child.off('error', onError)
+      signal?.removeEventListener('abort', onAbort)
+    }
+    function onData(chunk: Buffer): void {
       output += chunk.toString()
       const match = /ready:(\d+)/.exec(output)
       if (!match) return
-      child.stdout.off('data', onData)
+      cleanup()
       resolve(Number(match[1]))
     }
+    function onError(error: Error) { cleanup(); reject(error) }
+    function onClose() { onError(new Error('fixture closed before reporting readiness')) }
+    function onAbort() { cleanup(); reject(signal!.reason) }
     child.stdout.on('data', onData)
+    child.once('close', onClose)
+    child.once('error', onError)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) onAbort()
   })
 }
 
 describe('owned subprocess cancellation', () => {
   it.runIf(process.platform !== 'win32')(
     'escalates from SIGTERM and terminates the owned POSIX process group',
-    async () => {
+    async ({ signal, task }) => {
       const descendant =
         `process.on('SIGTERM', () => {}); ` +
         `process.send('ready'); setInterval(() => {}, 1000)`
@@ -36,16 +51,10 @@ describe('owned subprocess cancellation', () => {
       const exited = waitForExit(child, { command: 'POSIX tree fixture' })
       // Observe rejection immediately, including a failed fixture startup.
       void exited.catch(() => {})
-      let output = ''
-      child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString() })
       let descendantPid: number | undefined
 
       try {
-        descendantPid = await vi.waitFor(() => {
-          const match = /ready:(\d+)/.exec(output)
-          expect(match, 'the descendant installed its SIGTERM handler').not.toBeNull()
-          return Number(match![1])
-        })
+        descendantPid = await readReadyPid(child, signal)
         controller.abort()
         await expect(exited).rejects.toHaveProperty('name', 'AbortError')
         // Settlement must mean physical death, even though the parent has already
@@ -58,7 +67,7 @@ describe('owned subprocess cancellation', () => {
         child.kill('SIGKILL')
         await closed
         if (descendantPid !== undefined) {
-          await vi.waitFor(() => expect(() => process.kill(descendantPid!, 0)).toThrow())
+          await vi.waitFor(() => expect(() => process.kill(descendantPid!, 0)).toThrow(), { timeout: task.timeout })
         }
       }
     },
@@ -131,7 +140,7 @@ describe('why a collected run ended early', () => {
 
   async function stopOf(args: string[], opts: Parameters<typeof spawnStreaming>[2], abort?: (child: ReturnType<typeof spawnStreaming>) => void) {
     const child = spawnStreaming(process.execPath, args, opts)
-    const output = collectOutput(child)
+    const output = collectRunFacts(child)
     abort?.(child)
     await waitForExit(child, { reject: false }).catch(() => {})
     return output.stop()
@@ -154,4 +163,29 @@ describe('why a collected run ended early', () => {
   it('is idle when the idle watchdog ended it', async () => {
     expect(await stopOf(waiting, { idleTimeoutMs: 50 })).toBe('idle')
   })
+})
+
+
+it('captures monotonic elapsed time at close despite wall-clock jumps and later recording', () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-23T10:00:00Z'))
+  let monotonic = 100
+  const now = vi.spyOn(performance, 'now').mockImplementation(() => monotonic)
+  const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() })
+  try {
+    const output = collectRunFacts(child)
+    expect(output.elapsedMs()).toBeNull()
+    vi.setSystemTime(new Date('2026-10-23T09:00:00Z'))
+    monotonic = 350
+    child.emit('close', 0, null)
+    expect(output.elapsedMs()).toBe(250)
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+    monotonic = 10_000
+    expect(output.elapsedMs()).toBe(250)
+  } finally {
+    now.mockRestore()
+    vi.useRealTimers()
+    child.stdout.destroy()
+    child.stderr.destroy()
+  }
 })

@@ -118,13 +118,14 @@ function parsedBody(text: string): unknown {
 async function recordedAttempt<T extends object>(call: AiCall, send: () => Promise<T>): Promise<T> {
   call.sent = null
   const startedAtUtc = nowUtcIso()
+  const started = performance.now()
   try {
     const response = await send()
-    recordAiCall(call, startedAtUtc, null, response, null)
+    recordAiCall(call, startedAtUtc, performance.now() - started, null, response, null)
     return response
   } catch (err) {
     const answered = err instanceof OpenAI.APIError ? err : null
-    recordAiCall(call, startedAtUtc, answered?.status ?? null, answered?.error ?? null, err)
+    recordAiCall(call, startedAtUtc, performance.now() - started, answered?.status ?? null, answered?.error ?? null, err)
     throw err
   }
 }
@@ -132,6 +133,7 @@ async function recordedAttempt<T extends object>(call: AiCall, send: () => Promi
 function recordAiCall(
   call: AiCall,
   startedAtUtc: string,
+  elapsedMs: number,
   status: number | null,
   response: object | null,
   error: unknown,
@@ -150,7 +152,7 @@ function recordAiCall(
     response: response === null ? null : toJson(response),
     error: error === null ? null : toJson(describeError(error)),
   }, [call.apiKey])
-  writeRecord('ai_calls', row, () => toJson({ record: 'ai call', ...row }))
+  writeRecord('ai_calls', row, () => toJson({ record: 'ai call', ...row }), 'info', false, { elapsedMs, succeeded: error === null })
 }
 
 type CompletionChoice = {
@@ -231,6 +233,7 @@ export function aiRequestFailure(err: unknown): Error {
 
 /** A waiting user resends only known transient refusals, never unknown outcomes. */
 export function isRetryableAiError(err: unknown): boolean {
+  if ((aiRetryAfterMs(err) ?? 0) > 30_000) return false
   if (err instanceof OpenAI.APIConnectionTimeoutError) return false
   if (err instanceof OpenAI.APIConnectionError) {
     // Node fetch wraps socket errors in a TypeError; the SDK preserves that cause.
@@ -245,7 +248,10 @@ export function aiRetryAfterMs(err: unknown): number | undefined {
   if (!(err instanceof OpenAI.APIError)) return undefined
   const value = err.headers?.get('retry-after')
   if (!value) return undefined
-  const seconds = Number(value)
+  if (!value.trim()) return undefined
+  const seconds = /^\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value) : NaN
+  if (!Number.isFinite(seconds) && Number.isFinite(Number(value))) return undefined
   const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - Date.now()
-  return Number.isFinite(ms) ? Math.max(0, Math.min(30_000, ms)) : undefined
+  // The provider's minimum wait must never be shortened to fit our automatic budget.
+  return Number.isFinite(ms) ? Math.max(0, ms) : undefined
 }

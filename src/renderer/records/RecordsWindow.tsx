@@ -1,3 +1,4 @@
+import { PagedRunOutput } from './PagedRunOutput'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
@@ -5,6 +6,7 @@ import { describeError } from '@shared/error'
 import { I18nProvider, useI18n } from '@renderer/i18n/I18nContext'
 import { initialLanguagePreference, useLanguage } from '@renderer/i18n/useInterfaceLanguage'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
+import { useRecordPages } from './useRecordPages'
 import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
 import { ResizeHandle } from '@renderer/components/ResizeHandle'
 import { PassiveScrollRegion } from '@renderer/components/PassiveScrollRegion'
@@ -36,13 +38,9 @@ import {
   LEVEL_LABELS,
   RUN_STOP_LABELS,
   atTop,
-  cursorAfter,
   durationSeconds,
   jsonBlock,
-  mergeNewestPage,
-  nearEnd,
   recordKey,
-  textBlock,
 } from './record-format'
 
 const LIST_WIDTH = LAYOUT_BOUNDS.recordsListWidth
@@ -99,12 +97,22 @@ export function RecordsApp() {
     }
   }, [])
 
-  if (!interfaceLanguage || listWidth === null || timeZone === null) return null
+  if (!interfaceLanguage || listWidth === null || timeZone === null) {
+    const loading = <RecordsLoading />
+    return interfaceLanguage ? (
+      <I18nProvider language={interfaceLanguage.language} locale={interfaceLanguage.locale}>{loading}</I18nProvider>
+    ) : loading
+  }
   return (
     <I18nProvider language={interfaceLanguage.language} locale={interfaceLanguage.locale}>
       <RecordsWindow initialListWidth={listWidth} timeZone={displayTimeZone(timeZone)} />
     </I18nProvider>
   )
+}
+
+function RecordsLoading() {
+  const t = useI18n()
+  return <main className="grid h-screen place-items-center text-sm text-fg-muted" role="status">{t.t('common.loading')}</main>
 }
 
 type Filters = Omit<RecordsQuery, 'after'>
@@ -115,11 +123,6 @@ const SEARCH_DELAY_MS = 300
 const LIVE_INTERVAL_MS = 1000
 /** PageUp/PageDown step, as the tape lists take it. */
 const LIST_PAGE = 10
-
-type ListState =
-  | { status: 'loading' }
-  | { status: 'failed' }
-  | { status: 'ready'; records: RecordSummary[]; more: boolean; loadingMore: boolean; moreFailed: boolean }
 
 type DetailState =
   | { status: 'none' }
@@ -135,22 +138,25 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
   const [sourceReads, setSourceReads] = useState(0)
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   const [searchText, setSearchText] = useState('')
-  const [list, setList] = useState<ListState>({ status: 'loading' })
   const [selected, setSelected] = useState<Selection | null>(null)
   const [detail, setDetail] = useState<DetailState>({ status: 'none' })
   const [listWidth, setListWidth] = useState(initialListWidth)
   const [dragWidth, setDragWidth] = useState<number | null>(null)
-  const listGeneration = useRef(0)
-  // The busy claim for the next page (PLAYBOOK, Own the work in flight).
-  const fetchingMore = useRef(false)
-  // The filters the current list was read for, for the live reads below.
-  const filtersRef = useRef(filters)
   // New records arrived while the list was scrolled away from the top.
   const newestPending = useRef(false)
   // A failed read is itself logged as a record, whose signal would start the
   // next read; live reads stop after a failure and resume after a read succeeds.
   const liveSuspended = useRef(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const list = useRecordPages(filters, scrollRef, (error) => {
+    liveSuspended.current = true
+    diagnose('records read failed', error)
+  })
+  const pageOwner = useRef(list)
+  pageOwner.current = list
+  useEffect(() => { if (!list.failed) liveSuspended.current = false }, [list.failed])
+  useEffect(() => { newestPending.current = false }, [filters])
+
 
   // The list pane keeps its saved width but yields to the detail pane's minimum
   // when the window narrows. The list pane's border-r is on its side.
@@ -192,52 +198,7 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
     }
   }, [sourceReads])
 
-  // A page applies only while the filters it was read for are still the newest
-  // ones asked for.
-  useEffect(() => {
-    filtersRef.current = filters
-    const generation = ++listGeneration.current
-    fetchingMore.current = false
-    newestPending.current = false
-    setList({ status: 'loading' })
-    void ipcInvoke('records:page', { ...filters, after: null }).then(
-      (page) => {
-        if (generation !== listGeneration.current) return
-        liveSuspended.current = false
-        setList({ status: 'ready', records: page.records, more: page.more, loadingMore: false, moreFailed: false })
-      },
-      (error: unknown) => {
-        if (generation !== listGeneration.current) return
-        liveSuspended.current = true
-        diagnose('records read failed', error)
-        setList({ status: 'failed' })
-      },
-    )
-  }, [filters])
-
-  // The newest page read again for new records. It joins the rows already shown
-  // rather than replacing them, so the list never falls back to the loading note
-  // and the pages already read stay. It reads only refs, so one copy serves the
-  // live subscription below.
-  const readNewest = useCallback((): void => {
-    const generation = listGeneration.current
-    void ipcInvoke('records:page', { ...filtersRef.current, after: null }).then(
-      (page) => {
-        if (generation !== listGeneration.current) return
-        liveSuspended.current = false
-        setList((current) =>
-          current.status === 'ready'
-            ? { ...current, ...mergeNewestPage(current.records, current.more, page) }
-            : { status: 'ready', records: page.records, more: page.more, loadingMore: false, moreFailed: false },
-        )
-      },
-      (error: unknown) => {
-        if (generation !== listGeneration.current) return
-        liveSuspended.current = true
-        diagnose('records read failed', error)
-      },
-    )
-  }, [])
+  const readNewest = useCallback((): void => { void pageOwner.current.refresh() }, [])
 
   // A stored record reaches the list at once while it is scrolled to the top;
   // otherwise it waits until the list is back there, so the list never moves
@@ -286,58 +247,25 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey])
 
-  // The next page is read as the end of the list comes near, with no button. A
-  // failed page is read again when the end is reached again.
-  const loadMore = (): void => {
-    if (list.status !== 'ready' || !list.more || fetchingMore.current) return
-    fetchingMore.current = true
-    const generation = listGeneration.current
-    setList((current) => (current.status === 'ready' ? { ...current, loadingMore: true, moreFailed: false } : current))
-    void ipcInvoke('records:page', { ...filters, after: cursorAfter(list.records) }).then(
-      (page) => {
-        if (generation !== listGeneration.current) return
-        fetchingMore.current = false
-        liveSuspended.current = false
-        setList((current) =>
-          current.status === 'ready'
-            ? { ...current, records: [...current.records, ...page.records], more: page.more, loadingMore: false }
-            : current,
-        )
-      },
-      (error: unknown) => {
-        if (generation !== listGeneration.current) return
-        fetchingMore.current = false
-        liveSuspended.current = true
-        diagnose('records read failed', error)
-        setList((current) => (current.status === 'ready' ? { ...current, loadingMore: false, moreFailed: true } : current))
-      },
-    )
-  }
-
-  // A page that leaves the list short of the end reads the next one; a failed
-  // page waits for the reader instead.
-  useEffect(() => {
-    const scroll = scrollRef.current
-    if (list.status !== 'ready' || list.loadingMore || list.moreFailed || scroll === null) return
-    if (nearEnd(scroll)) loadMore()
-    // Only a new list state can change what is loaded.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list])
-
   const onListScroll = (): void => {
     const scroll = scrollRef.current
     if (scroll === null) return
     if (newestPending.current && atTop(scroll)) {
       newestPending.current = false
       readNewest()
-    }
-    if (nearEnd(scroll)) loadMore()
+    } else list.onScroll()
   }
 
   const records = list.status === 'ready' ? list.records : []
   const keys = records.map(recordKey)
+  const recordOffsets = useMemo(() => {
+    const offsets = [0]
+    for (const page of list.pages) offsets.push(offsets.at(-1)! + page.count)
+    return offsets
+  }, [list.pages])
 
   const select = (record: RecordSummary): void => {
+    list.activate(record)
     if (recordKey(record) !== selectedKey) setSelected({ kind: record.kind, id: record.id })
   }
 
@@ -351,10 +279,16 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
       const index = keys.indexOf(key)
       const record = records[index]
       if (record) select(record)
-      if (index === keys.length - 1) loadMore()
+      if (index === keys.length - 1) list.loadMore()
     },
     idPrefix: 'record',
     page: LIST_PAGE,
+    onCommandKey: (event) => {
+      if (!['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) return false
+      event.preventDefault()
+      void list.navigate(event.key).then((record) => { if (record) select(record) })
+      return true
+    },
   })
 
   // A drag is the user's intended width, which a narrower window only overrides
@@ -432,53 +366,62 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
             ref={scrollRef}
             data-records-scroll
             className="relative min-h-0 flex-1 overflow-y-auto"
-            aria-busy={list.status === 'loading'}
+            aria-busy={list.status === 'loading' || list.pending.size > 0}
             onScroll={onListScroll}
           >
             {list.status === 'failed' ? (
               <InlineError className="m-3">{t.t('records.loadFailed')}</InlineError>
             ) : list.status === 'loading' ? (
               <p className="p-4 text-sm text-fg">{t.t('records.loading')}</p>
-            ) : records.length === 0 ? (
+            ) : list.pages.every((page) => page.count === 0) ? (
               <p className="p-4 text-sm text-fg">{t.t('records.empty')}</p>
             ) : (
               <div
                 ref={kb.ref}
                 {...kb.listboxProps}
                 aria-label={t.t('records.title')}
-                className="space-y-1 p-2 outline-none"
+                className="p-2 outline-none"
               >
-                {records.map((record) => {
-                  const key = recordKey(record)
-                  const isSelected = key === selectedKey
-                  return (
-                    <div
-                      key={key}
-                      id={kb.optionId(key)}
-                      role="option"
-                      aria-selected={isSelected}
-                      data-record-key={key}
-                      onClick={() => select(record)}
-                      className={
-                        'listbox-item cursor-pointer rounded border px-3 py-2 transition ' +
-                        (isSelected
-                          ? 'border-selected ring-1 ring-inset ring-selected/40'
-                          : 'border-transparent hover:bg-hover')
-                      }
-                    >
-                      <div className="flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
-                        <span className="tabular-nums">{timeFormat.format(new Date(record.time))}</span>
-                        <span className={`font-medium ${LEVEL_CLASSES[record.level]}`}>{t.t(LEVEL_LABELS[record.level])}</span>
-                        {record.kind !== 'log' && <span>{t.t(KIND_LABELS[record.kind])}</span>}
-                      </div>
-                      <div className="mt-0.5 truncate text-sm text-fg-strong" data-record-title data-literal>{record.title}</div>
-                      {record.text && <div className="line-clamp-2 text-xs text-fg wrap-anywhere" data-literal>{record.text}</div>}
+                {list.pages.map((page, index) => {
+                  const cached = list.cache.get(index)
+                  return cached ? (
+                    <div key={index} ref={list.pageRef(index)} data-record-page={index} className="space-y-1 pb-1">
+                      {cached.map((record, rowIndex) => {
+                        const key = recordKey(record)
+                        const isSelected = key === selectedKey
+                        return (
+                          <div
+                            key={key}
+                            id={kb.optionId(key)}
+                            role="option"
+                            aria-selected={isSelected}
+                            aria-posinset={recordOffsets[index]! + rowIndex + 1}
+                            aria-setsize={list.pages.at(-1)?.more ? -1 : recordOffsets.at(-1)}
+                            data-record-key={key}
+                            onClick={() => select(record)}
+                            className={
+                              'listbox-item cursor-pointer rounded border px-3 py-2 transition ' +
+                              (isSelected
+                                ? 'border-selected ring-1 ring-inset ring-selected/40'
+                                : 'border-transparent hover:bg-hover')
+                            }
+                          >
+                            <div className="flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
+                              <span className="tabular-nums">{timeFormat.format(new Date(record.time))}</span>
+                              <span className={`font-medium ${LEVEL_CLASSES[record.level]}`}>{t.t(LEVEL_LABELS[record.level])}</span>
+                              {record.kind !== 'log' && <span>{t.t(KIND_LABELS[record.kind])}</span>}
+                            </div>
+                            <div className="mt-0.5 truncate text-sm text-fg-strong" data-record-title data-literal>{record.title}</div>
+                            {record.text && <div className="line-clamp-2 text-xs text-fg wrap-anywhere" data-literal>{record.text}</div>}
+                          </div>
+                        )
+                      })}
                     </div>
-                  )
+                  ) : <div key={index} role="presentation" aria-hidden="true" style={{ height: page.height }} />
                 })}
               </div>
             )}
-            {list.status === 'ready' && list.loadingMore && (
+            {list.status === 'ready' && list.pending.size > 0 && (
               <p className="p-4 text-sm text-fg">{t.t('records.loading')}</p>
             )}
             {list.status === 'ready' && list.moreFailed && (
@@ -595,7 +538,7 @@ function RecordDetailView({
   } else {
     add(t.t('records.started'), time(record.startedAt))
     add(t.t('records.finished'), time(record.endedAt))
-    add(t.t('records.duration'), secondsFormat.format(durationSeconds(record.startedAt, record.endedAt)))
+    add(t.t('records.duration'), secondsFormat.format(record.elapsedMs == null ? durationSeconds(record.startedAt, record.endedAt) : record.elapsedMs / 1000))
   }
   if (record.kind === 'ai-call') {
     add(t.t('records.model'), code(record.model))
@@ -634,8 +577,6 @@ function RecordDetailView({
     if (record.error !== null) addBlock(t.t('records.error'), jsonBlock(record.error))
   } else {
     addBlock(t.t('records.arguments'), jsonBlock(record.args))
-    addBlock(t.t('records.output'), textBlock(record.stdout))
-    addBlock(t.t('records.errorOutput'), textBlock(record.stderr))
   }
 
   return (
@@ -668,6 +609,10 @@ function RecordDetailView({
             </pre>
           </section>
         ))}
+        {(record.kind === 'ytdlp-run' || record.kind === 'ffmpeg-run') && <>
+          <PagedRunOutput kind={record.kind} id={record.id} stream="stdout" label={t.t('records.output')} initial={{ text: record.stdout, more: record.stdoutMore }} />
+          <PagedRunOutput kind={record.kind} id={record.id} stream="stderr" label={t.t('records.errorOutput')} initial={{ text: record.stderr, more: record.stderrMore }} />
+        </>}
       </PassiveScrollRegion>
     </>
   )

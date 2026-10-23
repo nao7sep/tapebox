@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs'
+import { waitForFixture } from '../../helpers/fixture-readiness'
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative } from 'node:path'
@@ -5,8 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SubprocessError } from '@main/io/spawn'
 
-const { writeRecord, userArgs } = vi.hoisted(() => ({ writeRecord: vi.fn(), userArgs: { value: [] as string[] } }))
-vi.mock('@main/io/records', () => ({ writeRecord }))
+const { writeRecord, writeOutputChunk, userArgs } = vi.hoisted(() => ({ writeRecord: vi.fn(), writeOutputChunk: vi.fn(), userArgs: { value: [] as string[] } }))
+vi.mock('@main/io/records', () => ({ writeRecord, writeOutputChunk }))
 vi.mock('@main/paths', () => ({ binaryPath: () => process.execPath, paths: { bin: '/bin' } }))
 vi.mock('@main/services/ytdlp-args', () => ({
   resolveYtdlpArgs: () => [fileURLToPath(new URL('./fixtures/ytdlp-path-grammar.mjs', import.meta.url)), ...userArgs.value],
@@ -21,6 +23,7 @@ const sourceUrl = 'https://example.test/video?literal=$TAPEBOX_NAME&template=%(t
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-literal-paths-'))
   writeRecord.mockClear()
+    writeOutputChunk.mockClear()
   userArgs.value = []
   vi.stubEnv('TAPEBOX_NAME', 'Unrelated')
   vi.stubEnv('TAPEBOX_MANAGED_LIBRARY', 'Unrelated')
@@ -61,7 +64,7 @@ for (const flavour of ['posix', 'windows']) {
       expect(await exists(join(dir, `${tapeId}.part`))).toBe(false)
       expect(await findThumbnail(dir, tapeId)).toBe(join(dir, `${tapeId}.webp`))
       expect(writeRecord.mock.calls[0]![1]).toMatchObject({ url: sourceUrl, tape_id: tapeId, kind: 'download', exit_code: 0 })
-      expect(writeRecord.mock.calls[0]![1].stdout).toContain(`tapebox-final-filepath:${result.mediaPath}`)
+      expect(writeOutputChunk.mock.calls.filter((call) => call[1] === 'stdout').map((call) => call[3]).join('')).toContain(`tapebox-final-filepath:${result.mediaPath}`)
       expect(process.env['TAPEBOX_MANAGED_LIBRARY']).toBe('Unrelated')
     })
 
@@ -82,7 +85,7 @@ for (const flavour of ['posix', 'windows']) {
       expect(await readFile(join(dir, `${stem}.mp4`), 'utf8')).toBe('existing media')
       expect(await readFile(join(dir, `${stem}.info.json`), 'utf8')).toBe('existing sidecar')
       expect(writeRecord.mock.calls[0]![1]).toMatchObject({ url: sourceUrl, tape_id: tapeId, kind: 'thumbnail', exit_code: 0 })
-      expect(writeRecord.mock.calls[0]![1].stdout).toContain(raw)
+      expect(writeOutputChunk.mock.calls.filter((call) => call[1] === 'stdout').map((call) => call[3]).join('')).toContain(raw)
     })
 
     it('retains inherited cwd and intentionally authored relative/environment cookie options', async () => {
@@ -102,7 +105,7 @@ for (const flavour of ['posix', 'windows']) {
       const row = writeRecord.mock.calls[0]![1]
       const recordedArgs = JSON.parse(row.args) as string[]
       expect(recordedArgs.slice(1, 5)).toEqual(userArgs.value)
-      const firstLine = (row.stdout as string).split('\n')[0]!
+      const firstLine = writeOutputChunk.mock.calls.filter((call) => call[1] === 'stdout').map((call) => call[3]).join('').split('\n')[0]!
       expect(JSON.parse(firstLine.slice('[fixture] '.length))).toEqual({ cwd: process.cwd(), pid: expect.any(Number), cookies: '[REDACTED]', header: headerArgument, url: sourceUrl })
     })
 
@@ -155,25 +158,32 @@ describe('raw poster scratch ownership', () => {
 
     expect((await readdir(dir)).sort()).toEqual([`${tapeId}.poster-kept.webp`, 'regular.webp'].sort())
     expect(await readFile(unrelated, 'utf8')).toBe('previous raw poster')
-    expect(writeRecord.mock.calls[0]![1]).toMatchObject({ kind: 'thumbnail', exit_code: 1, stderr: 'ERROR: fixture thumbnail failure\n' })
+    expect(writeRecord.mock.calls[0]![1]).toMatchObject({ kind: 'thumbnail', exit_code: 1, stderr: '' })
   })
 
-  it('removes its scratch after a parked provider has physically stopped on abort', async () => {
+  it('removes its scratch after a parked provider has physically stopped on abort', async ({ signal }) => {
     vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', 'posix')
     vi.stubEnv('TAPEBOX_TEST_THUMBNAIL_RESULT', 'park')
     const dir = await library()
     const controller = new AbortController()
     const result = downloadThumbnail(tapeId, sourceUrl, dir, controller.signal)
     const observed = result.then(() => 'resolved', (err: unknown) => err)
-    await vi.waitFor(async () => expect((await readdir(dir)).length).toBeGreaterThan(0))
-    controller.abort(new DOMException('cancel poster', 'AbortError'))
+    try {
+      await waitForFixture(dir, () => readdirSync(dir).length > 0 ? true : undefined, signal)
+      controller.abort(new DOMException('cancel poster', 'AbortError'))
 
-    expect(await observed).toMatchObject({ name: 'AbortError' })
-    expect(await readdir(dir)).toEqual([])
-    expect(writeRecord).toHaveBeenCalledOnce()
-    const firstLine = (writeRecord.mock.calls[0]![1].stdout as string).split('\n')[0]!
-    const { pid } = JSON.parse(firstLine.slice('[fixture] '.length)) as { pid: number }
-    expect(() => process.kill(pid, 0)).toThrow()
+      expect(await observed).toMatchObject({ name: 'AbortError' })
+      expect(await readdir(dir)).toEqual([])
+      expect(writeRecord).toHaveBeenCalledOnce()
+      const firstLine = (writeOutputChunk.mock.calls.filter((call) => call[1] === 'stdout').map((call) => call[3]).join('')).split('\n')[0]!
+      const { pid } = JSON.parse(firstLine.slice('[fixture] '.length)) as { pid: number }
+      expect(() => process.kill(pid, 0)).toThrow()
+    } finally {
+      // Readiness can fail before the fixture has started. Always cancel and
+      // settle the capture before afterEach removes its scratch directory.
+      controller.abort(new DOMException('fixture cleanup', 'AbortError'))
+      await observed
+    }
   })
 
   it('returns null for a missing optional poster and leaves existing files intact', async () => {
@@ -185,6 +195,6 @@ describe('raw poster scratch ownership', () => {
     await expect(downloadThumbnail(tapeId, sourceUrl, dir, new AbortController().signal)).resolves.toBeNull()
 
     expect(await readdir(dir)).toEqual(['Holiday.mp4'])
-    expect(writeRecord.mock.calls[0]![1]).toMatchObject({ kind: 'thumbnail', exit_code: 0, stderr: 'WARNING: no thumbnail available\n' })
+    expect(writeRecord.mock.calls[0]![1]).toMatchObject({ kind: 'thumbnail', exit_code: 0, stderr: '' })
   })
 })

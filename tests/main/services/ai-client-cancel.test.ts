@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const calls = vi.hoisted(() => [] as { signal?: AbortSignal }[])
 vi.mock('openai', () => {
@@ -34,18 +34,23 @@ vi.mock('@main/io/records', () => ({ writeRecord: vi.fn() }))
 
 const { generateSlug } = await import('@main/services/ai-client')
 
+afterEach(() => vi.useRealTimers())
+
 describe('generateSlug cancellation', () => {
   it('passes the caller signal to the request and stops retrying once it aborts', async () => {
+    vi.useFakeTimers()
+    calls.length = 0
     const controller = new AbortController()
     const pending = generateSlug({ tapeId: 't1', title: 'A Title' }, controller.signal)
-    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toHaveLength(1)
+    expect(vi.getTimerCount()).toBe(1)
     expect(calls[0]!.signal).toBe(controller.signal)
 
-    const started = Date.now()
     controller.abort()
     await expect(pending).rejects.toBeDefined()
-    // Without the signal, the first retry wait alone is 2 s.
-    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(10_000)
     expect(calls).toHaveLength(1)
   })
 })

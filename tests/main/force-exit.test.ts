@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 
-it.skipIf(process.platform === 'win32')('forces the process to end while a real worker remains blocked in native file open', async () => {
+it.skipIf(process.platform === 'win32')('forces the process to end while a real worker remains blocked in native file open', async ({ signal }) => {
   const root = await mkdtemp(join(tmpdir(), 'tapebox-forced-exit-'))
   const fifo = join(root, 'held.pipe')
   let child: ReturnType<typeof spawn> | undefined
   let closed: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
+  const stopFixture = () => { child?.kill('SIGKILL') }
+  signal.addEventListener('abort', stopFixture, { once: true })
   try {
     execFileSync('mkfifo', [fifo], { timeout: 1_000 })
     const helper = new URL('../../src/main/force-exit.ts', import.meta.url).href
@@ -19,11 +20,12 @@ it.skipIf(process.platform === 'win32')('forces the process to end while a real 
     child.stdout?.on('data', (value: Buffer) => { output += value.toString() })
     child.stderr?.on('data', (value: Buffer) => { output += value.toString() })
     closed = new Promise((resolve) => child!.once('close', (code, signal) => resolve({ code, signal })))
-    const outcome = await Promise.race([closed, new Promise<'expired'>((resolve) => { timer = setTimeout(() => resolve('expired'), 2_000) })])
+    // Observe physical closure under the test harness, including worker startup.
+    const outcome = await closed
     expect(outcome).toEqual({ code: null, signal: 'SIGKILL' })
     expect(output).toBe('forcing exit\n')
   } finally {
-    clearTimeout(timer)
+    signal.removeEventListener('abort', stopFixture)
     if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
     await closed
     await rm(root, { recursive: true, force: true })

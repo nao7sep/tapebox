@@ -1,3 +1,4 @@
+import { waitForFixture } from '../helpers/fixture-readiness'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -170,7 +171,7 @@ describe('the Electron entry', () => {
     expect(windows[0]!.focus).toHaveBeenCalledOnce()
   })
 
-  it('ends a standalone version probe on ordinary quit while the independent player keeps running', async () => {
+  it('ends a standalone version probe on ordinary quit while the independent player keeps running', async ({ signal, task }) => {
     const directory = mkdtempSync(join(tmpdir(), 'tapebox-quit-processes-'))
     const version = waitingFixture(directory, 'version')
     const player = waitingFixture(directory, 'player')
@@ -182,15 +183,21 @@ describe('the Electron entry', () => {
       forgetAllInstalledVersions()
       versionFixture.script = version.script
       readingVersion = readInstalledVersion('yt-dlp')
-      await vi.waitFor(() => { versionPid = Number(readFileSync(version.ready, 'utf8')); expect(versionPid).toBeGreaterThan(0) })
+      versionPid = await waitForFixture(directory, () => {
+        const pid = Number(readFileSync(version.ready, 'utf8'))
+        return pid > 0 ? pid : undefined
+      }, signal)
 
       // Exercise the actual direct-executable handoff on every host. No OS
       // browser, native application or media file is needed for this control.
       playerStarted = true
       await openExternalPlayer(process.execPath, player.script, 'linux')
-      await vi.waitFor(() => { playerPid = Number(readFileSync(player.ready, 'utf8')); expect(playerPid).toBeGreaterThan(0) })
+      playerPid = await waitForFixture(directory, () => {
+        const pid = Number(readFileSync(player.ready, 'utf8'))
+        return pid > 0 ? pid : undefined
+      }, signal)
       // The player's first pulse, so its liveness below compares two real pulses.
-      await vi.waitFor(() => expect(Number(readFileSync(player.pulse, 'utf8'))).toBeGreaterThan(0))
+      await waitForFixture(directory, () => Number(readFileSync(player.pulse, 'utf8')) > 0 ? true : undefined, signal)
       expect(() => process.kill(versionPid, 0)).not.toThrow()
       expect(() => process.kill(playerPid, 0)).not.toThrow()
       order.length = 0
@@ -211,7 +218,7 @@ describe('the Electron entry', () => {
       expect(() => process.kill(versionPid, 0)).toThrow()
 
       const before = Number(readFileSync(player.pulse, 'utf8'))
-      await vi.waitFor(() => expect(Number(readFileSync(player.pulse, 'utf8'))).toBeGreaterThan(before))
+      await waitForFixture(directory, () => Number(readFileSync(player.pulse, 'utf8')) > before ? true : undefined, signal)
       expect(() => process.kill(playerPid, 0)).not.toThrow()
     } finally {
       // The release marker also handles failure before the player reports its
@@ -224,7 +231,7 @@ describe('the Electron entry', () => {
         if (playerStarted) await vi.waitFor(() => {
           const pid = playerPid || Number(readFileSync(player.ready, 'utf8'))
           expect(() => process.kill(pid, 0)).toThrow()
-        })
+        }, { timeout: task.timeout })
       } finally {
         forgetAllInstalledVersions()
         versionFixture.script = ''
