@@ -109,7 +109,6 @@ export function registerSettingsHandlers(): void {
   // The default library folder, shown as the placeholder when libraryDir is blank.
   handle('settings:defaultLibraryDir', async () => paths.library)
   handle('settings:update', async ({ libraryAction, ...patch }) => {
-    const wasAutostart = config.getSettings().autoStartDownloads
     // Normalize user-typed folder fields at the boundary.
     const normalized: SettingsSets = { ...patch }
     if (patch.libraryDir !== undefined) {
@@ -131,7 +130,7 @@ export function registerSettingsHandlers(): void {
     // after. Stop (settings:cancelLibraryMove) or quitting aborts the copy and rolls
     // back every file already published.
     const apply = () => runCancellable(
-      (signal) => applySettingsPatch(normalized, wasAutostart, signal, libraryAction),
+      (signal) => applySettingsPatch(normalized, signal, libraryAction),
       LIBRARY_MOVE_KEY,
     )
     if (!movesLibrary(normalized)) return withLibraryClaim(apply)
@@ -161,10 +160,10 @@ const OBSOLETE_SOURCES_WARNING = message('errors.libraryOldCopiesKept')
 
 async function applySettingsPatch(
   normalized: SettingsSets,
-  wasAutostart: boolean,
   signal: AbortSignal,
   libraryAction?: 'open',
 ): Promise<SettingsUpdateResult> {
+  const previous = config.getSettings()
   const switching = movesLibrary(normalized)
   const toDir = effectiveLibraryDir(normalized.libraryDir ?? config.getSettings().libraryDir)
   const opening = switching && libraryAction === 'open'
@@ -212,7 +211,8 @@ async function applySettingsPatch(
   emit('settings:languageChanged', next.language)
   emit('settings:timeZoneChanged', next.timeZone)
   // Flipping autostart on should start anything already waiting.
-  if (!wasAutostart && next.autoStartDownloads) queue.resumePaused()
+  if (!previous.autoStartDownloads && next.autoStartDownloads) queue.resumePaused()
+  else if (next.autoStartDownloads && next.maxConcurrentDownloads > previous.maxConcurrentDownloads) queue.tick()
   // Toggling keep-awake off mid-playback must release the held wake lock now
   // (and toggling it on while a tape plays must acquire it) — reconcile against
   // the new setting rather than waiting for the next play/pause transition.

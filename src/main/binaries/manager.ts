@@ -10,6 +10,7 @@ import { writeFileAtomicVia } from '@main/io/atomic-file'
 import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
 import { recordLatest } from '@shared/binary-status'
+import type { BinaryEntry } from '@shared/dependencies'
 import { withRetry } from '@main/io/retry'
 import {
   BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
@@ -153,6 +154,22 @@ export function downloadTempPath(name: BinaryName): string {
   return join(paths.temp, `${name}-${nanoid(10)}.partial`)
 }
 
+// Observations can settle out of order, including within one clock millisecond.
+// Only process-local ordering is needed: no request survives an app restart.
+let observationGeneration = 0
+const acceptedObservations = new Map<BinaryName, number>()
+type Observation = { generation: number; startedAtUtc: string }
+
+function startObservation(): Observation {
+  return { generation: ++observationGeneration, startedAtUtc: nowUtcIso() }
+}
+
+function recordObservation(name: BinaryName, entry: BinaryEntry, version: string, observation: Observation): BinaryEntry {
+  if (observation.generation <= (acceptedObservations.get(name) ?? 0)) return entry
+  acceptedObservations.set(name, observation.generation)
+  return recordLatest(entry, version, observation.startedAtUtc)
+}
+
 async function isInstalled(name: BinaryName): Promise<boolean> {
   try {
     await access(binaryPath(name), constants.X_OK)
@@ -200,19 +217,20 @@ export async function checkForUpdates(signal?: AbortSignal): Promise<BinaryCheck
   // The attempt is recorded before anything is resolved, so the launch check waits
   // a day after this one whether it succeeds, fails or never reaches the network.
   await mutateDependencies(() => ({ lastCheckAttemptAtUtc: now }))
-  const resolved = new Map<BinaryName, string>()
+  const resolved = new Map<BinaryName, { version: string; observation: Observation }>()
   const failures: BinaryCheckFailure[] = []
 
   await Promise.all(
     binaryNames.map(async (name) => {
       try {
+        const observation = startObservation()
         const asset = await binarySpecs[name].resolveLatest(signal)
-        resolved.set(name, asset.version)
+        resolved.set(name, { version: asset.version, observation })
       } catch (err) {
         if (signal?.aborted) throw signal.reason
-        // A failed check writes NOTHING (managed-runtime-dependencies-conventions):
-        // no version, no timestamp, no error state — the displayed wording stays at
-        // the last successful knowledge. Log it and move on.
+        // A failed lookup leaves this tool's successful observation unchanged.
+        // The global attempt timestamp was already saved for the daily gate.
+        // Log the failure without replacing the displayed last-known version.
         failures.push({ name, message: message('tools.checkFailed', { tool: name }) })
         log.warn('binary update check failed', { name, error: describeError(err) })
       }
@@ -224,8 +242,8 @@ export async function checkForUpdates(signal?: AbortSignal): Promise<BinaryCheck
   // concurrent install's fields are preserved) and fold in each successful check.
   await mutateDependencies((d) => {
     const next = { ...d }
-    for (const [name, version] of resolved) {
-      next[name] = recordLatest(d[name], version, now)
+    for (const [name, { version, observation }] of resolved) {
+      next[name] = recordObservation(name, d[name], version, observation)
     }
     return next
   })
@@ -287,6 +305,7 @@ async function performInstall(
   emit('binaries:progress', { name, operationId, percent: 0, phase: 'download' })
 
   const spec = binarySpecs[name]
+  const observation = startObservation()
   const resolved = await spec.resolveLatest(signal)
   signal.throwIfAborted()
   log.info('binary resolved', { name, version: resolved.version, url: resolved.downloadUrl })
@@ -416,7 +435,7 @@ async function performInstall(
   // the binary, so an install has nothing to record about it.
   try {
     await mutateDependencies((d) => ({
-      [name]: recordLatest(d[name], resolved.version, nowUtcIso()),
+      [name]: recordObservation(name, d[name], resolved.version, observation),
     }))
   } catch (err) {
     log.warn('installed binary upstream facts could not be recorded', { name, error: describeError(err) })

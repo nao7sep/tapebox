@@ -100,8 +100,16 @@ export function holdFromScheduling(tapeIds: Iterable<string>): () => void {
  */
 export async function cancel(tapeId: string): Promise<void> {
   const job = active.get(tapeId)
-  if (!job) return
-  await job.cancel()
+  if (job) {
+    await job.cancel()
+    return
+  }
+  const tape = session.getTapes().find((candidate) => candidate.id === tapeId)
+  if (tape?.state !== 'queued') return
+  // Publish before yielding so another job's completion cannot start this tape.
+  const next = moveTape(tape, { state: 'paused', failureCode: null, lastError: null }, nowUtcIso())
+  session.upsertTape(next)
+  emit('tapes:updated', next)
 }
 
 /**

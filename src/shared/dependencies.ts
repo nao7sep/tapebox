@@ -8,9 +8,9 @@ import { z } from 'zod'
  * out is why a "reset settings" can't wipe the recorded check results and why an
  * update check churning these facts never rewrites the config file.
  *
- * Only what cannot be re-derived is stored, and both survivors are NETWORK facts
- * with no on-disk source: the last-known latest version and the last *successful*
- * check time. Presence is scanned from disk, and the INSTALLED version is read
+ * Only what cannot be re-derived is stored: each tool's last-known latest version
+ * and last successful check time, plus the global last check-attempt time used
+ * by the daily gate. Presence is scanned from disk, and the INSTALLED version is read
  * from the artifact itself (binaries/installed-version.ts) — never persisted here,
  * because a fact about a file kept away from that file drifts the moment an install
  * doesn't write the record (one predating the tracking, an interrupted install, a
@@ -18,7 +18,9 @@ import { z } from 'zod'
  * store now costs the last check, not the installed version.
  *
  * No integrity flag, checksum, or check/fault error is kept either: a failed check
- * writes nothing, and a damaged file fails when used and is fixed by installing again.
+ * leaves that tool's successful-check facts unchanged, while the global attempt
+ * time is saved before lookups. A damaged file fails when used and is fixed by
+ * installing again.
  */
 export const BinaryEntrySchema = z.object({
   latestKnownVersion: z.string().nullable(),

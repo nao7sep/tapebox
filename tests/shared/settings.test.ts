@@ -142,3 +142,19 @@ describe('the theme setting', () => {
     expect(summarizeSettings({ ...defaultSettings(), theme: 'dark' }).theme).toBe('dark')
   })
 })
+
+
+describe('site profile regular expressions', () => {
+  const profile = { id: 'profile1', name: 'Example', urlPattern: '[', isRegex: true, args: '', comment: '' }
+
+  it('rejects an invalid regular expression at the URL pattern field', () => {
+    const result = SettingsSchema.safeParse({ siteProfiles: [profile] })
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error.issues[0]?.path).toEqual(['siteProfiles', 0, 'urlPattern'])
+  })
+
+  it('allows ordinary substring patterns containing regex syntax', () => {
+    expect(SettingsSchema.safeParse({ siteProfiles: [{ ...profile, isRegex: false }] }).success).toBe(true)
+    expect(SettingsSchema.safeParse({ siteProfiles: [{ ...profile, urlPattern: '^https://example\\.com/' }] }).success).toBe(true)
+  })
+})

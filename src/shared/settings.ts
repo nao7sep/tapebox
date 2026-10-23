@@ -87,6 +87,13 @@ export const SiteProfileSchema = z.object({
   isRegex: z.boolean(),
   args: z.string(),
   comment: z.string(),
+}).superRefine((profile, ctx) => {
+  if (!profile.isRegex) return
+  try {
+    new RegExp(profile.urlPattern)
+  } catch {
+    ctx.addIssue({ code: 'custom', path: ['urlPattern'], message: 'URL pattern must be a valid regular expression.' })
+  }
 })
 export type SiteProfile = z.infer<typeof SiteProfileSchema>
 

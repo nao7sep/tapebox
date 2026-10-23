@@ -297,3 +297,30 @@ describe('settings:update — library move control', () => {
     expect(updateSettings).not.toHaveBeenCalled()
   })
 })
+
+
+describe('settings:update download concurrency', () => {
+  it('fills newly available slots immediately when autostart is enabled', async () => {
+    await update({ maxConcurrentDownloads: base.maxConcurrentDownloads + 1 })
+    expect(tick).toHaveBeenCalledOnce()
+  })
+
+  it('does not start waiting downloads when autostart is disabled', async () => {
+    base.autoStartDownloads = false
+    await update({ maxConcurrentDownloads: base.maxConcurrentDownloads + 1 })
+    expect(tick).not.toHaveBeenCalled()
+  })
+
+  it('leaves running downloads alone when the cap decreases', async () => {
+    await update({ maxConcurrentDownloads: 1 })
+    expect(tick).not.toHaveBeenCalled()
+  })
+
+  it('resumes paused downloads when autostart is enabled together with a higher cap', async () => {
+    const { resumePaused } = await import('@main/queue/manager')
+    base.autoStartDownloads = false
+    await update({ autoStartDownloads: true, maxConcurrentDownloads: 3 })
+    expect(resumePaused).toHaveBeenCalledOnce()
+    expect(tick).not.toHaveBeenCalled()
+  })
+})

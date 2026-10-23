@@ -33,9 +33,9 @@ vi.mock('@main/binaries/archive', () => ({ extractFileFromZip }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 // checkForUpdates is the orchestration seam for the convention's honest-state rule:
-// a successful resolve records the latest + time; a failed one writes NOTHING. The
-// dependencies store and the upstream registry are mocked at their module
-// boundaries so the fold is exercised without touching the network or disk.
+// a successful resolve records the tool's latest version and check time; a failed
+// one leaves those facts unchanged. The global attempt time is saved before lookups.
+// The store and registry are mocked at their module boundaries, without network or disk.
 const depsRef: { current: Dependencies } = { current: null as unknown as Dependencies }
 
 vi.mock('@main/io/logger', () => ({
@@ -127,7 +127,7 @@ function rejectWhenAborted(signal: AbortSignal): Promise<never> {
   })
 }
 
-describe('checkForUpdates — a failed check writes nothing', () => {
+describe('checkForUpdates — a failed check preserves per-tool facts', () => {
   it('folds only successful resolves; a failed binary keeps its facts null', async () => {
     seed()
     vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue(resolved('2024.01.01'))
@@ -142,7 +142,7 @@ describe('checkForUpdates — a failed check writes nothing', () => {
     expect(b['yt-dlp'].lastCheckedAtUtc).not.toBeNull()
     expect(b.deno.latestKnownVersion).toBe('1.44')
     expect(b.deno.lastCheckedAtUtc).not.toBeNull()
-    // The failed check wrote nothing — no version, no timestamp.
+    // The failed tool keeps its version and successful-check time; the attempt is recorded globally.
     expect(b.ffmpeg.latestKnownVersion).toBeNull()
     expect(b.ffmpeg.lastCheckedAtUtc).toBeNull()
     expect(result).toMatchObject({
@@ -453,4 +453,59 @@ describe('install final-preparation cancellation', () => {
     }
   })
 
+})
+
+
+describe('upstream observation ordering', () => {
+  function prepareInstall(): void {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    downloadWithProgress.mockImplementation(async ({ destPath }: { destPath: string }) => {
+      await writeFile(destPath, 'verified binary bytes')
+    })
+    verifyBinaryIntegrity.mockResolvedValue({ verified: true, method: 'sha256' })
+    for (const name of ['ffmpeg', 'deno'] as const) {
+      vi.mocked(binarySpecs[name].resolveLatest).mockResolvedValue(resolved('other'))
+    }
+  }
+
+  it.each(['same', 'backwards'] as const)('keeps a newer install observation when an older check settles last (%s clock)', async (clock) => {
+    seed()
+    prepareInstall()
+    // Ordering must survive equal and reversed UTC times.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+    let release!: (value: never) => void
+    let started!: () => void
+    const observed = new Promise<void>((resolve) => { started = resolve })
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockImplementationOnce(() => {
+      started()
+      return new Promise((resolve) => { release = resolve })
+    }).mockResolvedValueOnce(resolved('1.0'))
+    const check = checkForUpdates()
+    await observed
+    if (clock === 'backwards') vi.setSystemTime(new Date('2026-10-23T11:00:00Z'))
+    await expect(installOrUpdate('yt-dlp', `newer-install-${clock}`)).resolves.toMatchObject({ outcome: 'installed' })
+    release(resolved('9.0'))
+    await check
+    expect(depsRef.current['yt-dlp'].latestKnownVersion).toBe('1.0')
+    expect(depsRef.current.lastCheckAttemptAtUtc).toBe('2026-10-23T12:00:00.000Z')
+  })
+
+  it('keeps a newer check observation when an older install settles last', async () => {
+    seed()
+    prepareInstall()
+    let release!: (value: never) => void
+    let started!: () => void
+    const observed = new Promise<void>((resolve) => { started = resolve })
+    vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockImplementationOnce(() => {
+      started()
+      return new Promise((resolve) => { release = resolve })
+    }).mockResolvedValueOnce(resolved('1.0'))
+    const install = installOrUpdate('yt-dlp', 'older-install')
+    await observed
+    await checkForUpdates()
+    release(resolved('9.0'))
+    await expect(install).resolves.toMatchObject({ outcome: 'installed' })
+    expect(depsRef.current['yt-dlp'].latestKnownVersion).toBe('1.0')
+  })
 })

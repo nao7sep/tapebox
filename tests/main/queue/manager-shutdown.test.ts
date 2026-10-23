@@ -186,3 +186,28 @@ describe('queue diagnostic credentials', () => {
     }
   })
 })
+
+
+describe('queued user cancellation', () => {
+  it('pauses synchronously before another scheduler tick can start it', async () => {
+    vi.resetModules()
+    const queue = await import('@main/queue/manager')
+    const { emit } = await import('@main/ipc/events')
+    const tape = { ...queued('cancel-waiting'), failureCode: 'download', lastError: 'old failure' } as Tape
+    tapes.push(tape)
+    try {
+      const cancelling = queue.cancel(tape.id)
+      expect(tapes[0]).toMatchObject({ state: 'paused', failureCode: null, lastError: null })
+      expect(emit).toHaveBeenCalledWith('tapes:updated', tapes[0])
+      queue.tick()
+      expect(jobs.started).toEqual([])
+      await cancelling
+    } finally {
+      await queue.shutdown()
+      tapes.length = 0
+      jobs.started.length = 0
+      jobs.stopped.length = 0
+      jobs.settled.length = 0
+    }
+  })
+})
