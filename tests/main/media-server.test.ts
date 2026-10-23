@@ -43,6 +43,9 @@ beforeAll(async () => {
   await writeFile(join(mocks.libraryDir, 'tape.mp4'), BODY, 'utf8')
   await writeFile(join(mocks.libraryDir, 'poster.jpg'), BODY, 'utf8')
   await writeFile(join(mocks.libraryDir, 'notes.txt'), BODY, 'utf8')
+  await writeFile(join(mocks.libraryDir, 'audio.wav'), BODY, 'utf8')
+  await writeFile(join(mocks.libraryDir, 'audio.flac'), BODY, 'utf8')
+  await writeFile(join(mocks.libraryDir, 'active.html'), '<script>1</script>', 'utf8')
   await writeFile(join(mocks.libraryDir, 'empty.mp4'), '', 'utf8')
   await mkdir(join(mocks.libraryDir, 'folder.mp4'), { recursive: true })
 })
@@ -77,6 +80,17 @@ describe('the media server lifecycle', () => {
 })
 
 describe('serving a library file', () => {
+  it.each([['audio.wav', 'audio/wav'], ['audio.flac', 'audio/flac']])('serves supported passive audio %s', async (path, type) => {
+    const response = await get(path!)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe(type)
+    expect(await response.text()).toBe(BODY)
+  })
+
+  it('continues to refuse active content', async () => {
+    expect((await get('active.html')).status).toBe(404)
+  })
+
   it.each(['tape.mp4', 'tape.mp4?collection=3'])('serves %s with its media type', async (path) => {
     const response = await get(path)
 
