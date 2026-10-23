@@ -1,9 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 // The launcher helper is plain ESM because both shell families execute it directly.
 // @ts-expect-error The directly executed .mjs helper intentionally has no declaration file.
-import { claimRuntime, isRuntimeOwner, ownsProcess, releaseRuntime, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
+import { ownsProcess, REPO_ROOT } from "../../scripts/launcher-runtime.mjs";
 
 describe("launcher process identity", () => {
   it("owns only this repository's TapeBox runtime", () => {
@@ -34,15 +38,30 @@ describe("launcher process identity", () => {
   });
 
   it("does not let a stale launcher generation clean up its replacement", async () => {
-    const first = `first-${randomUUID()}`;
-    const second = `second-${randomUUID()}`;
+    const root = await mkdtemp(join(tmpdir(), "tapebox-launcher-test-"));
+    const helper = join(root, "scripts", "launcher-runtime.mjs");
     try {
-      await claimRuntime(first);
-      await claimRuntime(second);
-      expect(await isRuntimeOwner(first)).toBe(false);
-      expect(await isRuntimeOwner(second)).toBe(true);
+      await mkdir(join(root, "scripts"));
+      await copyFile(join(REPO_ROOT, "scripts", "launcher-runtime.mjs"), helper);
+      // The helper derives ownership from its checkout. Run an actual copy in a
+      // disposable checkout so claims can never replace a live launcher's token.
+      await promisify(execFile)(process.execPath, ["--input-type=module", "-e", `
+        import assert from 'node:assert/strict';
+        import { pathToFileURL } from 'node:url';
+        const { claimRuntime, isRuntimeOwner, releaseRuntime } = await import(pathToFileURL(process.argv[1]).href);
+        try {
+          await claimRuntime('first');
+          await claimRuntime('second');
+          assert.equal(await isRuntimeOwner('first'), false);
+          assert.equal(await isRuntimeOwner('second'), true);
+          assert.equal(await releaseRuntime('first'), false);
+          assert.equal(await isRuntimeOwner('second'), true);
+        } finally {
+          await releaseRuntime('second');
+        }
+      `, helper]);
     } finally {
-      await releaseRuntime(second);
+      await rm(root, { recursive: true, force: true });
     }
   });
 });
