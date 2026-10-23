@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
@@ -17,6 +18,38 @@ afterEach(() => {
 })
 
 describe('SQLite store admission', () => {
+  it('can create the store after the initializer exits before publication', () => {
+    const file = join(root, 'store.sqlite3')
+    const source = new URL('../../../src/main/io/sqlite-store.ts', import.meta.url).href
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import { DatabaseSync } from 'node:sqlite';
+      const { openWritableDatabase } = await import(process.argv[1]);
+      const exec = DatabaseSync.prototype.exec;
+      DatabaseSync.prototype.exec = function(sql) {
+        if (sql === 'COMMIT') process.exit(73);
+        return exec.call(this, sql);
+      };
+      openWritableDatabase(process.argv[2], 1, 'CREATE TABLE entries (value TEXT NOT NULL)');
+    `, source, file], { encoding: 'utf8' })
+    expect(child.status, child.stderr).toBe(73)
+    expect(existsSync(file)).toBe(false)
+    const db = openWritableDatabase(file, 1, schema)
+    opened.push(db)
+    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
+    expect(db.prepare('SELECT * FROM entries').all()).toEqual([])
+  })
+
+  it('preserves a competing unsupported store created before publication', () => {
+    const file = join(root, 'store.sqlite3')
+    const realExec = DatabaseSync.prototype.exec
+    vi.spyOn(DatabaseSync.prototype, 'exec').mockImplementation(function (this: DatabaseSync, sql: string) {
+      if (sql === 'COMMIT') writeFileSync(file, '')
+      return realExec.call(this, sql)
+    })
+    expect(() => openWritableDatabase(file, 1, schema)).toThrow(/format/)
+    expect(readFileSync(file)).toEqual(Buffer.alloc(0))
+  })
+
   it.each(['empty', 'negative', 'newer'])('leaves a preexisting %s store byte-identical', (kind) => {
     const file = join(root, 'store.sqlite3')
     if (kind === 'empty') writeFileSync(file, '')
