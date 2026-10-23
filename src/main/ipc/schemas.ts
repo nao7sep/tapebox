@@ -129,6 +129,7 @@ export const ipcRequestSchemas = {
 
   // ── Runtime info ──────────────────────────────────────────────────────────
   'app:runtimeInfo':       z.undefined(),
+  'app:quitDraftsReady':   z.object({ requestId: z.number().int() }),
   'app:quitDraftsAnswer':  z.object({ requestId: z.number().int(), dirty: z.boolean(), discard: z.boolean() }),
   'app:openExternal':      z.object({ url: z.url() }),
   'app:setVideoPlaying':   z.object({ playing: z.boolean() }),

@@ -35,14 +35,23 @@ export function WindowCloseGuard() {
   }
 
   useLayoutEffect(() => {
+    let active = true
     const stop = ipcOn('app:quitDraftsRequested', ({ requestId, ask }) => {
-      if (!windowCloseState().dirty) return answer(requestId, false, true)
-      if (!ask) return answer(requestId, true, false)
-      request.current = requestId
-      setWindowClosePending(true)
-      setAsking(true)
+      // Main retires unanswered requests before showing its own fallback. Wait
+      // for acknowledgement so a late renderer cannot open a second question.
+      void ipcInvoke('app:quitDraftsReady', { requestId }).then((current) => {
+        if (!active || !current) return
+        if (!windowCloseState().dirty) return answer(requestId, false, true)
+        if (!ask) return answer(requestId, true, false)
+        request.current = requestId
+        setWindowClosePending(true)
+        setAsking(true)
+      }).catch((error) => {
+        log.warn('quit draft acknowledgement failed', { error: describeError(error) })
+      })
     })
     return () => {
+      active = false
       stop()
       setWindowClosePending(false)
     }

@@ -169,6 +169,22 @@ describe('closing the main window', () => {
 // A user's quit asks about drafts, then about running work, before anything is
 // saved or stopped (unsaved-edits-conventions); a session end never asks.
 describe('the quit questions', () => {
+  it('offers the unresponsive notice with safe dismissal before stopping work', async () => {
+    await launch()
+    const settle = vi.mocked((await import('@main/window-close')).settleWindowDrafts)
+    settle.mockImplementationOnce(async (_window, signal, _standalone, unavailable) => unavailable(signal))
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0]).toMatchObject({
+      title: 'TapeBox',
+      message: 'quit.unresponsive.message',
+      closeLabel: 'common.cancel',
+      actions: [{ id: 'quit-anyway', label: 'quit.libraryNotSaved.quitAnyway', danger: true }],
+    })
+    expect(state.order).not.toContain('save-library')
+    expect(state.order).not.toContain('stop-downloads')
+  })
+
   it('asks about running downloads before stopping them, and Cancel stops nothing', async () => {
     await launch()
     state.working = true

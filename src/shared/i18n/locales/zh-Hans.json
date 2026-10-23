@@ -154,6 +154,7 @@
   "topBar.closeResult": "关闭添加 URL 提示",
   "toast.close": "关闭通知",
   "app.librarySaveFailed": "无法将资料库的更改保存到磁盘。TapeBox 会保留这些更改并再次尝试；请检查磁盘是否有可用空间。",
+  "quit.unresponsive.message": "TapeBox 没有响应。未保存的更改可能会丢失。",
   "quit.libraryNotSaved.title": "无法保存资料库的更改",
   "quit.libraryNotSaved.message": "TapeBox 没有退出，你最近对资料库的更改仍然保留。",
   "quit.libraryNotSaved.detail": "请检查磁盘是否有可用空间，以及 TapeBox 的数据文件夹是否可用，然后重试。如果仍要退出，这些更改将会丢失。",

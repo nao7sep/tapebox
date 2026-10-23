@@ -140,8 +140,9 @@ export type IpcCalls = {
   // ── Runtime info ─────────────────────────────────────────────────────────
   // Read-only facts about the current process.
   'app:runtimeInfo':       { req: undefined;                         res: RuntimeInfo }
-  // The main renderer's answer to app:quitDraftsRequested: whether it holds
-  // unsaved drafts and, when it asked, whether the user chose to discard them.
+  // Acknowledge before asking; false means the request expired and must not show.
+  'app:quitDraftsReady':   { req: { requestId: number }; res: boolean }
+  // Whether the renderer holds drafts and the user chose to discard them.
   'app:quitDraftsAnswer':  { req: { requestId: number; dirty: boolean; discard: boolean }; res: void }
   'app:openExternal':      { req: { url: string };                   res: void }
   // Report whether a tape is currently playing, so main can hold or release an OS

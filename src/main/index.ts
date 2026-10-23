@@ -239,7 +239,7 @@ async function handleTerminalStartupFailure(error: unknown): Promise<void> {
 const quit = createQuit({
   confirm: async (signal) => {
     const main = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
-    if (!(await settleWindowDrafts(main, signal, askToDiscardDrafts))) return false
+    if (!(await settleWindowDrafts(main, signal, askToDiscardDrafts, askAfterUnresponsiveWindow))) return false
     if (signal.aborted || !workIsRunning()) return true
     return askToStopWork(signal)
   },
@@ -316,6 +316,21 @@ async function askToDiscardDrafts(signal: AbortSignal): Promise<boolean> {
     signal,
   })
   return choice === 'discard'
+}
+
+/** The main-owned fallback remains usable when the workspace cannot answer. */
+async function askAfterUnresponsiveWindow(signal: AbortSignal): Promise<boolean> {
+  const t = mainTranslator()
+  const choice = await showPlainMessageDialog({
+    owner: questionOwner(),
+    language: t.language,
+    title: 'TapeBox',
+    message: t.t('quit.unresponsive.message'),
+    closeLabel: t.t('common.cancel'),
+    actions: [{ id: 'quit-anyway', label: t.t('quit.libraryNotSaved.quitAnyway'), danger: true }],
+    signal,
+  })
+  return choice === 'quit-anyway'
 }
 
 async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoice> {

@@ -25,7 +25,7 @@ const input = () => document.querySelector('input') as HTMLInputElement
 
 beforeEach(async () => {
   HTMLElement.prototype.scrollIntoView = vi.fn()
-  bridge.invoke.mockReset().mockResolvedValue(undefined)
+  bridge.invoke.mockReset().mockImplementation(async (channel: string) => channel === 'app:quitDraftsReady' ? true : undefined)
   vi.spyOn(document, 'hasFocus').mockReturnValue(true)
   useArchiveStore.setState({ selectedBoxId: null })
   useBoxesStore.setState({ editingId: null, draftName: '', pendingRenames: 0, boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
@@ -73,7 +73,7 @@ describe('box draft at quit', () => {
     expect(bridge.invoke).not.toHaveBeenCalled()
     vi.mocked(document.hasFocus).mockReturnValue(true)
     await act(async () => bridge.closeRequest({ requestId: 1, ask: true }))
-    expect(bridge.invoke).not.toHaveBeenCalled()
+    expect(bridge.invoke.mock.calls).toEqual([['app:quitDraftsReady', { requestId: 1 }]])
     const keep = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Keep editing')!
     await act(async () => keep.click())
     expect(input().value).toBe('Unfinished')

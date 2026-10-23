@@ -160,6 +160,7 @@
   "topBar.closeResult": "Chiudi messaggio di Aggiungi URL",
   "toast.close": "Chiudi notifica",
   "app.librarySaveFailed": "Non è stato possibile salvare su disco le modifiche alla libreria. TapeBox le conserva e riproverà; verifica che sul disco ci sia spazio libero.",
+  "quit.unresponsive.message": "TapeBox non risponde. Le modifiche non salvate potrebbero andare perse.",
   "quit.libraryNotSaved.title": "Impossibile salvare le modifiche alla libreria",
   "quit.libraryNotSaved.message": "TapeBox non è stato chiuso e conserva le ultime modifiche alla libreria.",
   "quit.libraryNotSaved.detail": "Verifica che sul disco ci sia spazio libero e che la cartella dei dati di TapeBox sia disponibile, poi riprova. Se esci comunque, queste modifiche andranno perse.",

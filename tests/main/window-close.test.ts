@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import type { BrowserWindow } from 'electron'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 // Closing the main window ends the app on every platform (window-conventions), and
 // the quit asks the main renderer before discarding its drafts
@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 const handlers = vi.hoisted(() => new Map<string, (request: unknown, event: unknown) => unknown>())
 vi.mock('@main/ipc/handle', () => ({ handle: (channel: string, handler: (request: unknown, event: unknown) => unknown) => { handlers.set(channel, handler) } }))
-import { configureWindowClose, registerDraftAnswers, settleWindowDrafts } from '@main/window-close'
+import { configureWindowClose, registerDraftAnswers, settleWindowDrafts, DRAFT_RESPONSE_TIMEOUT_MS } from '@main/window-close'
 
 class Contents extends EventEmitter {
   send = vi.fn()
@@ -50,8 +50,10 @@ describe('closing the main window', () => {
 
 describe('a quit and the main window\'s drafts', () => {
   const standalone = vi.fn(async () => true)
+  const unavailable = vi.fn(async () => false)
+  afterEach(() => { vi.useRealTimers(); unavailable.mockClear() })
   const settle = (win: Window | null, signal = new AbortController().signal) =>
-    settleWindowDrafts(win as unknown as BrowserWindow, signal, standalone)
+    settleWindowDrafts(win as unknown as BrowserWindow, signal, standalone, unavailable)
 
   it('goes on at once when the window holds no drafts', async () => {
     const win = new Window()
@@ -111,4 +113,39 @@ describe('a quit and the main window\'s drafts', () => {
 
     await expect(settle(null)).resolves.toBe(true)
   })
+  it('asks main after no initial response and retires late acknowledgements', async () => {
+    vi.useFakeTimers()
+    const win = new Window()
+    const result = settle(win)
+    const { requestId } = asked(win)
+    await vi.advanceTimersByTimeAsync(DRAFT_RESPONSE_TIMEOUT_MS)
+    await expect(result).resolves.toBe(false)
+    expect(unavailable).toHaveBeenCalledOnce()
+    expect(await handlers.get('app:quitDraftsReady')!({ requestId }, { sender: win.webContents })).toBe(false)
+    await answer(win.webContents, requestId, true, true)
+  })
+
+  it('never times out a person reading an acknowledged question', async () => {
+    vi.useFakeTimers()
+    const win = new Window()
+    const result = settle(win)
+    const { requestId } = asked(win)
+    expect(await handlers.get('app:quitDraftsReady')!({ requestId }, { sender: win.webContents })).toBe(true)
+    await vi.advanceTimersByTimeAsync(DRAFT_RESPONSE_TIMEOUT_MS * 10)
+    expect(unavailable).not.toHaveBeenCalled()
+    await answer(win.webContents, requestId, true, false)
+    await expect(result).resolves.toBe(false)
+  })
+
+  it('only accepts the asked renderer acknowledgement and honors Quit anyway', async () => {
+    vi.useFakeTimers()
+    unavailable.mockResolvedValueOnce(true)
+    const win = new Window()
+    const result = settle(win)
+    const { requestId } = asked(win)
+    expect(await handlers.get('app:quitDraftsReady')!({ requestId }, { sender: new Contents() })).toBe(false)
+    await vi.advanceTimersByTimeAsync(DRAFT_RESPONSE_TIMEOUT_MS)
+    await expect(result).resolves.toBe(true)
+  })
+
 })

@@ -31,11 +31,11 @@ function button(text: string): HTMLButtonElement {
   return [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!
 }
 
-const answers = () => bridge.invoke.mock.calls.map(([, answer]) => answer)
+const answers = () => bridge.invoke.mock.calls.filter(([channel]) => channel === 'app:quitDraftsAnswer').map(([, answer]) => answer)
 
 beforeEach(async () => {
   vi.clearAllMocks()
-  bridge.invoke.mockResolvedValue(undefined)
+  bridge.invoke.mockResolvedValue(true)
   const container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -79,4 +79,13 @@ describe('a quit and the window\'s drafts', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(answers()).toEqual([{ requestId: 4, dirty: true, discard: false }])
   })
+  it('does not show an expired question when the renderer responds late', async () => {
+    await act(async () => edit('unsaved'))
+    bridge.invoke.mockResolvedValueOnce(false)
+    await act(async () => bridge.request({ requestId: 5, ask: true }))
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(answers()).toEqual([])
+    expect(isWindowClosePending()).toBe(false)
+  })
+
 })

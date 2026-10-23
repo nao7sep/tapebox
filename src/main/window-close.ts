@@ -14,12 +14,20 @@ export function configureWindowClose(win: BrowserWindow, quit: () => void): void
 }
 
 type DraftAnswer = { dirty: boolean; discard: boolean }
-const pending = new Map<number, { sender: Electron.WebContents; settle: (answer: DraftAnswer) => void }>()
+// Only the initial renderer response is bounded, never the user’s deliberation.
+export const DRAFT_RESPONSE_TIMEOUT_MS = 4_000
+const pending = new Map<number, { sender: Electron.WebContents; acknowledge: () => void; settle: (answer: DraftAnswer) => void }>()
 let nextRequest = 0
 
 /** The main renderer answers a quit's draft question here. Only the window that
  * was asked can answer it. */
 export function registerDraftAnswers(): void {
+  handle('app:quitDraftsReady', ({ requestId }, event) => {
+    const request = pending.get(requestId)
+    if (!request || request.sender !== event.sender) return false
+    request.acknowledge()
+    return true
+  })
   handle('app:quitDraftsAnswer', ({ requestId, dirty, discard }, event) => {
     const request = pending.get(requestId)
     if (!request || request.sender !== event.sender) return
@@ -40,13 +48,19 @@ export function settleWindowDrafts(
   win: BrowserWindow | null,
   signal: AbortSignal,
   askStandalone: (signal: AbortSignal) => Promise<boolean>,
+  askUnavailable: (signal: AbortSignal) => Promise<boolean>,
 ): Promise<boolean> {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed() || signal.aborted) return Promise.resolve(true)
   const showing = win.isVisible() && !win.isMinimized()
   const requestId = ++nextRequest
   const contents = win.webContents
-  return new Promise<DraftAnswer>((resolve) => {
-    const finish = (answer: DraftAnswer) => {
+  return new Promise<DraftAnswer | null>((resolve) => {
+    let settled = false
+    const timer = setTimeout(() => finish(null), DRAFT_RESPONSE_TIMEOUT_MS)
+    const finish = (answer: DraftAnswer | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
       pending.delete(requestId)
       signal.removeEventListener('abort', goOn)
       contents.off('render-process-gone', goOn)
@@ -54,13 +68,15 @@ export function settleWindowDrafts(
       resolve(answer)
     }
     const goOn = () => finish({ dirty: false, discard: true })
-    pending.set(requestId, { sender: contents, settle: finish })
+    pending.set(requestId, { sender: contents, acknowledge: () => clearTimeout(timer), settle: finish })
     signal.addEventListener('abort', goOn)
     contents.once('render-process-gone', goOn)
     contents.once('destroyed', goOn)
     sendTo(contents, 'app:quitDraftsRequested', { requestId, ask: showing })
   }).then(async (answer) => {
-    if (!answer.dirty || signal.aborted) return true
+    if (signal.aborted) return true
+    if (answer === null) return askUnavailable(signal)
+    if (!answer.dirty) return true
     return showing ? answer.discard : askStandalone(signal)
   })
 }
