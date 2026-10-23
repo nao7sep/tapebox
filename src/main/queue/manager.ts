@@ -1,4 +1,5 @@
 import * as session from '@main/store/session'
+import { durableTape } from '@shared/durable-tape'
 import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
@@ -126,7 +127,7 @@ export async function shutdown(): Promise<void> {
 function restoreStoppedTape(tapeId: string): void {
   const tape = session.getTapes().find((candidate) => candidate.id === tapeId)
   if (!tape) return
-  const restored = session.durableTape(tape)
+  const restored = durableTape(tape)
   if (restored !== tape) {
     session.upsertTape(restored)
     emit('tapes:updated', restored)
@@ -155,7 +156,7 @@ export function isActive(tapeId: string): boolean {
 
 /**
  * Called once at startup. A download that was in flight when the app stopped
- * comes back from the catalog as queued (see session's durableTape), so starting
+ * comes back from the catalog as queued (see durableTape), so starting
  * the queue resumes it.
  */
 export function start(): void {

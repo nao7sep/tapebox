@@ -9,6 +9,8 @@ import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { portableFilenameIdentity, boxNameIdentity } from '@shared/filename'
 import { catalogCodec } from './catalog-codec'
+import { durableTape } from '@shared/durable-tape'
+export { durableTape } from '@shared/durable-tape'
 import { TapeSchema, BoxSchema, TRACKED_FILENAME_FIELDS, type Box, type Tape, type Session } from '@shared/domain'
 
 /**
@@ -41,6 +43,8 @@ let catalogPath: string | null = null
 let persistChain: Promise<void> = Promise.resolve()
 /** Serialized durable content last written or loaded, to skip unchanged writes. */
 let lastWritten: Buffer | null = null
+let mutationGeneration = 0
+let writtenGeneration = -1
 const decodedBytes = new WeakMap<Session, Buffer>()
 const tapePositions = new Map<string, number>()
 const boxPositions = new Map<string, number>()
@@ -56,28 +60,32 @@ let saveFailureListener: (() => void) | null = null
 const tapeReorderIntents = new Map<string, Set<object>>()
 const boxReorderIntents = new Set<object>()
 
-const IN_FLIGHT_STATES: ReadonlySet<Tape['state']> = new Set(['probing', 'ready', 'downloading'])
-
-/**
- * The durable form of a tape. A tape in flight exists only while its job runs; a
- * restart resumes it from the queue, so it is stored as queued, without the
- * attempt's start time. Its probed metadata is kept, as it is real data.
- */
-export function durableTape(tape: Tape): Tape {
-  if (!IN_FLIGHT_STATES.has(tape.state)) return tape
-  return { ...tape, state: 'queued', downloadStartedAtUtc: null }
-}
-
 /** Write one worker-encoded durable buffer, reusing its exact bytes for backup. */
-async function writeCatalog(session: Session): Promise<void> {
+async function writeCatalog(session: Session): Promise<number> {
+  const generation = mutationGeneration
+  const target = catalogPath
+  if (session === cache && writtenGeneration === generation) return generation
+  if (target === null) throw new Error('Catalog location is not loaded')
   const encoded = await catalogCodec({ op: 'encode', session })
   if (encoded.kind !== 'encoded') throw new Error(`Catalog encoding failed: ${'detail' in encoded ? encoded.detail : encoded.kind}`)
   const bytes = Buffer.from(encoded.bytes.buffer, encoded.bytes.byteOffset, encoded.bytes.byteLength)
-  if (lastWritten?.equals(bytes)) { saveFailing = false; return }
-  if (catalogPath === null) throw new Error('Catalog location is not loaded')
-  await writeManagedJsonBytes(catalogPath, bytes)
+  if (!lastWritten?.equals(bytes)) await writeManagedJsonBytes(target, bytes)
   lastWritten = bytes
+  // A candidate becomes current only after its caller publishes its fields.
+  writtenGeneration = session === cache ? generation : -1
   saveFailing = false
+  return generation
+}
+
+/** Candidate publication preserves changes made while its bytes were in flight. */
+function candidateApplied(generation: number): void {
+  const unchanged = mutationGeneration === generation
+  mutationGeneration += 1
+  if (unchanged) writtenGeneration = mutationGeneration
+}
+
+function sameFields<T extends object>(left: T, right: T): boolean {
+  return (Object.keys(right) as (keyof T)[]).every((key) => left[key] === right[key])
 }
 
 /**
@@ -189,6 +197,8 @@ export function bindSession(target: string, session: Session): void {
   tapeReorderIntents.clear()
   boxReorderIntents.clear()
   lastWritten = decodedBytes.get(session) ?? null
+  mutationGeneration = 0
+  writtenGeneration = lastWritten === null ? -1 : 0
   rebuildIndexes()
   loaded = true
   saveFailing = false
@@ -231,13 +241,14 @@ export function upsertTape(tape: Tape): void {
     if (previous) tapeReorderIntents.delete(tapeListKey(previous))
     tapeReorderIntents.delete(tapeListKey(tape))
   }
+  const changed = !previous || !sameFields(durableTape(previous), durableTape(tape))
   replaceFilenameOwner(previous, tape)
   if (idx >= 0) cache.tapes[idx] = tape
   else {
     tapePositions.set(tape.id, cache.tapes.length)
     cache.tapes.push(tape)
   }
-  scheduleSave()
+  if (changed) { mutationGeneration += 1; scheduleSave() }
 }
 
 function tapeListKey(tape: Tape): string {
@@ -284,7 +295,7 @@ export async function reorderTapesDurably(orderedIds: readonly string[]): Promis
         return order === undefined || order === tape.order ? tape : { ...tape, order }
       })
 
-      await writeCatalog({ ...cache, tapes: candidateTapes })
+      const generation = await writeCatalog({ ...cache, tapes: candidateTapes })
 
       if (tapeReorderIntents.get(source)?.has(intent)) {
         // Apply only order to current rows, preserving newer metadata/downloads.
@@ -292,6 +303,7 @@ export async function reorderTapesDurably(orderedIds: readonly string[]): Promis
           const order = orderById.get(tape.id)
           return order === undefined || order === tape.order ? tape : { ...tape, order }
         })
+        candidateApplied(generation)
       } else {
         // The already-published candidate is obsolete. Organization uses the
         // existing debounced consistency boundary; its current cache is saved
@@ -337,7 +349,7 @@ export async function renameTapeDurably(tape: Tape): Promise<Tape> {
     tapes[idx] = admitTape(applyRenameFields(tapes[idx]!, tape))
     const candidate = { ...cache, tapes }
 
-    await writeCatalog(candidate)
+    const generation = await writeCatalog(candidate)
 
     // The durable rename is now authoritative. Preserve unrelated fields changed
     // by queue/progress work while the write was in flight, and let its already-
@@ -347,6 +359,7 @@ export async function renameTapeDurably(tape: Tape): Promise<Tape> {
       committed = applyRenameFields(cache.tapes[currentIdx]!, tape)
       replaceFilenameOwner(cache.tapes[currentIdx], committed)
       cache.tapes[currentIdx] = committed
+      candidateApplied(generation)
     }
   })
   return committed
@@ -369,7 +382,9 @@ export function removeTapes(ids: string[]): void {
   for (const tape of cache.tapes) {
     if (set.has(tape.id)) tapeReorderIntents.delete(tapeListKey(tape))
   }
+  const oldLength = cache.tapes.length
   cache.tapes = cache.tapes.filter((i) => !set.has(i.id))
+  if (cache.tapes.length !== oldLength) mutationGeneration += 1
   rebuildIndexes()
   scheduleSave()
 }
@@ -386,6 +401,7 @@ export function upsertBox(box: Box): void {
   const owner = boxNameOwners.get(name)
   if (!name || (owner !== undefined && owner !== box.id)) throw new Error('Box names must be non-empty and unique')
   const idx = boxPositions.get(box.id) ?? -1
+  const changed = idx < 0 || !sameFields(cache.boxes[idx]!, box)
   if (idx >= 0) boxNameOwners.delete(boxNameIdentity(cache.boxes[idx]!.name))
   boxNameOwners.set(name, box.id)
   if (idx < 0 || cache.boxes[idx]!.order !== box.order) boxReorderIntents.clear()
@@ -394,7 +410,7 @@ export function upsertBox(box: Box): void {
     boxPositions.set(box.id, cache.boxes.length)
     cache.boxes.push(box)
   }
-  scheduleSave()
+  if (changed) { mutationGeneration += 1; scheduleSave() }
 }
 
 /** Persist the complete box order before publishing it to the cache. */
@@ -426,12 +442,13 @@ export async function reorderBoxesDurably(orderedIds: readonly string[]): Promis
         return order === undefined || order === box.order ? box : { ...box, order }
       })
 
-      await writeCatalog({ ...cache, boxes: candidateBoxes })
+      const generation = await writeCatalog({ ...cache, boxes: candidateBoxes })
       if (boxReorderIntents.has(intent)) {
         cache.boxes = cache.boxes.map((box) => {
           const order = orderById.get(box.id)
           return order === undefined || order === box.order ? box : { ...box, order }
         })
+        candidateApplied(generation)
       } else scheduleSave()
     })
   } catch (error) {
@@ -447,6 +464,7 @@ export function removeBox(id: string): void {
   assertLoaded()
   if (cache.tapes.some((tape) => tape.boxId === id)) throw new Error(`Box is still referenced: ${id}`)
   if (boxPositions.has(id)) {
+    mutationGeneration += 1
     boxReorderIntents.clear()
     tapeReorderIntents.delete(`box:${id}`)
   }

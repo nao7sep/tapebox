@@ -18,6 +18,11 @@ const catalogMutation = vi.hoisted(() => ({
 vi.mock('@main/paths', () => ({ collectionCatalog: () => join(testRoot, 'catalog.json') }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => testRoot }))
 vi.mock('@main/store/backupStore', () => ({ record }))
+vi.mock('@main/store/catalog-codec', async (original) => {
+  const actual = await original<typeof import('@main/store/catalog-codec')>()
+  return { catalogCodec: vi.fn(actual.catalogCodec) }
+})
+import { catalogCodec } from '@main/store/catalog-codec'
 vi.mock('@main/io/logger', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
@@ -63,6 +68,7 @@ import {
   renameTapeDurably,
   reorderTapesDurably,
   reorderBoxesDurably,
+  bindSession,
 } from '@main/store/session'
 
 function tape(id = 'abc1234567', order = 0): Tape {
@@ -326,6 +332,67 @@ describe('live catalog admission and derived lookup indexes', () => {
 
 
 describe('catalog codec publication', () => {
+  it('keeps later mutations dirty when an earlier generation settles', async () => {
+    await loadSession()
+    const original = tape()
+    upsertTape(original)
+    catalogMutation.saved = () => {
+      catalogMutation.saved = null
+      upsertTape({ ...original, title: 'Changed during publication' })
+    }
+    await persistNow()
+    vi.mocked(catalogCodec).mockClear()
+    await persistNow()
+    expect(catalogCodec).toHaveBeenCalledOnce()
+    const stored = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8'))
+    expect(stored.tapes[0].title).toBe('Changed during publication')
+    vi.mocked(catalogCodec).mockClear()
+    await persistNow({ quitting: true })
+    expect(catalogCodec).not.toHaveBeenCalled()
+  })
+
+  it('keeps a committed rename dirty for metadata changed during publication', async () => {
+    await loadSession()
+    const original = tape()
+    upsertTape(original)
+    await persistNow()
+    catalogMutation.saved = () => {
+      catalogMutation.saved = null
+      upsertTape({ ...original, title: 'New metadata' })
+    }
+    await renameTapeDurably({ ...original, name: 'Renamed', filename: 'Renamed.mp4' })
+    await persistNow()
+    const stored = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8'))
+    expect(stored.tapes[0]).toMatchObject({ title: 'New metadata', filename: 'Renamed.mp4' })
+  })
+
+  it('does not encode transient-only transitions or a settled durable rename again', async () => {
+    await loadSession()
+    const original = { ...tape(), state: 'queued' as const, downloadStartedAtUtc: null }
+    upsertTape(original)
+    await persistNow()
+    vi.mocked(catalogCodec).mockClear()
+    upsertTape({ ...original, state: 'downloading', downloadStartedAtUtc: '2026-01-02T00:00:00.000Z' })
+    await persistNow()
+    expect(catalogCodec).not.toHaveBeenCalled()
+    await renameTapeDurably({ ...original, name: 'Renamed', filename: 'Renamed.mp4' })
+    vi.mocked(catalogCodec).mockClear()
+    await persistNow({ quitting: true })
+    expect(catalogCodec).not.toHaveBeenCalled()
+  })
+
+  it('does not carry a clean generation into a newly bound collection', async () => {
+    await loadSession()
+    upsertTape(tape())
+    await persistNow()
+    const target = join(testRoot, 'other.json')
+    bindSession(target, { tapes: [], boxes: [] })
+    vi.mocked(catalogCodec).mockClear()
+    await persistNow()
+    expect(catalogCodec).toHaveBeenCalledOnce()
+    expect(JSON.parse(await readFile(target, 'utf8')).tapes).toEqual([])
+  })
+
   it('encodes outside main and suppresses a redundant save after loading the same catalog', async () => {
     await loadSession()
     upsertTape(tape())
@@ -339,7 +406,9 @@ describe('catalog codec publication', () => {
     } finally { mainEncoding.mockRestore() }
     await loadSession()
     record.mockClear()
+    vi.mocked(catalogCodec).mockClear()
     await expect(persistNow()).resolves.toBe(true)
     expect(record).not.toHaveBeenCalled()
+    expect(catalogCodec).not.toHaveBeenCalled()
   })
 })

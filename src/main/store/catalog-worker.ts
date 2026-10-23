@@ -1,3 +1,4 @@
+import { durableTape } from '../../shared/durable-tape.ts'
 import { parentPort } from 'node:worker_threads'
 import { readFileSync } from 'node:fs'
 import { SessionSchema, type Session } from '../../shared/domain.ts'
@@ -35,7 +36,6 @@ port.on('message', (request: CatalogRequest) => {
 })
 
 function encode(session: Session): Uint8Array<ArrayBuffer> {
-  const tapes = session.tapes.map((tape) => ['probing', 'ready', 'downloading'].includes(tape.state)
-    ? { ...tape, state: 'queued', downloadStartedAtUtc: null } : tape)
+  const tapes = session.tapes.map(durableTape)
   return new TextEncoder().encode(JSON.stringify(withFormatVersion({ tapes, boxes: session.boxes }, FORMAT_VERSIONS.catalog), null, 2) + '\n')
 }

@@ -37,7 +37,6 @@ const tapes = vi.hoisted(() => [] as Tape[])
 vi.mock('@main/store/session', () => ({
   getTapes: () => tapes,
   upsertTape: vi.fn((tape: Tape) => { const index = tapes.findIndex((value) => value.id === tape.id); if (index >= 0) tapes[index] = tape }),
-  durableTape: (tape: Tape) => ['probing', 'ready', 'downloading'].includes(tape.state) ? { ...tape, state: 'queued', downloadStartedAtUtc: null } : tape,
 }))
 vi.mock('@main/store/config', () => ({
   getSettings: () => ({ maxConcurrentDownloads: 2, autoStartDownloads: true }),
