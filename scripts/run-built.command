@@ -12,7 +12,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="TapeBox"
 RUNTIME_HELPER="$SCRIPT_DIR/launcher-runtime.mjs"
 RUNTIME_TOKEN="run-built-$$-$(date +%s)-$RANDOM"
-OUT_DIR="dist"
+OUT_DIR="$REPO_DIR/dist"
 
 log_step() {
   printf '\n==> %s\n' "$1"
@@ -39,7 +39,7 @@ cd "$REPO_DIR"
 # No build here: this launcher must start instantly. If there is no usable bundle
 # yet, stop and point at rebuild rather than launching something stale or empty.
 APP_BUNDLE="$(find "$OUT_DIR" -maxdepth 2 -name "$APP_NAME.app" -type d 2>/dev/null | head -1 || true)"
-if [[ -z "$APP_BUNDLE" || ! -d "$APP_BUNDLE/Contents/MacOS" ]]; then
+if [[ -z "$APP_BUNDLE" || ! -x "$APP_BUNDLE/Contents/MacOS/TapeBox" ]]; then
   echo "No packaged app found ($OUT_DIR/mac*/$APP_NAME.app is missing) — run rebuild first."
   exit 1
 fi
@@ -47,10 +47,7 @@ fi
 # Age tracks the actual build: packaging resets Contents/MacOS, but the .app dir's
 # own mtime can lag — stat the executable dir, not the bundle root.
 built_at="$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S %Z' "$APP_BUNDLE/Contents/MacOS" 2>/dev/null || echo 'unknown')"
-node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
-node "$RUNTIME_HELPER" stop
 log_step "Launching the existing packaged app (built: $built_at)"
 echo "If you changed source since then, run rebuild instead."
 
-open -n "$APP_BUNDLE"
-node "$RUNTIME_HELPER" wait-process "$APP_BUNDLE/Contents/MacOS/TapeBox" 30000
+node "$RUNTIME_HELPER" launch "$RUNTIME_TOKEN" "$APP_BUNDLE/Contents/MacOS/TapeBox"

@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { assertRequiredPackageEntries } from './package-entries.mjs'
 import { listPackage } from '@electron/asar'
 
-const distDir = resolve('dist')
+const distDir = resolve(process.argv[2] ?? 'dist')
 const candidates = process.platform === 'win32'
   ? [join(distDir, 'win-unpacked', 'resources', 'app.asar')]
   : []
@@ -21,7 +21,7 @@ if (process.platform === 'darwin' && existsSync(distDir)) {
 
 const archive = candidates.find((candidate) => existsSync(candidate))
 if (!archive) {
-  throw new Error('No packaged TapeBox app.asar found under dist')
+  throw new Error(`No packaged TapeBox app.asar found under ${distDir}`)
 }
 
 const entries = listPackage(archive, { isPack: false })

@@ -1,3 +1,4 @@
+import { startLauncherControl } from './launcher-control.js'
 import { pathToFileURL } from 'node:url'
 import { trustApplicationDocument } from './ipc/trust'
 import { app, BrowserWindow, powerMonitor, shell } from 'electron'
@@ -200,6 +201,9 @@ async function startup(): Promise<void> {
 
   startupReady = true
   const initialWindow = await createMainWindow()
+  try { await startLauncherControl(() => app.quit()) } catch (error) {
+    log.warn('launcher readiness could not be registered', { error: describeError(error) })
+  }
 
   // The just-in-case data backup (data-backup conventions) is write-through, not a
   // startup pass: every managed-text save records its exact bytes into

@@ -35,8 +35,10 @@ pause_on_failure() {
 cleanup() {
   local status="$?"
   trap - EXIT
-  if node "$RUNTIME_HELPER" is-owner "$RUNTIME_TOKEN" >/dev/null 2>&1; then
-    node "$RUNTIME_HELPER" stop-if-owner "$RUNTIME_TOKEN" >/dev/null 2>&1 || true
+  if command -v node >/dev/null 2>&1; then
+    local cleanup_status=0
+    node "$RUNTIME_HELPER" stop-if-owner "$RUNTIME_TOKEN" || cleanup_status=$?
+    if [[ "$status" -eq 0 && "$cleanup_status" -ne 0 ]]; then status="$cleanup_status"; fi
   fi
   pause_on_failure "$status"
   exit "$status"
@@ -49,13 +51,8 @@ require_command npm
 
 cd "$REPO_DIR"
 
-log_step "Replacing any existing TapeBox runtime"
-node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
-node "$RUNTIME_HELPER" stop
-node "$RUNTIME_HELPER" check-endpoint 127.0.0.1 27143
-
 log_step "Installing dependencies"
-npm install
+npm install --no-audit --no-fund
 
 # npm install skips the Electron binary if the package is already at the locked version.
 log_step "Verifying Electron binary"
@@ -65,9 +62,6 @@ if [[ ! -f node_modules/electron/path.txt ]]; then
 fi
 
 log_step "Starting TapeBox in development mode"
-npm run dev &
-DEV_PID=$!
-node "$RUNTIME_HELPER" wait-http "$RENDERER_URL" 60000
-node "$RUNTIME_HELPER" wait-process "$REPO_DIR/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron" 60000
+node "$RUNTIME_HELPER" launch-dev "$RUNTIME_TOKEN" 127.0.0.1 27143
 log_step "TapeBox is ready at $RENDERER_URL"
-wait "$DEV_PID"
+node "$RUNTIME_HELPER" wait-owner "$RUNTIME_TOKEN"

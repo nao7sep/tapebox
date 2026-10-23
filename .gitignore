@@ -4,6 +4,8 @@ node_modules
 # Build output (electron-vite -> out, electron-builder -> dist)
 out
 dist
+dist.candidate-*
+dist.previous-*
 
 # OS junk
 .DS_Store

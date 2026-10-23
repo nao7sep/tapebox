@@ -49,16 +49,11 @@ try {
     }
 
     $builtAt = (Get-Item $exePath).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
-    & node $runtimeHelper claim $runtimeToken
-    & node $runtimeHelper stop
-    if ($LASTEXITCODE -ne 0) { throw "Could not replace the existing TapeBox runtime." }
     Write-Step "Launching the existing packaged app (built: $builtAt)"
     Write-Host "If you changed source since then, run rebuild instead."
 
-    # GUI app: launch non-blocking via Start-Process.
-    Start-Process -FilePath $exePath | Out-Null
-    & node $runtimeHelper wait-process $exePath 30000
-    if ($LASTEXITCODE -ne 0) { throw "TapeBox did not start." }
+    & node $runtimeHelper launch $runtimeToken $exePath
+    if ($LASTEXITCODE -ne 0) { throw "TapeBox did not become ready." }
 }
 catch {
     Write-Host ""

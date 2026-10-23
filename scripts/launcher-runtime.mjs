@@ -1,316 +1,209 @@
-// The launchers' process helper (scripts/*.command, scripts/*.ps1): one TapeBox
-// runtime per checkout. Usage: node launcher-runtime.mjs <command> [args], where
-// the command is claim <token>, is-owner <token>, release-if-owner <token>, stop,
-// stop-if-owner <token>, check-endpoint <host> <port>, wait-http <url> [ms] or
-// wait-process <executable> [ms].
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readFile, unlink, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { dirname, join, normalize, relative, resolve } from "node:path";
-import { promisify } from "node:util";
+// Repository-owned launch transaction. Usage: launch <token> <executable> [args],
+// launch-dev <token> <host> <port>, publish-launch <token> <candidate> <relative-exe>,
+// stop-if-owner <token>, wait-owner <token>, or check-endpoint <host> <port>.
+// Ownership is a captured PID/creation identity plus a private app control token;
+// executable paths and occupied ports never authorize closing another instance.
+import { execFile, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { open, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve, sep } from 'node:path';
+import { promisify } from 'node:util';
 
-const execFileAsync = promisify(execFile);
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-export const REPO_ROOT = resolve(SCRIPT_DIR, "..");
-const OWNER_FILE = join(
-  tmpdir(),
-  `company-launcher-${createHash("sha256").update(REPO_ROOT).digest("hex").slice(0, 20)}.owner`,
-);
+const execute = promisify(execFile);
+export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const OWNER_FILE = join(tmpdir(), `company-launcher-${createHash('sha256').update(REPO_ROOT).digest('hex').slice(0, 20)}.json`);
+const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 
-function normalized(value) {
-  return normalize(value ?? "").replaceAll("\\", "/").toLowerCase();
-}
-
-function underRoot(value) {
-  const candidate = normalized(value);
-  const root = normalized(REPO_ROOT);
-  return candidate === root || candidate.startsWith(`${root}/`) || candidate.includes(`${root}/`);
-}
-
-// TapeBox's own runtime: the dev server and Electron, or the packaged app.
-const LABEL = "TapeBox";
-
-export function ownsProcess(processInfo) {
-  const executable = normalized(processInfo.executablePath);
-  const command = normalized(processInfo.commandLine);
-  const combined = `${executable}\n${command}`;
-  if (!underRoot(executable) && !underRoot(command)) return false;
-  return combined.includes("/scripts/run-dev.command")
-    || combined.includes("/scripts/run-dev.ps1")
-    || combined.includes("/scripts/run-built.command")
-    || combined.includes("/scripts/run-built.ps1")
-    || combined.includes("/scripts/rebuild.command")
-    || combined.includes("/scripts/rebuild.ps1")
-    || combined.includes("/node_modules/.bin/electron-vite")
-    || combined.includes("/node_modules/electron-vite/")
-    || combined.includes("/node_modules/electron/dist/")
-    || combined.includes(`/${LABEL.toLowerCase()}.app/contents/macos/${LABEL.toLowerCase()}`)
-    || combined.includes(`/${LABEL.toLowerCase()}.exe`);
-}
-
-function parsePosixProcesses(stdout) {
-  return stdout.trim().split("\n").filter(Boolean).map((line) => {
-    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
-    if (!match) return undefined;
-    return {
-      pid: Number(match[1]),
-      parentPid: Number(match[2]),
-      executablePath: "",
-      commandLine: match[3],
-    };
-  }).filter(Boolean);
-}
-
-async function listProcesses() {
-  if (process.platform !== "win32") {
-    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,ppid=,command="], {
-      encoding: "utf8",
-      timeout: 5000,
-      maxBuffer: 8 * 1024 * 1024,
-    });
-    return parsePosixProcesses(stdout);
+export async function processIdentity(pid) {
+  if (process.platform === 'win32') {
+    const { stdout } = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+      `$ErrorActionPreference = 'Stop'; $p = Get-CimInstance Win32_Process -Filter "ProcessId = ${Number(pid)}"; if ($p) { $p.CreationDate.ToUniversalTime().ToString('o') }`], { timeout: 10000 });
+    return stdout.trim() || null;
   }
-
-  const script = [
-    "Get-CimInstance Win32_Process |",
-    "Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine |",
-    "ConvertTo-Json -Compress",
-  ].join(" ");
-  const { stdout } = await execFileAsync("powershell.exe", [
-    "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script,
-  ], {
-    encoding: "utf8",
-    timeout: 10000,
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  const decoded = JSON.parse(stdout || "[]");
-  const rows = Array.isArray(decoded) ? decoded : [decoded];
-  return rows.map((row) => ({
-    pid: Number(row.ProcessId),
-    parentPid: Number(row.ParentProcessId),
-    executablePath: row.ExecutablePath ?? "",
-    commandLine: row.CommandLine ?? "",
-  }));
-}
-
-function descendantsOf(processes, roots) {
-  const selected = new Set(roots);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const item of processes) {
-      if (selected.has(item.parentPid) && !selected.has(item.pid)) {
-        selected.add(item.pid);
-        changed = true;
-      }
-    }
-  }
-  return selected;
-}
-
-function ancestorsOf(processes, pid) {
-  const byPid = new Map(processes.map((item) => [item.pid, item]));
-  const selected = new Set([pid]);
-  let current = byPid.get(pid)?.parentPid;
-  while (current && !selected.has(current)) {
-    selected.add(current);
-    current = byPid.get(current)?.parentPid;
-  }
-  return selected;
-}
-
-const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
-
-export async function claimRuntime(token) {
-  await writeFile(OWNER_FILE, `${token}\n`, { encoding: "utf8", mode: 0o600 });
-}
-
-export async function isRuntimeOwner(token) {
   try {
-    return (await readFile(OWNER_FILE, "utf8")).trim() === token;
+    const { stdout } = await execute('ps', ['-p', String(pid), '-o', 'lstart='], { timeout: 5000 });
+    return stdout.trim() || null;
   } catch (error) {
-    if (error?.code === "ENOENT") return false;
+    if (error.code === 1 && !error.stdout?.trim()) return null;
     throw error;
   }
 }
 
-export async function releaseRuntime(token) {
-  if (!await isRuntimeOwner(token)) return false;
-  try {
-    await unlink(OWNER_FILE);
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-  return true;
+async function readJson(path) {
+  try { return JSON.parse(await readFile(path, 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
-async function stopRuntime() {
-  const initial = await listProcesses();
-  const excluded = ancestorsOf(initial, process.pid);
-  const ownedRoots = initial.filter((item) => !excluded.has(item.pid) && ownsProcess(item)).map((item) => item.pid);
-  if (ownedRoots.length === 0) return;
-
-  const initialTargets = descendantsOf(initial, ownedRoots);
-  process.stdout.write(`Stopping the existing ${LABEL} runtime (pid ${ownedRoots.join(", ")}).\n`);
-
-  if (process.platform === "win32") {
-    for (const pid of ownedRoots) {
-      try {
-        await execFileAsync("taskkill.exe", ["/PID", String(pid), "/T"], { timeout: 5000 });
-      } catch {
-        // A process may exit while another root tears down the same tree.
+export function runtimeOwner({ recordPath = OWNER_FILE, identity = processIdentity, wait = delay,
+  now = Date.now, close = async (record) => {
+    const response = await fetch(`http://127.0.0.1:${record.app.port}/quit`, {
+      method: 'POST', headers: { authorization: `Bearer ${record.token}` }, signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(`The app refused the close request (${response.status}).`);
+  }, timeout = 10000 } = {}) {
+  const lockPath = `${recordPath}.lock`;
+  const read = () => readJson(recordPath);
+  const save = async (record) => {
+    const stage = `${recordPath}.tmp`;
+    await writeFile(stage, JSON.stringify(record), { mode: 0o600 });
+    await rename(stage, recordPath);
+  };
+  const alive = async (process) => process?.created && await identity(process.pid) === process.created;
+  async function locked(work) {
+    let lock;
+    const deadline = now() + timeout;
+    for (;;) {
+      try { lock = await open(lockPath, 'wx', 0o600); break; }
+      catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        if (now() >= deadline) throw new Error(`Another launcher is still working. Wait for it to finish. If it crashed, close its terminal and remove ${lockPath}, then retry.`);
+        await wait(100);
       }
     }
-  } else {
-    for (const pid of initialTargets) {
-      try { process.kill(pid, "SIGTERM"); } catch {}
+    try { return await work(); }
+    finally { await lock.close(); await unlink(lockPath); }
+  }
+  async function stop(record) {
+    if (!record) return;
+    const requested = new Set();
+    const deadline = now() + timeout;
+    for (;;) {
+      // electron-vite can replace its Electron child on a main-process edit.
+      // Its inherited private token registers the new child of this generation.
+      const ready = record.readyPath ? await readJson(record.readyPath) : null;
+      if (ready?.token === record.token && (ready.pid !== record.app?.pid || ready.port !== record.app?.port)) {
+        const created = await identity(ready.pid);
+        if (created) {
+          record.app = { pid: ready.pid, created, port: ready.port };
+          record.launching = false;
+          await save(record);
+        }
+      }
+      const appAlive = await alive(record.app);
+      const key = record.app && `${record.app.pid}:${record.app.created}:${record.app.port}`;
+      if (appAlive && !requested.has(key)) { await close(record); requested.add(key); }
+      if (!await alive(record.root) && !await alive(record.app)) {
+        if (record.launching) throw new Error(`A previous launch never registered readiness. Close its app and terminal, then remove ${recordPath} and retry.`);
+        if (record.readyPath) await unlink(record.readyPath).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+        return;
+      }
+      if (now() >= deadline) throw new Error('TapeBox is still running. Finish or cancel its close question, or close its launcher terminal, then retry. Nothing was force-closed.');
+      await wait(100);
     }
   }
+  return {
+    read, save, alive,
+    replace: (token, launch) => locked(async () => {
+      await stop(await read());
+      const record = { token, root: null, app: null };
+      await save(record);
+      // Keep the transaction locked through readiness: no later invocation can
+      // claim this generation between closure, launch and registration.
+      return await launch(record, save);
+    }),
+    stopIfOwner: (token) => locked(async () => {
+      const record = await read();
+      if (record?.token !== token) return false;
+      await stop(record);
+      await unlink(recordPath);
+      return true;
+    }),
+  };
+}
 
-  const deadline = Date.now() + 5000;
-  while (Date.now() < deadline) {
-    const current = await listProcesses();
-    if (!current.some((item) => initialTargets.has(item.pid))) return;
-    await delay(100);
-  }
+async function launch(token, executable, args, prepare = async () => undefined) {
+  if (!/^[a-zA-Z0-9-]+$/.test(token)) throw new Error('Invalid launcher token.');
+  const owner = runtimeOwner();
+  await owner.replace(token, async (record, save) => {
+    const cleanup = await prepare();
+    const readyPath = `${OWNER_FILE}.${token}.ready`;
+    record.readyPath = readyPath;
+    record.launching = true;
+    await save(record);
+    const child = spawn(executable, args, {
+      cwd: REPO_ROOT, detached: true, windowsHide: true, stdio: 'inherit',
+      env: { ...process.env, TAPEBOX_LAUNCHER_READY: readyPath, TAPEBOX_LAUNCHER_TOKEN: token },
+    });
+    try { await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); }); }
+    catch (error) { record.launching = false; await save(record); throw error; }
+    child.unref();
+    record.root = { pid: child.pid, created: await processIdentity(child.pid) };
+    await save(record);
+    {
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        const ready = await readJson(readyPath);
+        if (ready?.token === token) {
+          const created = await processIdentity(ready.pid);
+          if (!created) throw new Error('TapeBox exited before becoming ready.');
+          record.app = { pid: ready.pid, created, port: ready.port };
+          record.launching = false;
+          await save(record);
+          await cleanup?.();
+          process.stdout.write('TapeBox is ready.\n');
+          return;
+        }
+        if (!record.root.created || !await owner.alive(record.root)) throw new Error('The launched app exited before becoming ready. An independently launched TapeBox may have been activated; close it and retry.');
+        await delay(100);
+      }
+      throw new Error('TapeBox did not become ready. Check its terminal output, close it, then retry.');
+    }
+  });
+}
 
-  const current = await listProcesses();
-  const currentOwnedRoots = current
-    .filter((item) => initialTargets.has(item.pid) && !excluded.has(item.pid) && ownsProcess(item))
-    .map((item) => item.pid);
-  const forceTargets = descendantsOf(current, currentOwnedRoots);
-  if (process.platform === "win32") {
-    for (const pid of currentOwnedRoots) {
-      try {
-        await execFileAsync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { timeout: 5000 });
-      } catch {}
+/** Keep the last runnable package until its validated replacement is published. */
+export async function publishCandidate(candidate, destination, token, move = rename) {
+  const previous = `${destination}.previous-${token}`;
+  let retained = false;
+  try { await move(destination, previous); retained = true; }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try { await move(candidate, destination); }
+  catch (error) {
+    if (retained) {
+      try { await move(previous, destination); }
+      catch (restore) { throw new AggregateError([error, restore], `Package publication failed; the previous package remains at ${previous}.`); }
     }
-  } else {
-    for (const pid of forceTargets) {
-      try { process.kill(pid, "SIGKILL"); } catch {}
-    }
+    throw error;
   }
+  return async () => { if (retained) await rm(previous, { recursive: true }); };
 }
 
 async function assertEndpointAvailable(host, port) {
   await new Promise((resolveProbe, rejectProbe) => {
     const probe = createServer();
-    probe.unref();
-    probe.once("error", (error) => {
-      rejectProbe(new Error(
-        `Cannot bind ${host}:${port}: ${error.code ?? error.message}. The listener was left running because its app identity is unknown.`,
-      ));
-    });
-    probe.listen({ host, port, exclusive: true }, () => {
-      probe.close((error) => error ? rejectProbe(error) : resolveProbe());
-    });
+    probe.once('error', (error) => rejectProbe(new Error(`Cannot bind ${host}:${port}: ${error.code ?? error.message}. The listener was left running because its ownership is unknown.`)));
+    probe.listen({ host, port, exclusive: true }, () => probe.close((error) => error ? rejectProbe(error) : resolveProbe()));
   });
 }
 
-async function waitForHttp(url, timeoutMilliseconds) {
-  const deadline = Date.now() + timeoutMilliseconds;
-  let lastError = "no response";
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
-      if (response.ok) return;
-      lastError = `HTTP ${response.status}`;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+async function main([command, ...args]) {
+  const owner = runtimeOwner();
+  if (command === 'launch-dev' && args[0] && args[1] && Number.isInteger(Number(args[2]))) {
+    return launch(args[0], process.execPath, [join(REPO_ROOT, 'node_modules/electron-vite/bin/electron-vite.js'), 'dev'],
+      async () => { await assertEndpointAvailable(args[1], Number(args[2])); });
+  }
+  if (command === 'publish-launch' && args[0] && args[1] && args[2]) {
+    const candidate = resolve(args[1]);
+    const destination = join(REPO_ROOT, 'dist');
+    const executable = resolve(destination, args[2]);
+    if (candidate !== `${destination}.candidate-${args[0]}` || !executable.startsWith(destination + sep)) throw new Error('Invalid candidate package path.');
+    return launch(args[0], executable, [], () => publishCandidate(candidate, destination, args[0]));
+  }
+  if (command === 'launch' && args[0] && args[1]) return launch(args[0], args[1], args.slice(2));
+  if (command === 'stop-if-owner' && args[0]) return owner.stopIfOwner(args[0]);
+  if (command === 'wait-owner' && args[0]) {
+    for (;;) {
+      const record = await owner.read();
+      if (record?.token !== args[0] || (!await owner.alive(record.root) && !await owner.alive(record.app))) return;
+      await delay(250);
     }
-    await delay(200);
   }
-  throw new Error(`${url} did not become ready within ${timeoutMilliseconds} ms (${lastError}).`);
+  if (command === 'check-endpoint' && args[0] && Number.isInteger(Number(args[1]))) return assertEndpointAvailable(args[0], Number(args[1]));
+  throw new Error('Expected launch <token> <executable> [args], stop-if-owner <token>, wait-owner <token>, or check-endpoint <host> <port>.');
 }
-
-async function waitForExecutable(executablePath, timeoutMilliseconds) {
-  const expected = normalized(resolve(executablePath));
-  const repoRelativeExpected = normalized(relative(REPO_ROOT, expected));
-  const deadline = Date.now() + timeoutMilliseconds;
-  while (Date.now() < deadline) {
-    const processes = await listProcesses();
-    const byPid = new Map(processes.map((item) => [item.pid, item]));
-    const found = processes.some((item) => {
-      const executable = normalized(item.executablePath);
-      const command = normalized(item.commandLine);
-      if (executable === expected || command === expected || command.startsWith(expected + " ")) return true;
-      if (command !== repoRelativeExpected && !command.startsWith(repoRelativeExpected + " ")) return false;
-      let parent = byPid.get(item.parentPid);
-      while (parent) {
-        if (underRoot(parent.executablePath) || underRoot(parent.commandLine)) return true;
-        parent = byPid.get(parent.parentPid);
-      }
-      return false;
-    });
-    if (found) return;
-    await delay(100);
-  }
-  throw new Error(`${executablePath} did not start within ${timeoutMilliseconds} ms.`);
-}
-
-async function main(args) {
-  const command = args.shift();
-  if (command === "claim") {
-    const token = args.shift();
-    if (!token) throw new Error("Expected claim <token>.");
-    await claimRuntime(token);
-    return;
-  }
-  if (command === "is-owner") {
-    const token = args.shift();
-    if (!token) throw new Error("Expected is-owner <token>.");
-    if (!await isRuntimeOwner(token)) process.exitCode = 3;
-    return;
-  }
-  if (command === "release-if-owner") {
-    const token = args.shift();
-    if (!token) throw new Error("Expected release-if-owner <token>.");
-    await releaseRuntime(token);
-    return;
-  }
-  if (command === "stop") {
-    await stopRuntime();
-    return;
-  }
-  if (command === "stop-if-owner") {
-    const token = args.shift();
-    if (!token) throw new Error("Expected stop-if-owner <token>.");
-    if (!await isRuntimeOwner(token)) return;
-    await stopRuntime();
-    await releaseRuntime(token);
-    return;
-  }
-  if (command === "check-endpoint") {
-    const host = args.shift();
-    const port = Number(args.shift());
-    if (!host || !Number.isInteger(port)) throw new Error("Expected check-endpoint <host> <port>.");
-    await assertEndpointAvailable(host, port);
-    return;
-  }
-  if (command === "wait-http") {
-    const url = args.shift();
-    const timeout = Number(args.shift() ?? "60000");
-    if (!url || !Number.isFinite(timeout)) throw new Error("Expected wait-http <url> [timeout-ms].");
-    await waitForHttp(url, timeout);
-    return;
-  }
-  if (command === "wait-process") {
-    const executablePath = args.shift();
-    const timeout = Number(args.shift() ?? "30000");
-    if (!executablePath || !Number.isFinite(timeout)) throw new Error("Expected wait-process <executable-path> [timeout-ms].");
-    await waitForExecutable(executablePath, timeout);
-    return;
-  }
-  throw new Error("Expected one of: claim, is-owner, release-if-owner, stop, stop-if-owner, check-endpoint, wait-http, wait-process.");
-}
-
-const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
-if (invokedPath === fileURLToPath(import.meta.url)) {
-  main(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
 }

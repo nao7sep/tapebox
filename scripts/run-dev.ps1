@@ -58,13 +58,8 @@ try {
 
     Set-Location $repoDir
 
-    Write-Step "Replacing any existing TapeBox runtime"
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", "electron", "TapeBox", "TapeBox")
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "check-endpoint", "127.0.0.1", "27143")
-
     Write-Step "Installing dependencies"
-    Invoke-Native -FilePath "npm" -ArgumentList @("install")
+    Invoke-Native -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
 
     # npm install skips the Electron binary if the package is already at the locked version.
     Write-Step "Verifying Electron binary"
@@ -74,14 +69,9 @@ try {
     }
 
     Write-Step "Starting TapeBox in development mode"
-    $devProcess = Start-Process -FilePath (Get-Command "npm.cmd").Source -ArgumentList @("run", "dev") -NoNewWindow -PassThru
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-http", $rendererUrl, "60000")
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", (Join-Path $repoDir "node_modules/electron/dist/electron.exe"), "60000")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "launch-dev", $runtimeToken, "127.0.0.1", "27143")
     Write-Step "TapeBox is ready at $rendererUrl"
-    $devProcess.WaitForExit()
-    if ($devProcess.ExitCode -notin @(0, 130, -1073741510)) {
-        throw "TapeBox development runtime failed with exit code $($devProcess.ExitCode)."
-    }
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-owner", $runtimeToken)
 }
 catch {
     Write-Host ""
@@ -89,11 +79,16 @@ catch {
     $scriptExitCode = 1
 }
 finally {
-    & node $runtimeHelper is-owner $runtimeToken *> $null
-    if ($LASTEXITCODE -eq 0) {
-        & node $runtimeHelper stop-if-owner $runtimeToken *> $null
-        Read-Host "Press Enter to close" | Out-Null
+    if (Get-Command node -ErrorAction SilentlyContinue) {
+        try {
+            Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop-if-owner", $runtimeToken)
+        }
+        catch {
+            Write-Host "TapeBox cleanup failed: $($_.Exception.Message)" -ForegroundColor Red
+            $scriptExitCode = 1
+        }
     }
+    if ($scriptExitCode -ne 0) { Read-Host "Press Enter to close" | Out-Null }
 }
 
 exit $scriptExitCode

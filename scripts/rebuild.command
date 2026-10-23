@@ -13,7 +13,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="TapeBox"
 RUNTIME_HELPER="$SCRIPT_DIR/launcher-runtime.mjs"
 RUNTIME_TOKEN="rebuild-$$-$(date +%s)-$RANDOM"
-OUT_DIR="dist"
+CANDIDATE_DIR="$REPO_DIR/dist.candidate-$RUNTIME_TOKEN"
 
 log_step() {
   printf '\n==> %s\n' "$1"
@@ -55,7 +55,11 @@ fi
 # Remove stale output so a build that fails to emit a file can't be masked by a
 # leftover artifact from a previous run.
 log_step "Cleaning previous build"
-rm -rf out "$OUT_DIR"
+rm -rf out
+if [[ -e "$CANDIDATE_DIR" ]]; then
+  echo "Candidate output already exists: $CANDIDATE_DIR" >&2
+  exit 1
+fi
 
 # The release build type-checks the shipped sources (main/preload + renderer);
 # the dev server skips this entirely. Tests are checked separately and are not
@@ -72,17 +76,15 @@ node_modules/.bin/electron-vite build
 # the app its own identity, so the dock and menu show "TapeBox" rather than the
 # generic "Electron".
 log_step "Packaging the app bundle"
-node_modules/.bin/electron-builder --dir
-npm run check:package
+node_modules/.bin/electron-builder --dir "--config.directories.output=$CANDIDATE_DIR"
+node "$SCRIPT_DIR/check-package-contents.mjs" "$CANDIDATE_DIR"
 
-APP_BUNDLE="$(find "$OUT_DIR" -maxdepth 2 -name "$APP_NAME.app" -type d 2>/dev/null | head -1 || true)"
-if [[ -z "$APP_BUNDLE" ]]; then
-  echo "Packaging did not produce $APP_NAME.app under $OUT_DIR/." >&2
+APP_BUNDLE="$(find "$CANDIDATE_DIR" -maxdepth 2 -name "$APP_NAME.app" -type d 2>/dev/null | head -1 || true)"
+if [[ -z "$APP_BUNDLE" || ! -x "$APP_BUNDLE/Contents/MacOS/TapeBox" ]]; then
+  echo "Packaging did not produce $APP_NAME.app under $CANDIDATE_DIR/." >&2
   exit 1
 fi
 
 log_step "Launching the packaged app"
-node "$RUNTIME_HELPER" claim "$RUNTIME_TOKEN"
-node "$RUNTIME_HELPER" stop
-open -n "$APP_BUNDLE"
-node "$RUNTIME_HELPER" wait-process "$APP_BUNDLE/Contents/MacOS/TapeBox" 30000
+EXECUTABLE_RELATIVE="${APP_BUNDLE#"$CANDIDATE_DIR/"}/Contents/MacOS/TapeBox"
+node "$RUNTIME_HELPER" publish-launch "$RUNTIME_TOKEN" "$CANDIDATE_DIR" "$EXECUTABLE_RELATIVE"

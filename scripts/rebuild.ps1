@@ -51,8 +51,9 @@ $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
 $runtimeToken = [guid]::NewGuid().ToString("N")
 $appName = "TapeBox"
-$outDir = "dist"
-$exePath = Join-Path $repoDir "$outDir/win-unpacked/$appName.exe"
+$candidateDir = Join-Path $repoDir "dist.candidate-$runtimeToken"
+$executableRelative = "win-unpacked/$appName.exe"
+$exePath = Join-Path $candidateDir $executableRelative
 
 try {
     Set-Utf8Console
@@ -62,7 +63,7 @@ try {
     Set-Location $repoDir
 
     Write-Step "Installing dependencies"
-    Invoke-Native -FilePath "npm" -ArgumentList @("install")
+    Invoke-Native -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
 
     # npm install skips the Electron binary if the package is already at the locked version.
     Write-Step "Verifying Electron binary"
@@ -71,17 +72,11 @@ try {
         Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "prepare:electron")
     }
 
-    # Windows locks the packaged executable while it runs, so replacement must
-    # happen before cleaning the package directory.
-    Write-Step "Replacing any existing TapeBox runtime"
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "claim", $runtimeToken)
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop", "electron", "TapeBox", "TapeBox")
-
     # Remove stale output so a build that fails to emit a file can't be masked by
     # a leftover artifact from a previous run.
     Write-Step "Cleaning previous build"
     if (Test-Path "out") { Remove-Item -Recurse -Force "out" }
-    if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
+    if (Test-Path $candidateDir) { throw "Candidate output already exists: $candidateDir" }
 
     # The release build type-checks the shipped sources (main/preload + renderer);
     # the dev server skips this entirely. Tests are checked separately and are not
@@ -97,17 +92,15 @@ try {
     # installer. This is what gives the app its own identity (correct name and
     # icon) instead of running under the generic Electron runtime.
     Write-Step "Packaging the app bundle"
-    Invoke-Native -FilePath "node_modules/.bin/electron-builder.cmd" -ArgumentList @("--dir")
-    Invoke-Native -FilePath "npm.cmd" -ArgumentList @("run", "check:package")
+    Invoke-Native -FilePath "node_modules/.bin/electron-builder.cmd" -ArgumentList @("--dir", "--config.directories.output=$candidateDir")
+    Invoke-Native -FilePath "node" -ArgumentList @((Join-Path $scriptDir "check-package-contents.mjs"), $candidateDir)
 
     if (-not (Test-Path $exePath)) {
-        throw "Packaging did not produce $appName.exe under $outDir/win-unpacked/."
+        throw "Packaging did not produce $appName.exe under $candidateDir/win-unpacked/."
     }
 
-    # GUI app: launch non-blocking via Start-Process.
     Write-Step "Launching the packaged app"
-    Start-Process -FilePath $exePath | Out-Null
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-process", $exePath, "30000")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "publish-launch", $runtimeToken, $candidateDir, $executableRelative)
 }
 catch {
     Write-Host ""
