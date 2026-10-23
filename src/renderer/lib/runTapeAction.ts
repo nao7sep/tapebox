@@ -42,5 +42,7 @@ export async function runTapeAction(
       message,
     )
     return 'failed'
+  } finally {
+    if (attempts.get(attemptKey) === attempt) attempts.delete(attemptKey)
   }
 }

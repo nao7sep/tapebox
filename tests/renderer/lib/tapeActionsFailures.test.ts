@@ -1,4 +1,4 @@
-import { invalidateTapeActions } from '@renderer/lib/runTapeAction'
+import { invalidateTapeActions, runTapeAction } from '@renderer/lib/runTapeAction'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TapeSchema, type Tape } from '@shared/domain'
 
@@ -256,4 +256,18 @@ describe('selection after an action settles', () => {
     await vi.waitFor(() => expect(useTapesStore.getState().tapes.find((t) => t.id === archived.id)?.archivedAtUtc).toBeNull())
     expect(useSelectionStore.getState().selectedId).toBe(other.id)
   })
+})
+
+
+it('retiring an older attempt does not retire the newer command', async () => {
+  let finish!: () => void
+  let fail!: (error: Error) => void
+  const first = runTapeAction('ownership', 'reveal', 'reveal', message('detail.revealFailed'), () => new Promise<void>(resolve => { finish = resolve }))
+  const second = runTapeAction('ownership', 'reveal', 'reveal', message('detail.revealFailed'), () => new Promise<void>((_resolve, reject) => { fail = reject }))
+  finish()
+  await expect(first).resolves.toBe('superseded')
+  fail(new Error('new command failed'))
+  await expect(second).resolves.toBe('failed')
+  expect(useTapeActionResultsStore.getState().byTape.ownership?.reveal).toBeDefined()
+  await expect(runTapeAction('ownership', 'reveal', 'reveal', message('detail.revealFailed'), async () => {})).resolves.toBe('succeeded')
 })

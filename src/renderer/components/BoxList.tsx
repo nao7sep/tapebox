@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDroppable } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -50,6 +50,21 @@ export function BoxList({
   orderError: Message | null
   onDismissOrderError: () => void
 }) {
+  // Only the latest creation interaction may open its returned rename draft.
+  const pendingCreate = useRef<object | null>(null)
+  useEffect(() => {
+    const unsubscribeDraft = useBoxesStore.subscribe((state, previous) => {
+      if (state.collection !== previous.collection || state.editingId !== previous.editingId || state.draftName !== previous.draftName) pendingCreate.current = null
+    })
+    const unsubscribeSelection = useArchiveStore.subscribe((state, previous) => {
+      if (state.selectedBoxId !== previous.selectedBoxId) pendingCreate.current = null
+    })
+    return () => {
+      pendingCreate.current = null
+      unsubscribeDraft()
+      unsubscribeSelection()
+    }
+  }, [])
   const boxes = useBoxesStore((s) => s.boxes)
   const tapes = useTapesStore((s) => s.tapes)
   const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
@@ -101,17 +116,20 @@ export function BoxList({
     editingId !== null && trimmedDraft ? boxNameError(trimmedDraft, otherNames(editingId)) : null
 
   async function newBox() {
-    const collection = useBoxesStore.getState().collection
+    const attempt = {}
+    pendingCreate.current = attempt
     clearActionError('create')
     try {
       const box = await ipcInvoke('boxes:create', { name: t.t('boxes.newBoxName') })
-      if (useBoxesStore.getState().collection !== collection) return
+      if (pendingCreate.current !== attempt) return
       selectBox(box.id)
       setDraftName(box.name)
       setEditingId(box.id)
     } catch (error) {
-      if (useBoxesStore.getState().collection !== collection) return
+      if (pendingCreate.current !== attempt) return
       setActionResult('create', presentFailure(error, message('boxes.createFailed'), 'box creation failed'))
+    } finally {
+      if (pendingCreate.current === attempt) pendingCreate.current = null
     }
   }
 

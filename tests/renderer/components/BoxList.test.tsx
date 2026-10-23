@@ -222,3 +222,35 @@ describe('selected box actions', () => {
     expect(bridge.invoke).toHaveBeenCalledWith('boxes:delete', { boxId: 'box1' })
   })
 })
+
+
+describe('new box reply ownership', () => {
+  it.each(['draft', 'selection', 'collection'])('keeps a newer %s when creation settles', async (change) => {
+    let finish!: (box: { id: string; name: string; order: number }) => void
+    bridge.invoke.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const create = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'New box')!
+    await act(async () => create.click())
+    await act(async () => {
+      if (change === 'selection') useArchiveStore.getState().selectBox('other')
+      else if (change === 'collection') useBoxesStore.setState({ collection: {}, editingId: null, draftName: '' })
+    })
+    if (change === 'draft') await type('Newer draft')
+    const { editingId, draftName } = useBoxesStore.getState()
+    const { selectedBoxId } = useArchiveStore.getState()
+    await act(async () => finish({ id: 'new', name: 'New box', order: 1 }))
+    expect(useBoxesStore.getState()).toMatchObject({ editingId, draftName })
+    expect(useArchiveStore.getState().selectedBoxId).toBe(selectedBoxId)
+  })
+
+  it('lets only the newest creation reply open editing', async () => {
+    const finish: Array<(box: { id: string; name: string; order: number }) => void> = []
+    bridge.invoke.mockImplementation(() => new Promise(resolve => finish.push(resolve)))
+    const create = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'New box')!
+    await act(async () => { create.click(); create.click() })
+    await act(async () => finish[0]!({ id: 'first', name: 'First', order: 1 }))
+    expect(useBoxesStore.getState().editingId).toBe('box1')
+    await act(async () => finish[1]!({ id: 'second', name: 'Second', order: 2 }))
+    expect(useBoxesStore.getState()).toMatchObject({ editingId: 'second', draftName: 'Second' })
+    expect(useArchiveStore.getState().selectedBoxId).toBe('second')
+  })
+})
