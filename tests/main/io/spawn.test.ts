@@ -57,9 +57,11 @@ describe('owned subprocess cancellation', () => {
         descendantPid = await readReadyPid(child, signal)
         controller.abort()
         await expect(exited).rejects.toHaveProperty('name', 'AbortError')
-        // Settlement must mean physical death, even though the parent has already
-        // closed and the descendant ignored the group's first signal.
-        expect(() => process.kill(descendantPid!, 0)).toThrow()
+        // The owned group must be gone at settlement: a surviving descendant
+        // would keep it alive. The OS may retain the dead descendant's PID briefly
+        // after removing its group membership, so reaping is observed separately.
+        expect(() => process.kill(-child.pid!, 0)).toThrow()
+        await vi.waitFor(() => expect(() => process.kill(descendantPid!, 0)).toThrow(), { timeout: task.timeout })
       } finally {
         // Clean up even when readiness or the escalation assertion fails. Use the
         // fixture's recorded group, independently of the termination under test.
