@@ -6,6 +6,8 @@ import { BoxList } from '@renderer/components/BoxList'
 import { WindowCloseGuard } from '@renderer/components/WindowCloseGuard'
 import { windowCloseState } from '@renderer/lib/windowClose'
 import { useBoxesStore } from '@renderer/store/boxes'
+import type { Tape } from '@shared/domain'
+import { useTapesStore } from '@renderer/store/tapes'
 import { useArchiveStore } from '@renderer/store/archive'
 import { useBoxActionResultsStore } from '@renderer/store/boxActionResults'
 
@@ -27,6 +29,7 @@ beforeEach(async () => {
   HTMLElement.prototype.scrollIntoView = vi.fn()
   bridge.invoke.mockReset().mockImplementation(async (channel: string) => channel === 'app:quitDraftsReady' ? true : undefined)
   vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+  useTapesStore.setState({ tapes: [] })
   useArchiveStore.setState({ selectedBoxId: null })
   useBoxesStore.setState({ editingId: null, draftName: '', pendingRenames: 0, boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
   useBoxActionResultsStore.setState({ results: {} })
@@ -253,4 +256,24 @@ describe('new box reply ownership', () => {
     expect(useBoxesStore.getState()).toMatchObject({ editingId: 'second', draftName: 'Second' })
     expect(useArchiveStore.getState().selectedBoxId).toBe('second')
   })
+})
+
+it('derives archived counts after moves and unarchiving, including Unboxed', async () => {
+  const tape: Tape = {
+    id: 'TapeID0001', sourceUrl: 'https://example.test', state: 'downloaded', addedAtUtc: '2026-01-01T00:00:00Z',
+    sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: null,
+    probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null, downloadStartedAtUtc: null,
+    downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: '2026-01-01T00:00:00Z',
+    boxId: 'box1', order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+  }
+  const counts = () => [...document.querySelectorAll('.tabular-nums')].map((node) => node.textContent)
+  await act(async () => {
+    useBoxesStore.setState({ editingId: null })
+    useTapesStore.setState({ tapes: [tape, { ...tape, id: 'TapeID0002', boxId: null }, { ...tape, id: 'TapeID0003', archivedAtUtc: null, boxId: null }] })
+  })
+  expect(counts()).toEqual(['1', '1'])
+  await act(async () => useTapesStore.getState().upsert({ ...tape, boxId: null }))
+  expect(counts()).toEqual(['2', '0'])
+  await act(async () => useTapesStore.getState().upsert({ ...tape, boxId: null, archivedAtUtc: null }))
+  expect(counts()).toEqual(['1', '0'])
 })

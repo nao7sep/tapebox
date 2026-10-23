@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDroppable } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
@@ -83,8 +83,13 @@ export function BoxList({
   const selectedBox = boxes.find((box) => box.id === selectedBoxId)
 
   const sorted = [...boxes].sort((a, b) => a.order - b.order)
-  const archived = tapes.filter((i) => !!i.archivedAtUtc)
-  const countOf = (boxId: string | null) => archived.filter((i) => i.boxId === boxId).length
+  const counts = useMemo(() => {
+    const result = new Map<string | null, number>()
+    for (const tape of tapes) {
+      if (tape.archivedAtUtc) result.set(tape.boxId, (result.get(tape.boxId) ?? 0) + 1)
+    }
+    return result
+  }, [tapes])
 
   // The box list is a listbox over the always-present Unboxed row (id UNBOXED_DROP_ID)
   // followed by the boxes in display order — the order the list reads. Clicking a row
@@ -246,7 +251,7 @@ export function BoxList({
       >
         <UnboxedRow
           id={kb.optionId(UNBOXED_DROP_ID)}
-          count={countOf(null)}
+          count={counts.get(null) ?? 0}
           selected={selectedBoxId === null}
           onSelect={() => selectBox(null)}
         />
@@ -284,7 +289,7 @@ export function BoxList({
               index={index}
               optionId={kb.optionId(g.id)}
               label={g.name}
-              count={countOf(g.id)}
+              count={counts.get(g.id) ?? 0}
               selected={selectedBoxId === g.id}
               onSelect={() => selectBox(g.id)}
               onRename={() => { setDraftName(g.name); setEditingId(g.id) }}
