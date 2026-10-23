@@ -86,20 +86,6 @@ export async function readSidecarFile(sidecarPath: string): Promise<Record<strin
   return found.value
 }
 
-/**
- * Read a sidecar back as its raw object (the full yt-dlp info.json plus the
- * tapebox namespace). Best-effort: a missing, unparseable or newer-format file
- * returns null, so callers that only want an optional field (e.g. description
- * for slug generation) can treat it as simply absent.
- */
-export async function readSidecar(sidecarPath: string): Promise<Record<string, unknown> | null> {
-  try {
-    return await readSidecarFile(sidecarPath)
-  } catch {
-    return null
-  }
-}
-
 /** Preserve optional/opaque source metadata while filling managed fields from
  * the admitted catalog. Sparse external bundles remain editable and exportable. */
 export function sidecarNamespace(sidecar: Record<string, unknown>, tape: Tape): Record<string, unknown> {

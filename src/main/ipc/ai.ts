@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { handle } from './handle'
 import * as session from '@main/store/session'
 import * as ai from '@main/services/ai-client'
-import { readSidecar } from '@main/core/sidecar'
+import { readSidecarFile } from '@main/core/sidecar'
 import { slugifyAscii } from '@main/core/slug'
 import { getLibraryDir } from '@main/store/config'
 import { cancelWork, runCancellable } from '@main/work-registry'
@@ -37,12 +37,12 @@ function aiRequestKey(requestId: string): string {
 /**
  * The source description, pulled from the sidecar's yt-dlp info.json (it isn't
  * kept on the Tape — descriptions are large and would bloat catalog.json). Only
- * downloaded tapes have a sidecar; best-effort, so a missing field or file just
- * yields null and the {description} token substitutes to empty.
+ * downloaded tapes have a sidecar. An absent optional field yields null; a
+ * failed read must stop the request before selected input reaches the provider.
  */
 async function readDescription(tape: Tape): Promise<string | null> {
   if (!tape.sidecarFilename) return null
-  const data = await readSidecar(join(getLibraryDir(), tape.sidecarFilename))
-  const description = data?.['description']
+  const data = await readSidecarFile(join(getLibraryDir(), tape.sidecarFilename))
+  const description = data['description']
   return typeof description === 'string' ? description : null
 }

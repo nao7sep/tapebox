@@ -2,10 +2,10 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readSidecar, readSidecarFile, writeSidecar } from '@main/core/sidecar'
+import { readSidecarFile, writeSidecar } from '@main/core/sidecar'
 
 // A tape's sidecar carries its format version (store-recovery-conventions). One
-// without its marker is unreadable, what TapeBox writes carries 1, and one in a
+// without its marker uses current-shape admission, what TapeBox writes carries 1, and one in a
 // newer format is refused by name and left byte-identical.
 
 let dir: string
@@ -29,7 +29,6 @@ describe('sidecar format version', () => {
     const path = join(dir, 'Take.json')
     await writeFile(path, JSON.stringify({ formatVersion: 'one', id: 'source' }))
     await expect(readSidecarFile(path)).resolves.toEqual({ formatVersion: 'one', id: 'source' })
-    expect(await readSidecar(path)).toEqual({ formatVersion: 'one', id: 'source' })
   })
 
   it('writes format 1 first and reads it back', async () => {
@@ -48,7 +47,6 @@ describe('sidecar format version', () => {
       name: 'UserFacingError',
       userMessage: { key: 'errors.fileNewer', values: { name: 'Take.json' } },
     })
-    expect(await readSidecar(path), 'the best-effort read treats it as absent').toBeNull()
     expect(await readFile(path, 'utf8')).toBe(text)
     expect(await readdir(dir)).toEqual(['Take.json'])
   })

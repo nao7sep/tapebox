@@ -44,10 +44,10 @@ export async function generateSlug(
   // empty — the surrounding tag stays, which the model handles fine. The whole
   // description is sent as-is when the user's prompt references it; trusting the
   // user's choice to include it (and to instruct the model how to treat it).
-  const userPrompt = prompts.slug
-    .replace(/\{title\}/g, opts.title ?? '')
-    .replace(/\{uploader\}/g, opts.uploader ?? '')
-    .replace(/\{description\}/g, opts.description ?? '')
+  const userPrompt = prompts.slug.replace(
+    /\{(title|uploader|description)\}/g,
+    (_token, field: 'title' | 'uploader' | 'description') => opts[field] ?? '',
+  )
 
   const request = buildSlugRequest(model, thinking, userPrompt)
   const call: AiCall = { tapeId: opts.tapeId, endpoint: settings['openai.endpoint'], model, apiKey, built: request, sent: null }

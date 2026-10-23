@@ -78,3 +78,17 @@ describe('AI terminal diagnostic masking', () => {
     expect(error.message).toContain('diagnostic-test-key')
   })
 })
+
+
+it('inserts selected metadata literally into a single prompt pass', async () => {
+  mocks.create.mockResolvedValue({ choices: [{ finish_reason: 'stop', message: { content: '{"slug":"literal-name"}' } }] })
+  const title = "Price $$ $& $` $' {uploader}"
+  const uploader = '{description} creator'
+  const description = '{title} original description'
+  await generateSlug({ tapeId: 'literal', title, uploader, description }, new AbortController().signal)
+  const request = mocks.create.mock.calls[0]![0]
+  const user = request.messages.find((entry: { role: string }) => entry.role === 'user').content
+  expect(user).toContain(title)
+  expect(user).toContain(uploader)
+  expect(user).toContain(description)
+})
