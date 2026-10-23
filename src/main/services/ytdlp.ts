@@ -80,7 +80,7 @@ export function collectRun(
         stdout: '',
         stderr: '',
       }
-      writeRecord('ytdlp_runs', row, () => toJson({ record: 'yt-dlp run', outputKey: output.outputKey, ...row }), 'info', false, { elapsedMs: output.elapsedMs(), succeeded: exit.code === 0, outputKey: output.outputKey })
+      writeRecord('ytdlp_runs', row, () => toJson({ record: 'yt-dlp run', outputKey: output.outputKey, ...row }), 'info', false, { elapsedMs: output.elapsedMs(), succeeded: exit.code === 0, outputKey: output.outputKey, outputChunks: output.outputChunks })
     },
   }
 }

@@ -660,6 +660,8 @@
   "records.outputPrevious": "Previous",
   "records.outputNext": "Next",
   "records.outputFailed": "This output could not be read.",
+  "records.outputIncomplete": "Some output was not retained in Records.",
+  "records.outputUnknown": "Output completeness is unknown for this run.",
   "records.output": "Output",
   "records.errorOutput": "Error output",
   "records.scan": "Scan",

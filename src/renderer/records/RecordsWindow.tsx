@@ -651,6 +651,9 @@ function RecordDetailView({
           </section>
         ))}
         {(record.kind === 'ytdlp-run' || record.kind === 'ffmpeg-run') && <>
+          {record.outputStatus !== 'complete' && <p className="text-xs text-fg-muted">
+            {t.t(record.outputStatus === 'incomplete' ? 'records.outputIncomplete' : 'records.outputUnknown')}
+          </p>}
           <PagedRunOutput kind={record.kind} id={record.id} stream="stdout" label={t.t('records.output')} initial={{ text: record.stdout, more: record.stdoutMore }} />
           <PagedRunOutput kind={record.kind} id={record.id} stream="stderr" label={t.t('records.errorOutput')} initial={{ text: record.stderr, more: record.stderrMore }} />
         </>}

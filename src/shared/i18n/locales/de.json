@@ -660,6 +660,8 @@
   "records.outputPrevious": "Zurück",
   "records.outputNext": "Weiter",
   "records.outputFailed": "Diese Ausgabe konnte nicht gelesen werden.",
+  "records.outputIncomplete": "Ein Teil der Ausgabe wurde nicht im Protokoll aufbewahrt.",
+  "records.outputUnknown": "Es ist unbekannt, ob die Ausgabe dieser Ausführung vollständig ist.",
   "records.output": "Ausgabe",
   "records.errorOutput": "Fehlerausgabe",
   "records.scan": "Scan",

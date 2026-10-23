@@ -81,7 +81,7 @@ const SOURCES: readonly Source[] = [
     level: runLevel('ytdlp_runs'),
     title: "'yt-dlp ' || kind",
     text: 'url',
-    searched: ['kind', 'url', 'args', 'tape_id', 'scan_id', 'stdout', 'stderr'],
+    searched: ['kind', 'url', 'args', 'tape_id', 'scan_id'],
   },
   {
     kind: 'ffmpeg-run',
@@ -90,7 +90,7 @@ const SOURCES: readonly Source[] = [
     level: runLevel('ffmpeg_runs'),
     title: "'ffmpeg ' || kind",
     text: 'NULL',
-    searched: ['kind', 'args', 'tape_id', 'stdout', 'stderr'],
+    searched: ['kind', 'args', 'tape_id'],
   },
 ]
 
@@ -107,14 +107,13 @@ function likePattern(search: string): string | null {
 }
 
 export function readPage(db: DatabaseSync, query: RecordsQuery): RecordsPage {
-  const tables = optionalTables(db)
   const pattern = likePattern(query.search)
-  if (pattern !== null && hasOutputTables(tables)) registerOutputSearch(db)
+  if (pattern !== null) registerOutputSearch(db)
   const parts: string[] = []
   const params: SQLInputValue[] = []
   for (const source of SOURCES) {
     if (query.kind !== null && query.kind !== source.kind) continue
-    const level = tables.has('execution_facts') ? source.level : source.level.replace(executionFact(source.table, 'succeeded'), 'NULL')
+    const level = source.level
     const where = ['1 = 1']
     if (query.session !== null) {
       where.push('session = ?')
@@ -133,7 +132,7 @@ export function readPage(db: DatabaseSync, query: RecordsQuery): RecordsPage {
     if (pattern !== null) {
       const searched = source.searched.map((column) => `${column} LIKE ? ESCAPE '\\'`)
       params.push(...source.searched.map(() => pattern))
-      if (hasOutputTables(tables) && (source.kind === 'ytdlp-run' || source.kind === 'ffmpeg-run')) {
+      if (source.kind === 'ytdlp-run' || source.kind === 'ffmpeg-run') {
         searched.push(`EXISTS (SELECT 1 FROM run_outputs AS output
           WHERE output.record_table = '${source.table}' AND output.record_id = ${source.table}.id
           AND output_contains(${source.table}.session, output.run_key, ?) = 1)`)
@@ -186,12 +185,14 @@ function registerOutputSearch(db: DatabaseSync): void {
     const needle = asciiLowercase(search as string)
     let tail = ''
     let previousStream: string | null = null
-    const chunks = db.prepare(`SELECT stream, content FROM run_output_chunks
+    let previousSequence = -1
+    const chunks = db.prepare(`SELECT stream, sequence, content FROM run_output_chunks
       WHERE session = ? AND run_key = ? ORDER BY stream, sequence`).iterate(session, runKey)
     for (const value of chunks) {
-      const chunk = value as { stream: string; content: string }
-      if (chunk.stream !== previousStream) tail = ''
+      const chunk = value as { stream: string; sequence: number; content: string }
+      if (chunk.stream !== previousStream || chunk.sequence !== previousSequence + 1) tail = ''
       previousStream = chunk.stream
+      previousSequence = chunk.sequence
       const joined = tail + asciiLowercase(chunk.content)
       if (joined.includes(needle)) return 1
       tail = needle.length > 1 ? joined.slice(-(needle.length - 1)) : ''
@@ -242,46 +243,28 @@ const DETAIL_SQL: Readonly<Record<RecordKind, string>> = {
     FROM ai_calls WHERE id = ?`,
   'ytdlp-run': `SELECT 'ytdlp-run' AS kind, id, session, tape_id AS tapeId, scan_id AS scanId, kind AS run, url, args,
     started_at_utc AS startedAt, ended_at_utc AS endedAt, ${executionFact('ytdlp_runs', 'elapsed_ms')} AS elapsedMs, ${runLevel('ytdlp_runs')} AS level, exit_code AS exitCode, signal,
-    stop_reason AS stopReason, substr(stdout, 1, 32768) AS stdout, substr(stderr, 1, 32768) AS stderr,
-    length(stdout) > 32768 AS stdoutMore, length(stderr) > 32768 AS stderrMore FROM ytdlp_runs WHERE id = ?`,
+    stop_reason AS stopReason FROM ytdlp_runs WHERE id = ?`,
   'ffmpeg-run': `SELECT 'ffmpeg-run' AS kind, id, session, tape_id AS tapeId, kind AS run, args,
     started_at_utc AS startedAt, ended_at_utc AS endedAt, ${executionFact('ffmpeg_runs', 'elapsed_ms')} AS elapsedMs, ${runLevel('ffmpeg_runs')} AS level, exit_code AS exitCode, signal,
-    stop_reason AS stopReason, substr(stdout, 1, 32768) AS stdout, substr(stderr, 1, 32768) AS stderr,
-    length(stdout) > 32768 AS stdoutMore, length(stderr) > 32768 AS stderrMore FROM ffmpeg_runs WHERE id = ?`,
-}
-
-/** Optional additions may not exist in an older read-only history database. */
-function optionalTables(db: DatabaseSync): Set<string> {
-  const tables = db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('execution_facts', 'run_outputs', 'run_output_chunks')").all() as { name: string }[]
-  return new Set(tables.map((table) => table.name))
-}
-
-function hasOutputTables(tables: Set<string>): boolean {
-  return tables.has('run_outputs') && tables.has('run_output_chunks')
+    stop_reason AS stopReason FROM ffmpeg_runs WHERE id = ?`,
 }
 
 export function readDetail(db: DatabaseSync, kind: RecordKind, id: number): RecordDetail | null {
-  const tables = optionalTables(db)
-  let sql = DETAIL_SQL[kind]
-  if (!tables.has('execution_facts') && kind !== 'log') {
-    const table = SOURCES.find((source) => source.kind === kind)!.table
-    sql = sql.replace(executionFact(table, 'elapsed_ms'), 'NULL').replace(executionFact(table, 'succeeded'), 'NULL')
-  }
+  const sql = DETAIL_SQL[kind]
   const row = (db.prepare(sql).get(id) as unknown as RecordDetail | undefined) ?? null
   if (row?.kind === 'ytdlp-run' || row?.kind === 'ffmpeg-run') {
-    const mapping = outputMapping(db, row.kind, id, tables)
-    if (!mapping) return { ...row, stdoutMore: Boolean(row.stdoutMore), stderrMore: Boolean(row.stderrMore) }
+    const mapping = outputMapping(db, row.kind, id)
+    if (!mapping) return { ...row, stdout: '', stderr: '', stdoutMore: false, stderrMore: false, outputStatus: 'unknown' }
     const stdout = readChunk(db, mapping, 'stdout', 0)
     const stderr = readChunk(db, mapping, 'stderr', 0)
-    return { ...row, stdout: stdout.text, stderr: stderr.text, stdoutMore: stdout.more, stderrMore: stderr.more }
+    return { ...row, stdout: stdout.text, stderr: stderr.text, stdoutMore: stdout.more, stderrMore: stderr.more, outputStatus: outputStatus(db, mapping) }
   }
   return row
 }
 
 type OutputMapping = { session: string; runKey: string }
 
-function outputMapping(db: DatabaseSync, kind: RunOutputQuery['kind'], id: number, tables: Set<string>): OutputMapping | undefined {
-  if (!hasOutputTables(tables)) return undefined
+function outputMapping(db: DatabaseSync, kind: RunOutputQuery['kind'], id: number): OutputMapping | undefined {
   const table = kind === 'ytdlp-run' ? 'ytdlp_runs' : 'ffmpeg_runs'
   return db.prepare(`SELECT run.session, output.run_key AS runKey FROM ${table} AS run
     JOIN run_outputs AS output ON output.record_table = ? AND output.record_id = run.id WHERE run.id = ?`)
@@ -299,11 +282,18 @@ function readChunk(db: DatabaseSync, mapping: OutputMapping, stream: RunOutputQu
 }
 
 export function readOutput(db: DatabaseSync, query: RunOutputQuery): RunOutputPage {
-  const mapping = outputMapping(db, query.kind, query.id, optionalTables(db))
-  if (mapping) return readChunk(db, mapping, query.stream, query.page)
-  const table = query.kind === 'ytdlp-run' ? 'ytdlp_runs' : 'ffmpeg_runs'
-  const row = db.prepare(`SELECT substr(${query.stream}, ? * 32768 + 1, 32768) AS text,
-    length(${query.stream}) > (? + 1) * 32768 AS more FROM ${table} WHERE id = ?`)
-    .get(query.page, query.page, query.id) as { text: string; more: number } | undefined
-  return row ? { text: row.text, more: Boolean(row.more) } : { text: '', more: false }
+  const mapping = outputMapping(db, query.kind, query.id)
+  return mapping ? readChunk(db, mapping, query.stream, query.page) : { text: '', more: false }
+}
+
+function outputStatus(db: DatabaseSync, mapping: OutputMapping): 'complete' | 'incomplete' | 'unknown' {
+  const rows = db.prepare(`SELECT expected.stream, expected.expected_chunks AS expected,
+    COUNT(chunk.sequence) AS retained, MIN(chunk.sequence) AS first, MAX(chunk.sequence) AS last
+    FROM run_output_extents AS expected LEFT JOIN run_output_chunks AS chunk
+      ON chunk.session = expected.session AND chunk.run_key = expected.run_key AND chunk.stream = expected.stream
+    WHERE expected.session = ? AND expected.run_key = ? GROUP BY expected.stream`)
+    .all(mapping.session, mapping.runKey) as Array<{ stream: string; expected: number; retained: number; first: number | null; last: number | null }>
+  if (rows.length !== 2) return 'unknown'
+  return rows.every((row) => row.retained === row.expected &&
+    (row.expected === 0 || (row.first === 0 && row.last === row.expected - 1))) ? 'complete' : 'incomplete'
 }

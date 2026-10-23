@@ -631,6 +631,8 @@
   "records.outputPrevious": "이전",
   "records.outputNext": "다음",
   "records.outputFailed": "이 출력을 읽을 수 없습니다.",
+  "records.outputIncomplete": "일부 출력이 로그에 저장되지 않았습니다.",
+  "records.outputUnknown": "이 실행의 출력이 완전한지는 알 수 없습니다.",
   "records.output": "출력",
   "records.errorOutput": "오류 출력",
   "records.scan": "스캔",

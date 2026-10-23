@@ -25,8 +25,9 @@ describe('streaming run capture', () => {
     expect(capture.stderr().length).toBeLessThanOrEqual(32_768)
     expect(text('stdout')).toBe(block.repeat(20))
     expect(text('stderr')).toBe(block.repeat(20))
-    for (const stream of ['stdout', 'stderr']) {
+    for (const stream of ['stdout', 'stderr'] as const) {
       const calls = writeOutputChunk.mock.calls.filter((call) => call[1] === stream)
+      expect(capture.outputChunks[stream]).toBe(calls.length)
       expect(calls.map((call) => call[2])).toEqual(calls.map((_, index) => index))
       for (const call of calls) {
         expect(call[0]).toBe(capture.outputKey)
@@ -58,6 +59,7 @@ describe('streaming run capture', () => {
     const raw = '{"cookies":"private-cookie","title":"\u{1F600}"}'
     for (const byte of Buffer.from(raw)) proc.stdout.emit('data', Buffer.from([byte]))
     proc.emit('close', 0, null)
+    expect(capture.outputChunks).toEqual({ stdout: 1, stderr: 0 })
     expect(capture.stdout()).toBe(raw)
     expect(text('stdout')).toBe('{"cookies":"[REDACTED]","title":"\u{1F600}"}')
   })

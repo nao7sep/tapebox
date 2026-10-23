@@ -631,6 +631,8 @@
   "records.outputPrevious": "前へ",
   "records.outputNext": "次へ",
   "records.outputFailed": "この出力を読み取れませんでした。",
+  "records.outputIncomplete": "一部の出力がログに保存されていません。",
+  "records.outputUnknown": "この実行の出力がすべて揃っているかは不明です。",
   "records.output": "出力",
   "records.errorOutput": "エラー出力",
   "records.scan": "スキャン",

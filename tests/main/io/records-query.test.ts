@@ -30,8 +30,8 @@ function referenceRecords(db: DatabaseSync) {
   const sources: Array<{ table: string; kind: RecordKind; search: string[] }> = [
     { table: 'logs', kind: 'log', search: ['message', 'tape_id', 'fields'] },
     { table: 'ai_calls', kind: 'ai-call', search: ['endpoint', 'model', 'tape_id', 'request', 'response', 'error'] },
-    { table: 'ytdlp_runs', kind: 'ytdlp-run', search: ['kind', 'url', 'args', 'tape_id', 'scan_id', 'stdout', 'stderr'] },
-    { table: 'ffmpeg_runs', kind: 'ffmpeg-run', search: ['kind', 'args', 'tape_id', 'stdout', 'stderr'] },
+    { table: 'ytdlp_runs', kind: 'ytdlp-run', search: ['kind', 'url', 'args', 'tape_id', 'scan_id'] },
+    { table: 'ffmpeg_runs', kind: 'ffmpeg-run', search: ['kind', 'args', 'tape_id'] },
   ]
   return sources.flatMap((source) => {
     const rows = db.prepare(`SELECT * FROM ${source.table}`).all() as Array<Record<string, string | number | null>>
@@ -48,7 +48,12 @@ function referenceRecords(db: DatabaseSync) {
         text: isCall ? String(row.endpoint) : source.kind === 'ytdlp-run' ? String(row.url) : null,
         tapeId: row.tape_id === null ? null : String(row.tape_id),
       }
-      return { record, searched: source.search.map((column) => row[column] === null ? '' : String(row[column]).toLowerCase()) }
+      const searched = source.search.map((column) => row[column] === null ? '' : String(row[column]).toLowerCase())
+      if (!isLog && !isCall) {
+        const chunks = db.prepare(`SELECT content FROM run_output_chunks JOIN run_outputs ON run_outputs.run_key = run_output_chunks.run_key WHERE record_table = ? AND record_id = ? AND session = ?`).all(source.table, row.id!, row.session!) as { content: string }[]
+        searched.push(...chunks.map(({ content }) => content.toLowerCase()))
+      }
+      return { record, searched }
     })
   })
 }
@@ -152,6 +157,10 @@ describe('Records chronological page queries', () => {
       UPDATE ytdlp_runs SET exit_code = id % 2, stop_reason = CASE id % 4 WHEN 0 THEN 'cancel' ELSE NULL END, scan_id = 'scan_needle', stderr = 'run error';
       UPDATE ffmpeg_runs SET exit_code = id % 2, stop_reason = CASE id % 4 WHEN 0 THEN 'quit' ELSE NULL END, stderr = 'run error';
     `)
+    for (const table of ['ytdlp_runs', 'ffmpeg_runs']) {
+      db.exec(`INSERT INTO run_outputs SELECT '${table}', id, '${table}-' || id FROM ${table};
+        INSERT INTO run_output_chunks SELECT session, '${table}-' || id, 'stderr', 0, 'run error' FROM ${table}`)
+    }
     const facts = referenceRecords(db)
     const filters: Partial<RecordsQuery>[] = [
       {},
@@ -236,25 +245,29 @@ describe('bounded run output history', () => {
     return Number(db.prepare(`INSERT INTO ${table} (${columns}) VALUES (${values.map(() => '?').join(',')})`).run(...values).lastInsertRowid)
   }
 
-  it.each(['ytdlp-run', 'ffmpeg-run'] as const)('retrieves complete Unicode legacy %s output in bounded pages, without new tables', async (kind) => {
+  it.each(['ytdlp-run', 'ffmpeg-run'] as const)('does not read obsolete inline %s output or silently accept a missing schema', async (kind) => {
     const { db } = await freshDatabase()
-    db.exec('DROP TABLE IF EXISTS run_outputs; DROP TABLE IF EXISTS run_output_chunks; DROP TABLE IF EXISTS execution_facts')
-    const text = 'x'.repeat(32767) + '\u{1F600}' + 'e\u0301'.repeat(20000) + 'tail'
-    const id = run(db, kind, text)
-    const detail = readDetail(db, kind, id)
-    expect(detail).toMatchObject({ stdout: 'x'.repeat(32767) + '\u{1F600}', stdoutMore: true, stderr: '', stderrMore: false, elapsedMs: null })
-    let recovered = ''
-    for (let page = 0; ; page++) {
-      const output = readOutput(db, { kind, id, stream: 'stdout', page })
-      expect(Array.from(output.text).length).toBeLessThanOrEqual(32768)
-      recovered += output.text
-      if (!output.more) break
-    }
-    expect(recovered).toBe(text)
-    expect(readOutput(db, { kind, id, stream: 'stderr', page: 0 })).toEqual({ text: '', more: false })
-    expect(readOutput(db, { kind, id, stream: 'stdout', page: 100 })).toEqual({ text: '', more: false })
-    expect(readOutput(db, { kind, id: id + 1, stream: 'stdout', page: 0 })).toEqual({ text: '', more: false })
-    expect(readPage(db, recordsQuery({ kind, search: 'tail' })).records.map((row) => row.id)).toEqual([id])
+    const id = run(db, kind, 'obsolete inline evidence')
+    expect(readDetail(db, kind, id)).toMatchObject({ stdout: '', stderr: '', outputStatus: 'unknown' })
+    expect(readOutput(db, { kind, id, stream: 'stdout', page: 0 })).toEqual({ text: '', more: false })
+    expect(readPage(db, recordsQuery({ kind, search: 'obsolete inline evidence' })).records).toEqual([])
+    db.exec('DROP TABLE run_outputs')
+    expect(() => readDetail(db, kind, id)).toThrow(/run_outputs/)
+    const table = kind === 'ytdlp-run' ? 'ytdlp_runs' : 'ffmpeg_runs'
+    expect(db.prepare(`SELECT stdout FROM ${table} WHERE id = ?`).get(id)).toEqual({ stdout: 'obsolete inline evidence' })
+  })
+
+  it.each([1, 2])('marks a missing output chunk at sequence %s as incomplete, including a missing final chunk', async (missing) => {
+    const { db } = await freshDatabase()
+    const id = run(db, 'ffmpeg-run', '')
+    db.prepare("INSERT INTO run_outputs VALUES ('ffmpeg_runs', ?, 'gap')").run(id)
+    expect(readDetail(db, 'ffmpeg-run', id)).toMatchObject({ outputStatus: 'unknown' })
+    db.exec("INSERT INTO run_output_extents VALUES ('output-session', 'gap', 'stdout', 3), ('output-session', 'gap', 'stderr', 0)")
+    const chunk = db.prepare("INSERT INTO run_output_chunks VALUES ('output-session', 'gap', 'stdout', ?, ?)")
+    for (let sequence = 0; sequence < 3; sequence++) chunk.run(sequence, `chunk ${sequence}`)
+    expect(readDetail(db, 'ffmpeg-run', id)).toMatchObject({ outputStatus: 'complete' })
+    db.prepare("DELETE FROM run_output_chunks WHERE run_key = 'gap' AND sequence = ?").run(missing)
+    expect(readDetail(db, 'ffmpeg-run', id)).toMatchObject({ outputStatus: 'incomplete' })
   })
 
   it.each(['ytdlp-run', 'ffmpeg-run'] as const)('reads mapped %s chunks exactly and searches later output while isolating session and stream', async (kind) => {
@@ -290,6 +303,9 @@ describe('bounded run output history', () => {
     db.prepare('UPDATE run_outputs SET run_key = ? WHERE record_table = ? AND record_id = ?').run('long-key', table, id)
     expect(readPage(db, recordsQuery({ kind, search: 'FIRST%_MIDDLELAST' })).records.map((row) => row.id)).toEqual([id])
     expect(readPage(db, recordsQuery({ kind, search: 'firstanythingmiddlelast' })).records).toEqual([])
+    db.prepare("DELETE FROM run_output_chunks WHERE run_key = 'long-key' AND sequence = 1").run()
+    expect(readPage(db, recordsQuery({ kind, search: 'FIRST%_LAST' })).records).toEqual([])
+    chunk.run('output-session', 'long-key', 'stdout', 1, 'Middle')
     db.prepare("DELETE FROM run_output_chunks WHERE run_key = 'long-key' AND sequence = 0").run()
     expect(readOutput(db, { kind, id, stream: 'stdout', page: 0 })).toEqual({ text: '', more: true })
     expect(readOutput(db, { kind, id, stream: 'stdout', page: 1 })).toEqual({ text: 'Middle', more: true })

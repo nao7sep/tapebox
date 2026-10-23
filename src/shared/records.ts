@@ -119,6 +119,7 @@ export type YtdlpRunRecordDetail = {
   stopReason: RunStop | null
   stdout: string
   stderr: string
+  outputStatus: 'complete' | 'incomplete' | 'unknown'
   stdoutMore: boolean
   stderrMore: boolean
 }
@@ -141,6 +142,7 @@ export type FfmpegRunRecordDetail = {
   stopReason: RunStop | null
   stdout: string
   stderr: string
+  outputStatus: 'complete' | 'incomplete' | 'unknown'
   stdoutMore: boolean
   stderrMore: boolean
 }

@@ -8,7 +8,7 @@ import { databaseTransaction, openWritableDatabase } from './sqlite-store.ts'
 
 export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
 export type RecordRow = Record<string, SQLInputValue>
-export type ExecutionFacts = { elapsedMs?: number | null; succeeded?: boolean | null; outputKey?: string }
+export type ExecutionFacts = { elapsedMs?: number | null; succeeded?: boolean | null; outputKey?: string; outputChunks?: { stdout: number; stderr: number } }
 export type RecordWriteRequest = { facts?: ExecutionFacts; id: number; chunk?: { runKey: string; stream: 'stdout' | 'stderr'; sequence: number; content: string }; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer }
 export type RecordWriteResponse = { id: number; stored: boolean; console?: string; diagnostics: string[] }
 /** `textOnly`: the replacement for a writer that stalled, which writes only the
@@ -29,6 +29,14 @@ CREATE TABLE IF NOT EXISTS run_outputs (
   record_id INTEGER NOT NULL,
   run_key TEXT NOT NULL,
   PRIMARY KEY (record_table, record_id)
+);
+
+CREATE TABLE IF NOT EXISTS run_output_extents (
+  session TEXT NOT NULL,
+  run_key TEXT NOT NULL,
+  stream TEXT NOT NULL,
+  expected_chunks INTEGER NOT NULL,
+  PRIMARY KEY (session, run_key, stream)
 );
 
 CREATE TABLE IF NOT EXISTS execution_facts (
@@ -150,6 +158,10 @@ port.on('message', (request: RecordWriteRequest) => {
           if (request.facts?.outputKey) {
             store.prepare('INSERT INTO run_outputs (record_table, record_id, run_key) VALUES (?, ?, ?)')
               .run(request.table!, inserted.lastInsertRowid, request.facts.outputKey)
+            if (request.facts.outputChunks) for (const stream of ['stdout', 'stderr'] as const) {
+              store.prepare('INSERT INTO run_output_extents (session, run_key, stream, expected_chunks) VALUES (?, ?, ?, ?)')
+                .run(data.session, request.facts.outputKey, stream, request.facts.outputChunks[stream])
+            }
           }
           if (request.facts) {
             store.prepare('INSERT INTO execution_facts (record_table, record_id, elapsed_ms, succeeded) VALUES (?, ?, ?, ?)')

@@ -718,6 +718,8 @@
   "records.outputPrevious": "Назад",
   "records.outputNext": "Далее",
   "records.outputFailed": "Не удалось прочитать этот вывод.",
+  "records.outputIncomplete": "Часть вывода не была сохранена в журнале.",
+  "records.outputUnknown": "Неизвестно, полон ли вывод этого запуска.",
   "records.output": "Вывод",
   "records.errorOutput": "Вывод ошибок",
   "records.scan": "Сканирование",

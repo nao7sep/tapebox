@@ -631,6 +631,8 @@
   "records.outputPrevious": "上一页",
   "records.outputNext": "下一页",
   "records.outputFailed": "无法读取此输出。",
+  "records.outputIncomplete": "部分输出未保留在日志中。",
+  "records.outputUnknown": "本次运行的输出是否完整尚不明确。",
   "records.output": "输出",
   "records.errorOutput": "错误输出",
   "records.scan": "扫描",

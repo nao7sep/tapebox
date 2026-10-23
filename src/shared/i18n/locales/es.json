@@ -689,6 +689,8 @@
   "records.outputPrevious": "Anterior",
   "records.outputNext": "Siguiente",
   "records.outputFailed": "No se pudo leer esta salida.",
+  "records.outputIncomplete": "Parte de la salida no se conservó en Registros.",
+  "records.outputUnknown": "Se desconoce si la salida de esta ejecución está completa.",
   "records.output": "Salida",
   "records.errorOutput": "Salida de error",
   "records.scan": "Escaneo",

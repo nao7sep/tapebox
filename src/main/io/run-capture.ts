@@ -46,12 +46,12 @@ export function createRunCapture(child: OutputChild, options: { credentials?: re
   let rawStdout = ''
   let stderr = ''
   let finished = false
+  const outputChunks = { stdout: 0, stderr: 0 }
   const pipes = (['stdout', 'stderr'] as const).map((stream) => {
     const decoder = new StringDecoder('utf8')
     let pending = ''
-    let sequence = 0
     const flush = () => {
-      if (pending) writeOutputChunk(outputKey, stream, sequence++, pending)
+      if (pending) writeOutputChunk(outputKey, stream, outputChunks[stream]++, pending)
       pending = ''
     }
     const safe = (text: string) => {
@@ -86,5 +86,5 @@ export function createRunCapture(child: OutputChild, options: { credentials?: re
     for (const pipe of pipes) pipe()
   }
   child.once('close', finish)
-  return { ...facts, outputKey, stdout: () => rawStdout, stderr: () => stderr, finish }
+  return { ...facts, outputKey, outputChunks, stdout: () => rawStdout, stderr: () => stderr, finish }
 }

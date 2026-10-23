@@ -60,7 +60,7 @@ export function collectRun(
         stdout: '',
         stderr: '',
       }
-      writeRecord('ffmpeg_runs', row, () => toJson({ record: 'ffmpeg run', outputKey: output.outputKey, ...row }), 'info', false, { elapsedMs: output.elapsedMs(), succeeded, outputKey: output.outputKey })
+      writeRecord('ffmpeg_runs', row, () => toJson({ record: 'ffmpeg run', outputKey: output.outputKey, ...row }), 'info', false, { elapsedMs: output.elapsedMs(), succeeded, outputKey: output.outputKey, outputChunks: output.outputChunks })
     },
   }
 }

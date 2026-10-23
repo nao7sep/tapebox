@@ -51,7 +51,7 @@ const callDetail: RecordDetail = {
 const runDetail: RecordDetail = {
   kind: 'ytdlp-run', id: 2, session: SESSION, tapeId: null, scanId: 's1', run: 'scan', url: 'https://example.com/list',
   args: JSON.stringify(['--flat-playlist']), startedAt: '2026-10-04T08:00:00.000Z', endedAt: '2026-10-04T08:00:01.000Z', elapsedMs: null,
-  level: 'error', exitCode: 1, signal: null, stopReason: null, stdout: 'partial', stderr: 'ERROR: boom', stdoutMore: false, stderrMore: false,
+  level: 'error', exitCode: 1, signal: null, stopReason: null, stdout: 'partial', stderr: 'ERROR: boom', stdoutMore: false, stderrMore: false, outputStatus: 'complete',
 }
 
 type Handler = (req: unknown) => Promise<unknown>
@@ -251,12 +251,23 @@ describe('RecordsWindow', () => {
     expect(body).toContain('SIGTERM')
   })
 
+  it.each(['complete', 'incomplete', 'unknown'] as const)('shows output completeness independently of run success: %s', async (outputStatus) => {
+    answer('records:page', { records: [{ ...call, kind: 'ytdlp-run', id: 2, title: 'yt-dlp scan', level: 'info' }], more: false })
+    answer('records:detail', { ...runDetail, level: 'info', exitCode: 0, outputStatus })
+    await mount()
+    await act(async () => options()[0]!.click())
+    const detail = document.querySelector('[data-records-detail]')!
+    expect(detail.textContent!.includes('Some output was not retained in Records.')).toBe(outputStatus === 'incomplete')
+    expect(detail.textContent!.includes('Output completeness is unknown for this run.')).toBe(outputStatus === 'unknown')
+    expect(document.querySelector('h2')!.parentElement!.textContent).not.toContain('Error')
+  })
+
   it('leaves out the blocks of a run that are empty', async () => {
     answer('records:page', { records: [{ ...call, kind: 'ffmpeg-run', id: 3, title: 'ffmpeg probe', level: 'info' }], more: false })
     answer('records:detail', {
       kind: 'ffmpeg-run', id: 3, session: SESSION, tapeId: null, run: 'probe', args: '[]',
       startedAt: runDetail.startedAt, endedAt: runDetail.endedAt, elapsedMs: null, level: 'info', exitCode: 0, signal: null, stopReason: null,
-      stdout: '{"streams":[]}', stderr: ' \n', stdoutMore: false, stderrMore: false,
+      stdout: '{"streams":[]}', stderr: ' \n', stdoutMore: false, stderrMore: false, outputStatus: 'complete',
     } satisfies RecordDetail)
     await mount()
     await act(async () => options()[0]!.click())

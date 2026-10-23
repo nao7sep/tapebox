@@ -50,16 +50,18 @@ async function seed(records: Records): Promise<void> {
     endpoint: 'https://api.openai.com/v1', model: 'gpt-x', request: JSON.stringify({ input: 'slug 100%' }),
     status: 429, response: JSON.stringify({ message: 'quota' }), error: JSON.stringify({ name: 'RateLimitError' }),
   }, () => 'ai call')
+  records.writeOutputChunk('seed-ytdlp', 'stdout', 0, 'found 3 entries')
+  records.writeOutputChunk('seed-ffmpeg', 'stderr', 0, 'Invalid data found')
   records.writeRecord('ytdlp_runs', {
     tape_id: null, scan_id: 's1', kind: 'scan', url: 'https://example.com/list', args: JSON.stringify(['--flat-playlist']),
     started_at_utc: '2026-10-04T10:00:05.000Z', ended_at_utc: '2026-10-04T10:00:06.000Z', exit_code: 0, signal: null,
-    stdout: 'found 3 entries', stderr: '',
-  }, () => 'yt-dlp run')
+    stdout: '', stderr: '',
+  }, () => 'yt-dlp run', 'info', false, { outputKey: 'seed-ytdlp', outputChunks: { stdout: 1, stderr: 0 } })
   records.writeRecord('ffmpeg_runs', {
     tape_id: 't2', kind: 'thumbnail', args: JSON.stringify(['-i', 'in.webp']),
     started_at_utc: '2026-10-04T10:00:07.000Z', ended_at_utc: '2026-10-04T10:00:07.500Z', exit_code: 1, signal: null,
-    stdout: '', stderr: 'Invalid data found',
-  }, () => 'ffmpeg run')
+    stdout: '', stderr: '',
+  }, () => 'ffmpeg run', 'info', false, { outputKey: 'seed-ffmpeg', outputChunks: { stdout: 0, stderr: 1 } })
   // The fixture needs committed rows. Ordinary reads do not drain future or
   // unrelated submitted diagnostics; production change notices follow ACKs.
   await records.flushRecords()

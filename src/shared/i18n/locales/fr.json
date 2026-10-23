@@ -689,6 +689,8 @@
   "records.outputPrevious": "Précédent",
   "records.outputNext": "Suivant",
   "records.outputFailed": "Cette sortie n’a pas pu être lue.",
+  "records.outputIncomplete": "Une partie de la sortie n’a pas été conservée dans le Journal.",
+  "records.outputUnknown": "On ne sait pas si la sortie de cette exécution est complète.",
   "records.output": "Sortie",
   "records.errorOutput": "Sortie d’erreur",
   "records.scan": "Analyse",

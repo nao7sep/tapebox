@@ -689,6 +689,8 @@
   "records.outputPrevious": "Precedente",
   "records.outputNext": "Successivo",
   "records.outputFailed": "Impossibile leggere questo output.",
+  "records.outputIncomplete": "Parte dell’output non è stata conservata nei Log.",
+  "records.outputUnknown": "Non è noto se l’output di questa esecuzione sia completo.",
   "records.output": "Output",
   "records.errorOutput": "Output di errore",
   "records.scan": "Scansione",
