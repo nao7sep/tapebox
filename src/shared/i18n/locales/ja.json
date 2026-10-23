@@ -446,7 +446,7 @@
   "tools.requiredHint": "ダウンロードには yt-dlp と ffmpeg が必要です。Deno は任意です。",
   "tools.installRequired": "yt-dlp と ffmpeg をインストール",
   "tools.checkOnLaunch": "起動時にツールのアップデートを確認",
-  "tools.checkOnLaunchHint": "TapeBox の起動時に一度、yt-dlp、ffmpeg、Deno の新しいリリースを探します。",
+  "tools.checkOnLaunchHint": "前回の確認から24時間が経過していれば、前回の確認が失敗していても、起動時に yt-dlp、ffmpeg、Deno の新しいリリースを確認します。手動での確認はいつでもできます。",
   "tools.cancelling": "キャンセル中…",
   "tools.cancelCheck": "確認をキャンセル",
   "tools.checkForUpdates": "アップデートを確認",

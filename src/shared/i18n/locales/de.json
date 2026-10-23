@@ -472,7 +472,7 @@
   "tools.requiredHint": "Für Downloads sind yt-dlp und ffmpeg erforderlich. Deno ist optional.",
   "tools.installRequired": "yt-dlp und ffmpeg installieren",
   "tools.checkOnLaunch": "Beim Start nach Tool-Updates suchen",
-  "tools.checkOnLaunchHint": "Sucht beim Start von TapeBox einmal nach neueren Versionen von yt-dlp, ffmpeg und Deno.",
+  "tools.checkOnLaunchHint": "Sucht beim Start nach neueren Versionen von yt-dlp, ffmpeg und Deno, wenn seit dem letzten Versuch 24 Stunden vergangen sind, auch wenn dieser fehlgeschlagen ist. Sie können jederzeit manuell nach Updates suchen.",
   "tools.cancelling": "Wird abgebrochen\u00a0…",
   "tools.cancelCheck": "Prüfung abbrechen",
   "tools.checkForUpdates": "Nach Updates suchen",

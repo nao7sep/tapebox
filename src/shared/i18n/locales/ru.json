@@ -524,7 +524,7 @@
   "tools.requiredHint": "Для загрузки необходимы yt-dlp и ffmpeg. Deno необязателен.",
   "tools.installRequired": "Установить yt-dlp и ffmpeg",
   "tools.checkOnLaunch": "Проверять обновления инструментов при запуске",
-  "tools.checkOnLaunchHint": "Один раз при запуске TapeBox ищет новые версии yt-dlp, ffmpeg и Deno.",
+  "tools.checkOnLaunchHint": "При запуске проверяет наличие новых версий yt-dlp, ffmpeg и Deno, если с последней попытки прошло 24 часа, даже если она завершилась неудачей. Вы можете выполнить проверку вручную в любое время.",
   "tools.cancelling": "Отмена…",
   "tools.cancelCheck": "Отменить проверку",
   "tools.checkForUpdates": "Проверить обновления",
