@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MenuItemConstructorOptions } from 'electron'
 
-vi.mock('electron', () => ({ Menu: {} }))
+vi.mock('electron', () => ({ Menu: {}, BrowserWindow: { fromId: (id: number) => ({ id }) } }))
 
 import { applicationMenuTemplate } from '@main/menu'
 import { LANGUAGES } from '@shared/i18n/languages'
@@ -67,6 +67,19 @@ describe('application menu', () => {
     expect(about.role).toBeUndefined()
     ;(about.click as () => void)()
     expect(onAbout).toHaveBeenCalledOnce()
+  })
+
+  it('routes both reload commands through consent callbacks with their standard shortcuts', () => {
+    const reload = vi.fn()
+    const template = applicationMenuTemplate(createTranslator('en'), 'darwin', () => {}, reload)
+    const view = template.find((menu) => menu.role === 'viewMenu')!.submenu as MenuItemConstructorOptions[]
+    for (const [index, force] of [false, true].entries()) {
+      const item = view[index]!
+      expect(item.role).toBeUndefined()
+      expect(item.accelerator).toBe(force ? 'CmdOrCtrl+Shift+R' : 'CmdOrCtrl+R')
+      ;(item.click as (...args: unknown[]) => void)({}, { id: 7 })
+      expect(reload).toHaveBeenLastCalledWith({ id: 7 }, force)
+    }
   })
 
   it('names the app in the About, Hide and Quit items', () => {

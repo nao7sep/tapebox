@@ -34,7 +34,8 @@ import { createQuit, type QuitChoice } from './quit.js'
 import { forceExitProcess } from './force-exit.js'
 import { killOwnedProcessesNow } from './io/spawn.js'
 import { showPlainMessageDialog } from './plain-message-dialog.js'
-import { setAboutRequest } from './menu.js'
+import { setAboutRequest, setReloadRequest } from './menu.js'
+import { createWindowReload } from './window-reload.js'
 import { sendTo } from './ipc/events.js'
 import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '@shared/layout'
 import {
@@ -236,6 +237,14 @@ async function handleTerminalStartupFailure(error: unknown): Promise<void> {
   })
 }
 
+const reload = createWindowReload(
+  (window, signal) => window === mainWindow
+    ? settleWindowDrafts(window, signal, askToDiscardDrafts, (signal) => askAfterUnresponsiveWindow(signal, true))
+    : Promise.resolve(true),
+  (error) => log.error('renderer reload failed', { error: describeError(error) }),
+)
+setReloadRequest((window, force) => { void reload.request(window, force) })
+
 /** The quit's steps; quit.ts owns their order and bounds. Stopping work stops
  * downloads, tool installs, scans and other in-flight work, whose child
  * processes and library writes must not outlive the app; a download stopped
@@ -252,6 +261,7 @@ const quit = createQuit({
   ask: askAfterFailedLibrarySave,
   // Cancel leaves the window as it was; only a main window that is gone comes back.
   resume: () => {
+    reload.resume()
     resumeWork()
     resumeScans()
     resumeBinaryOperations()
@@ -324,7 +334,7 @@ async function askToDiscardDrafts(signal: AbortSignal): Promise<boolean> {
 }
 
 /** The main-owned fallback remains usable when the workspace cannot answer. */
-async function askAfterUnresponsiveWindow(signal: AbortSignal): Promise<boolean> {
+async function askAfterUnresponsiveWindow(signal: AbortSignal, reloading = false): Promise<boolean> {
   const t = mainTranslator()
   const choice = await showPlainMessageDialog({
     owner: questionOwner(),
@@ -332,7 +342,7 @@ async function askAfterUnresponsiveWindow(signal: AbortSignal): Promise<boolean>
     title: 'TapeBox',
     message: t.t('quit.unresponsive.message'),
     closeLabel: t.t('common.cancel'),
-    actions: [{ id: 'quit-anyway', label: t.t('quit.libraryNotSaved.quitAnyway'), danger: true }],
+    actions: [{ id: 'quit-anyway', label: t.t(reloading ? 'nativeMenu.reload' : 'quit.libraryNotSaved.quitAnyway'), danger: true }],
     signal,
   })
   return choice === 'quit-anyway'
@@ -379,7 +389,10 @@ void app.whenReady().then(() => {
   // startup creates the one owner window as soon as readiness is established.
   app.on('activate', showOrCreateMainWindow)
   // macOS and Linux: an OS logout, restart or shutdown, before its quit arrives.
-  powerMonitor.on('shutdown', quit.markSessionEnd)
+  powerMonitor.on('shutdown', () => {
+    reload.cancelPending()
+    quit.markSessionEnd()
+  })
   // The computer's languages, the menu and AppKit's record of the choice, before
   // any window exists.
   void settleLanguageWhenReady().then(startup).catch(handleTerminalStartupFailure)
@@ -392,4 +405,7 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 
-app.on('before-quit', quit.beforeQuit)
+app.on('before-quit', (event) => {
+  reload.beginQuit()
+  quit.beforeQuit(event)
+})

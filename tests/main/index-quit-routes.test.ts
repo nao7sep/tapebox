@@ -28,6 +28,9 @@ const state = vi.hoisted(() => ({
   working: false,
   minimized: false,
   about: (() => {}) as () => void,
+  reload: ((_window: unknown, _force: boolean) => {}) as (window: unknown, force: boolean) => void,
+  reloadPage: vi.fn(),
+  reloadIgnoringCache: vi.fn(),
   boot: [] as string[],
   blockers: new Set<number>(),
   nextBlocker: 0,
@@ -38,7 +41,7 @@ vi.mock('electron', () => {
     static getFocusedWindow(): unknown { return state.focused }
     readonly handlers = new Map<string, Handler>()
     readonly renderer = new Map<string, Handler>()
-    readonly webContents = { on: (event: string, handler: Handler) => { this.renderer.set(event, handler) }, setWindowOpenHandler: vi.fn(), send: vi.fn(), isDestroyed: () => false }
+    readonly webContents = { reload: state.reloadPage, reloadIgnoringCache: state.reloadIgnoringCache, on: (event: string, handler: Handler) => { this.renderer.set(event, handler) }, setWindowOpenHandler: vi.fn(), send: vi.fn(), isDestroyed: () => false }
     constructor() { state.windows.push(this) }
     on(event: string, handler: Handler): this { this.handlers.set(event, handler); return this }
     once(event: string, handler: Handler): this { return this.on(event, handler) }
@@ -106,7 +109,7 @@ vi.mock('@main/window-minimum', () => ({ configureWindowMinimum: vi.fn() }))
 vi.mock('@main/window-activity', () => ({ configureWindowActivity: vi.fn() }))
 vi.mock('@main/window-close', () => ({ configureWindowClose: vi.fn(), registerDraftAnswers: vi.fn(), settleWindowDrafts: vi.fn(async () => { state.order.push('drafts'); return true }) }))
 vi.mock('@main/store/backupStore', () => ({ closeBackupStore: vi.fn(async () => {}) }))
-vi.mock('@main/menu', () => ({ setAboutRequest: (request: () => void) => { state.about = request } }))
+vi.mock('@main/menu', () => ({ setAboutRequest: (request: () => void) => { state.about = request }, setReloadRequest: (request: typeof state.reload) => { state.reload = request } }))
 vi.mock('@main/plain-message-dialog', () => ({ showPlainMessageDialog: vi.fn(async (options: { title: string }) => { state.order.push(options.title === 'quit.workRunning.title' ? 'work-dialog' : 'dialog'); return 'cancel' }) }))
 vi.mock('@main/force-exit', () => ({ forceExitProcess: vi.fn(() => { state.order.push('force-exit') }) }))
 vi.mock('@main/io/spawn', () => ({ killOwnedProcessesNow: vi.fn(() => { state.order.push('kill-tools') }) }))
@@ -122,6 +125,8 @@ let processHandlers: Array<[string, (...args: unknown[]) => void]> = []
 
 /** A fresh Electron entry, started up to its main window. */
 async function launch(): Promise<{ handlers: Map<string, Handler>; renderer: Map<string, Handler> }> {
+  state.reloadPage.mockClear()
+  state.reloadIgnoringCache.mockClear()
   state.blockers.clear()
   state.app.clear()
   state.power.clear()
@@ -340,5 +345,24 @@ describe('playback assertion lifetime', () => {
     expect(state.blockers.size).toBe(1)
     window.renderer.get('destroyed')!()
     expect(state.blockers.size).toBe(0)
+  })
+})
+
+
+describe('renderer reload consent', () => {
+  it.each([false, true])('asks about main-window drafts without stopping background work (force: %s)', async (force) => {
+    const window = await launch()
+    state.working = true
+    const settle = vi.mocked((await import('@main/window-close')).settleWindowDrafts)
+    settle.mockResolvedValueOnce(false)
+    state.reload(window, force)
+    await Promise.resolve()
+    expect(state.reloadPage).not.toHaveBeenCalled()
+    expect(state.reloadIgnoringCache).not.toHaveBeenCalled()
+    settle.mockResolvedValueOnce(true)
+    state.reload(window, force)
+    await vi.waitFor(() => expect(force ? state.reloadIgnoringCache : state.reloadPage).toHaveBeenCalledOnce())
+    expect(state.order).not.toContain('stop-downloads')
+    expect(state.order).not.toContain('save-library')
   })
 })

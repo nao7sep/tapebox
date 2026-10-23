@@ -1,4 +1,4 @@
-import { Menu, type MenuItemConstructorOptions } from 'electron'
+import { BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import type { Translator } from '@shared/i18n/translate'
 
 const APP_NAME = 'TapeBox'
@@ -6,14 +6,14 @@ const APP_NAME = 'TapeBox'
 /**
  * The application menu, in the interface language (localization-conventions,
  * app-chrome-conventions). It is Electron's default menu rebuilt with catalogue
- * labels, because the default's labels are English: the same roles, so every
- * item still sends the system's standard action to whatever has focus, and the
+ * labels, because the default's labels are English. Standard roles send their
+ * actions to whatever has focus; Reload first settles unsaved drafts. The
  * Window menu stays the windows menu macOS lists open windows in. The default's
  * Help menu, which only linked to Electron's own website, is left out.
  *
  * Built from the `nativeMenu.*` keys and rebuilt when the language changes.
  */
-export function applicationMenuTemplate(t: Translator, platform: string, onAbout: () => void = () => {}): MenuItemConstructorOptions[] {
+export function applicationMenuTemplate(t: Translator, platform: string, onAbout: () => void = () => {}, onReload: (window: BrowserWindow, force: boolean) => void = () => {}): MenuItemConstructorOptions[] {
   const mac = platform === 'darwin'
   const item = (role: MenuItemConstructorOptions['role'], label: string): MenuItemConstructorOptions => ({ role, label })
   const separator: MenuItemConstructorOptions = { type: 'separator' }
@@ -75,8 +75,14 @@ export function applicationMenuTemplate(t: Translator, platform: string, onAbout
     label: t.t('nativeMenu.view'),
     role: 'viewMenu',
     submenu: [
-      item('reload', t.t('nativeMenu.reload')),
-      item('forceReload', t.t('nativeMenu.forceReload')),
+      { label: t.t('nativeMenu.reload'), accelerator: 'CmdOrCtrl+R', click: (_item, window) => {
+        const target = window && BrowserWindow.fromId(window.id)
+        if (target) onReload(target, false)
+      } },
+      { label: t.t('nativeMenu.forceReload'), accelerator: 'CmdOrCtrl+Shift+R', click: (_item, window) => {
+        const target = window && BrowserWindow.fromId(window.id)
+        if (target) onReload(target, true)
+      } },
       item('toggleDevTools', t.t('nativeMenu.toggleDevTools')),
       separator,
       item('resetZoom', t.t('nativeMenu.actualSize')),
@@ -100,6 +106,9 @@ export function applicationMenuTemplate(t: Translator, platform: string, onAbout
   return [...(mac ? [appMenu] : []), fileMenu, editMenu, viewMenu, windowMenu]
 }
 
+let reloadRequest: (window: BrowserWindow, force: boolean) => void = () => {}
+export function setReloadRequest(request: typeof reloadRequest): void { reloadRequest = request }
+
 let aboutRequest: () => void = () => {}
 
 /** The app menu's About opens the main window's About dialog through this. */
@@ -108,5 +117,5 @@ export function setAboutRequest(request: () => void): void {
 }
 
 export function installApplicationMenu(t: Translator): void {
-  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate(t, process.platform, () => aboutRequest())))
+  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate(t, process.platform, () => aboutRequest(), (window, force) => reloadRequest(window, force))))
 }
