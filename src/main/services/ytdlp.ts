@@ -9,6 +9,8 @@ import { toJson } from '@main/io/log-format'
 import { writeRecord } from '@main/io/records'
 import { createRunCapture } from '@main/io/run-capture'
 import { maskCredentials, maskYtdlpArgs, maskYtdlpOutput } from '@main/io/mask'
+import { log } from '@main/io/logger'
+import { describeError } from '@shared/error'
 import { nowUtcIso } from '@shared/utc'
 import {
   makeLineBuffer,
@@ -349,13 +351,18 @@ export async function clearStem(libraryDir: string, stem: string): Promise<void>
   let entries: string[]
   try {
     entries = await readdir(libraryDir)
-  } catch {
-    return
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
   }
   const prefix = `${stem}.`
   for (const name of entries) {
     if (name.startsWith(prefix)) {
-      await unlink(join(libraryDir, name)).catch(() => {})
+      try {
+        await unlink(join(libraryDir, name))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
     }
   }
 }
@@ -422,6 +429,11 @@ export async function downloadThumbnail(
   } finally {
     // runToEnd owns the child through close, so cleanup cannot race its writer.
     // A returned raw image is now owned by the caller's image gate.
-    if (raw === null) await clearStem(libraryDir, scratchStem)
+    if (raw === null) {
+      // Optional scratch cleanup must not replace the provider's failure.
+      await clearStem(libraryDir, scratchStem).catch((error: unknown) => {
+        log.warn('thumbnail scratch cleanup failed', { tapeId, error: describeError(error) })
+      })
+    }
   }
 }
