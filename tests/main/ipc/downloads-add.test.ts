@@ -1,6 +1,6 @@
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 
 const handlers = vi.hoisted(() => new Map<string, (req: unknown) => Promise<unknown>>())
@@ -26,14 +26,16 @@ vi.mock('@main/store/config', () => ({
   getLibraryDir: () => '/library',
   getSettings: () => ({ autoStartDownloads: true }),
 }))
-let stems = 0
-vi.mock('@main/core/stem', () => ({
-  // Checking the library for a free stem takes a filesystem round trip.
-  reserveStem: async () => {
-    await new Promise((resolve) => setTimeout(resolve, 5))
-    return `stem${++stems}`
-  },
-}))
+const stat = vi.hoisted(() => vi.fn())
+vi.mock('node:fs/promises', async (original) => ({ ...await original<typeof import('node:fs/promises')>(), stat }))
+beforeEach(() => {
+  tapes.length = 0
+  vi.clearAllMocks()
+  stat.mockReset().mockImplementation(async () => {
+    await Promise.resolve()
+    throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+  })
+})
 vi.mock('@main/queue/manager', () => ({ tick: vi.fn(), cancel: vi.fn() }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
@@ -41,6 +43,24 @@ const { registerDownloadHandlers } = await import('@main/ipc/downloads')
 registerDownloadHandlers()
 
 describe('adding URLs', () => {
+  it.each(['EACCES', 'EIO'])('does not add or announce a tape after a stem lookup fails with %s', async (code) => {
+    const { emit } = await import('@main/ipc/events')
+    const { tick } = await import('@main/queue/manager')
+    stat.mockRejectedValue(Object.assign(new Error('library unavailable'), { code }))
+    await expect(handlers.get('downloads:add')!({ url: 'https://example.test/watch' })).rejects.toMatchObject({ code: 'internal' })
+    await expect(handlers.get('downloads:addBulk')!({ urls: ['https://example.test/watch'] })).rejects.toMatchObject({ code: 'internal' })
+    expect(tapes).toEqual([])
+    expect(emit).not.toHaveBeenCalled()
+    expect(tick).not.toHaveBeenCalled()
+  })
+
+  it('tries another stem when a sidecar already occupies the first name', async () => {
+    stat.mockResolvedValueOnce({})
+    await handlers.get('downloads:add')!({ url: 'https://example.test/watch' })
+    expect(stat).toHaveBeenCalledTimes(2)
+    expect(tapes).toHaveLength(1)
+  })
+
   it('creates one tape when the same URL is added twice at once', async () => {
     tapes.length = 0
     const add = handlers.get('downloads:add')!
