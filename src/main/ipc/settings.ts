@@ -1,3 +1,4 @@
+import { confirmPublicationDurability } from '@main/io/atomic-file'
 import { resolve } from 'node:path'
 import { handle } from './handle'
 import * as config from '@main/store/config'
@@ -234,6 +235,9 @@ async function applySettingsPatch(
   // cleanup of the old copies is a warning on a successful save, never a failure.
   if (relocation) {
     try {
+      if (!await confirmPublicationDurability([paths.config, ...relocation.files.map((file) => file.destination)])) {
+        return { settings: next, warning: OBSOLETE_SOURCES_WARNING }
+      }
       await completeLibraryRelocation(relocation.files)
       log.info('obsolete library sources cleaned after settings commit', {
         from: relocation.fromDir,

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  confirmPublicationDurability,
   copyFileNoOverwrite,
   directorySupportsHardLinks,
   linkOrCopyNoOverwrite,
@@ -482,6 +483,16 @@ describe('directorySupportsHardLinks', () => {
 })
 
 describe('after the commit', () => {
+  it.each([['EIO', false], ['ENOTSUP', true]] as const)('distinguishes directory open %s from unsupported syncing', async (code, confirmed) => {
+    const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    const opened = vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
+      if (String(args[0]) === dir && args[1] === 'r') throw Object.assign(new Error('directory refused'), { code })
+      return real.open(...args)
+    })
+    try { expect(await confirmPublicationDurability([join(dir, 'published')])).toBe(confirmed) }
+    finally { opened.mockRestore() }
+  })
+
   /** Opening the destination directory for its sync yields a handle whose sync
    * and close both fail, as on a volume that rejects directory handles late. */
   async function failDirectorySync(directory: string) {
@@ -503,6 +514,7 @@ describe('after the commit', () => {
     try {
       await writeFileAtomicVia(dest, async (tmp) => { await writeFile(tmp, 'new') })
       expect(opened).toHaveBeenCalledWith(dir, 'r')
+      expect(await confirmPublicationDurability([dest])).toBe(false)
     } finally { opened.mockRestore() }
     expect(await readFile(dest, 'utf8')).toBe('new')
     expect(await readdir(dir)).toEqual(['catalog.json'])
@@ -516,6 +528,7 @@ describe('after the commit', () => {
     try {
       await publishFileNoOverwrite(stage, dest)
       expect(opened).toHaveBeenCalledWith(dir, 'r')
+      expect(await confirmPublicationDurability([dest])).toBe(false)
     } finally { opened.mockRestore() }
     expect(await readFile(dest, 'utf8')).toBe('bytes')
     expect(await exists(stage)).toBe(false)

@@ -10,6 +10,7 @@ import { serializeStoreJson } from '@main/io/atomic-json'
 import { maskYtdlpOutput, maskUrlCredentials } from '@main/io/mask'
 import { log } from '@main/io/logger'
 import {
+  confirmPublicationDurability,
   copyFileNoOverwrite,
   directorySupportsHardLinks,
   unlinkFiles,
@@ -140,6 +141,9 @@ async function exportTape(
     // already succeeded, so a discard failure must say "exported, but the original
     // wasn't removed" rather than leave an untracked orphan while claiming success.
     if (deleteFromApp) {
+      if (!await confirmPublicationDurability(writtenPaths)) {
+        throw new UserFacingError('conflict', message('errors.exportOriginalsKept'))
+      }
       const { failed, busy } = await removeTapes([tapeId], true)
       if (failed.length > 0 || busy.length > 0) {
         throw new UserFacingError('conflict', message('errors.exportOriginalsKept'))

@@ -1,3 +1,5 @@
+import * as fileIo from 'node:fs/promises'
+vi.mock('node:fs/promises', async (original) => ({ ...await original<typeof import('node:fs/promises')>() }))
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -45,7 +47,7 @@ let destinationDir: string
 
 beforeEach(async () => {
   handlers.clear()
-  vi.mocked(removeTapes).mockResolvedValue({ removed: [], failed: [], busy: [] })
+  vi.mocked(removeTapes).mockClear().mockResolvedValue({ removed: [], failed: [], busy: [] })
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-sidecar-'))
   libraryState.dir = join(root, 'library')
   destinationDir = join(root, 'destination')
@@ -64,6 +66,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await rm(root, { recursive: true, force: true })
 })
 
@@ -75,7 +78,7 @@ async function exportedSidecar(name: string): Promise<Record<string, unknown>> {
 
 describe('export:files sidecar', () => {
   it('reports a kept busy original without undoing the completed export', async () => {
-    vi.mocked(removeTapes).mockResolvedValue({ removed: [], failed: [], busy: [tape.id] })
+    vi.mocked(removeTapes).mockClear().mockResolvedValue({ removed: [], failed: [], busy: [tape.id] })
     await expect(handlers.get('export:files')!({ tapeId: tape.id, destinationDir, name: 'Holiday', deleteFromApp: true }))
       .rejects.toMatchObject({ code: 'conflict', userMessage: { key: 'errors.exportOriginalsKept' } })
     expect(await readFile(join(destinationDir, 'Holiday.mp4'), 'utf8')).toBe('video')
@@ -142,4 +145,15 @@ it('masks known credentials in the export copy while preserving sparse and opaqu
   expect(exported.tapebox.renamedAtUtc).toEqual(expect.any(String))
   expect(exported.title).toBe('Original title')
   expect(await readFile(join(destinationDir, 'Portable.mp4'), 'utf8')).toBe('video')
+})
+
+it('keeps the exported bundle and its original when the destination cannot be flushed', async () => {
+  const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
+    if (String(args[0]) === destinationDir && args[1] === 'r') throw Object.assign(new Error('directory I/O failed'), { code: 'EIO' })
+    return real.open(...args)
+  })
+  await expect(handlers.get('export:files')!({ tapeId: tape.id, destinationDir, name: 'Holiday', deleteFromApp: true })).rejects.toThrow()
+  expect(removeTapes).not.toHaveBeenCalled()
+  expect(await readFile(join(destinationDir, 'Holiday.mp4'), 'utf8')).toBe(await readFile(join(libraryState.dir, 'Take.mp4'), 'utf8'))
 })

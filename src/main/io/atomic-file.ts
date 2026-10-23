@@ -294,22 +294,41 @@ export async function fsyncFile(path: string): Promise<void> {
   }
 }
 
-/**
- * fsync a directory so the rename's new entry is itself durable. Best-effort:
- * Windows can't open a directory as a file handle and macOS treats it as a no-op,
- * so a failure there is expected and ignored — it hardens Linux and is harmless
- * elsewhere. It runs after a publication has committed, so it never throws: a
- * failed sync or close must not report a committed file as failed. A hung volume
- * is outside support.
- */
-async function fsyncDirBestEffort(path: string): Promise<void> {
-  const handle = await open(path, 'r').catch(() => null)
-  if (!handle) return
-  try {
-    await handle.sync()
-  } catch {
-    // directory fsync unsupported on this platform
-  } finally {
-    await handle.close().catch(() => {})
+/** Confirm all publication directories before a transaction discards recovery
+ * sources. This final group flush covers both bundle files and the authority
+ * file, which may have been committed by separate persistence owners. */
+export async function confirmPublicationDurability(files: readonly string[]): Promise<boolean> {
+  let confirmed = true
+  for (const directory of new Set(files.map((file) => dirname(file)))) {
+    if (!await fsyncDirBestEffort(directory)) confirmed = false
   }
+  return confirmed
+}
+
+/** Publication has already committed. Unsupported directory sync is the platform
+ * boundary; genuine I/O failure is diagnosed and returns uncertain durability,
+ * never a thrown failure that could roll back an already committed authority. */
+async function fsyncDirBestEffort(path: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  let confirmed = true
+  try {
+    handle = await open(path, 'r')
+    await handle.sync()
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    const unsupported = code === 'EINVAL' || code === 'ENOTSUP' || code === 'EOPNOTSUPP' ||
+      (process.platform === 'win32' && (code === 'EPERM' || code === 'EISDIR' || code === 'EACCES'))
+    if (!unsupported) {
+      confirmed = false
+      log.warn('published directory durability is uncertain', { path, error: describeError(error) })
+    }
+  } finally {
+    if (handle) {
+      try { await handle.close() } catch (error) {
+        confirmed = false
+        log.warn('published directory handle did not close cleanly', { path, error: describeError(error) })
+      }
+    }
+  }
+  return confirmed
 }
