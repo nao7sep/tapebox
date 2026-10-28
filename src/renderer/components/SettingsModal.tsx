@@ -375,7 +375,6 @@ function pickEditable(s: Settings) {
     autoStartDownloads: s.autoStartDownloads,
     maxConcurrentDownloads: s.maxConcurrentDownloads,
     autoplay: s.autoplay,
-    playSound: s.playSound,
     keepAwakeWhilePlaying: s.keepAwakeWhilePlaying,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,
@@ -677,13 +676,6 @@ function GeneralTab({
         checked={draft.autoplay}
         disabled={busy}
         onChange={(v) => onPatch({ autoplay: v })}
-      />
-      <Toggle
-        label={t.t('settings.playSound')}
-        description={t.t('settings.playSoundHint')}
-        checked={draft.playSound}
-        disabled={busy}
-        onChange={(v) => onPatch({ playSound: v })}
       />
       <Toggle
         label={t.t('settings.keepAwake')}

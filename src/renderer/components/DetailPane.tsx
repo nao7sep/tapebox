@@ -18,7 +18,6 @@ import { keyEventIsComposing } from '@renderer/lib/useComposing'
 import { isShortcutBlocked } from '@renderer/lib/dom'
 import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
 import { log } from '@renderer/ipc/log'
-import { useEnforcedMute } from '@renderer/lib/useEnforcedMute'
 import { useKeepAwake } from '@renderer/lib/useKeepAwake'
 import { useVolume } from '@renderer/lib/useVolume'
 import { useCurrentChapter } from '@renderer/lib/currentChapter'
@@ -92,7 +91,6 @@ export function DetailPane({
   const logEntries = useDownloadLogStore((s) => s.entries[tape.id]) ?? NO_ENTRIES
   const logTrimmed = useDownloadLogStore((s) => s.trimmed[tape.id] === true)
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
-  const playSound = useSettingsStore((s) => s.settings?.playSound ?? true)
   // Persisted chaptersPaneWidth is the drag-set INTENT; the displayed width is
   // derived from it and the live detail row (this component's flex row),
   // narrowing toward the pane min when the window shrinks and returning to the
@@ -151,7 +149,6 @@ export function DetailPane({
   // playback error replaces it), so the wake-lock and volume hooks re-attach when
   // the player reappears rather than going silent until the next tape.
   const playerSrc = tape.state === 'downloaded' && !renaming && !playbackError ? mediaUrl : null
-  useEnforcedMute(videoRef, !playSound, playerSrc)
   useKeepAwake(videoRef, playerSrc)
   useVolume(videoRef, playerSrc)
 
@@ -489,7 +486,6 @@ export function DetailPane({
                   src={mediaUrl}
                   posterSrc={posterSrc}
                   autoPlay={resumeRef.current?.play ?? autoplay}
-                  muted={!playSound}
                   onError={(v) => setPlaybackError(describeMediaError(v, tape))}
                   onLoadedMetadata={restorePlayback}
                 />
@@ -520,7 +516,6 @@ export function DetailPane({
         <div className="detail-result-shelf shrink-0 space-y-2 border-t border-line px-4 py-3 empty:hidden">
           <TapeActionResults tapeId={tape.id} />
           <LayoutWriteResult field="chaptersPaneWidth" />
-          <LayoutWriteResult field="volume" />
         </div>
         <div className="mt-auto flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-4 pt-3">
           {/* Primary: re-engage / resolve the current state. */}

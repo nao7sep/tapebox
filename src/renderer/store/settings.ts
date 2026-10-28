@@ -4,7 +4,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { message, type Message } from '@shared/i18n/translate'
 
-export type WritablePlaybackSetting = 'autoplay' | 'playSound'
+export type WritablePlaybackSetting = 'autoplay'
 
 /**
  * Renderer-side mirror of the persisted Settings, hydrated once at app startup
@@ -37,14 +37,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
 const FAILURE_COPY: Record<WritablePlaybackSetting, Message> = {
   autoplay: message('playback.autoplaySaveFailed'),
-  playSound: message('playback.soundSaveFailed'),
 }
 
 /**
  * Patch an app-chrome playback setting. Persisted changes are published only
  * after settings:update confirms them; a rejected write leaves the prior value
  * in use and retains a field-specific result beside the toggles.
- * (The live playback volume is view state, not a setting, and has its own store.)
+ * (Playback volume lives in the layout store; see lib/volume.ts.)
  */
 export async function savePlaybackSettings(
   patch: Partial<Pick<Settings, WritablePlaybackSetting>>,

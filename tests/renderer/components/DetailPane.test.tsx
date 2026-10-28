@@ -216,20 +216,14 @@ describe('selected-tape keyboard ownership', () => {
 })
 
 
-it('reasserts enforced mute on the replacement player after a failed rename', async () => {
-  useSettingsStore.setState({ settings: { ...defaultSettings(), playSound: false } })
+it('turns the native mute button into volume zero', async () => {
   await render()
-  const old = video()
-  ipcInvoke.mockImplementation(async (channel: string) => {
-    if (channel === 'library:rename') throw new Error('rename failed')
-    return {}
-  })
-  await click('Rename')
-  await click('Rename', true)
-  const restored = video()
-  expect(restored).not.toBe(old)
-  await act(async () => { restored.muted = false; restored.dispatchEvent(new Event('volumechange')) })
-  expect(restored.muted).toBe(true)
+  const current = video()
+  await act(async () => { current.muted = true; current.dispatchEvent(new Event('volumechange')) })
+  expect(current.muted).toBe(false)
+  expect(current.volume).toBe(0)
+  await act(async () => current.dispatchEvent(new Event('volumechange')))
+  expect(useLayoutStore.getState().layout?.volume).toBe(0)
 })
 
 it('applies rejected volume rollback to the live element without an echo save', async () => {

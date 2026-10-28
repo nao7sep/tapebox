@@ -45,25 +45,25 @@ describe('settings by set', () => {
   })
 
   it('reads absent sets from built-ins without writing them', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, playSound: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, keepAwakeWhilePlaying: false }))
     await loadSettings()
-    expect(getSettings()).toEqual({ ...defaultSettings(), playSound: false })
-    expect(await savedSets()).toEqual({ playSound: false })
+    expect(getSettings()).toEqual({ ...defaultSettings(), keepAwakeWhilePlaying: false })
+    expect(await savedSets()).toEqual({ keepAwakeWhilePlaying: false })
   })
 
   it('keeps keys it does not know exactly as written through a save', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, version: 20, future: { a: 1 }, playSound: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, version: 20, future: { a: 1 }, keepAwakeWhilePlaying: false }))
     await loadSettings()
     await updateSettings({ autoplay: false })
-    expect(await savedSets()).toEqual({ version: 20, future: { a: 1 }, playSound: false, autoplay: false })
+    expect(await savedSets()).toEqual({ version: 20, future: { a: 1 }, keepAwakeWhilePlaying: false, autoplay: false })
   })
 
   it('writes from the loaded settings, not from the file as it is now', async () => {
     await loadSettings()
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, playSound: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, keepAwakeWhilePlaying: false }))
     await updateSettings({ autoplay: false })
     expect(await savedSets()).toEqual({ autoplay: false })
-    expect(getSettings().playSound).toBe(true)
+    expect(getSettings().keepAwakeWhilePlaying).toBe(true)
   })
 
   it('uses the built-in for a relative export folder, keeps the saved one through other saves, and says so', async () => {
@@ -71,10 +71,10 @@ describe('settings by set', () => {
     expect(await loadSettings()).toEqual({ status: 'loaded', settingsKept: true })
     expect(getSettings()).toEqual({ ...defaultSettings(), autoplay: false })
     expect(log.warn.mock.calls.map(([, fields]) => fields)).toEqual([{ key: 'defaultExportDir' }])
-    await updateSettings({ playSound: false })
-    expect(await savedSets()).toEqual({ defaultExportDir: 'exports', autoplay: false, playSound: false })
+    await updateSettings({ keepAwakeWhilePlaying: false })
+    expect(await savedSets()).toEqual({ defaultExportDir: 'exports', autoplay: false, keepAwakeWhilePlaying: false })
     await updateSettings({ defaultExportDir: '/exports' })
-    expect(await savedSets(), 'the user saving the set replaces the kept copy').toEqual({ defaultExportDir: '/exports', autoplay: false, playSound: false })
+    expect(await savedSets(), 'the user saving the set replaces the kept copy').toEqual({ defaultExportDir: '/exports', autoplay: false, keepAwakeWhilePlaying: false })
   })
 
   it('stops for a library folder it cannot use, rather than look in the wrong place', async () => {
@@ -101,10 +101,10 @@ describe('settings by set', () => {
   })
 
   it('uses built-ins for malformed sets without quarantining or merging nested members', async () => {
-    const raw = { 'openai.endpoint': 'http://remote.example', prompts: {}, language: 'unsupported', playSound: false }
+    const raw = { 'openai.endpoint': 'http://remote.example', prompts: {}, language: 'unsupported', keepAwakeWhilePlaying: false }
     await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ...raw }))
     await loadSettings()
-    expect(getSettings()).toEqual({ ...defaultSettings(), playSound: false })
+    expect(getSettings()).toEqual({ ...defaultSettings(), keepAwakeWhilePlaying: false })
     expect(await savedSets()).toEqual(raw)
     expect(await readdir(dir)).toEqual(['config.json'])
     expect(log.warn.mock.calls.map(([, fields]) => fields)).toEqual([
@@ -121,7 +121,7 @@ describe('settings by set', () => {
   })
 
   it('removes every stored copy equal to its built-in, untouched ones included', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, playSound: true, theme: 'system', autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, keepAwakeWhilePlaying: true, theme: 'system', autoplay: false }))
     await loadSettings()
     await updateSettings({ autoplay: true })
     expect(await savedSets()).toEqual({})
@@ -137,13 +137,13 @@ describe('settings by set', () => {
     await writeFile(paths.config, JSON.stringify({ formatVersion: 1, autoplay: false }))
     const before = await stat(paths.config)
     await loadSettings()
-    await updateSettings({ autoplay: false, playSound: true })
+    await updateSettings({ autoplay: false, keepAwakeWhilePlaying: true })
     expect((await stat(paths.config)).mtimeMs).toBe(before.mtimeMs)
     expect(await readFile(paths.config, 'utf8')).toBe(JSON.stringify({ formatVersion: 1, autoplay: false }))
   })
 
   it('writes nothing at a Save that changes no set, keeping what it could not use', async () => {
-    const text = JSON.stringify({ formatVersion: 1, language: 'unsupported', future: 'x', playSound: true, autoplay: false })
+    const text = JSON.stringify({ formatVersion: 1, language: 'unsupported', future: 'x', keepAwakeWhilePlaying: true, autoplay: false })
     await writeFile(paths.config, text)
     await loadSettings()
     await updateSettings({ autoplay: false })
@@ -256,7 +256,7 @@ describe('settings by set', () => {
 
   it('serializes concurrent set writes without losing either copy', async () => {
     await loadSettings()
-    await Promise.all([updateSettings({ autoplay: false }), updateSettings({ playSound: false })])
-    expect(await savedSets()).toEqual({ autoplay: false, playSound: false })
+    await Promise.all([updateSettings({ autoplay: false }), updateSettings({ keepAwakeWhilePlaying: false })])
+    expect(await savedSets()).toEqual({ autoplay: false, keepAwakeWhilePlaying: false })
   })
 })

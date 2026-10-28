@@ -164,7 +164,7 @@ button:disabled {
   --color-note-line-hover: #7c3aed;
   --color-note-tint: #f5f3ff;
   --color-note-row: #f5f3ff;
-  /* The playback toggles when on. */
+  /* The playback controls when on. */
   --color-autoplay-on: #0284c7;
   --color-sound-on: #db2777;
 }

@@ -55,24 +55,6 @@ describe('truthful renderer persistence', () => {
     expect(inEnglish(state.writeErrors.autoplay)).not.toMatch(/EACCES|private\/tmp|SENTINEL|remote method/i)
   })
 
-  it('settles unrelated setting writes independently when responses finish out of order', async () => {
-    type Saved = { settings: ReturnType<typeof defaultSettings>; warning: string | null }
-    let resolveAutoplay!: (value: Saved) => void
-    let resolveSound!: (value: Saved) => void
-    const autoplayResponse = new Promise<Saved>((resolve) => { resolveAutoplay = resolve })
-    const soundResponse = new Promise<Saved>((resolve) => { resolveSound = resolve })
-    ipcInvoke.mockReturnValueOnce(autoplayResponse).mockReturnValueOnce(soundResponse)
-
-    const autoplayWrite = savePlaybackSettings({ autoplay: false })
-    const soundWrite = savePlaybackSettings({ playSound: false })
-    resolveSound({ settings: { ...defaultSettings(), playSound: false }, warning: null })
-    await soundWrite
-    resolveAutoplay({ settings: { ...defaultSettings(), autoplay: false }, warning: null })
-    await autoplayWrite
-
-    expect(useSettingsStore.getState().settings).toMatchObject({ autoplay: false, playSound: false })
-  })
-
   it('keeps independent layout fields when one concurrent write rejects', async () => {
     let resolveLeft!: (value: typeof defaultLayout) => void
     let rejectVolume!: (error: Error) => void

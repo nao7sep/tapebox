@@ -10,11 +10,13 @@ const PERSIST_DELAY_MS = 500
  * time they switch tapes; here we apply the saved level to each newly-mounted
  * element (keyed on srcKey) and remember whatever they dial in.
  *
- * Volume (loudness) is independent of the muted flag that useEnforcedMute owns,
- * so the two don't interact: this persists the level whether or not sound is on.
+ * Zero is the one muted state: the native mute button is turned into volume 0,
+ * so the toolbar's speaker icon shows muted whenever the player is silent and
+ * raising the volume restores sound. Nothing else mutes the element.
  *
- * Volume is view state, so it lives in the layout store, not settings
- * (persisted-store-separation-conventions). The in-memory mirror is updated
+ * Volume lives in the layout store, which already gives a value adjusted by the
+ * drag a mirror-now, write-later path with rollback; the settings store saves
+ * whole sets through the Settings dialog. The in-memory mirror is updated
  * immediately (so the *next* tape opens at the current level even mid-drag), while
  * the disk write is debounced — the native volume slider fires a flurry of
  * volumechange events, and one layout write per pixel would thrash the file. A
@@ -37,6 +39,13 @@ export function useVolume(videoRef: RefObject<HTMLVideoElement | null>, srcKey: 
     let last = video.volume
     let timer: ReturnType<typeof setTimeout> | undefined
     const onVolumeChange = () => {
+      if (video.muted) {
+        // Unmuting and zeroing each raise another volumechange; the second one
+        // persists the 0.
+        video.muted = false
+        video.volume = 0
+        return
+      }
       const v = video.volume
       if (v === last) return
       last = v

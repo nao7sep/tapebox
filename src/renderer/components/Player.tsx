@@ -5,7 +5,6 @@ type Props = {
   /** Local poster URL, shown only while idle (see below). */
   posterSrc?: string
   autoPlay?: boolean
-  muted?: boolean
   /** Fired when the <video> raises an error; receives the element to inspect. */
   onError?: (video: HTMLVideoElement) => void
   /** Fired once the new source's metadata is ready (so the parent can seek). Used
@@ -49,7 +48,6 @@ function VideoSurface({
   src,
   posterSrc,
   autoPlay,
-  muted,
   onError,
   onLoadedMetadata,
   forwardedRef,
@@ -100,7 +98,6 @@ function VideoSurface({
       src={src}
       poster={showPoster ? posterSrc : undefined}
       autoPlay={autoPlay}
-      muted={muted}
       onPlay={() => setShowPoster(false)}
       onSeeking={() => setShowPoster(false)}
       onLoadedMetadata={() => onLoadedMetadata?.()}

@@ -250,7 +250,7 @@ describe('write-through: a real managed save records the exact bytes after the r
     // First run does not write. The first user change goes through the managed-text
     // choke point, which records after the rename.
     await loadSettings()
-    await updateSettings({ playSound: false })
+    await updateSettings({ keepAwakeWhilePlaying: false })
     const { flushBackupStore } = await import('@main/store/backupStore')
     await flushBackupStore()
 
@@ -384,7 +384,7 @@ describe('manual recovery from captured managed bytes', () => {
       id: 'recover1', name: 'Synthetic recovery authorization', urlPattern: 'example.test', isRegex: false,
       args: '--add-header "Authorization: Bearer synthetic-recovery-secret"', comment: 'Synthetic test value only',
     }
-    await config.updateSettings({ playSound: false, maxConcurrentDownloads: 4, siteProfiles: [profile] })
+    await config.updateSettings({ keepAwakeWhilePlaying: false, maxConcurrentDownloads: 4, siteProfiles: [profile] })
     await session.loadSession()
     const box = { id: 'restorebox', name: 'Saved collection', order: 2 }
     const { tapeFromSidecar } = await import('@main/core/import-classify')
@@ -423,7 +423,7 @@ describe('manual recovery from captured managed bytes', () => {
       const recoveredConfig = await import('@main/store/config')
       const recoveredSession = await import('@main/store/session')
       await expect(recoveredConfig.loadSettings()).resolves.toEqual({ status: 'loaded', settingsKept: false })
-      expect(recoveredConfig.getSettings()).toMatchObject({ playSound: false, maxConcurrentDownloads: 4 })
+      expect(recoveredConfig.getSettings()).toMatchObject({ keepAwakeWhilePlaying: false, maxConcurrentDownloads: 4 })
       expect(recoveredConfig.getSettings().siteProfiles).toEqual([profile])
       await expect(recoveredSession.loadSession()).resolves.toMatchObject({ status: 'loaded' })
       expect(recoveredSession.getBoxes()).toEqual([box])
