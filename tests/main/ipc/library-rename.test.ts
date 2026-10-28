@@ -1,4 +1,5 @@
-import { CatalogOwnership } from '@main/core/catalog-ownership'
+import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
+import { librarySourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
@@ -24,9 +25,9 @@ const renameTapeDurably = vi.hoisted(() => vi.fn())
 const logError = vi.hoisted(() => vi.fn())
 const logWarn = vi.hoisted(() => vi.fn())
 vi.mock('@main/store/session', () => ({
-  filenameOwner: (name: string, exceptId?: string) => new CatalogOwnership(state.tape ? [state.tape] : []).filenameOwner(name, exceptId),
-  stemOwner: (stem: string, exceptId?: string) => new CatalogOwnership(state.tape ? [state.tape] : []).stemOwner(stem, exceptId),
-  sourceOwner: (ref: SourceRef, exceptId?: string) => new CatalogOwnership(state.tape ? [state.tape] : []).sourceOwner(ref, exceptId),
+  filenameOwner: (name: string, exceptId?: string) => catalogFilenameOwner(state.tape ? [state.tape] : [], name, exceptId),
+  stemOwner: (stem: string, exceptId?: string) => catalogStemOwner(state.tape ? [state.tape] : [], stem, exceptId),
+  sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(state.tape ? [state.tape] : [], exceptId).find(ref),
   onCatalogSaveFailure: () => {},
   getTape: (id: string) => state.tape?.id === id ? state.tape : undefined,
   getTapes: () => state.tape ? [state.tape] : [],

@@ -1,9 +1,8 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadSessionFile } from '@main/store/session'
-import { SessionSchema } from '@shared/domain'
 
 // Real filesystem (a temp dir) so the read → parse → quarantine path is exercised
 // end to end. loadSessionFile is the path-taking seam the app singleton wraps.
@@ -99,22 +98,15 @@ describe('loadSessionFile', () => {
 })
 
 
-describe('catalog worker decoding', () => {
-  it('reads a valid current unmarked shape without main-thread JSON parsing or catalog validation', async () => {
+describe('unmarked catalogs', () => {
+  it('reads a valid current unmarked shape without rewriting it', async () => {
     const path = join(dir, 'catalog.json')
     const tape = catalogTape('abc1234567', 'https://example.test/video', 'video.mp4')
     const bytes = JSON.stringify({ tapes: [tape], boxes: [] })
     await writeFile(path, bytes)
-    const parse = vi.spyOn(JSON, 'parse').mockImplementation(() => { throw new Error('main-thread JSON parse') })
-    const validate = vi.spyOn(SessionSchema, 'safeParse').mockImplementation(() => { throw new Error('main-thread catalog validation') })
-    try {
-      const loaded = await loadSessionFile(path)
-      expect(loaded.result).toEqual({ status: 'loaded', tapeCount: 1 })
-      expect(loaded.session.tapes).toEqual([tape])
-    } finally {
-      parse.mockRestore()
-      validate.mockRestore()
-    }
+    const loaded = await loadSessionFile(path)
+    expect(loaded.result).toEqual({ status: 'loaded', tapeCount: 1 })
+    expect(loaded.session.tapes).toEqual([tape])
     expect(await readFile(path, 'utf8')).toBe(bytes)
   })
 })

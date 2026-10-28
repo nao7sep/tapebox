@@ -1,4 +1,5 @@
-import { CatalogOwnership } from '@main/core/catalog-ownership'
+import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
+import { librarySourceIndex } from '@shared/source-identity'
 import { mkdtemp, readdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -53,9 +54,9 @@ function deps(tapes: Map<string, Tape>, overrides: { download: JobDeps['ytdlp'][
     findFinishedBundle,
     session: {
       getTape: (id) => tapes.get(id),
-      filenameOwner: (name, exceptId) => new CatalogOwnership([...tapes.values()]).filenameOwner(name, exceptId),
-      stemOwner: (stem, exceptId) => new CatalogOwnership([...tapes.values()]).stemOwner(stem, exceptId),
-      sourceOwner: (ref, exceptId) => new CatalogOwnership([...tapes.values()]).sourceOwner(ref, exceptId),
+      filenameOwner: (name, exceptId) => catalogFilenameOwner([...tapes.values()], name, exceptId),
+      stemOwner: (stem, exceptId) => catalogStemOwner([...tapes.values()], stem, exceptId),
+      sourceOwner: (ref, exceptId) => librarySourceIndex([...tapes.values()], exceptId).find(ref),
       upsertTape: (tape) => { tapes.set(tape.id, tape) },
       persistNow: async () => overrides.committed,
     },
@@ -114,7 +115,7 @@ describe('a download finished before its catalog commit', () => {
 })
 
 describe('findFinishedBundle', () => {
-  const filenameOwner = (tapes: Tape[]) => (name: string, exceptId?: string) => new CatalogOwnership(tapes).filenameOwner(name, exceptId)
+  const filenameOwner = (tapes: Tape[]) => (name: string, exceptId?: string) => catalogFilenameOwner(tapes, name, exceptId)
   const sidecar = (id: string, fields: Record<string, unknown> = {}) => JSON.stringify({
     formatVersion: 1, id: 'vid1',
     tapebox: { sourceUrl: 'https://example.test/watch', addedAtUtc: ADDED, downloadedAtUtc: FINISHED, mediaFilename: `${id}.mp4`, thumbnailFilename: null, ...fields },

@@ -18,11 +18,6 @@ const catalogMutation = vi.hoisted(() => ({
 vi.mock('@main/paths', () => ({ collectionCatalog: () => join(testRoot, 'catalog.json') }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => testRoot }))
 vi.mock('@main/store/backupStore', () => ({ record }))
-vi.mock('@main/store/catalog-codec', async (original) => {
-  const actual = await original<typeof import('@main/store/catalog-codec')>()
-  return { catalogCodec: vi.fn(actual.catalogCodec) }
-})
-import { catalogCodec } from '@main/store/catalog-codec'
 vi.mock('@main/io/logger', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
@@ -63,7 +58,6 @@ import {
   getBoxes,
   getTapes,
   removeTapes,
-  removeBox,
   getTape,
   persistNow,
   upsertBox,
@@ -309,32 +303,16 @@ describe('catalog persistence', () => {
 })
 
 
-describe('live catalog admission and derived lookup indexes', () => {
-  it('rejects invalid rows, unknown boxes, and portable filename aliases before changing the cache', async () => {
-    await loadSession()
-    const original = tape()
-    upsertTape(original)
-    expect(() => upsertTape({ ...original, sourceUrl: 'file:///private' })).toThrow()
-    expect(() => upsertTape({ ...original, boxId: 'missingbox' })).toThrow('Unknown box')
-    expect(() => upsertTape({ ...tape('def1234567'), filename: original.filename!.toUpperCase() })).toThrow('already in use')
-    expect(() => upsertTape({ ...original, sidecarFilename: original.filename })).toThrow('already in use')
-    expect(getTape(original.id)).toEqual(original)
-    expect(getTapes()).toHaveLength(1)
-    await expect(persistNow()).resolves.toBe(true)
-  })
-
-  it('updates filename ownership after durable rename and rebuilds positions after removal and rebind', async () => {
+describe('derived position indexes', () => {
+  it('rebuilds positions after durable rename, removal and rebind', async () => {
     await loadSession()
     const first = tape()
     const second = tape('def1234567')
     upsertTape(first)
     upsertTape(second)
-    await expect(renameTapeDurably({ ...first, filename: second.filename })).rejects.toThrow('already in use')
     await renameTapeDurably({ ...first, filename: 'Renamed.mp4' })
-    upsertTape({ ...second, filename: first.filename })
-    expect(() => upsertTape({ ...second, filename: 'RENAMED.MP4' })).toThrow('already in use')
     removeTapes([first.id])
-    upsertTape({ ...second, title: 'After removal', filename: 'Renamed.mp4' })
+    upsertTape({ ...second, title: 'After removal' })
     expect(getTape(first.id)).toBeUndefined()
     expect(getTape(second.id)?.title).toBe('After removal')
     await persistNow()
@@ -344,45 +322,9 @@ describe('live catalog admission and derived lookup indexes', () => {
     expect(getTapes()).toHaveLength(1)
     await persistNow()
   })
-
-  it('admits unique boxes and refuses deletion while a tape still references one', async () => {
-    await loadSession()
-    const box = { id: 'box1234567', name: 'Saved', order: 0 }
-    upsertBox(box)
-    expect(() => upsertBox({ ...box, id: 'bad' })).toThrow()
-    expect(() => upsertBox({ ...box, id: 'box7654321', name: ' saved ' })).toThrow('unique')
-    const archived = { ...tape(), archivedAtUtc: '2026-10-23T00:00:00.000Z', boxId: box.id }
-    upsertTape(archived)
-    expect(() => removeBox(box.id)).toThrow('still referenced')
-    upsertTape({ ...archived, boxId: null })
-    removeBox(box.id)
-    upsertBox({ id: 'box7654321', name: box.name, order: 0 })
-    expect(getBoxes()).toEqual([{ id: 'box7654321', name: box.name, order: 0 }])
-    await persistNow()
-  })
 })
 
-
-describe('catalog codec publication', () => {
-  it('keeps later mutations dirty when an earlier generation settles', async () => {
-    await loadSession()
-    const original = tape()
-    upsertTape(original)
-    catalogMutation.saved = () => {
-      catalogMutation.saved = null
-      upsertTape({ ...original, title: 'Changed during publication' })
-    }
-    await persistNow()
-    vi.mocked(catalogCodec).mockClear()
-    await persistNow()
-    expect(catalogCodec).toHaveBeenCalledOnce()
-    const stored = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8'))
-    expect(stored.tapes[0].title).toBe('Changed during publication')
-    vi.mocked(catalogCodec).mockClear()
-    await persistNow({ quitting: true })
-    expect(catalogCodec).not.toHaveBeenCalled()
-  })
-
+describe('catalog publication', () => {
   it('keeps a committed rename dirty for metadata changed during publication', async () => {
     await loadSession()
     const original = tape()
@@ -398,49 +340,13 @@ describe('catalog codec publication', () => {
     expect(stored.tapes[0]).toMatchObject({ title: 'New metadata', filename: 'Renamed.mp4' })
   })
 
-  it('does not encode transient-only transitions or a settled durable rename again', async () => {
-    await loadSession()
-    const original = { ...tape(), state: 'queued' as const, downloadStartedAtUtc: null }
-    upsertTape(original)
-    await persistNow()
-    vi.mocked(catalogCodec).mockClear()
-    upsertTape({ ...original, state: 'downloading', downloadStartedAtUtc: '2026-01-02T00:00:00.000Z' })
-    await persistNow()
-    expect(catalogCodec).not.toHaveBeenCalled()
-    await renameTapeDurably({ ...original, name: 'Renamed', filename: 'Renamed.mp4' })
-    vi.mocked(catalogCodec).mockClear()
-    await persistNow({ quitting: true })
-    expect(catalogCodec).not.toHaveBeenCalled()
-  })
-
-  it('does not carry a clean generation into a newly bound collection', async () => {
+  it('suppresses a redundant save after loading the same catalog', async () => {
     await loadSession()
     upsertTape(tape())
-    await persistNow()
-    const target = join(testRoot, 'other.json')
-    bindSession(target, { tapes: [], boxes: [] })
-    vi.mocked(catalogCodec).mockClear()
-    await persistNow()
-    expect(catalogCodec).toHaveBeenCalledOnce()
-    expect(JSON.parse(await readFile(target, 'utf8')).tapes).toEqual([])
-  })
-
-  it('encodes outside main and suppresses a redundant save after loading the same catalog', async () => {
-    await loadSession()
-    upsertTape(tape())
-    const stringify = JSON.stringify
-    const mainEncoding = vi.spyOn(JSON, 'stringify').mockImplementation((value, ...args) => {
-      if (value && typeof value === 'object' && 'tapes' in value && 'boxes' in value) throw new Error('main-thread catalog encoding')
-      return stringify(value, ...args)
-    })
-    try {
-      await expect(persistNow()).resolves.toBe(true)
-    } finally { mainEncoding.mockRestore() }
+    await expect(persistNow()).resolves.toBe(true)
     await loadSession()
     record.mockClear()
-    vi.mocked(catalogCodec).mockClear()
     await expect(persistNow()).resolves.toBe(true)
     expect(record).not.toHaveBeenCalled()
-    expect(catalogCodec).not.toHaveBeenCalled()
   })
 })

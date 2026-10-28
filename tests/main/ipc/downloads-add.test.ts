@@ -1,4 +1,5 @@
-import { CatalogOwnership } from '@main/core/catalog-ownership'
+import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
+import { librarySourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
@@ -16,9 +17,9 @@ vi.mock('electron', () => ({
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 const tapes = vi.hoisted(() => [] as Tape[])
 vi.mock('@main/store/session', () => ({
-  filenameOwner: (name: string, exceptId?: string) => new CatalogOwnership(tapes).filenameOwner(name, exceptId),
-  stemOwner: (stem: string, exceptId?: string) => new CatalogOwnership(tapes).stemOwner(stem, exceptId),
-  sourceOwner: (ref: SourceRef, exceptId?: string) => new CatalogOwnership(tapes).sourceOwner(ref, exceptId),
+  filenameOwner: (name: string, exceptId?: string) => catalogFilenameOwner(tapes, name, exceptId),
+  stemOwner: (stem: string, exceptId?: string) => catalogStemOwner(tapes, stem, exceptId),
+  sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(tapes, exceptId).find(ref),
   getTapes: () => tapes,
   getTape: (id: string) => tapes.find((t) => t.id === id),
   upsertTape: (tape: Tape) => {

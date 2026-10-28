@@ -1,4 +1,5 @@
-import { CatalogOwnership } from '@main/core/catalog-ownership'
+import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
+import { librarySourceIndex } from '@shared/source-identity'
 import { describe, it, expect } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -90,9 +91,9 @@ function makeDeps(opts: {
     findFinishedBundle: opts.finished ?? (async () => ({ status: 'none' })),
     session: {
       getTape: (id) => tapes.get(id),
-      filenameOwner: (name, exceptId) => new CatalogOwnership([...tapes.values()]).filenameOwner(name, exceptId),
-      stemOwner: (stem, exceptId) => new CatalogOwnership([...tapes.values()]).stemOwner(stem, exceptId),
-      sourceOwner: (ref, exceptId) => new CatalogOwnership([...tapes.values()]).sourceOwner(ref, exceptId),
+      filenameOwner: (name, exceptId) => catalogFilenameOwner([...tapes.values()], name, exceptId),
+      stemOwner: (stem, exceptId) => catalogStemOwner([...tapes.values()], stem, exceptId),
+      sourceOwner: (ref, exceptId) => librarySourceIndex([...tapes.values()], exceptId).find(ref),
       upsertTape: (t) => {
         tapes.set(t.id, t)
       },

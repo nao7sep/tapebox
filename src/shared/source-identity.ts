@@ -29,35 +29,21 @@ export function tapeSourceRef(tape: Tape): SourceRef {
 
 /** A lookup of known sources, each naming the entry it came from. */
 export class SourceIndex {
-  private readonly byUrl = new Map<string, Set<string>>()
-  private readonly byId = new Map<string, Set<string>>()
+  private readonly byUrl = new Map<string, string>()
+  private readonly byId = new Map<string, string>()
 
   /** Record `ref` as belonging to `owner` (a tape id, or any label the caller needs back). */
   add(ref: SourceRef, owner: string): void {
-    for (const [index, key] of [[this.byUrl, canonicalizeForDedup(ref.url)], [this.byId, idKey(ref)]] as const) {
-      if (key === null) continue
-      let owners = index.get(key)
-      if (!owners) index.set(key, owners = new Set())
-      owners.add(owner)
-    }
-  }
-
-  remove(ref: SourceRef, owner: string): void {
-    for (const [index, key] of [[this.byUrl, canonicalizeForDedup(ref.url)], [this.byId, idKey(ref)]] as const) {
-      if (key === null) continue
-      const owners = index.get(key)
-      owners?.delete(owner)
-      if (owners?.size === 0) index.delete(key)
-    }
+    const url = canonicalizeForDedup(ref.url)
+    if (!this.byUrl.has(url)) this.byUrl.set(url, owner)
+    const id = idKey(ref)
+    if (id !== null && !this.byId.has(id)) this.byId.set(id, owner)
   }
 
   /** The owner of a known source that is the same video as `ref`, if any. */
-  find(ref: SourceRef, exceptId?: string): string | undefined {
+  find(ref: SourceRef): string | undefined {
     const id = idKey(ref)
-    for (const owners of [this.byUrl.get(canonicalizeForDedup(ref.url)), id === null ? undefined : this.byId.get(id)]) {
-      if (owners) for (const owner of owners) if (owner !== exceptId) return owner
-    }
-    return undefined
+    return this.byUrl.get(canonicalizeForDedup(ref.url)) ?? (id === null ? undefined : this.byId.get(id))
   }
 
   has(ref: SourceRef): boolean {
