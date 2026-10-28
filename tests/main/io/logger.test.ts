@@ -42,7 +42,7 @@ describe('log records', () => {
   it('writes the final queued record without another main-loop turn', async () => {
     const { records, log, paths } = await freshApp()
     records.openRecords()
-    await records.waitForRecordsInitialization()
+    await records.flushRecords()
     log.error('last fatal entry', { error: { message: 'fatal cause', stack: 'full fatal stack' } })
     records.flushRecordsBeforeExit(500)
     expect(rows(paths.records, 'SELECT message, fields FROM logs')).toEqual([

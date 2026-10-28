@@ -116,40 +116,12 @@ describe('records reads', () => {
     }
   })
 
-  it('waits for the initial schema request before dispatching the first read', async () => {
-    const { records, reader } = await freshApp()
-    const postMessage = Worker.prototype.postMessage
-    const releases: Array<() => void> = []
-    const dispatched: string[] = []
-    const gate = vi.spyOn(Worker.prototype, 'postMessage').mockImplementation(function (this: Worker, value, transferList) {
-      if (value.read) dispatched.push(value.read.op)
-      if (!value.read && !value.table) {
-        releases.push(() => postMessage.call(this, value, transferList))
-        return
-      }
-      postMessage.call(this, value, transferList)
-    })
-    records.openRecords()
-    const read = reader.readRecords({ op: 'sources' })
-    try {
-      await Promise.resolve()
-      expect(releases).toHaveLength(1)
-      expect(dispatched).toEqual([])
-      for (const release of releases.splice(0)) release()
-      expect(await read).toEqual({ sessions: [], tapeIds: [] })
-      expect(dispatched).toEqual(['sources'])
-    } finally {
-      for (const release of releases.splice(0)) release()
-      await Promise.allSettled([read])
-      gate.mockRestore()
-    }
-  })
-
   it('lets the reader report cold database initialization failure instead of claiming ready storage', async () => {
     const { records, reader } = await freshApp()
     const { paths } = await import('@main/paths')
     mkdirSync(paths.records)
     records.openRecords()
+    await records.flushRecords()
     await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow()
   })
 
@@ -270,7 +242,7 @@ describe('records reads', () => {
     const { records, reader } = await freshApp()
     const { paths } = await import('@main/paths')
     records.openRecords()
-    await records.waitForRecordsInitialization()
+    await records.flushRecords()
     const db = new DatabaseSync(paths.records)
     try {
       db.exec("CREATE TRIGGER reject_execution_facts BEFORE INSERT ON execution_facts BEGIN SELECT RAISE(ABORT, 'fixture refused facts'); END")
@@ -288,7 +260,7 @@ describe('records reads', () => {
     const { records, reader } = await freshApp()
     const { paths } = await import('@main/paths')
     records.openRecords()
-    await records.waitForRecordsInitialization()
+    await records.flushRecords()
     logRow(records, '2026-10-04T10:00:01.000Z', 'info', 'kept')
     await records.closeRecords()
     const check = new DatabaseSync(paths.records, { readOnly: true })
@@ -415,19 +387,5 @@ describe('records reads', () => {
     const session = records.openRecords()
     await seed(records)
     expect((await reader.readRecords({ op: 'sources' })).sessions).toEqual([session])
-  })
-
-  it('gives up on a read that does not answer in time, and starts a fresh reader for the next', async () => {
-    const { records, reader } = await freshApp()
-    records.openRecords()
-    await seed(records)
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-
-    const stuck = reader.readRecords({ op: 'sources' })
-    vi.advanceTimersByTime(reader.READ_TIMEOUT_MS)
-    await expect(stuck).rejects.toThrow(/did not answer/)
-
-    vi.useRealTimers()
-    expect((await reader.readRecords({ op: 'sources' })).tapeIds).toEqual(['t2', 't1'])
   })
 })

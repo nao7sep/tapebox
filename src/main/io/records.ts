@@ -15,48 +15,47 @@ import type { RecordTable, RecordRow, ExecutionFacts } from './records-write-wor
 let session: string | null = null
 let fallbackPath: string | null = null
 let worker: Worker | null = null
+let responsePort: MessagePort | null = null
 let closed = false
 let nextId = 1
 let closing: Promise<void> | null = null
 let terminalFlushed = false
-let initialization: Promise<void> = Promise.resolve()
-const responsePorts = new Map<Worker, MessagePort>()
 let storedListener: (() => void) | null = null
-type Pending = { worker: Worker; settled: Promise<void>; resolve: () => void; text: string; level: LogLevel; mirrored: boolean }
+type Pending = { settled: Promise<void>; resolve: () => void; text: string; level: LogLevel; mirrored: boolean }
 const pending = new Map<number, Pending>()
-const retirements = new Map<Worker, Promise<void>>()
 
 function note(message: string, error: unknown): string {
   return toJson({ time: new Date().toISOString(), level: 'error', message, error: describeError(error) })
 }
 
-function retire(current: Worker): Promise<void> {
-  const existing = retirements.get(current)
-  if (existing) return existing
-  const retirement = current.terminate().then(() => {}, (error: unknown) => {
-    toConsole('error', note('records writer did not retire cleanly', error))
-  }).finally(() => { retirements.delete(current); responsePorts.get(current)?.close(); responsePorts.delete(current) })
-  retirements.set(current, retirement)
-  return retirement
+/** Stop the one writer of this launch; its port closes with it. */
+function stopWriter(): Promise<void> {
+  const current = worker
+  const port = responsePort
+  worker = null
+  responsePort = null
+  if (!current) return Promise.resolve()
+  return current.terminate().then(() => {}, (error: unknown) => {
+    toConsole('error', note('records writer did not stop cleanly', error))
+  }).finally(() => port?.close())
 }
 
-function abandon(current: Worker, error: unknown): void {
-  if (worker !== current && ![...pending.values()].some((entry) => entry.worker === current)) return
-  if (worker === current) worker = null
+/** The writer failed or exited: its unfinished records go to the console, and
+ * so do later ones. */
+function abandon(error: unknown): void {
+  if (!worker) return
   toConsole('error', note('records writer failed; unfinished write outcomes are unknown', error))
   for (const [id, entry] of pending) {
-    if (entry.worker !== current) continue
     pending.delete(id)
     if (entry.text && !entry.mirrored) toConsole(entry.level, entry.text)
     entry.resolve()
   }
-  // Later records go to the console.
-  void retire(current)
+  void stopWriter()
 }
 
-function acknowledge(created: Worker, response: RecordWriteResponse): void {
+function acknowledge(response: RecordWriteResponse): void {
   const entry = pending.get(response.id)
-  if (!entry || entry.worker !== created) return
+  if (!entry) return
   pending.delete(response.id)
   for (const diagnostic of response.diagnostics) toConsole('error', diagnostic)
   if (response.console && !entry.mirrored) toConsole(entry.level, response.console)
@@ -66,7 +65,9 @@ function acknowledge(created: Worker, response: RecordWriteResponse): void {
   entry.resolve()
 }
 
-/** Begin a launch synchronously; opening storage runs off thread. */
+/** Begin a launch synchronously; opening storage runs off thread, as the first
+ * queued request. Startup drains it with {@link flushRecords} before the Records
+ * window can read. */
 export function openRecords(): string {
   if (worker) throw new Error('Records are already open.')
   const started = new Date()
@@ -76,47 +77,36 @@ export function openRecords(): string {
   closed = false
   closing = null
   terminalFlushed = false
-  initialization = startWriter()
-  return session
-}
-
-function startWriter(): Promise<void> {
   const { port1, port2 } = new MessageChannel()
   try {
     const module = import.meta.url.endsWith('.ts') ? './records-write-worker.ts' : './records-write-worker.js'
     const created = new Worker(new URL(module, import.meta.url), { workerData: {
       databasePath: paths.records, logsPath: paths.logs, responsePort: port2,
-      fallbackPath: fallbackPath!, session: session!,
+      fallbackPath, session,
     } satisfies RecordWriteData, transferList: [port2] })
-    responsePorts.set(created, port1)
-    port1.on('message', (response: RecordWriteResponse) => acknowledge(created, response))
+    port1.on('message', acknowledge)
     port1.unref()
-    created.on('error', (error: unknown) => abandon(created, error))
-    created.on('exit', (code) => { if (worker === created) abandon(created, new Error(`Records writer exited with code ${code}.`)) })
+    created.on('error', abandon)
+    created.on('exit', (code) => { if (worker === created) abandon(new Error(`Records writer exited with code ${code}.`)) })
     created.unref()
     worker = created
-    return enqueue({}, '', 'error', false)
+    responsePort = port1
+    void enqueue({}, '', 'error', false)
   } catch (error) { port1.close(); port2.close(); toConsole('error', note('records writer could not start; using the console', error)) }
-  return Promise.resolve()
+  return session
 }
 
 export function currentSession(): string | null { return session }
 export function onRecordStored(listener: (() => void) | null): void { storedListener = listener }
 
-/** Wait only for this launch's first schema attempt to settle. It may select the
- * fallback, so the reader still owns opening and validating the database. Later
- * writes never replace this barrier. */
-export function waitForRecordsInitialization(): Promise<void> { return initialization }
-
 function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: LogLevel, mirrored: boolean): Promise<void> {
-  const current = worker
-  if (!current) return Promise.resolve()
+  if (!worker) return Promise.resolve()
   const id = nextId++
   let resolve!: () => void
   const settled = new Promise<void>((done) => { resolve = done })
-  pending.set(id, { worker: current, settled, resolve, text, level, mirrored })
-  try { current.postMessage({ ...request, id } satisfies RecordWriteRequest) }
-  catch (error) { abandon(current, error) }
+  pending.set(id, { settled, resolve, text, level, mirrored })
+  try { worker.postMessage({ ...request, id } satisfies RecordWriteRequest) }
+  catch (error) { abandon(error) }
   return settled
 }
 
@@ -146,15 +136,14 @@ export function flushRecordsBeforeExit(remainingMs: number): void {
   if (terminalFlushed) return
   terminalFlushed = true
   closed = true
-  const current = worker
-  const port = current && responsePorts.get(current)
-  if (!current || !port) return
+  const port = responsePort
+  if (!worker || !port) return
   const completion = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
   enqueue({ completion }, '', 'error', false)
   const outcome = Atomics.wait(new Int32Array(completion), 0, 0, remainingMs)
   let response: ReturnType<typeof receiveMessageOnPort>
-  while ((response = receiveMessageOnPort(port))) acknowledge(current, response.message as RecordWriteResponse)
-  if (outcome === 'timed-out') abandon(current, new Error('Terminal Records drain expired; unfinished write outcomes are unknown.'))
+  while ((response = receiveMessageOnPort(port))) acknowledge(response.message as RecordWriteResponse)
+  if (outcome === 'timed-out') abandon(new Error('Terminal Records drain expired; unfinished write outcomes are unknown.'))
 }
 
 /** Seal admission, drain what is queued, then stop the writer. The quit's exit
@@ -162,12 +151,7 @@ export function flushRecordsBeforeExit(remainingMs: number): void {
 export function closeRecords(): Promise<void> {
   if (closing) return closing
   closed = true
-  closing = (async () => {
-    await flushRecords()
-    const current = worker
-    if (current) { worker = null; void retire(current) }
-    await Promise.all([...retirements.values()])
-  })()
+  closing = flushRecords().then(stopWriter)
   return closing
 }
 

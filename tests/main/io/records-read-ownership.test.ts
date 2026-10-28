@@ -8,7 +8,7 @@ type ReaderWorker = EventEmitter & {
   postMessage: (request: RecordsWorkerRequest) => void
   terminate: ReturnType<typeof vi.fn>
 }
-const state = vi.hoisted(() => ({ workers: [] as ReaderWorker[], initialization: Promise.resolve() }))
+const state = vi.hoisted(() => ({ workers: [] as ReaderWorker[] }))
 
 vi.mock('node:worker_threads', async () => {
   const { EventEmitter } = await import('node:events')
@@ -25,8 +25,6 @@ vi.mock('node:worker_threads', async () => {
   }
 })
 vi.mock('@main/paths', () => ({ paths: { records: '/unused-records-reader-fixture.sqlite3' } }))
-vi.mock('@main/io/logger', () => ({ log: { warn: vi.fn() } }))
-vi.mock('@main/io/records', () => ({ waitForRecordsInitialization: () => state.initialization }))
 
 let reader: typeof import('@main/io/records-read')
 
@@ -34,7 +32,6 @@ beforeEach(async () => {
   vi.useFakeTimers()
   vi.resetModules()
   state.workers = []
-  state.initialization = Promise.resolve()
   reader = await import('@main/io/records-read')
 })
 
@@ -46,96 +43,40 @@ afterEach(async () => {
 })
 
 describe('records reader ownership', () => {
-  it('a late initialization settlement cannot dispatch to a timed-out reader', async () => {
-    let initialize!: () => void
-    state.initialization = new Promise<void>((resolve) => { initialize = resolve })
+  it('waits for a read without a deadline', async () => {
+    const read = reader.readRecords({ op: 'sources' })
+    const worker = state.workers[0]!
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(60_000)
+    worker.emit('message', { id: worker.requests[0]!.id, ok: true, value: { sessions: ['late'], tapeIds: [] } })
+    await expect(read).resolves.toEqual({ sessions: ['late'], tapeIds: [] })
+    expect(worker.terminate).not.toHaveBeenCalled()
+  })
+
+  it('fails the reads of a reader that errs, and an old reader cannot reject its replacement\'s read', async () => {
     const first = reader.readRecords({ op: 'sources' })
     const old = state.workers[0]!
-    const rejected = expect(first).rejects.toThrow('did not answer')
-    await Promise.resolve()
-    expect(old.requests).toEqual([])
-    await vi.advanceTimersByTimeAsync(reader.READ_TIMEOUT_MS)
+    const rejected = expect(first).rejects.toThrow('old failure')
+    old.emit('error', new Error('old failure'))
     await rejected
+    expect(old.terminate).toHaveBeenCalledOnce()
 
     const second = reader.readRecords({ op: 'sources' })
     const current = state.workers[1]!
-    initialize()
-    await Promise.resolve()
-    expect(old.requests).toEqual([])
-    expect(old.terminate).toHaveBeenCalledOnce()
-    expect(current.requests).toHaveLength(1)
-    old.emit('message', { id: 1, ok: true, value: { sessions: ['stale'], tapeIds: [] } })
-    current.emit('message', { id: current.requests[0]!.id, ok: true, value: { sessions: ['current'], tapeIds: [] } })
-    await expect(second).resolves.toEqual({ sessions: ['current'], tapeIds: [] })
-    expect(vi.getTimerCount()).toBe(0)
-
-    const closing = reader.closeRecordsReader()
-    let closed = false
-    void closing.then(() => { closed = true })
-    current.release()
-    await Promise.resolve()
-    expect(closed).toBe(false)
-    old.release()
-    await closing
-    expect(closed).toBe(true)
-  })
-
-  it('close rejects a read waiting for initialization, and late readiness cannot dispatch it', async () => {
-    let initialize!: () => void
-    state.initialization = new Promise<void>((resolve) => { initialize = resolve })
-    const first = reader.readRecords({ op: 'sources' })
-    const old = state.workers[0]!
-    const rejected = expect(first).rejects.toThrow('was closed')
-    const closing = reader.closeRecordsReader()
-    await rejected
-    initialize()
-    await Promise.resolve()
-    expect(old.requests).toEqual([])
-    expect(old.terminate).toHaveBeenCalledOnce()
-    expect(vi.getTimerCount()).toBe(0)
-    await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow('was closed')
-    expect(state.workers).toHaveLength(1)
-    old.release()
-    await closing
-  })
-
-  it('an old timed-out worker error cannot reject the replacement worker request', async () => {
-    const first = reader.readRecords({ op: 'sources' })
-    const rejected = expect(first).rejects.toThrow('did not answer')
-    await vi.advanceTimersByTimeAsync(reader.READ_TIMEOUT_MS)
-    await rejected
-    const old = state.workers[0]!
-
-    const second = reader.readRecords({ op: 'sources' })
-    const current = state.workers[1]!
-    await Promise.resolve()
     old.emit('error', new Error('late old worker error'))
+    old.emit('exit', 1)
     current.emit('message', { id: current.requests[0]!.id, ok: true, value: { sessions: ['current'], tapeIds: [] } })
     await expect(second).resolves.toEqual({ sessions: ['current'], tapeIds: [] })
-    expect(old.terminate).toHaveBeenCalledOnce()
-    expect(vi.getTimerCount()).toBe(0)
-
-    const closing = reader.closeRecordsReader()
-    let closed = false
-    void closing.then(() => { closed = true })
-    current.release()
-    await Promise.resolve()
-    expect(closed).toBe(false)
-    old.release()
-    await closing
-    expect(closed).toBe(true)
   })
 
-  it('close rejects its waiting reads, seals new admission and joins actual retirement', async () => {
+  it('close rejects its waiting reads, seals new admission and waits for the thread to stop', async () => {
     const pending = reader.readRecords({ op: 'sources' })
     const rejected = expect(pending).rejects.toThrow('was closed')
     const worker = state.workers[0]!
     const closing = reader.closeRecordsReader()
-    expect(reader.closeRecordsReader()).toBe(closing)
     await rejected
     await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow('was closed')
     expect(state.workers).toHaveLength(1)
-    expect(vi.getTimerCount()).toBe(0)
     let closed = false
     void closing.then(() => { closed = true })
     await Promise.resolve()
@@ -145,20 +86,13 @@ describe('records reader ownership', () => {
     expect(closed).toBe(true)
   })
 
-  it('a postMessage failure owns its timer, rejection and retirement', async () => {
+  it('a postMessage failure rejects every read on that reader', async () => {
     const first = reader.readRecords({ op: 'sources' })
-    const old = state.workers[0]!
-    const firstRejection = expect(first).rejects.toThrow('old failure')
-    old.emit('error', new Error('old failure'))
-    await firstRejection
-    const next = reader.readRecords({ op: 'sources' })
-    const worker = state.workers[1]!
+    const worker = state.workers[0]!
     worker.postMessage = () => { throw new Error('postMessage unavailable') }
     const failed = reader.readRecords({ op: 'sources' })
-    const nextRejection = expect(next).rejects.toThrow('postMessage unavailable')
+    await expect(first).rejects.toThrow('postMessage unavailable')
     await expect(failed).rejects.toThrow('postMessage unavailable')
-    await nextRejection
     expect(worker.terminate).toHaveBeenCalledOnce()
-    expect(vi.getTimerCount()).toBe(0)
   })
 })

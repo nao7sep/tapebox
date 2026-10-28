@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { ensureDirs, paths, sweepAbandonedStaging } from './paths.js'
 import { notifyCorruptConfig, notifyCorruptSession, notifySettingsKept, notifyStartupFailure } from './startup-dialog.js'
 import { initLogger, isDebugEnabled, log } from './io/logger.js'
-import { closeRecords, flushRecordsBeforeExit, onRecordStored, openRecords } from './io/records.js'
+import { closeRecords, flushRecords, flushRecordsBeforeExit, onRecordStored, openRecords } from './io/records.js'
 import { closeRecordsReader } from './io/records-read.js'
 import { notifyRecordsChanged } from './records-window.js'
 import { describeError } from '@shared/error'
@@ -207,6 +207,8 @@ async function startup(): Promise<void> {
 
   await afterQuit()
   await startMediaServer()
+  // The writer has opened its schema before the Records window can read it.
+  await flushRecords()
   registerIpcHandlers()
   registerDraftAnswers()
   queue.start()

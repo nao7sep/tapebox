@@ -52,62 +52,37 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 
-it('reports a failed writer, sends unfinished and later records to the console and joins its actual retirement', async () => {
+it('reports a failed writer and sends unfinished and later records to the console', async () => {
   records.openRecords()
-  const initialization = records.waitForRecordsInitialization()
   records.writeRecord('logs', { time: 'now', level: 'info', message: 'record', tape_id: null, fields: '{}' }, () => 'record fallback')
   const worker = state.workers[0]!
   const flushed = records.flushRecords()
   worker.emit('error', new Error('writer failed'))
   await flushed
-  await initialization
   expect(worker.terminate).toHaveBeenCalledOnce()
   expect(console.error).toHaveBeenCalledWith(expect.stringContaining('unfinished write outcomes are unknown'))
   expect(console.log).toHaveBeenCalledWith('record fallback')
   expect(records.writeRecord('logs', { message: 'after the failure' }, () => 'after the failure')).toBe(true)
   expect(console.log).toHaveBeenCalledWith('after the failure')
-  expect(state.workers).toHaveLength(1)
-  const closing = records.closeRecords()
-  let closed = false
-  void closing.then(() => { closed = true })
-  await vi.advanceTimersByTimeAsync(1_000)
-  expect(closed).toBe(false)
   worker.emit('error', new Error('stale error'))
   expect(worker.terminate).toHaveBeenCalledOnce()
-  worker.release()
-  await closing
+  expect(state.workers).toHaveLength(1)
+  await records.closeRecords()
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('captures only the first initialization settlement per open and ignores a previous launch acknowledgement', async () => {
-  await records.waitForRecordsInitialization() // Before open, the reader owns any missing-file failure.
+it('drains the queued records at close without a deadline before stopping the writer', async () => {
   records.openRecords()
-  const old = state.workers[0]!
-  const firstInitialization = records.waitForRecordsInitialization()
-  old.emit('message', { id: old.requests[0]!.id, stored: false, diagnostics: [] })
-  await firstInitialization
-  const closed = records.closeRecords()
-  old.release()
-  await closed
-
-  records.openRecords()
-  const current = state.workers[1]!
-  const nextInitialization = records.waitForRecordsInitialization()
-  expect(nextInitialization).not.toBe(firstInitialization)
-  let initialized = false
-  void nextInitialization.then(() => { initialized = true })
-  old.emit('message', { id: old.requests[0]!.id, stored: false, diagnostics: [] })
-  await Promise.resolve()
-  expect(initialized).toBe(false)
-
-  records.writeRecord('logs', { message: 'later pending write' }, () => 'later pending write')
-  current.emit('message', { id: current.requests[0]!.id, stored: false, diagnostics: [] })
-  await nextInitialization
-  expect(initialized).toBe(true)
-  expect(records.waitForRecordsInitialization()).toBe(nextInitialization)
-  expect(current.requests).toHaveLength(2) // The later write is still admitted and held.
-  current.emit('message', { id: current.requests[1]!.id, stored: true, diagnostics: [] })
-  await records.flushRecords()
+  records.writeRecord('logs', { message: 'held' }, () => 'held')
+  const worker = state.workers[0]!
+  const closing = records.closeRecords()
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(worker.terminate).not.toHaveBeenCalled()
+  for (const request of worker.requests) worker.emit('message', { id: request.id, stored: false, diagnostics: [] })
+  worker.release()
+  await closing
+  expect(worker.terminate).toHaveBeenCalledOnce()
+  expect(console.error).not.toHaveBeenCalled()
 })
 
 it('seals writes at close while draining stored acknowledgements exactly once', async () => {

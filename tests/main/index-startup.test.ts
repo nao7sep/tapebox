@@ -64,7 +64,7 @@ vi.mock('@main/paths', () => ({
 }))
 vi.mock('@main/startup-dialog', () => ({ notifyCorruptConfig: vi.fn(), notifyCorruptSession: vi.fn(), notifyStartupFailure: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ initLogger: vi.fn(), isDebugEnabled: () => false, log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
-vi.mock('@main/io/records', () => ({ closeRecords: vi.fn(async () => {}), flushRecordsBeforeExit: vi.fn(() => { order.push('records-drain') }), onRecordStored: vi.fn(), openRecords: () => 'session' }))
+vi.mock('@main/io/records', () => ({ flushRecords: vi.fn(async () => {}), closeRecords: vi.fn(async () => {}), flushRecordsBeforeExit: vi.fn(() => { order.push('records-drain') }), onRecordStored: vi.fn(), openRecords: () => 'session' }))
 vi.mock('@main/io/records-read', () => ({ closeRecordsReader: vi.fn(async () => {}) }))
 vi.mock('@main/records-window', () => ({ notifyRecordsChanged: vi.fn() }))
 vi.mock('@main/store/config', () => ({ getSettings: () => ({ language: 'en', theme: 'system' }), loadSettings: vi.fn(async () => ({ status: 'loaded' })) }))
