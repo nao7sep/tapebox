@@ -11,9 +11,7 @@ import type { RecordTable, RecordRow, ExecutionFacts } from './records-write-wor
 
 /** Records SQLite and fallback filesystem work belong to the writer thread.
  * Main owns admission, acknowledgements and commit notifications. Local storage
- * work has no deadline; only the exit sequence bounds its drain. */
-const CLOSE_DRAIN_TIMEOUT_MS = 1_000
-export const TERMINAL_RECORD_DRAIN_MS = 500
+ * work has no deadline; only the exit sequence's one deadline bounds its drain. */
 let session: string | null = null
 let fallbackPath: string | null = null
 let worker: Worker | null = null
@@ -142,8 +140,9 @@ export function flushRecords(): Promise<void> {
 }
 
 /** A terminal path cannot run another event-loop turn. Wait for the writer's
- * actual ordered barrier, then synchronously receive its full acknowledgements. */
-export function flushRecordsBeforeExit(): void {
+ * actual ordered barrier, at most what remains of the exit deadline, then
+ * synchronously receive its full acknowledgements. */
+export function flushRecordsBeforeExit(remainingMs: number): void {
   if (terminalFlushed) return
   terminalFlushed = true
   closed = true
@@ -152,25 +151,21 @@ export function flushRecordsBeforeExit(): void {
   if (!current || !port) return
   const completion = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
   enqueue({ completion }, '', 'error', false)
-  const outcome = Atomics.wait(new Int32Array(completion), 0, 0, TERMINAL_RECORD_DRAIN_MS)
+  const outcome = Atomics.wait(new Int32Array(completion), 0, 0, remainingMs)
   let response: ReturnType<typeof receiveMessageOnPort>
   while ((response = receiveMessageOnPort(port))) acknowledge(current, response.message as RecordWriteResponse)
   if (outcome === 'timed-out') abandon(current, new Error('Terminal Records drain expired; unfinished write outcomes are unknown.'))
 }
 
-/** Seal admission immediately, bound the drain, and join actual retirement. */
+/** Seal admission, drain what is queued, then stop the writer. The quit's exit
+ * deadline bounds the wait; the writer is never abandoned mid-drain. */
 export function closeRecords(): Promise<void> {
   if (closing) return closing
   closed = true
   closing = (async () => {
-    let timer: NodeJS.Timeout | undefined
-    await Promise.race([flushRecords(), new Promise<void>((resolve) => { timer = setTimeout(resolve, CLOSE_DRAIN_TIMEOUT_MS) })])
-    clearTimeout(timer)
+    await flushRecords()
     const current = worker
-    if (current) {
-      if ([...pending.values()].some((entry) => entry.worker === current)) abandon(current, new Error('Records quit drain expired.'))
-      else { worker = null; void retire(current) }
-    }
+    if (current) { worker = null; void retire(current) }
     await Promise.all([...retirements.values()])
   })()
   return closing

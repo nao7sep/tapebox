@@ -19,31 +19,14 @@
 
 import { describeError } from '@shared/error'
 
-/** Who started a quit. */
-export type QuitOrigin = 'user' | 'session-end'
-
 /** What the user chose after a failed library save; 'cancel' is also the dialog closed. */
 export type QuitChoice = 'cancel' | 'retry' | 'quit-anyway'
 
-export interface QuitBounds {
-  /** Each save of the library catalog and of the layout. */
-  save: number
-  /** Stopping downloads, tool installs, scans and other work in flight. */
-  stop: number
-  /** Stopping the media server and closing the backup history and records. */
-  close: number
-}
-
-/** Each step's bound, in ms, all under the 5 s Windows gives a session end. A
- * session end's steps add up to 3.5 s; a user's quit asks after at most 4 s. */
-export const QUIT_BOUNDS_MS: Record<QuitOrigin, QuitBounds> = {
-  user: { save: 4_000, stop: 4_500, close: 2_000 },
-  'session-end': { save: 1_000, stop: 1_000, close: 500 },
-}
-
-/** A quit running during a session end exits this long after the session end
- * reached it, whatever step it is in. */
-export const SESSION_END_LIMIT_MS = 4_000
+/** The one exit deadline, in ms, for every quit, within the 5 s Windows gives a
+ * session end. It is fixed when the quit begins, and every step draws on what
+ * remains of it. A question the quit asks pauses it: the deadline starts again
+ * when the answer arrives (or a session end closes the question). */
+export const EXIT_DEADLINE_MS = 4_000
 
 /** How long powerMonitor's 'shutdown' marks the session as ending when no quit
  * follows it. Electron reports no cancelled logout (another app can veto it), so
@@ -71,10 +54,10 @@ export interface QuitSteps {
   saveLayout(): Promise<void>
   /** Stops the media server and closes the backup history and records. */
   close(): Promise<void>
-  /** Closes the records synchronously, for a Windows session end, after which
-   * the process may be ended at any time. The catalog keeps its last committed
-   * state; nothing writes it synchronously. */
-  endNow(): void
+  /** Closes the records synchronously within `remainingMs`, for a Windows
+   * session end, after which the process may be ended at any time. The catalog
+   * keeps its last committed state; nothing writes it synchronously. */
+  endNow(remainingMs: number): void
   warn(message: string, details: Record<string, unknown>): void
   exit(forced?: boolean): void
 }
@@ -103,7 +86,7 @@ export interface Quit {
    * only the exit after the steps settle ends it. */
   beforeQuit(event: { preventDefault: () => void }): void
   /** powerMonitor 'shutdown': the session is ending, so nothing asks again and
-   * a running quit closes its question and ends within the limit. With no quit
+   * a running quit closes its question and ends within the deadline. With no quit
    * running, the mark applies to a quit that arrives within
    * {@link SESSION_END_MARK_MS}. */
   markSessionEnd(): void
@@ -116,19 +99,18 @@ export function createQuit(steps: QuitSteps): Quit {
   let sessionEnding = false
   let exited = false
   let allowUnsaved = false
-  /** A stop, layout or close step outlived its bound and may still be running. */
+  /** A stop, layout or close step outlived the deadline and may still be running. */
   let forced = false
-  /** The last library save outlived its bound. A later successful save clears it:
-   * catalog writes run in order, so that one settled first. */
+  /** The last library save outlived the deadline. A later successful save clears
+   * it: catalog writes run in order, so that one settled first. */
   let librarySaveUnsettled = false
-  let limitTimer: ReturnType<typeof setTimeout> | null = null
+  let deadlineAt = 0
   let markTimer: ReturnType<typeof setTimeout> | null = null
   let question: AbortController | null = null
 
   const exit = (force = forced || librarySaveUnsettled): void => {
     if (exited) return
     exited = true
-    if (limitTimer) clearTimeout(limitTimer)
     if (markTimer) clearTimeout(markTimer)
     steps.exit(force)
   }
@@ -137,49 +119,50 @@ export function createQuit(steps: QuitSteps): Quit {
     if (markTimer) { clearTimeout(markTimer); markTimer = null }
   }
 
-  const bounds = (): QuitBounds => QUIT_BOUNDS_MS[sessionEnding ? 'session-end' : 'user']
+  const restartDeadline = (): void => { deadlineAt = Date.now() + EXIT_DEADLINE_MS }
+  const remaining = (): number => Math.max(0, deadlineAt - Date.now())
 
-  const startLimit = (): void => {
-    if (limitTimer) return
-    limitTimer = setTimeout(() => {
-      steps.warn('the session ended before the quit finished; exiting', { limitMs: SESSION_END_LIMIT_MS })
-      exit(true)
-    }, SESSION_END_LIMIT_MS)
+  /** Asks one question with the deadline paused; it starts again on the answer. */
+  async function asking<T>(ask: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    question = new AbortController()
+    try {
+      return await ask(question.signal)
+    } finally {
+      question = null
+      restartDeadline()
+    }
   }
 
-  function warnUnsettled(step: string, settled: Settled<unknown>, boundMs: number): void {
-    if (settled.outcome === 'timeout') steps.warn(`${step} did not finish within the quit bound`, { boundMs })
+  function warnUnsettled(step: string, settled: Settled<unknown>): void {
+    if (settled.outcome === 'timeout') steps.warn(`${step} did not finish before the exit deadline`, { deadlineMs: EXIT_DEADLINE_MS })
     else if (settled.outcome === 'failed') steps.warn(`${step} failed at quit`, { error: describeError(settled.error) })
   }
 
-  function warnStepUnsettled(step: string, settled: Settled<unknown>, boundMs: number): void {
+  async function step(name: string, work: Promise<unknown>): Promise<void> {
+    const settled = await within(work, remaining())
     if (settled.outcome === 'timeout') forced = true
-    warnUnsettled(step, settled, boundMs)
+    warnUnsettled(name, settled)
   }
 
   /** Saves the library until it is saved, the user decides, or the session ends.
    * Resolves false when the user cancelled the quit. */
   async function saveOrAsk(): Promise<boolean> {
     for (;;) {
-      const boundMs = bounds().save
-      const saved = await within(steps.saveLibrary(), boundMs)
+      const saved = await within(steps.saveLibrary(), remaining())
       librarySaveUnsettled = saved.outcome === 'timeout'
       if (saved.outcome === 'done' && saved.value) return true
-      warnUnsettled('the library save', saved, boundMs)
+      warnUnsettled('the library save', saved)
       if (sessionEnding) {
         steps.warn('quitting for the session end without the library save', {})
         return true
       }
       if (allowUnsaved) return true
-      question = new AbortController()
       let choice: QuitChoice
       try {
-        choice = await steps.ask(question.signal)
+        choice = await asking(steps.ask)
       } catch (error) {
         steps.warn('the failed-save question could not be shown; cancelling the quit', { error: describeError(error) })
         choice = 'cancel'
-      } finally {
-        question = null
       }
       // A session end closed the question: it never asks, and goes on.
       if (sessionEnding) return true
@@ -196,44 +179,32 @@ export function createQuit(steps: QuitSteps): Quit {
   /** The user's go-ahead for what the quit ends. A session end never asks. */
   async function confirmed(): Promise<boolean> {
     if (sessionEnding) return true
-    question = new AbortController()
     try {
-      return await steps.confirm(question.signal) || sessionEnding
+      return await asking(steps.confirm) || sessionEnding
     } catch (error) {
       if (sessionEnding) return true
       steps.warn('the quit questions could not be shown; cancelling the quit', { error: describeError(error) })
       return false
-    } finally {
-      question = null
     }
   }
 
   async function run(): Promise<void> {
-    if (!(await confirmed())) {
+    if (!(await confirmed()) || !(await saveOrAsk())) {
       running = false
       steps.resume()
       return
     }
-    if (!(await saveOrAsk())) {
-      running = false
-      steps.resume()
-      return
-    }
-    let b = bounds()
-    warnStepUnsettled('stopping work in flight', await within(steps.stopWork(), b.stop), b.stop)
+    await step('stopping work in flight', steps.stopWork())
     // Finalized downloads may have changed the catalog while work stopped.
-    b = bounds()
     const library = saveOrAsk()
-    const layout = within(steps.saveLayout(), b.save)
+    const layout = steps.saveLayout()
     if (!(await library)) {
       running = false
       steps.resume()
       return
     }
-    b = bounds()
-    warnStepUnsettled('the layout save', await layout, b.save)
-    b = bounds()
-    warnStepUnsettled('closing the stores', await within(steps.close(), b.close), b.close)
+    await step('the layout save', layout)
+    await step('closing the stores', steps.close())
     exit()
   }
 
@@ -245,10 +216,10 @@ export function createQuit(steps: QuitSteps): Quit {
       allowUnsaved = false
       forced = false
       librarySaveUnsettled = false
+      restartDeadline()
       // The session end this quit belongs to no longer expires.
       clearMarkTimer()
-      if (sessionEnding) startLimit()
-      // A step that throws past its bound still exits: quit must never hang.
+      // A step that throws past the deadline still exits: quit must never hang.
       void run().catch((error: unknown) => {
         steps.warn('the quit failed; exiting', { error: describeError(error) })
         exit(true)
@@ -265,17 +236,18 @@ export function createQuit(steps: QuitSteps): Quit {
         }, SESSION_END_MARK_MS)
         return
       }
-      if (sessionEnding) return
       sessionEnding = true
-      startLimit()
       question?.abort()
     },
     endSessionNow() {
       if (exited) return
       sessionEnding = true
+      // This handler begins a quit of its own, or closes a running quit's
+      // question, which restarts the deadline; otherwise it draws on what remains.
+      if (!running || question) restartDeadline()
       question?.abort()
       try {
-        steps.endNow()
+        steps.endNow(remaining())
       } catch (error) {
         steps.warn('the session-end close failed', { error: describeError(error) })
       }

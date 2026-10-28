@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { app } from 'electron'
 import { showPlainMessageDialog } from '@main/plain-message-dialog'
-import { SESSION_END_LIMIT_MS } from '@main/quit'
+import { EXIT_DEADLINE_MS } from '@main/quit'
 
 // The Electron entry's platform quit routes. Closing the main window quits on
 // every platform, including macOS.
@@ -11,9 +11,9 @@ import { SESSION_END_LIMIT_MS } from '@main/quit'
 // raise powerMonitor's 'shutdown' before their quit arrives, Windows raises the
 // main window's 'session-end' and no quit event. Neither route may ask, veto or
 // delay the OS: the macOS quit never shows the failed-save question and ends
-// within the session-end limit, and the Windows handler drains the records,
+// within the exit deadline, and the Windows handler drains the records,
 // kills the owned download tools and exits before it returns, with no
-// synchronous catalog write. quit.test.ts covers the quit's own steps and bounds.
+// synchronous catalog write. quit.test.ts covers the quit's own steps and deadline.
 
 type Handler = (...args: unknown[]) => unknown
 
@@ -123,8 +123,8 @@ vi.mock('@main/i18n', () => ({
 
 let processHandlers: Array<[string, (...args: unknown[]) => void]> = []
 
-/** A fresh Electron entry, started up to its main window. */
-async function launch(): Promise<{ handlers: Map<string, Handler>; renderer: Map<string, Handler> }> {
+/** A fresh Electron entry, ready but still settling its language. */
+async function boot(): Promise<void> {
   state.reloadPage.mockClear()
   state.reloadIgnoringCache.mockClear()
   state.blockers.clear()
@@ -142,7 +142,12 @@ async function launch(): Promise<{ handlers: Map<string, Handler>; renderer: Map
       if (!listeners.includes(listener)) processHandlers.push([event, listener as (...args: unknown[]) => void])
     }
   }
-  await vi.waitFor(() => expect(state.app.has('before-quit')).toBe(true))
+  await vi.waitFor(() => expect(state.power.has('shutdown')).toBe(true))
+}
+
+/** A fresh Electron entry, started up to its main window. */
+async function launch(): Promise<{ handlers: Map<string, Handler>; renderer: Map<string, Handler> }> {
+  await boot()
   state.releaseLanguage()
   await vi.waitFor(() => expect(state.windows).toHaveLength(1))
   state.order.length = 0
@@ -255,17 +260,43 @@ describe('an OS session end delivered to the Electron entry', () => {
     expect(state.order).toEqual(['save-library', 'stop-downloads', 'save-library', 'close-records', 'kill-tools', 'app-exit'])
   })
 
-  it('macOS: work that stalls at a session end is forced off within the limit', async () => {
+  it('macOS: work that stalls at a session end is forced off at the exit deadline', async () => {
     await launch()
     state.stopStalls = true
     state.power.get('shutdown')!({ preventDefault: vi.fn() })
 
-    const started = Date.now()
-    state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order.at(-1)).toBe('force-exit'), { timeout: SESSION_END_LIMIT_MS + 1_000 })
-    expect(Date.now() - started).toBeLessThan(SESSION_END_LIMIT_MS)
+    vi.useFakeTimers()
+    try {
+      state.app.get('before-quit')!({ preventDefault: vi.fn() })
+      await vi.advanceTimersByTimeAsync(EXIT_DEADLINE_MS - 1)
+      expect(state.order).not.toContain('force-exit')
+      await vi.advanceTimersByTimeAsync(1)
+    } finally {
+      vi.useRealTimers()
+    }
     expect(state.order).not.toContain('dialog')
     expect(state.order.slice(-2)).toEqual(['kill-tools', 'force-exit'])
+  })
+})
+
+// Startup takes its next step only after a running quit: a quit that ends the app
+// meets no window, and a cancelled one lets startup carry on.
+describe('a quit that begins during startup', () => {
+  it('ends the app before startup opens the main window', async () => {
+    await boot()
+    state.power.get('shutdown')!({ preventDefault: vi.fn() })
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    state.releaseLanguage()
+    await vi.waitFor(() => expect(state.order.at(-1)).toBe('app-exit'))
+    expect(state.windows).toHaveLength(0)
+  })
+
+  it('lets startup open the main window once the quit is cancelled', async () => {
+    await boot()
+    state.app.get('before-quit')!({ preventDefault: vi.fn() })
+    state.releaseLanguage()
+    await vi.waitFor(() => expect(state.windows).toHaveLength(1))
+    expect(state.order).toEqual(['drafts', 'save-library', 'dialog'])
   })
 })
 

@@ -11,8 +11,8 @@ let launch: string | null = null
 
 /** Best-effort backup hashing and SQLite work run on their own thread.
  * Completed managed writes hand off their exact bytes; failures never undo them.
- * Local storage work has no deadline; only the exit sequence bounds its drain. */
-const CLOSE_DRAIN_TIMEOUT_MS = 1_000
+ * Local storage work has no deadline; only the exit sequence's one deadline
+ * bounds its drain. */
 
 type Pending = { worker: Worker }
 let worker: Worker | null = null
@@ -114,20 +114,10 @@ export function closeBackupStore(): Promise<void> {
   if (closing) return closing
   accepting = false
   closing = (async () => {
-    let timeout: NodeJS.Timeout | undefined
-    await Promise.race([flushBackupStore(), new Promise<void>((resolve) => { timeout = setTimeout(resolve, CLOSE_DRAIN_TIMEOUT_MS) })])
-    clearTimeout(timeout)
+    await flushBackupStore()
     const current = worker
     worker = null
-    if (current) {
-      if ([...pending.values()].some((entry) => entry.worker === current)) {
-        log.warn('backup store: quit drain expired; unfinished record outcomes are unknown', {})
-      }
-      for (const [id, entry] of pending) if (entry.worker === current) pending.delete(id)
-      void retire(current)
-    }
-    waiting.clear()
-    settleDrains()
+    if (current) void retire(current)
     await Promise.all([...retirements.values()])
   })()
   return closing

@@ -135,14 +135,14 @@ it('bounds the terminal barrier, seals writes and preserves the unknown outcome 
   records.writeRecord('logs', { message: 'fatal' }, () => 'fatal fallback')
   const worker = state.workers[0]!
   const wait = vi.spyOn(Atomics, 'wait').mockReturnValue('timed-out')
-  records.flushRecordsBeforeExit()
-  expect(wait).toHaveBeenCalledWith(expect.any(Int32Array), 0, 0, records.TERMINAL_RECORD_DRAIN_MS)
+  records.flushRecordsBeforeExit(500)
+  expect(wait).toHaveBeenCalledWith(expect.any(Int32Array), 0, 0, 500)
   expect(worker.requests.at(-1)!.completion).toBeInstanceOf(SharedArrayBuffer)
   expect(worker.terminate).toHaveBeenCalledOnce()
   expect(console.error).toHaveBeenCalledWith(expect.stringContaining('unfinished write outcomes are unknown'))
   expect(console.log).toHaveBeenCalledWith('fatal fallback')
   const requestCount = worker.requests.length
-  records.flushRecordsBeforeExit()
+  records.flushRecordsBeforeExit(500)
   expect(worker.requests).toHaveLength(requestCount)
   expect(records.writeRecord('logs', { message: 'late' }, () => 'late')).toBe(true)
 })

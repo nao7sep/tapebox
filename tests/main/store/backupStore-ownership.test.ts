@@ -57,18 +57,19 @@ it('settles a failed worker\'s record, ignores its stale reply, and joins the ac
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('seals ordinary admission immediately and gives a held quit drain a finite wait', async () => {
+it('seals ordinary admission immediately and drains what was admitted before stopping the worker', async () => {
   backup.record('/file', Buffer.from('bytes'))
   const worker = state.workers[0]!
   const closing = backup.closeBackupStore()
   expect(backup.closeBackupStore()).toBe(closing)
   backup.record('/ignored', Buffer.from('ignored'))
   expect(worker.messages).toHaveLength(1)
-  await vi.advanceTimersByTimeAsync(1_000)
-  expect(worker.terminate).toHaveBeenCalledOnce()
-  expect(state.warn).toHaveBeenCalledWith('backup store: quit drain expired; unfinished record outcomes are unknown', {})
+  await Promise.resolve()
+  expect(worker.terminate).not.toHaveBeenCalled()
+  worker.emit('message', { id: 1 })
   worker.release()
   await closing
+  expect(worker.terminate).toHaveBeenCalledOnce()
   expect(vi.getTimerCount()).toBe(0)
 })
 

@@ -44,7 +44,7 @@ describe('log records', () => {
     records.openRecords()
     await records.waitForRecordsInitialization()
     log.error('last fatal entry', { error: { message: 'fatal cause', stack: 'full fatal stack' } })
-    records.flushRecordsBeforeExit()
+    records.flushRecordsBeforeExit(500)
     expect(rows(paths.records, 'SELECT message, fields FROM logs')).toEqual([
       { message: 'last fatal entry', fields: JSON.stringify({ error: { message: 'fatal cause', stack: 'full fatal stack' } }) },
     ])
@@ -70,7 +70,7 @@ describe('log records', () => {
     const info = vi.spyOn(console, 'log').mockImplementation(() => {})
     records.openRecords()
     log.info('original record')
-    records.flushRecordsBeforeExit()
+    records.flushRecordsBeforeExit(500)
     const notes = errors.mock.calls.map(([line]) => JSON.parse(String(line)))
     expect(notes).toEqual(expect.arrayContaining([
       expect.objectContaining({ message: 'records database could not be opened; writing to a text file', error: expect.objectContaining({ stack: expect.any(String) }) }),

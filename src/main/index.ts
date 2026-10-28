@@ -30,7 +30,7 @@ import { settleTerminalStartupFailure } from './terminal-startup-failure.js'
 import { configureWindowActivity } from './window-activity.js'
 import { configureWindowClose, registerDraftAnswers, settleWindowDrafts } from './window-close.js'
 import { hasInstalls } from './binaries/manager.js'
-import { createQuit, type QuitChoice } from './quit.js'
+import { createQuit, EXIT_DEADLINE_MS, type QuitChoice } from './quit.js'
 import { forceExitProcess } from './force-exit.js'
 import { killOwnedProcessesNow } from './io/spawn.js'
 import { showPlainMessageDialog } from './plain-message-dialog.js'
@@ -85,6 +85,16 @@ settleLanguageBeforeReady()
 let mainWindow: BrowserWindow | null = null
 let startupReady = false
 let terminalStartupFailure = false
+/** Set while a quit runs. Startup takes its next step only after it: a quit that
+ * ends the app never meets a window or notice that startup would have opened,
+ * and a cancelled quit lets startup carry on where it stopped. */
+let quitRunning: { promise: Promise<void>; resolve: () => void } | null = null
+const afterQuit = (): Promise<void> => quitRunning?.promise ?? Promise.resolve()
+function beginQuitTurn(): void {
+  if (quitRunning) return
+  let resolve!: () => void
+  quitRunning = { promise: new Promise<void>((done) => { resolve = done }), resolve }
+}
 
 async function createMainWindow(): Promise<BrowserWindow> {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow
@@ -181,6 +191,7 @@ async function startup(): Promise<void> {
     log.warn('temporary download staging could not be swept', { error: describeError(error) })
   }
 
+  await afterQuit()
   const configResult = await loadSettings()
   await applyLanguagePreference(getSettings().language)
   registerLanguageHandlers()
@@ -189,15 +200,18 @@ async function startup(): Promise<void> {
   // OS appearance and then switches. A failure before this point follows the OS.
   applyThemePreference(getSettings().theme)
   followOsThemeChanges()
+  await afterQuit()
   await loadDependencies()
   const sessionResult = await loadSession()
   await layout.loadLayout()
 
+  await afterQuit()
   await startMediaServer()
   registerIpcHandlers()
   registerDraftAnswers()
   queue.start()
 
+  await afterQuit()
   startupReady = true
   const initialWindow = await createMainWindow()
 
@@ -208,9 +222,11 @@ async function startup(): Promise<void> {
 
   // If the library file was unreadable, it was set aside (never wiped); tell the
   // user at the app edge — the session store stays UI-free.
+  await afterQuit()
   if (sessionResult.status === 'recovered') {
     await notifyCorruptSession(sessionResult.quarantinePath, initialWindow)
   }
+  await afterQuit()
   if (configResult.status === 'recovered') {
     await notifyCorruptConfig(configResult.quarantinePath, initialWindow)
   } else if (configResult.status === 'loaded' && configResult.settingsKept) {
@@ -228,6 +244,8 @@ function exitNow(): void {
 async function handleTerminalStartupFailure(error: unknown): Promise<void> {
   if (terminalStartupFailure) return
   terminalStartupFailure = true
+  // A quit in progress ends the app first; a cancelled one leaves the failure to tell.
+  await afterQuit()
   // Once the notice has been shown, nothing is left to save: the records worker
   // may be stuck in native I/O, so the exit is forced.
   await settleTerminalStartupFailure(error, {
@@ -245,7 +263,7 @@ const reload = createWindowReload(
 )
 setReloadRequest((window, force) => { void reload.request(window, force) })
 
-/** The quit's steps; quit.ts owns their order and bounds. Stopping work stops
+/** The quit's steps; quit.ts owns their order and the exit deadline. Stopping work stops
  * downloads, tool installs, scans and other in-flight work, whose child
  * processes and library writes must not outlive the app; a download stopped
  * here resumes at the next launch. The media server is in-process, so it dies
@@ -261,6 +279,8 @@ const quit = createQuit({
   ask: askAfterFailedLibrarySave,
   // Cancel leaves the window as it was; only a main window that is gone comes back.
   resume: () => {
+    quitRunning?.resolve()
+    quitRunning = null
     reload.resume()
     resumeWork()
     resumeScans()
@@ -282,9 +302,9 @@ const quit = createQuit({
   },
   // The forced exit follows at once, so only the synchronous records drain can
   // still land the shutdown line.
-  endNow: () => {
+  endNow: (remainingMs) => {
     log.info('shutdown', { reason: 'session-end' })
-    flushRecordsBeforeExit()
+    flushRecordsBeforeExit(remainingMs)
   },
   warn: (message, details) => log.warn(message, details),
   exit: (forced) => {
@@ -376,7 +396,7 @@ async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoic
 // through its close step, a forced exit without any cleanup at all.
 process.on('uncaughtException', (err) => {
   log.error('uncaught exception', { error: describeError(err) })
-  flushRecordsBeforeExit()
+  flushRecordsBeforeExit(EXIT_DEADLINE_MS)
   exitNow()
 })
 process.on('unhandledRejection', (reason) => {
@@ -407,5 +427,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', (event) => {
   reload.beginQuit()
+  beginQuitTurn()
   quit.beforeQuit(event)
 })

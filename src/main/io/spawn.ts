@@ -90,10 +90,10 @@ type StreamingChild = ChildProcessByStdio<null, Readable, Readable> & {
   termination?: Promise<void>
 }
 
-// Stopping a tree fits inside the quit's stop step (quit.ts QUIT_BOUNDS_MS): on
-// POSIX within a session end's 1 s, on Windows, where only a user's quit stops
-// work, within its 4.5 s. A download needs no graceful exit — its leftovers are
-// swept — so the SIGTERM grace is short.
+// The subprocess's own termination bounds, for Cancel as for quit; a quit waits
+// for them only within what remains of its exit deadline (quit.ts), then its
+// forced exit kills the groups. A download needs no graceful exit — its
+// leftovers are swept — so the SIGTERM grace is short.
 const WINDOWS_TREE_KILL_TIMEOUT_MS = 4_000
 const POSIX_TERM_GRACE_MS = 500
 const POSIX_KILL_SETTLE_MS = 300
