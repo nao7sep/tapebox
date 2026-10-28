@@ -79,15 +79,6 @@ it('reports a failed writer, sends unfinished and later records to the console a
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('sends a record to the console rather than queue it without bound behind a slow writer', () => {
-  records.openRecords()
-  const worker = state.workers[0]!
-  for (let index = 0; index < records.RECORD_PENDING_LIMIT - 1; index++) records.writeRecord('logs', { message: 'queued' }, () => 'queued')
-  expect(records.writeRecord('logs', { message: 'over' }, () => 'over the limit')).toBe(true)
-  expect(console.log).toHaveBeenCalledWith('over the limit')
-  expect(worker.requests).toHaveLength(records.RECORD_PENDING_LIMIT)
-})
-
 it('captures only the first initialization settlement per open and ignores a previous launch acknowledgement', async () => {
   await records.waitForRecordsInitialization() // Before open, the reader owns any missing-file failure.
   records.openRecords()
@@ -156,7 +147,7 @@ it('bounds the terminal barrier, seals writes and preserves the unknown outcome 
   expect(records.writeRecord('logs', { message: 'late' }, () => 'late')).toBe(true)
 })
 
-it('shares chunk admission and fallback without publishing an incomplete run', async () => {
+it('shares chunk admission without publishing an incomplete run', async () => {
   const stored = vi.fn()
   records.onRecordStored(stored)
   records.openRecords()
@@ -168,7 +159,4 @@ it('shares chunk admission and fallback without publishing an incomplete run', a
   for (const queued of worker.requests) worker.emit('message', { id: queued.id, stored: false, diagnostics: [] })
   await records.flushRecords()
   expect(stored).not.toHaveBeenCalled()
-  for (let index = 0; index < records.RECORD_PENDING_LIMIT; index++) records.writeOutputChunk('run-key', 'stdout', index, 'chunk')
-  records.writeOutputChunk('run-key', 'stdout', records.RECORD_PENDING_LIMIT, 'overflow')
-  expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"content":"overflow"'))
 })

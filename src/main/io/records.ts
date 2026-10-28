@@ -14,9 +14,6 @@ import type { RecordTable, RecordRow, ExecutionFacts } from './records-write-wor
  * work has no deadline; only the exit sequence bounds its drain. */
 const CLOSE_DRAIN_TIMEOUT_MS = 1_000
 export const TERMINAL_RECORD_DRAIN_MS = 500
-/** Records waiting on the writer at most; beyond it a record goes to the console
- *  rather than queue without bound behind a slow writer (logging-conventions). */
-export const RECORD_PENDING_LIMIT = 1_000
 let session: string | null = null
 let fallbackPath: string | null = null
 let worker: Worker | null = null
@@ -127,16 +124,16 @@ function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: L
 
 /** Whether this call already printed its fallback to the console. */
 export function writeRecord(table: RecordTable, row: RecordRow, text: () => string, level: LogLevel = 'info', mirrored = false, facts?: ExecutionFacts): boolean {
-  if (session === null || closed || !worker || pending.size >= RECORD_PENDING_LIMIT) { toConsole(level, text()); return true }
+  if (session === null || closed || !worker) { toConsole(level, text()); return true }
   const line = text()
   enqueue({ table, row, text: line, facts }, line, level, mirrored)
   return false
 }
 
-/** Bounded best-effort admission shares the same writer and fallback as metadata. */
+/** Output chunks share the same writer and console fallback as metadata. */
 export function writeOutputChunk(runKey: string, stream: 'stdout' | 'stderr', sequence: number, content: string): void {
   const text = toJson({ record: 'run output', session, runKey, stream, sequence, content })
-  if (session === null || closed || !worker || pending.size >= RECORD_PENDING_LIMIT) { toConsole('info', text); return }
+  if (session === null || closed || !worker) { toConsole('info', text); return }
   enqueue({ chunk: { runKey, stream, sequence, content }, text }, text, 'info', false)
 }
 
