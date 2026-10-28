@@ -207,18 +207,8 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: s
 
 async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir: string, signal: AbortSignal, posterReserved: boolean): Promise<Tape> {
   const tapeId = tape.id
-  const assertCurrent = (): Tape => {
-    signal.throwIfAborted()
-    const current = session.getTape(tapeId)
-    const fields = ['sourceUrl', 'state', 'filename', 'sidecarFilename', 'thumbnailFilename', 'title', 'uploader', 'probedAtUtc', 'name'] as const
-    if (!current || fields.some((key) => current[key] !== tape[key])) {
-      throw new UserFacingError('refused', message('refresh.applyStale'))
-    }
-    return current
-  }
   // Refuse a protected sidecar before attempting its optional poster backfill.
   const sidecar = tape.sidecarFilename ? await readSidecarFile(join(dir, tape.sidecarFilename)) : null
-  assertCurrent()
 
   // Backfill a local poster for a downloaded tape that has none — e.g. one
   // downloaded before thumbnails were saved locally. Best-effort: the catalog
@@ -229,10 +219,8 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
     const stem = tape.filename.slice(0, -extname(tape.filename).length)
     try {
       if (await posterStemFree(tape, dir, stem)) {
-        assertCurrent()
         const raw = await downloadThumbnail(tape.id, tape.sourceUrl, dir, signal)
         try {
-          assertCurrent()
           thumbnailFilename = raw ? await saveThumbnailJpeg(tape.id, raw, dir, stem, signal) : null
         } finally {
           // A returned raw file belongs to this caller until conversion or a
@@ -250,7 +238,14 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
       log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })
     }
   }
-  assertCurrent()
+  // The one check that the reviewed tape is still the one being changed, right
+  // before the sidecar and catalog commit; the tape write claim holds it after.
+  signal.throwIfAborted()
+  const reviewed = session.getTape(tapeId)
+  const fields = ['sourceUrl', 'state', 'filename', 'sidecarFilename', 'thumbnailFilename', 'title', 'uploader', 'probedAtUtc', 'name'] as const
+  if (!reviewed || fields.some((key) => reviewed[key] !== tape[key])) {
+    throw new UserFacingError('refused', message('refresh.applyStale'))
+  }
 
   // The sidecar is the bundle's own record: export carries it and import reads
   // its title, uploader and poster back. So it takes everything the catalog is
@@ -258,13 +253,12 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
   // the catalog as it was rather than the two disagreeing. A poster fetched for
   // it stays in the library under the tape's own stem, for the next Apply.
   if (tape.sidecarFilename) {
-    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, assertCurrent, sidecar!)
+    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, reviewed, sidecar!)
   }
 
   // Once the sidecar has committed, Apply finishes with its catalog commit even if
   // it is cancelled or the app is quitting, so the two never disagree; the tape
-  // write claim keeps the fields checked above unchanged. Without a sidecar there
-  // was no await since the last check.
+  // write claim keeps the fields checked above unchanged.
   const current = session.getTape(tapeId)
   if (!current) throw new Error(`Tape not found: ${tapeId}`)
 
@@ -315,7 +309,7 @@ async function writeRefreshedSidecar(
   path: string,
   metadata: RefreshedMetadata,
   thumbnailFilename: string | null,
-  assertCurrent: () => Tape,
+  tape: Tape,
   sidecar: Record<string, unknown>,
 ): Promise<void> {
   let changed = false
@@ -327,11 +321,10 @@ async function writeRefreshedSidecar(
   }
   const tb = sidecar['tapebox']
   if (tb && typeof tb === 'object' && (tb as Record<string, unknown>)['thumbnailFilename'] !== thumbnailFilename) {
-    sidecar['tapebox'] = { ...sidecarNamespace(sidecar, assertCurrent()), thumbnailFilename }
+    sidecar['tapebox'] = { ...sidecarNamespace(sidecar, tape), thumbnailFilename }
     changed = true
   }
   if (!changed) return
-  assertCurrent()
   // not recorded: the sidecar is library-directory content, colocated with binary
   // media, so it is excluded (data-backup conventions) and takes the raw
   // writeJsonAtomic, not the choke point.
@@ -691,8 +684,7 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
   tb['thumbnailFilename'] = thumbnailName
   sidecar['tapebox'] = tb
 
-  const updated = {
-    ...tape,
+  const renamed: session.RenameFields = {
     filename: mediaName,
     sidecarFilename: sidecarName,
     thumbnailFilename: thumbnailName,
@@ -738,7 +730,7 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
     await rollbackBeforeCatalogCommit(err)
   }
 
-  const committed = await session.renameTapeDurably(updated).catch(rollbackBeforeCatalogCommit)
+  const committed = await session.renameTapeDurably(tapeId, renamed).catch(rollbackBeforeCatalogCommit)
   emit('tapes:updated', committed)
 
   // The durable catalog is the commit point. Equivalent-name sidecars retain

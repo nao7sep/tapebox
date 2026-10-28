@@ -94,6 +94,12 @@ afterEach(async () => {
   await rm(testRoot, { recursive: true, force: true })
 })
 
+/** The durable rename of `renamed`'s rename fields onto its row. */
+const rename = (renamed: Tape) => renameTapeDurably(renamed.id, {
+  filename: renamed.filename, sidecarFilename: renamed.sidecarFilename, thumbnailFilename: renamed.thumbnailFilename,
+  name: renamed.name, renamedAtUtc: renamed.renamedAtUtc,
+})
+
 describe('catalog persistence', () => {
   it('keeps ownership current through updates, durable rename, removal and collection binding', async () => {
     await loadSession()
@@ -107,7 +113,7 @@ describe('catalog persistence', () => {
     upsertTape(changed)
     expect(sourceOwner({ url: first.sourceUrl })).toBeUndefined()
     expect(sourceOwner({ url: changed.sourceUrl })).toBe(first.id)
-    const renaming = renameTapeDurably({ ...changed, filename: 'Next.mp4' })
+    const renaming = rename({ ...changed, filename: 'Next.mp4' })
     expect(filenameOwner('First.mp4')).toBe(first.id)
     await renaming
     expect(filenameOwner('First.mp4')).toBeUndefined()
@@ -131,7 +137,7 @@ describe('catalog persistence', () => {
     upsertTape(original)
     await persistNow()
 
-    const committing = renameTapeDurably(updated)
+    const committing = rename(updated)
     expect(getTape(updated.id)?.name).toBe('Take')
     await committing
 
@@ -149,7 +155,7 @@ describe('catalog persistence', () => {
 
     const before = persistNow()
     catalogMutation.failRenamedOnce = true
-    const durableResult = renameTapeDurably(updated).then(
+    const durableResult = rename(updated).then(
       () => null,
       (error: unknown) => error,
     )
@@ -167,50 +173,33 @@ describe('catalog persistence', () => {
     expect(catalog).toEqual({ formatVersion: 1, tapes: [original], boxes: [box] })
   })
 
-  it('publishes a reorder only after the complete catalog order is durable', async () => {
+  it('keeps a reorder whose save failed, as any library edit, and writes it on the retry', async () => {
     await loadSession()
+    const failures = vi.fn()
+    onCatalogSaveFailure(failures)
     const first = tape('abc1234567', 0)
     const second = tape('def1234567', 1)
+    const firstBox = { id: 'boxabc4567', name: 'First', order: 0 }
+    const secondBox = { id: 'boxdef4567', name: 'Second', order: 1 }
     upsertTape(first)
     upsertTape(second)
+    upsertBox(firstBox)
+    upsertBox(secondBox)
     await persistNow()
 
     catalogMutation.failReorderOnce = true
-    await expect(reorderTapesDurably([second.id, first.id])).rejects.toThrow('catalog reorder disk full')
-    expect(getTape(first.id)?.order).toBe(0)
-    expect(getTape(second.id)?.order).toBe(1)
-
-    const unchanged = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8')) as { tapes: Tape[] }
-    expect(unchanged.tapes.map((item) => [item.id, item.order])).toEqual([
-      [first.id, 0],
-      [second.id, 1],
-    ])
-
     await reorderTapesDurably([second.id, first.id])
-    expect(getTape(first.id)?.order).toBe(1)
-    expect(getTape(second.id)?.order).toBe(0)
-  })
-
-  it('keeps box ordering unchanged when its durable catalog write fails', async () => {
-    await loadSession()
-    const first = { id: 'boxabc4567', name: 'First', order: 0 }
-    const second = { id: 'boxdef4567', name: 'Second', order: 1 }
-    upsertBox(first)
-    upsertBox(second)
-    await persistNow()
-
     catalogMutation.failBoxReorderOnce = true
-    await expect(reorderBoxesDurably([second.id, first.id])).rejects.toThrow('box reorder disk full')
-    expect(getBoxes().map((box) => [box.id, box.order])).toEqual([
-      [first.id, 0],
-      [second.id, 1],
-    ])
+    await reorderBoxesDurably([secondBox.id, firstBox.id])
+    expect(failures).toHaveBeenCalledOnce()
+    expect([getTape(first.id)?.order, getTape(second.id)?.order]).toEqual([1, 0])
+    expect(getBoxes().map((box) => [box.id, box.order])).toEqual([[firstBox.id, 1], [secondBox.id, 0]])
 
-    await reorderBoxesDurably([second.id, first.id])
-    expect(getBoxes().map((box) => [box.id, box.order])).toEqual([
-      [first.id, 1],
-      [second.id, 0],
-    ])
+    await expect(persistNow()).resolves.toBe(true)
+    const onDisk = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8')) as { tapes: Tape[]; boxes: typeof firstBox[] }
+    expect(onDisk.tapes.map((item) => [item.id, item.order])).toEqual([[first.id, 1], [second.id, 0]])
+    expect(onDisk.boxes.map((item) => [item.id, item.order])).toEqual([[firstBox.id, 1], [secondBox.id, 0]])
+    onCatalogSaveFailure(() => {})
   })
 
   it('writes a download in flight as its queued self, so queue steps add no catalog versions', async () => {
@@ -310,7 +299,7 @@ describe('derived position indexes', () => {
     const second = tape('def1234567')
     upsertTape(first)
     upsertTape(second)
-    await renameTapeDurably({ ...first, filename: 'Renamed.mp4' })
+    await rename({ ...first, filename: 'Renamed.mp4' })
     removeTapes([first.id])
     upsertTape({ ...second, title: 'After removal' })
     expect(getTape(first.id)).toBeUndefined()
@@ -334,7 +323,7 @@ describe('catalog publication', () => {
       catalogMutation.saved = null
       upsertTape({ ...original, title: 'New metadata' })
     }
-    await renameTapeDurably({ ...original, name: 'Renamed', filename: 'Renamed.mp4' })
+    await rename({ ...original, name: 'Renamed', filename: 'Renamed.mp4' })
     await persistNow()
     const stored = JSON.parse(await readFile(join(testRoot, 'catalog.json'), 'utf8'))
     expect(stored.tapes[0]).toMatchObject({ title: 'New metadata', filename: 'Renamed.mp4' })

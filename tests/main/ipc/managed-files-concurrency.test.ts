@@ -332,7 +332,6 @@ describe('managed filename ownership across producers and cleanup', () => {
     } finally { gate.release() }
     const result = await applying
     expect(result instanceof Error).toBe(outcome === 'stale-input')
-    if (outcome === 'stale-input') expect(thumbnail.save).not.toHaveBeenCalled()
     await expect(readFile(scratch)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(await readFile(join(state.libraryDir, 'Original.jpg'), 'utf8')).toBe('existing literal poster')
     expect(session.getTape(original.id)?.thumbnailFilename).toBeNull()

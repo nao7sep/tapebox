@@ -128,7 +128,7 @@ beforeEach(async () => {
       mediaFilename: 'Take.mp4', thumbnailFilename: 'Take.jpg',
     },
   }))
-  renameTapeDurably.mockImplementation(async (tape: Tape) => {
+  renameTapeDurably.mockImplementation(async (_id: string, fields: Partial<Tape>) => {
     rollbackMutation.order.push('catalog:start')
     rollbackMutation.sourcesVisibleAtCommit = await Promise.all(
       ['Take.mp4', 'Take.json', 'Take.jpg'].map((name) => readFile(join(dir, name)).then(() => true, () => false)),
@@ -137,9 +137,9 @@ beforeEach(async () => {
       ['renamed.mp4', 'renamed.json', 'renamed.jpg'].map((name) => readFile(join(dir, name)).then(() => true, () => false)),
     ).then((visible) => visible.every(Boolean))
     if (rollbackMutation.durableFails) throw new Error('catalog disk full')
-    state.tape = tape
+    state.tape = { ...state.tape!, ...fields }
     rollbackMutation.order.push('catalog:committed')
-    return tape
+    return state.tape
   })
   registerLibraryHandlers()
 })
@@ -243,11 +243,11 @@ describe('library:rename', () => {
   it('gives the media and poster their new names without copying their bytes', async () => {
     const before = await Promise.all(['Take.mp4', 'Take.jpg'].map((name) => stat(join(dir, name))))
     let linkedAtCommit: boolean[] = []
-    renameTapeDurably.mockImplementationOnce(async (tape: Tape) => {
+    renameTapeDurably.mockImplementationOnce(async (_id: string, fields: Partial<Tape>) => {
       const after = await Promise.all(['renamed.mp4', 'renamed.jpg'].map((name) => stat(join(dir, name))))
       linkedAtCommit = after.map((file, index) => file.ino === before[index]!.ino && file.dev === before[index]!.dev)
-      state.tape = tape
-      return tape
+      state.tape = { ...state.tape!, ...fields }
+      return state.tape
     })
 
     await handlers.get('library:rename')!({ tapeId: state.tape!.id, name: 'renamed' })

@@ -4,6 +4,7 @@ import { collectionCatalog } from '@main/paths'
 import { getLibraryDir } from './config'
 import { quarantineFile, serializeStoreJson, writeManagedJsonBytes } from '@main/io/atomic-json'
 import { StoreAccessError } from '@main/io/store-access'
+import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
@@ -48,12 +49,6 @@ const boxPositions = new Map<string, number>()
 /** True from a failed catalog save until the next successful one. */
 let saveFailing = false
 let saveFailureListener: (() => void) | null = null
-/** Only physically outstanding intents are kept. A later admission must not
- * discard an earlier successful save: it is the base if the later save fails.
- * Real organization edits invalidate every intent of that list, including ABA;
- * metadata and other lists remain independent. No history survives settlement. */
-const tapeReorderIntents = new Map<string, Set<object>>()
-const boxReorderIntents = new Set<object>()
 
 /** How catalog.json is written. */
 const CATALOG_JSON = { formatVersion: FORMAT_VERSIONS.catalog, schema: SessionSchema }
@@ -184,12 +179,20 @@ export function bindSession(target: string, session: Session): void {
   cancelScheduledSave()
   catalogPath = target
   cache = session
-  tapeReorderIntents.clear()
-  boxReorderIntents.clear()
   lastWritten = encodeCatalog(session)
   rebuildIndexes()
   loaded = true
   saveFailing = false
+}
+
+/** Publish catalog.json at `destination` for a library move, at its turn in the
+ * save order, saving the cache first so no save lands between the two. */
+export function copyCatalogTo(destination: string, signal?: AbortSignal): Promise<{ crossDevice: boolean }> {
+  assertLoaded()
+  return enqueueCatalogWrite(async () => {
+    await writeCatalog(cache)
+    return linkOrCopyNoOverwrite(catalogPath!, destination, signal)
+  })
 }
 
 /** A move preserves the same cache and durable bytes at its new location. */
@@ -238,11 +241,6 @@ export function getTape(id: string): Tape | undefined {
 export function upsertTape(tape: Tape): void {
   assertLoaded()
   const idx = tapePositions.get(tape.id) ?? -1
-  const previous = cache.tapes[idx]
-  if (!previous || tapeListKey(previous) !== tapeListKey(tape) || previous.order !== tape.order) {
-    if (previous) tapeReorderIntents.delete(tapeListKey(previous))
-    tapeReorderIntents.delete(tapeListKey(tape))
-  }
   if (idx >= 0) cache.tapes[idx] = tape
   else {
     tapePositions.set(tape.id, cache.tapes.length)
@@ -255,130 +253,67 @@ function tapeListKey(tape: Tape): string {
   return tape.archivedAtUtc ? tape.boxId === null ? 'unboxed' : `box:${tape.boxId}` : 'inbox'
 }
 
-/** Persist a submitted source list's order before publishing it. Later authored
- * organization wins over an older candidate; every acknowledgment includes the
- * current source plus its originally owned rows now moved elsewhere. */
+/** Reindex one list to `requestedIds` first, its other members after by their
+ * current order. Ids not in the list are ignored. */
+function reorderList(tapes: Tape[], source: string, requestedIds: readonly string[]): Tape[] {
+  const members = tapes.filter((tape) => tapeListKey(tape) === source)
+  const memberIds = new Set(members.map((tape) => tape.id))
+  const named = requestedIds.filter((id) => memberIds.has(id))
+  const namedIds = new Set(named)
+  const sequence = [
+    ...named,
+    ...members.filter((tape) => !namedIds.has(tape.id)).sort((a, b) => a.order - b.order).map((tape) => tape.id),
+  ]
+  const orderById = new Map(sequence.map((id, order) => [id, order]))
+  return tapes.map((tape) => {
+    const order = orderById.get(tape.id)
+    return order === undefined || order === tape.order ? tape : { ...tape, order }
+  })
+}
+
+/** Reorder the list the first submitted tape is in, then await its save. Like
+ * any other library edit it applies at once, so a later edit wins over it; a
+ * failed save keeps it in the library and is the save owner's to retry and
+ * report. Returns the list's rows as they are once saved. */
 export async function reorderTapesDurably(orderedIds: readonly string[]): Promise<Tape[]> {
   assertLoaded()
-  // Capture intent before reserving/waiting for the catalog writer. Inferring
-  // the source from a surviving id inside the queue could reorder its new list.
   const submittedIds = [...new Set(orderedIds)]
-  const byId = new Map(cache.tapes.map((tape) => [tape.id, tape]))
-  const first = submittedIds.map((id) => byId.get(id)).find((tape) => tape !== undefined)
-  const source = first ? tapeListKey(first) : null
-  const originalIds = new Set(cache.tapes.filter((tape) => tapeListKey(tape) === source).map((tape) => tape.id))
-  const requestedIds = submittedIds.filter((id) => originalIds.has(id))
-  const intent = {}
-  if (source !== null) {
-    const intents = tapeReorderIntents.get(source) ?? new Set<object>()
-    intents.add(intent)
-    tapeReorderIntents.set(source, intents)
-  }
+  const first = submittedIds.map(getTape).find((tape) => tape !== undefined)
+  if (!first) return []
+  const source = tapeListKey(first)
+  cache.tapes = reorderList(cache.tapes, source, submittedIds)
+  await persistNow()
+  return cache.tapes.filter((tape) => tapeListKey(tape) === source)
+}
+
+export type RenameFields = Pick<Tape, 'filename' | 'sidecarFilename' | 'thumbnailFilename' | 'name' | 'renamedAtUtc'>
+
+/** Commit one tape's rename fields to catalog.json before publishing them. This
+ * is the transaction boundary for a filesystem rename: new paths must not become
+ * authoritative until the durable catalog names them. At its turn in the save
+ * order the catalog is written with the fields, which then apply to the row as
+ * it is by then; nothing else changes them meanwhile. Returns the current row. */
+export async function renameTapeDurably(id: string, fields: RenameFields): Promise<Tape> {
+  assertLoaded()
+  const renamed = (tapes: Tape[]): Tape[] => tapes.map((tape) => tape.id === id ? { ...tape, ...fields } : tape)
   cancelScheduledSave()
   try {
     await enqueueCatalogWrite(async () => {
-      if (source === null || !tapeReorderIntents.get(source)?.has(intent)) {
-        await writeCatalog(cache)
-        return
-      }
-      const namedIds = new Set(requestedIds)
-      const sequence = [
-        ...requestedIds,
-        ...cache.tapes
-          .filter((tape) => tapeListKey(tape) === source && !namedIds.has(tape.id))
-          .sort((a, b) => a.order - b.order)
-          .map((tape) => tape.id),
-      ]
-      const orderById = new Map(sequence.map((id, order) => [id, order]))
-      const candidateTapes = cache.tapes.map((tape) => {
-        const order = orderById.get(tape.id)
-        return order === undefined || order === tape.order ? tape : { ...tape, order }
-      })
-
-      await writeCatalog({ ...cache, tapes: candidateTapes })
-
-      if (tapeReorderIntents.get(source)?.has(intent)) {
-        // Apply only order to current rows, preserving newer metadata/downloads.
-        cache.tapes = cache.tapes.map((tape) => {
-          const order = orderById.get(tape.id)
-          return order === undefined || order === tape.order ? tape : { ...tape, order }
-        })
-      } else {
-        // The already-published candidate is obsolete. Organization uses the
-        // existing debounced consistency boundary; its current cache is saved
-        // by this same serialized owner, never by a second corrective writer.
-        scheduleSave()
-      }
+      if (!tapePositions.has(id)) throw new Error(`Tape not found during durable rename: ${id}`)
+      await writeCatalog({ ...cache, tapes: renamed(cache.tapes) })
+      cache.tapes = renamed(cache.tapes)
     })
   } catch (error) {
-    // Admission cancelled the ordinary timer. Preserve current metadata and
-    // organization through that same owner after a rejected candidate; never
-    // retry the rejected order itself.
+    // Admission cancelled the ordinary timer; the cache still needs it.
     scheduleSave()
     throw error
-  } finally {
-    if (source !== null) {
-      const intents = tapeReorderIntents.get(source)
-      intents?.delete(intent)
-      if (intents?.size === 0) tapeReorderIntents.delete(source)
-    }
   }
-  return source === null ? [] : cache.tapes.filter((tape) => tapeListKey(tape) === source || originalIds.has(tape.id))
-}
-
-/** Commit one tape's rename fields to catalog.json before publishing them to the
- * in-memory session. This is the transaction boundary for a filesystem rename:
- * new paths must not become authoritative until the durable catalog names them.
- * Return the merged current row so callers publish its newer unrelated fields.
- * Ordinary queue/progress updates keep using the debounced upsert above. */
-export async function renameTapeDurably(tape: Tape): Promise<Tape> {
-  assertLoaded()
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-    saveTimer = null
-  }
-  // Reserve the serialized position immediately. Computing the candidate outside
-  // the queued task would let an ordinary persist called while an older write is
-  // settling slip in ahead and make candidate paths durable before this transaction.
-  let committed = tape
-  await enqueueCatalogWrite(async () => {
-    const idx = tapePositions.get(tape.id) ?? -1
-    if (idx < 0) throw new Error(`Tape not found during durable rename: ${tape.id}`)
-    const tapes = [...cache.tapes]
-    tapes[idx] = applyRenameFields(tapes[idx]!, tape)
-    const candidate = { ...cache, tapes }
-
-    await writeCatalog(candidate)
-
-    // The durable rename is now authoritative. Preserve unrelated fields changed
-    // by queue/progress work while the write was in flight, and let its already-
-    // scheduled ordinary persist serialize the combined current state afterward.
-    const currentIdx = tapePositions.get(tape.id) ?? -1
-    if (currentIdx >= 0) {
-      committed = applyRenameFields(cache.tapes[currentIdx]!, tape)
-      cache.tapes[currentIdx] = committed
-    }
-  })
-  return committed
-}
-
-function applyRenameFields(current: Tape, renamed: Tape): Tape {
-  return {
-    ...current,
-    filename: renamed.filename,
-    sidecarFilename: renamed.sidecarFilename,
-    thumbnailFilename: renamed.thumbnailFilename,
-    name: renamed.name,
-    renamedAtUtc: renamed.renamedAtUtc,
-  }
+  return getTape(id)!
 }
 
 export function removeTapes(ids: string[]): void {
   assertLoaded()
   const set = new Set(ids)
-  for (const tape of cache.tapes) {
-    if (set.has(tape.id)) tapeReorderIntents.delete(tapeListKey(tape))
-  }
   cache.tapes = cache.tapes.filter((i) => !set.has(i.id))
   rebuildIndexes()
   scheduleSave()
@@ -392,7 +327,6 @@ export function getBoxes(): Box[] {
 export function upsertBox(box: Box): void {
   assertLoaded()
   const idx = boxPositions.get(box.id) ?? -1
-  if (idx < 0 || cache.boxes[idx]!.order !== box.order) boxReorderIntents.clear()
   if (idx >= 0) cache.boxes[idx] = box
   else {
     boxPositions.set(box.id, cache.boxes.length)
@@ -401,58 +335,28 @@ export function upsertBox(box: Box): void {
   scheduleSave()
 }
 
-/** Persist the complete box order before publishing it to the cache. */
+/** Reorder the boxes, the submitted ones first and any others after by their
+ * current order, then await the save, as {@link reorderTapesDurably} does. */
 export async function reorderBoxesDurably(orderedIds: readonly string[]): Promise<Box[]> {
   assertLoaded()
-  const submittedIds = [...new Set(orderedIds)]
-  const intent = {}
-  boxReorderIntents.add(intent)
-  cancelScheduledSave()
-  try {
-    await enqueueCatalogWrite(async () => {
-      if (!boxReorderIntents.has(intent)) {
-        await writeCatalog(cache)
-        return
-      }
-      const existingIds = new Set(cache.boxes.map((box) => box.id))
-      const namedIds = submittedIds.filter((id) => existingIds.has(id))
-      const named = new Set(namedIds)
-      const sequence = [
-        ...namedIds,
-        ...cache.boxes
-          .filter((box) => !named.has(box.id))
-          .sort((a, b) => a.order - b.order)
-          .map((box) => box.id),
-      ]
-      const orderById = new Map(sequence.map((id, order) => [id, order]))
-      const candidateBoxes = cache.boxes.map((box) => {
-        const order = orderById.get(box.id)
-        return order === undefined || order === box.order ? box : { ...box, order }
-      })
-
-      await writeCatalog({ ...cache, boxes: candidateBoxes })
-      if (boxReorderIntents.has(intent)) {
-        cache.boxes = cache.boxes.map((box) => {
-          const order = orderById.get(box.id)
-          return order === undefined || order === box.order ? box : { ...box, order }
-        })
-      } else scheduleSave()
-    })
-  } catch (error) {
-    scheduleSave()
-    throw error
-  } finally {
-    boxReorderIntents.delete(intent)
-  }
+  const existingIds = new Set(cache.boxes.map((box) => box.id))
+  const named = [...new Set(orderedIds)].filter((id) => existingIds.has(id))
+  const namedIds = new Set(named)
+  const sequence = [
+    ...named,
+    ...cache.boxes.filter((box) => !namedIds.has(box.id)).sort((a, b) => a.order - b.order).map((box) => box.id),
+  ]
+  const orderById = new Map(sequence.map((id, order) => [id, order]))
+  cache.boxes = cache.boxes.map((box) => {
+    const order = orderById.get(box.id)
+    return order === undefined || order === box.order ? box : { ...box, order }
+  })
+  await persistNow()
   return cache.boxes
 }
 
 export function removeBox(id: string): void {
   assertLoaded()
-  if (boxPositions.has(id)) {
-    boxReorderIntents.clear()
-    tapeReorderIntents.delete(`box:${id}`)
-  }
   cache.boxes = cache.boxes.filter((g) => g.id !== id)
   rebuildIndexes()
   scheduleSave()
@@ -518,8 +422,8 @@ export async function persistNow(options: { quitting?: boolean } = {}): Promise<
   }
 }
 
-function enqueueCatalogWrite(write: () => Promise<void>): Promise<void> {
+function enqueueCatalogWrite<T>(write: () => Promise<T>): Promise<T> {
   const run = persistChain.then(write)
-  persistChain = run.catch(() => {})
+  persistChain = run.then(() => {}, () => {})
   return run
 }

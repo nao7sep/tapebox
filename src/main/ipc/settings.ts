@@ -18,6 +18,7 @@ import {
 import { UserFacingError } from '@main/user-facing-error'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
+import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
 import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import { settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
@@ -92,6 +93,10 @@ async function relocateIfLibraryDirChanged(
   const result = await relocateLibrary(fromDir, toDir, entries, {
     signal,
     onProgress: (progress) => emit('settings:libraryMoveProgress', progress),
+    // The catalog's owner copies it, so no catalog save can land mid-copy.
+    publish: (name, source, destination, signal) => name === COLLECTION_CATALOG
+      ? session.copyCatalogTo(destination, signal)
+      : linkOrCopyNoOverwrite(source, destination, signal),
   })
   if (result.moved) {
     log.info('library destinations published; awaiting settings commit', {

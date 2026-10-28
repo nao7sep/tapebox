@@ -61,6 +61,9 @@ export type RelocateOptions = {
   signal?: AbortSignal
   /** Called once before the first file and after each file is published. */
   onProgress?: (progress: RelocateProgress) => void
+  /** Publishes one file at its destination without overwrite; the owner of a
+   * file another writer may change, such as the catalog, publishes it itself. */
+  publish?: (name: string, source: string, destination: string, signal?: AbortSignal) => Promise<{ crossDevice: boolean }>
 }
 
 /**
@@ -112,7 +115,7 @@ export async function relocateLibrary(
   entries: readonly string[],
   options: RelocateOptions = {},
 ): Promise<RelocateResult> {
-  const { signal, onProgress } = options
+  const { signal, onProgress, publish } = options
   if (sameDir(fromDir, toDir)) return { moved: false, reason: 'same-dir' }
 
   await mkdir(toDir, { recursive: true })
@@ -168,7 +171,7 @@ export async function relocateLibrary(
       await mkdir(dirname(destination), { recursive: true })
       // not recorded: relocation preserves an already-accounted media bundle at
       // a new managed location; it does not author new content.
-      const copied = await linkOrCopyNoOverwrite(source, destination, signal)
+      const copied = await (publish ? publish(name, source, destination, signal) : linkOrCopyNoOverwrite(source, destination, signal))
       crossDevice = crossDevice || copied.crossDevice
       movedFiles.push({ name, source, destination })
       progress.filesDone += 1
