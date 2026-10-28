@@ -8,7 +8,6 @@ import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
 import { isImportableUrl } from '@shared/url'
 import { librarySourceIndex } from '@shared/source-identity'
-import { SCAN_PAGE_SIZE } from '@shared/ipc-contract'
 import type { Tape } from '@shared/domain'
 import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { UserFacingError } from '@main/user-facing-error'
@@ -18,33 +17,6 @@ import { message } from '@shared/i18n/translate'
 function inboxFrontOrders(count: number): number[] {
   const inbox = session.getTapes().filter((i) => !i.archivedAtUtc)
   return frontOrders(inbox.map((i) => i.order), count)
-}
-
-/** Scan selection is read in pages; only the current delivery batch is retained. */
-export async function addScannedUrls(urls: AsyncIterable<string>, count: number, signal: AbortSignal): Promise<number> {
-  let minimum = Infinity
-  for (const tape of session.getTapes()) if (!tape.archivedAtUtc) minimum = Math.min(minimum, tape.order)
-  const base = minimum === Infinity ? 0 : minimum - count
-  let added = 0
-  let batch: Tape[] = []
-  const publish = (): void => { if (batch.length) { emit('tapes:added', batch); batch = [] } }
-  try {
-    for await (const url of urls) {
-      signal.throwIfAborted()
-      if (!isImportableUrl(url) || session.sourceOwner({ url })) continue
-      const id = await reserveStem(getLibraryDir())
-      signal.throwIfAborted()
-      if (session.sourceOwner({ url })) continue
-      const tape = queuedTape(id, url, base + added++)
-      session.upsertTape(tape)
-      batch.push(tape)
-      if (batch.length === SCAN_PAGE_SIZE) publish()
-    }
-    return added
-  } finally {
-    publish()
-    queue.tick()
-  }
 }
 
 export function registerDownloadHandlers(): void {

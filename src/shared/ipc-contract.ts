@@ -9,7 +9,7 @@ import type { RecordDetail, RecordKind, RecordSources, RecordsPage, RecordsQuery
  * Request/response contract for ipcMain.handle / ipcRenderer.invoke channels.
  * Channel names are 'domain:action', so a channel's owner reads from its name.
  *
- * This file is pure — safe to import from main, preload, and
+ * This file is type-only and pure — safe to import from main, preload, and
  * renderer. The renderer's typed client (preload contextBridge) and the main
  * registrar both derive from this single source of truth.
  *
@@ -124,13 +124,10 @@ export type IpcCalls = {
   'binaries:cancelCheck':  { req: undefined;                         res: BinaryCancelResult }
 
   // ── Scan (page scan) ──────────────────────────────────────────────
-  // Scan results and selection stay in the main-owned temporary store.
-  'scan:start':   { req: { url: string }; res: { sessionId: string } }
-  'scan:cancel':  { req: { sessionId: string }; res: void }
-  'scan:release': { req: { sessionId: string }; res: void }
-  'scan:page':    { req: { sessionId: string; search: string; start: number }; res: ScanPage }
-  'scan:select':  { req: { sessionId: string; selected: boolean; sourceUrl?: string; search?: string }; res: void }
-  'scan:add':     { req: { sessionId: string }; res: { added: number } }
+  // The Scan-a-page modal subscribes to scan:* events, then calls scan:start.
+  // Returns a sessionId used to filter events and cancel the stream.
+  'scan:start':            { req: { url: string };                   res: { sessionId: string } }
+  'scan:cancel':           { req: { sessionId: string };             res: void }
 
   // ── Native dialogs ───────────────────────────────────────────────────────
   'dialog:pickDirectory':  { req: { title?: string; initialDirectory?: string }; res: string | null }
@@ -261,19 +258,6 @@ export type RefreshedMetadata = {
   probedAtUtc: string
 }
 
-/** Transport batch size, never a limit on the number of scan results. */
-export const SCAN_PAGE_SIZE = 256
-export type ScanPage = {
-  entries: Array<ScanResult & { selected: boolean }>
-  start: number
-  matched: number
-  total: number
-  selected: number
-  inLibrary: number
-  unavailable: number
-  status: 'running' | 'done' | 'stopped' | 'failed'
-}
-
 export type ScanResult = {
   sourceId: string
   sourceUrl: string
@@ -329,6 +313,10 @@ export type IpcEvents = {
 
   // Progress of a library move started by settings:update, per file published.
   'settings:libraryMoveProgress': { filesDone: number; filesTotal: number; bytesDone: number; bytesTotal: number }
+
+  'scan:entry':        { sessionId: string; entry: ScanResult }
+  'scan:done':         { sessionId: string; totalCount: number }
+  'scan:error':        { sessionId: string; code: 'scan-failed' }
 
   'binaries:progress':        { name: BinaryName; operationId: string; percent: number; phase: 'download' | 'verify' | 'install' }
 

@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { SCAN_PAGE_SIZE, type ScanPage, type ScanResult } from '@shared/ipc-contract'
-import { ipcInvoke } from '@renderer/ipc/client'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ScanResult } from '@shared/ipc-contract'
+import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
 import { presentFailure } from '@renderer/lib/presentFailure'
@@ -15,172 +15,187 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
 
 type Props = { onClose: () => void; initialUrl?: string }
+
 type ScanSubmission = {
   sessionId: string | null
   retired: boolean
   running: boolean
   stopRequested: boolean
   stopFailure: Message | null
-  pageFailure: Message | null
   cancellation: Promise<void> | null
-  released: boolean
 }
+
+/** Fixed row height (px) of the results list, which renders only visible rows. */
 const ROW_HEIGHT = 32
 
-/** Main owns the full result set and selection. The modal retains one viewport
- * page and the active row's title; a single request coalesces polling and input. */
+/**
+ * Scan a page for videos — a URL that lists multiple videos (a creator's uploads,
+ * search results, a category). The user pastes a page URL, scans it, reviews the
+ * videos in a checkable table, and adds the selected ones in bulk.
+ *
+ * The modal owns the scan session: it subscribes to scan:* once on mount and
+ * filters events by the current sessionId (set when scan:start resolves), so a
+ * re-scan cleanly supersedes the previous stream.
+ *
+ * A scan can stream thousands of entries, so arrivals are deduplicated through a
+ * Set, buffered, and committed to state once per animation frame, and the list
+ * renders only the rows in view.
+ */
 export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const { url, setUrl, onPaste } = useClipboardUrl(true, initialUrl)
   const { composingRef, handlers: composing } = useComposing()
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
-  const [page, setPage] = useState<ScanPage | null>(null)
+  const [entries, setEntries] = useState<ScanResult[]>([])
   const [error, setError] = useState<Message | null>(null)
+  const t = useI18n()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [adding, setAdding] = useState(false)
-  const [selecting, setSelecting] = useState(false)
-  const [active, setActive] = useState<ScanResult | null>(null)
-  const [scrollTop, setScrollTop] = useState(0)
-  const [viewportHeight, setViewportHeight] = useState(0)
-  const t = useI18n()
+
   const liveRef = useRef(true)
   const scanRef = useRef<ScanSubmission | null>(null)
+  // Arrivals not yet committed to state, the sourceUrls already seen this scan,
+  // and the pending frame that will commit them.
+  const pendingRef = useRef<ScanResult[]>([])
+  const seenRef = useRef<Set<string>>(new Set())
+  const frameRef = useRef<number | null>(null)
   const listRef = useRef<HTMLUListElement | null>(null)
-  const queryRef = useRef({ search: '', start: 0, revision: 0 })
-  const pageInFlight = useRef(false)
-  const pagePending = useRef(false)
-  const addingRef = useRef(false)
-  const selectingRef = useRef(false)
-  const refreshRef = useRef<() => void>(() => {})
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
+  // Rows have one fixed height for virtualization, so a long title is cut short
+  // there; the row last focused or tapped shows its complete title and reason
+  // beneath the list (responsive-interface-conventions).
+  const [activeUrl, setActiveUrl] = useState<string | null>(null)
+
+  function flushPending() {
+    frameRef.current = null
+    if (!liveRef.current) return
+    const batch = pendingRef.current
+    if (batch.length === 0) return
+    pendingRef.current = []
+    setEntries((prev) => prev.concat(batch))
+    const selectable = batch.filter((entry) => !entry.alreadyInLibrary && !entry.unavailable)
+    if (selectable.length > 0) {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        for (const entry of selectable) next.add(entry.sourceUrl)
+        return next
+      })
+    }
+  }
+
+  function resetPending() {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+    frameRef.current = null
+    pendingRef.current = []
+    seenRef.current = new Set()
+  }
 
   function ownsSubmission(submission: ScanSubmission): boolean {
     return liveRef.current && !submission.retired && scanRef.current === submission
   }
 
-  function refreshPage() {
-    const submission = scanRef.current
-    if (!liveRef.current || !submission?.sessionId || addingRef.current || selectingRef.current) return
-    if (pageInFlight.current) { pagePending.current = true; return }
-    pageInFlight.current = true
-    pagePending.current = false
-    const query = { ...queryRef.current }
-    void ipcInvoke('scan:page', { sessionId: submission.sessionId, search: query.search, start: query.start })
-      .then((result) => {
-        if (!ownsSubmission(submission) || query.revision !== queryRef.current.revision) return
-        setPage(result)
-        setSelecting(false)
-        if (submission.pageFailure) {
-          const previous = submission.pageFailure
-          submission.pageFailure = null
-          setError((current) => current === previous ? null : current)
-        }
-        submission.running = result.status === 'running'
-        setScanning(submission.running)
-        setScanned(true)
-        if (result.status === 'failed') setError(message('scan.failed'))
-      })
-      .catch((err) => {
-        if (!ownsSubmission(submission) || query.revision !== queryRef.current.revision) return
-        setSelecting(false)
-        submission.pageFailure = presentFailure(err, message('scan.failed'), 'page scan results failed')
-        setError(submission.pageFailure)
-      })
-      .finally(() => {
-        pageInFlight.current = false
-        if (liveRef.current && pagePending.current) refreshRef.current()
-      })
-  }
-  refreshRef.current = refreshPage
-
-  function changeQuery(nextSearch: string, start: number) {
-    queryRef.current = { search: nextSearch, start, revision: queryRef.current.revision + 1 }
-    refreshRef.current()
-  }
-
-  function releaseSubmission(submission: ScanSubmission) {
-    if (!submission.sessionId || submission.released) return
-    submission.released = true
-    const sessionId = submission.sessionId
-    void ipcInvoke('scan:release', { sessionId }).catch((err) => {
-      log.warn('page scan release failed', { sessionId, error: describeError(err) })
-    })
-  }
-
-  function retireSubmission() {
-    const submission = scanRef.current
-    scanRef.current = null
-    queryRef.current.revision += 1
-    pagePending.current = false
-    if (!submission) return
-    submission.retired = true
-    releaseSubmission(submission)
-  }
-
   function cancelSubmission(submission: ScanSubmission): Promise<void> {
+    // Stop and dismissal can overlap. One request owns cancellation of this exact
+    // session until the bridge settles; main owns the process through its exit.
     if (submission.cancellation) return submission.cancellation
-    if (!submission.sessionId) return Promise.resolve()
     const sessionId = submission.sessionId
-    queryRef.current.revision += 1
+    if (!sessionId) return Promise.resolve()
     const cancellation = ipcInvoke('scan:cancel', { sessionId })
       .then(() => {
+        submission.sessionId = null
         submission.running = false
         if (!ownsSubmission(submission)) return
-        const previous = submission.stopFailure
+        if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+        flushPending()
+        const previousFailure = submission.stopFailure
         submission.stopFailure = null
-        if (previous) setError((current) => current === previous ? null : current)
+        if (previousFailure) setError((current) => current === previousFailure ? null : current)
         setScanning(false)
         setScanned(true)
-        refreshRef.current()
       })
       .catch((err) => {
         if (ownsSubmission(submission)) {
           submission.stopRequested = false
           submission.stopFailure = presentFailure(err, message('scan.stopFailed'), 'page scan cancellation failed')
           setError(submission.stopFailure)
-        } else log.warn('page scan cancellation failed after dismissal', { sessionId, error: describeError(err) })
+        } else {
+          log.warn('page scan cancellation failed after dismissal', { sessionId, error: describeError(err) })
+        }
       })
       .finally(() => { submission.cancellation = null })
     submission.cancellation = cancellation
     return cancellation
   }
 
+  function retireSubmission() {
+    const submission = scanRef.current
+    scanRef.current = null
+    if (!submission) return
+    submission.retired = true
+    if (submission.sessionId) void cancelSubmission(submission)
+    // A pending start still owns its reply. Its continuation cancels the returned
+    // ID instead of installing an orphan session into a retired modal.
+  }
+
   useEffect(() => {
     liveRef.current = true
-    const timer = setInterval(() => {
-      const submission = scanRef.current
-      if (submission && (submission.running || submission.pageFailure) && !document.hidden) refreshRef.current()
-    }, 250)
+    const offs = [
+      ipcOn('scan:entry', (e) => {
+        if (e.sessionId !== scanRef.current?.sessionId) return
+        // The same video can surface twice on a listing page; dedup by sourceUrl so the
+        // list keys and the (sourceUrl-keyed) selection stay unambiguous.
+        if (seenRef.current.has(e.entry.sourceUrl)) return
+        seenRef.current.add(e.entry.sourceUrl)
+        pendingRef.current.push(e.entry)
+        frameRef.current ??= requestAnimationFrame(flushPending)
+      }),
+      ipcOn('scan:done', (e) => {
+        const submission = scanRef.current
+        if (submission && e.sessionId === submission.sessionId) {
+          submission.running = false
+          setScanning(false)
+          setScanned(true)
+        }
+      }),
+      ipcOn('scan:error', (e) => {
+        const submission = scanRef.current
+        if (submission && e.sessionId === submission.sessionId) {
+          submission.running = false
+          setScanning(false)
+          setScanned(true)
+          setError(message('scan.failed'))
+        }
+      }),
+    ]
     return () => {
       liveRef.current = false
-      clearInterval(timer)
+      offs.forEach((off) => off())
+      resetPending()
       retireSubmission()
     }
   }, [])
 
   function scan() {
     const v = url.trim()
-    if (!v || scanRef.current?.running || addingRef.current || selectingRef.current || selecting) return
+    if (!v || scanRef.current?.running) return
     retireSubmission()
     const submission: ScanSubmission = {
-      sessionId: null, retired: false, running: true, stopRequested: false,
-      stopFailure: null, pageFailure: null, cancellation: null, released: false,
+      sessionId: null, retired: false, running: true, stopRequested: false, stopFailure: null, cancellation: null,
     }
     scanRef.current = submission
-    queryRef.current = { search: '', start: 0, revision: queryRef.current.revision + 1 }
-    setPage(null)
+    resetPending()
+    setEntries([])
+    setSelected(new Set())
     setSearch('')
-    setActive(null)
-    setScrollTop(0)
-    if (listRef.current) listRef.current.scrollTop = 0
     setError(null)
     setScanned(false)
     setScanning(true)
     void ipcInvoke('scan:start', { url: v })
-      .then((result) => {
-        submission.sessionId = result.sessionId
-        if (!ownsSubmission(submission)) releaseSubmission(submission)
-        else if (submission.stopRequested) void cancelSubmission(submission)
-        else refreshRef.current()
+      .then((r) => {
+        submission.sessionId = r.sessionId
+        if (submission.retired || submission.stopRequested) void cancelSubmission(submission)
       })
       .catch((err) => {
         submission.running = false
@@ -196,66 +211,72 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
 
   async function stopScan() {
     const submission = scanRef.current
-    if (!submission || addingRef.current) return
+    if (!submission) return
+    // The user can press Stop before start returns an ID. Keep that intent with
+    // the submission so the reply cannot turn it into a running scan later.
     submission.stopRequested = true
     if (submission.sessionId) await cancelSubmission(submission)
   }
 
-  const total = page?.total ?? 0
-  const matched = page?.matched ?? 0
-  const selected = page?.selected ?? 0
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return entries
+    return entries.filter((e) => (e.title ?? '').toLowerCase().includes(q))
+  }, [entries, search])
+
+  // The list grows up to its max height as rows arrive; re-measure when the row
+  // count changes (scrolling measures too).
   useLayoutEffect(() => {
     if (listRef.current) setViewportHeight(listRef.current.clientHeight)
-  }, [matched])
-  const range = visibleRowRange(scrollTop, viewportHeight, ROW_HEIGHT, matched)
-  // A previous page below the new viewport cannot stand in for its first row.
-  // Keep the scroll extent while the matching page is fetched on upward scroll.
-  const visibleRows = page && page.start <= range.start
-    ? page.entries.slice(range.start - page.start, Math.max(0, range.end - page.start))
-    : []
-  // The transport contract bounds a page; never expand a renderer cache to match
-  // the result count. Scroll requests replace this page instead of appending.
-  const rows = visibleRows.slice(0, SCAN_PAGE_SIZE)
+  }, [filtered.length])
 
-  async function select(selected: boolean, sourceUrl?: string) {
-    const submission = scanRef.current
-    if (!submission?.sessionId || addingRef.current || selectingRef.current || selecting) return
-    selectingRef.current = true
-    setSelecting(true)
-    setError(null)
-    queryRef.current.revision += 1
-    try {
-      await ipcInvoke('scan:select', { sessionId: submission.sessionId, selected, ...(sourceUrl ? { sourceUrl } : { search }) })
-    } catch (err) {
-      if (ownsSubmission(submission)) setError(presentFailure(err, message('scan.failed'), 'page scan selection failed'))
-    } finally {
-      selectingRef.current = false
-      if (ownsSubmission(submission)) refreshRef.current()
-    }
+  const range = visibleRowRange(scrollTop, viewportHeight, ROW_HEIGHT, filtered.length)
+  const visibleRows = filtered.slice(range.start, range.end)
+  const active = activeUrl === null ? undefined : filtered.find((e) => e.sourceUrl === activeUrl)
+
+  function toggle(sourceUrl: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(sourceUrl)) next.delete(sourceUrl)
+      else next.add(sourceUrl)
+      return next
+    })
+  }
+
+  function bulkSelect(on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const e of filtered) {
+        if (e.alreadyInLibrary || e.unavailable) continue
+        if (on) next.add(e.sourceUrl)
+        else next.delete(e.sourceUrl)
+      }
+      return next
+    })
   }
 
   async function confirm() {
-    const submission = scanRef.current
-    if (!submission?.sessionId || selected === 0 || addingRef.current || selectingRef.current || selecting) return
-    addingRef.current = true
+    const urls = Array.from(selected)
+    if (urls.length === 0) return
     setAdding(true)
     setError(null)
-    queryRef.current.revision += 1
     try {
-      await ipcInvoke('scan:add', { sessionId: submission.sessionId })
-      if (ownsSubmission(submission)) onClose()
+      await ipcInvoke('downloads:addBulk', { urls })
+      if (liveRef.current) onClose()
     } catch (err) {
       const failure = presentFailure(err, message('scan.addFailed'), 'bulk tape add failed')
-      if (ownsSubmission(submission)) setError(failure)
+      if (liveRef.current) setError(failure)
     } finally {
-      addingRef.current = false
-      if (ownsSubmission(submission)) { setAdding(false); refreshRef.current() }
+      if (liveRef.current) setAdding(false)
     }
   }
 
-  const inLibraryCount = page?.inLibrary ?? 0
-  const unavailableCount = page?.unavailable ?? 0
-  const newCount = total - inLibraryCount - unavailableCount
+  // The breakdown line (new / already in the library / unavailable) drawn under
+  // the result headline once scanning finishes: entries fall into exactly one of
+  // these three per ScanResult's own fields.
+  const inLibraryCount = useMemo(() => entries.filter((e) => e.alreadyInLibrary).length, [entries])
+  const unavailableCount = useMemo(() => entries.filter((e) => e.unavailable !== null).length, [entries])
+  const newCount = entries.length - inLibraryCount - unavailableCount
   const breakdownParts: string[] = []
   if (newCount > 0) breakdownParts.push(t.t('scan.breakdownNew', { count: newCount }))
   if (inLibraryCount > 0) breakdownParts.push(t.t('scan.breakdownInLibrary', { count: inLibraryCount }))
@@ -265,8 +286,8 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   const footer = (
     <>
       <Button variant="ghost" onClick={onClose} disabled={adding}>{t.t('common.cancel')}</Button>
-      <Button variant="primary" onClick={() => void confirm()} disabled={selected === 0 || selecting || adding} loading={adding}>
-        {adding ? t.t('scan.adding') : t.t('scan.addTapes', { count: selected })}
+      <Button variant="primary" onClick={() => void confirm()} disabled={selected.size === 0} loading={adding}>
+        {adding ? t.t('scan.adding') : t.t('scan.addTapes', { count: selected.size })}
       </Button>
     </>
   )
@@ -277,7 +298,6 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
         <input
           type="text"
           value={url}
-          disabled={adding}
           onChange={(e) => setUrl(e.target.value)}
           onPaste={onPaste}
           onCompositionStart={composing.onCompositionStart}
@@ -290,7 +310,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
         <Button
           variant={scanning ? 'secondary' : 'primary'}
           onClick={() => (scanning ? void stopScan() : scan())}
-          disabled={adding || selecting || (!scanning && !url.trim())}
+          disabled={!scanning && !url.trim()}
         >
           {t.t(scanning ? 'common.stop' : 'scan.scan')}
         </Button>
@@ -303,7 +323,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
       ) : scanning ? (
         <div className="mt-3">
           <p className="text-sm text-fg">{t.t('scan.scanning')}</p>
-          <p className="mt-0.5 text-xs text-fg-muted tabular-nums">{t.t('scan.foundSoFar', { count: total })}</p>
+          <p className="mt-0.5 text-xs text-fg-muted tabular-nums">{t.t('scan.foundSoFar', { count: entries.length })}</p>
           <div className="mt-2">
             <IndeterminateBar />
           </div>
@@ -312,28 +332,24 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
       ) : (
         <div className="mt-3">
           <p className="text-sm text-fg">
-            <span className="font-semibold tabular-nums text-info-fg">{t.number(total)}</span>{' '}
-            {t.t('scan.videosFound', { count: total })}
+            <span className="font-semibold tabular-nums text-info-fg">{t.number(entries.length)}</span>{' '}
+            {t.t('scan.videosFound', { count: entries.length })}
           </p>
           {breakdownParts.length > 0 && <p className="mt-0.5 text-xs text-fg-muted">{breakdown}</p>}
           {error && <InlineError className="mt-1.5">{t.text(error)}</InlineError>}
         </div>
       )}
 
-      {total > 0 && (
+      {entries.length > 0 && (
         <>
           <div className="mt-3 flex items-center gap-2">
-            <Button variant="secondary" size="sm" disabled={adding || selecting} onClick={() => void select(true)}>{t.t('scan.selectAll')}</Button>
-            <Button variant="secondary" size="sm" disabled={adding || selecting} onClick={() => void select(false)}>{t.t('scan.clearSelection')}</Button>
+            <Button variant="secondary" size="sm" onClick={() => bulkSelect(true)}>{t.t('scan.selectAll')}</Button>
+            <Button variant="secondary" size="sm" onClick={() => bulkSelect(false)}>{t.t('scan.clearSelection')}</Button>
             <input
               type="text"
               value={search}
-              disabled={adding}
               onChange={(e) => {
                 setSearch(e.target.value)
-                setActive(null)
-                setPage((current) => current ? { ...current, entries: [] } : current)
-                changeQuery(e.target.value, 0)
                 setScrollTop(0)
                 if (listRef.current) listRef.current.scrollTop = 0
               }}
@@ -346,25 +362,21 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
             ref={listRef}
             className="mt-2 max-h-[45vh] overflow-y-auto"
             onScroll={(event) => {
-              const top = event.currentTarget.scrollTop
-              const height = event.currentTarget.clientHeight
-              const start = visibleRowRange(top, height, ROW_HEIGHT, matched).start
-              if (start !== queryRef.current.start) changeQuery(search, start)
-              setScrollTop(top)
+              setScrollTop(event.currentTarget.scrollTop)
               setViewportHeight(event.currentTarget.clientHeight)
             }}
             style={{
               paddingTop: range.start * ROW_HEIGHT,
-              paddingBottom: (matched - range.start - rows.length) * ROW_HEIGHT,
+              paddingBottom: (filtered.length - range.end) * ROW_HEIGHT,
             }}
           >
-            {rows.map((e) => {
+            {visibleRows.map((e) => {
               const disabled = e.alreadyInLibrary || e.unavailable !== null
-              const checked = e.selected && !disabled
+              const checked = selected.has(e.sourceUrl) && !disabled
               return (
                 <li key={e.sourceUrl} style={{ height: ROW_HEIGHT }}>
                   <label
-                    onClick={() => setActive(e)}
+                    onClick={() => setActiveUrl(e.sourceUrl)}
                     className={
                       'flex h-full items-center gap-3 rounded px-2 text-sm ' +
                       (disabled ? 'opacity-50' : 'hover:bg-hover')
@@ -375,9 +387,9 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
                       checked={checked}
                       // aria-disabled rather than disabled keeps an unaddable row
                       // focusable, so its full title and reason stay reachable.
-                      aria-disabled={disabled || adding || selecting || undefined}
-                      onChange={() => { if (!disabled) void select(!e.selected, e.sourceUrl) }}
-                      onFocus={() => setActive(e)}
+                      aria-disabled={disabled || undefined}
+                      onChange={() => { if (!disabled) toggle(e.sourceUrl) }}
+                      onFocus={() => setActiveUrl(e.sourceUrl)}
                     />
                     {e.alreadyInLibrary && <span className="shrink-0 text-xs text-fg-muted">{t.t('tapeState.downloaded')}</span>}
                     <span className="min-w-0 flex-1 truncate">

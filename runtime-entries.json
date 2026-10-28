@@ -4,8 +4,7 @@
     "records-worker": "src/main/io/records-worker.ts",
     "records-write-worker": "src/main/io/records-write-worker.ts",
     "backup-worker": "src/main/store/backup-worker.ts",
-    "sidecar-worker": "src/main/io/sidecar-worker.ts",
-    "scan-worker": "src/main/store/scan-worker.ts"
+    "sidecar-worker": "src/main/io/sidecar-worker.ts"
   },
   "preload": { "index": "src/preload/index.ts" },
   "renderer": {

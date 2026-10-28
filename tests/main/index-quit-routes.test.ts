@@ -99,7 +99,7 @@ vi.mock('@main/queue/manager', () => ({
   hasActiveJobs: () => state.working,
 }))
 vi.mock('@main/binaries/manager', () => ({ hasInstalls: () => false }))
-vi.mock('@main/ipc/scan', () => ({ cancelAllScans: vi.fn(async () => {}), closeScanStores: vi.fn(async () => {}), resumeScans: vi.fn(), hasActiveScans: () => false }))
+vi.mock('@main/ipc/scan', () => ({ cancelAllScans: vi.fn(async () => {}), resumeScans: vi.fn(), hasActiveScans: () => false }))
 vi.mock('@main/work-registry', () => ({ cancelAllWork: vi.fn(async () => {}), resumeWork: vi.fn(), hasRunningWork: () => false }))
 vi.mock('@main/media-server', () => ({ startMediaServer: vi.fn(async () => {}), stopMediaServer: vi.fn(async () => {}) }))
 vi.mock('@main/window-options', () => ({ windowOptions: () => ({}) }))

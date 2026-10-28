@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SubprocessError } from '@main/io/spawn'
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
-const { writeRecord, writeOutputChunk, script } = vi.hoisted(() => ({ writeRecord: vi.fn(), writeOutputChunk: vi.fn(), script: { value: 'setInterval(() => {}, 1000)' } }))
+const { writeRecord, writeOutputChunk } = vi.hoisted(() => ({ writeRecord: vi.fn(), writeOutputChunk: vi.fn() }))
 vi.mock('@main/io/records', () => ({ writeRecord, writeOutputChunk }))
 // The scan's "yt-dlp" is Node waiting until it is stopped; its own flags follow `--`.
 vi.mock('@main/paths', () => ({ binaryPath: () => process.execPath, paths: { bin: '/bin' } }))
-vi.mock('@main/services/ytdlp-args', () => ({ resolveYtdlpArgs: () => ['-e', script.value, '--'] }))
+vi.mock('@main/services/ytdlp-args', () => ({ resolveYtdlpArgs: () => ['-e', 'setInterval(() => {}, 1000)', '--'] }))
 
 const { scanOutcome, startScan } = await import('@main/services/ytdlp-scan')
 
@@ -48,32 +48,5 @@ describe('stopping a scan', () => {
     await expect(scan.complete).resolves.toEqual({ kind: 'stopped', totalCount: 0 })
     expect(writeRecord).toHaveBeenCalledOnce()
     expect(writeRecord.mock.calls[0]![1]).toMatchObject({ kind: 'scan', scan_id: 's1', stop_reason: by })
-  })
-})
-
-
-describe('stream delivery', () => {
-  it('awaits each stored entry and drains the final UTF-8 line before completing', async () => {
-    script.value = `for (let i=0;i<600;i++) process.stdout.write(JSON.stringify({id:String(i),url:'https://example.test/'+i,title:'日本語'})+'\\n')`
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
-    const found: string[] = []
-    const scan = startScan('https://example.test/list', 'stream', async entry => {
-      found.push(entry.title!)
-      if (found.length === 1) await held
-    })
-    await vi.waitFor(() => expect(found).toHaveLength(1))
-    await new Promise(resolve => setTimeout(resolve, 30))
-    expect(found).toHaveLength(1)
-    release()
-    await expect(scan.complete).resolves.toEqual({ kind: 'done', totalCount: 600 })
-    expect(found).toHaveLength(600)
-    expect(found.every(title => title === '日本語')).toBe(true)
-  })
-  it('reports a store failure and stops the producer rather than swallowing it as malformed JSON', async () => {
-    script.value = `process.stdout.write(JSON.stringify({id:'1',url:'https://example.test/1'})+'\\n'); setInterval(()=>{},1000)`
-    const failure = new Error('result disk full')
-    const scan = startScan('https://example.test/list', 'failed', async () => { throw failure })
-    await expect(scan.complete).resolves.toEqual({ kind: 'failed', error: failure })
   })
 })
