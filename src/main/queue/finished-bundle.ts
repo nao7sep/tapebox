@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Tape } from '@shared/domain'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
-import { readSidecarDocument } from '@main/core/sidecar'
+import { readSidecarFile } from '@main/core/sidecar'
 import type { TapeMove } from '@main/core/tape-state'
 import { nameInStem } from '@main/core/managed-files'
 import { SourceIndex, tapeSourceRef } from '@shared/source-identity'
@@ -30,11 +30,8 @@ export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc:
   const stem = tape.id
   const sidecarFilename = `${stem}.json`
   let sidecar: Record<string, unknown>
-  let chapterCount: number | null
   try {
-    const document = await readSidecarDocument(join(libraryDir, sidecarFilename), undefined, 'catalog')
-    sidecar = document.value
-    chapterCount = document.chapterCount
+    sidecar = await readSidecarFile(join(libraryDir, sidecarFilename))
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'none' }
     return { status: 'unusable', reason: 'the sidecar could not be read' }
@@ -61,7 +58,6 @@ export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc:
 
   const found = tapeFromSidecar(sidecar, {
     id: tape.id,
-    chapterCount: chapterCount ?? 0,
     sourceUrl: tape.sourceUrl,
     mediaFilename: bundle.mediaFilename,
     sidecarFilename,

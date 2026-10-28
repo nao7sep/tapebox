@@ -1,9 +1,7 @@
-import { unlink } from 'node:fs/promises'
-import { writeFileAtomicVia } from '@main/io/atomic-file'
-import { sidecarCodec } from '@main/io/sidecar-codec'
-import type { SidecarProjection, SidecarRewrite, SidecarReadMode } from '@main/io/sidecar-stream'
+import { readFile, unlink } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { FORMAT_VERSIONS, checkFormatVersion } from '@main/io/format-version'
+import { writeJsonAtomic } from '@main/io/atomic-json'
+import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { UserFacingError } from '@main/user-facing-error'
 import { classifyImport } from './import-classify'
 import type { Tape } from '@shared/domain'
@@ -20,49 +18,84 @@ import { message } from '@shared/i18n/translate'
  * surface); only the 'tapebox' namespace is validated by callers.
  */
 
+const PATH_FIELDS_ROOT = [
+  'filename',
+  '_filename',
+  'filepath',
+  '_filepath',
+  '__finaldir',
+  '__files_to_move',
+  'requested_downloads',
+] as const
+
+const PATH_FIELDS_NESTED_ARRAYS = ['formats', 'requested_formats'] as const
+const NESTED_PATH_KEYS = ['filepath'] as const
+
 export async function finalize(opts: {
   infoJsonPath: string
   sidecarPath: string
   tapeboxAdditions: SidecarTapeBox
 }): Promise<void> {
-  await writeFileAtomicVia(opts.sidecarPath, temp => writeSidecarStage(opts.infoJsonPath, temp, {
-    root: { tapebox: opts.tapeboxAdditions }, stripPaths: true,
-  }))
+  const text = await readFile(opts.infoJsonPath, 'utf8')
+  const data = JSON.parse(text) as Record<string, unknown>
+
+  for (const key of PATH_FIELDS_ROOT) delete data[key]
+
+  for (const arrKey of PATH_FIELDS_NESTED_ARRAYS) {
+    const arr = data[arrKey]
+    if (Array.isArray(arr)) {
+      for (const tape of arr) {
+        if (tape && typeof tape === 'object') {
+          for (const k of NESTED_PATH_KEYS) delete (tape as Record<string, unknown>)[k]
+        }
+      }
+    }
+  }
+
+  data.tapebox = opts.tapeboxAdditions
+  // not recorded: a tape's sidecar (yt-dlp info.json + the tapebox namespace) is
+  // library content, transient and app-owned until exported (developer
+  // classification), so it takes the raw writeJsonAtomic, not the choke point. The
+  // tape's catalog row is what records, via catalog.json.
+  await writeSidecar(opts.sidecarPath, data)
   await unlink(opts.infoJsonPath).catch(() => {})
 }
 
-/** Consumed fields only; opaque source metadata stays in the source file. */
-export async function readSidecarProjection(path: string, signal?: AbortSignal, mode: SidecarReadMode = 'preview'): Promise<SidecarProjection> {
-  return (await sidecarCodec({ op: 'read', path, mode }, signal))!
+/** How every sidecar is serialized: the library's own and an export's copy. */
+export const SIDECAR_JSON = { formatVersion: FORMAT_VERSIONS.sidecar }
+
+/**
+ * Write a sidecar in the library, stamped with its format version. Not recorded:
+ * see {@link finalize}.
+ */
+export async function writeSidecar(path: string, sidecar: Record<string, unknown>): Promise<void> {
+  await writeJsonAtomic(path, sidecar, SIDECAR_JSON)
 }
-export async function readSidecarDocument(path: string, signal?: AbortSignal, mode: SidecarReadMode = 'preview'): Promise<{ value: Record<string, unknown>; stamp: string; chapterCount: number | null }> {
-  const document = await readSidecarProjection(path, signal, mode)
-  const value = document.value
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('the root is not a JSON object')
-  const found = checkFormatVersion(value as Record<string, unknown>, FORMAT_VERSIONS.sidecar)
-  if (found.status === 'newer') throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(path) }))
+
+/**
+ * Read a sidecar as its raw object. One in a newer format is reported to the
+ * user by name and left as it is (store-recovery-conventions); a missing or
+ * unparseable file throws.
+ */
+export async function readSidecarFile(sidecarPath: string): Promise<Record<string, unknown>> {
+  const found = parseStoreJson(await readFile(sidecarPath, 'utf8'), FORMAT_VERSIONS.sidecar)
+  if (found.status === 'newer') {
+    throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(sidecarPath) }))
+  }
   if (found.status === 'unreadable') throw found.error
-  return { value: found.value, stamp: document.stamp, chapterCount: document.chapterCount }
+  return found.value
 }
-export async function readSidecarFile(path: string, signal?: AbortSignal, mode: SidecarReadMode = 'preview'): Promise<Record<string, unknown>> {
-  return (await readSidecarDocument(path, signal, mode)).value
-}
-export async function writeSidecarStage(path: string, output: string, patch: SidecarRewrite, expectedStamp?: string, signal?: AbortSignal): Promise<void> {
-  await sidecarCodec({ op: 'rewrite', path, output, patch, version: FORMAT_VERSIONS.sidecar, expectedStamp }, signal)
-}
-export async function rewriteSidecar(path: string, patch: SidecarRewrite, expectedStamp: string, signal?: AbortSignal): Promise<void> {
-  await writeFileAtomicVia(path, temp => writeSidecarStage(path, temp, patch, expectedStamp, signal), undefined, signal)
-}
-/** Defaults fill absent fields; existing subobjects are never copied into a
- * replacement patch, so opaque children survive a managed-field change. */
-export function sidecarNamespacePatch(sidecar: Record<string, unknown>, tape: Tape, changes: Record<string, unknown>): Record<string, unknown> {
+
+/** Preserve optional/opaque source metadata while filling managed fields from
+ * the admitted catalog. Sparse external bundles remain editable and exportable. */
+export function sidecarNamespace(sidecar: Record<string, unknown>, tape: Tape): Record<string, unknown> {
   const admission = classifyImport(sidecar)
   if (admission.status === 'reject') throw new UserFacingError('invalid', admission.reason)
-  const existing = sidecar['tapebox'] as Record<string, unknown>
-  const defaults = {
+  const fields = sidecar['tapebox'] as Record<string, unknown>
+  return {
     sourceUrl: tape.sourceUrl, name: tape.name, addedAtUtc: tape.addedAtUtc,
     downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: tape.renamedAtUtc,
     media: null, mediaFilename: tape.filename, thumbnailFilename: tape.thumbnailFilename,
+    ...fields,
   }
-  return { ...Object.fromEntries(Object.entries(defaults).filter(([key]) => !Object.hasOwn(existing, key))), ...changes }
 }

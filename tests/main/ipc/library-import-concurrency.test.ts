@@ -452,19 +452,3 @@ describe('concurrent bundle admission at the catalog boundary', () => {
     expect((await readdir(state.libraryDir)).sort()).toEqual(['clip.json', 'clip.mp4', 'independent.json', 'independent.mp4'])
   })
 })
-
-it('rolls back copied files if a sidecar changes after projection and before admission', async () => {
-  const path = await stageBundle(sourceDir, 'changing', 'https://example.test/original')
-  const gate = hold('heldCopy', join(state.libraryDir, 'changing.mp4'))
-  const importing = importBundle(path)
-  await gate.started
-  const changed = JSON.stringify({ tapebox: { sourceUrl: 'https://example.test/replaced', mediaFilename: 'other.mp4' } })
-  await writeFile(path, changed)
-  gate.release()
-  const result = await importing
-  expect(result.issues.some(issue => issue.reason.key === 'import.copyFailed')).toBe(true)
-  expect(session.getTapes()).toEqual([])
-  expect(await readdir(state.libraryDir)).toEqual([])
-  expect(await readFile(path, 'utf8')).toBe(changed)
-  expect(await readFile(join(sourceDir, 'changing.mp4'), 'utf8')).toBe('media:changing')
-})

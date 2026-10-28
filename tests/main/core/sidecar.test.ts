@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readSidecarFile, readSidecarDocument, rewriteSidecar } from '@main/core/sidecar'
+import { readSidecarFile, writeSidecar } from '@main/core/sidecar'
 
 // A tape's sidecar carries its format version (store-recovery-conventions). One
 // without its marker uses current-shape admission, what TapeBox writes carries 1, and one in a
@@ -33,9 +33,7 @@ describe('sidecar format version', () => {
 
   it('writes format 1 first and reads it back', async () => {
     const path = join(dir, 'Take.json')
-    await writeFile(path, '{}')
-    const document = await readSidecarDocument(path)
-    await rewriteSidecar(path, { root: { id: 'source', tapebox: { name: 'Take' } } }, document.stamp)
+    await writeSidecar(path, { id: 'source', tapebox: { name: 'Take' } })
     expect(Object.keys(JSON.parse(await readFile(path, 'utf8')))).toEqual(['formatVersion', 'id', 'tapebox'])
     expect(await readSidecarFile(path)).toEqual({ formatVersion: 1, id: 'source', tapebox: { name: 'Take' } })
   })

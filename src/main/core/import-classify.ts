@@ -98,7 +98,6 @@ export function tapeFromSidecar(
   sidecar: Record<string, unknown>,
   params: {
     id: string
-    chapterCount?: number
     sourceUrl: string
     mediaFilename: string
     sidecarFilename: string
@@ -121,7 +120,7 @@ export function tapeFromSidecar(
     title: typeof sidecar['title'] === 'string' ? sidecar['title'] : null,
     uploader: typeof sidecar['uploader'] === 'string' ? sidecar['uploader'] : null,
     durationSeconds: typeof sidecar['duration'] === 'number' ? sidecar['duration'] : null,
-    chapterCount: params.chapterCount ?? (Array.isArray(sidecar['chapters']) ? sidecar['chapters'].length : 0),
+    chapterCount: Array.isArray(sidecar['chapters']) ? (sidecar['chapters'] as unknown[]).length : 0,
     probedAtUtc: null,
     filename: params.mediaFilename,
     sidecarFilename: params.sidecarFilename,
