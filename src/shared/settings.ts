@@ -4,8 +4,12 @@ import { multiline, singleLine } from './text-cleanup'
 import { LANGUAGE_PREFERENCES } from './i18n/languages'
 import { isTimeZone, SYSTEM_TIME_ZONE } from './time-zone'
 
-/** How many downloads may run at once; Settings' field takes the same bounds. */
-export const MAX_CONCURRENT_DOWNLOADS = { min: 1, max: 8 } as const
+/**
+ * How many downloads may run at once; Settings' field takes the same bounds.
+ * Developer decision: the default is 3, which suits slow machines and
+ * connections, and the range reaches 16 because fast ones gain from more.
+ */
+export const MAX_CONCURRENT_DOWNLOADS = { min: 1, max: 16, default: 3 } as const
 
 // The per-binary managed-dependency facts (installed/latest versions, last-check
 // time) are NOT config — they are app-recorded facts and live in their own
@@ -307,7 +311,7 @@ export function defaultSettings(): Settings {
   return {
     libraryDir: '',
     autoStartDownloads: true,
-    maxConcurrentDownloads: 2,
+    maxConcurrentDownloads: MAX_CONCURRENT_DOWNLOADS.default,
     autoplay: true,
     volume: 1,
     keepAwakeWhilePlaying: true,
