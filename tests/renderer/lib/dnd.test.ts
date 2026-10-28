@@ -204,24 +204,21 @@ describe('current dnd-kit completion mapping', () => {
     const source = sortable('tape-a', TAPE_DRAG_TYPE, 0, 2)
     const target = sortable('tape-c', TAPE_DRAG_TYPE, 2, 2)
 
-    expect(planTapeListDrop(dropEvent(source, target), ['tape-a', 'tape-b', 'tape-c'])).toEqual({
+    expect(planTapeListDrop(dropEvent(source, target))).toEqual({
       tapeId: 'tape-a',
       fromIndex: 0,
       toIndex: 2,
     })
-    expect(planTapeListDrop(dropEvent(source, target, true), ['tape-a', 'tape-b', 'tape-c'])).toBeNull()
-    expect(planTapeListDrop(dropEvent(source, source), ['tape-a', 'tape-b', 'tape-c'])).toBeNull()
-    expect(planTapeListDrop(dropEvent(source, null), ['tape-a', 'tape-b', 'tape-c'])).toBeNull()
-    expect(planTapeListDrop(dropEvent(source, null), ['tape-a', 'tape-b', 'tape-c'], 'tape-c')).toBeNull()
-    expect(planTapeListDrop(dropEvent(source, source, true), ['tape-a', 'tape-b', 'tape-c'], 'tape-c')).toBeNull()
-    expect(planTapeListDrop(dropEvent(source, target), ['tape-a', 'tape-b', 'tape-c'], 'tape-b')?.toIndex).toBe(2)
+    expect(planTapeListDrop(dropEvent(source, target, true))).toBeNull()
+    expect(planTapeListDrop(dropEvent(sortable('tape-a', TAPE_DRAG_TYPE, 1, 1), target))).toBeNull()
+    expect(planTapeListDrop(dropEvent(source, null))).toBeNull()
   })
 
   it('keeps archive list sorting distinct from semantic box delivery', () => {
     expect(planArchiveDrop(dropEvent(
       sortable('box-a', BOX_DRAG_TYPE, 0, 1),
       sortable('box-b', BOX_DRAG_TYPE, 1, 1),
-    ), ['tape-b', 'tape-c', 'tape-a'])).toEqual({
+    ))).toEqual({
       kind: 'reorder-box',
       boxId: 'box-a',
       fromIndex: 0,
@@ -231,7 +228,7 @@ describe('current dnd-kit completion mapping', () => {
     expect(planArchiveDrop(dropEvent(
       sortable('tape-a', TAPE_DRAG_TYPE, 2, 0),
       sortable('tape-b', TAPE_DRAG_TYPE, 0, 0),
-    ), ['tape-b', 'tape-c', 'tape-a'])).toEqual({
+    ))).toEqual({
       kind: 'reorder-tape',
       tapeId: 'tape-a',
       fromIndex: 2,
@@ -245,7 +242,7 @@ describe('current dnd-kit completion mapping', () => {
         type: BOX_TARGET_TYPE,
         data: { type: BOX_TARGET_TYPE, boxId: 'box-b' },
       },
-    ), ['tape-b', 'tape-c', 'tape-a'])).toEqual({ kind: 'move-tape', tapeId: 'tape-a', boxId: 'box-b' })
+    ))).toEqual({ kind: 'move-tape', tapeId: 'tape-a', boxId: 'box-b' })
 
     expect(planArchiveDrop(dropEvent(
       sortable('tape-a', TAPE_DRAG_TYPE, 0, 0),
@@ -254,7 +251,7 @@ describe('current dnd-kit completion mapping', () => {
         type: BOX_TARGET_TYPE,
         data: { type: BOX_TARGET_TYPE, boxId: null },
       },
-    ), ['tape-b', 'tape-c', 'tape-a'])).toEqual({ kind: 'move-tape', tapeId: 'tape-a', boxId: null })
+    ))).toEqual({ kind: 'move-tape', tapeId: 'tape-a', boxId: null })
 
     expect(planArchiveDrop(dropEvent(
       sortable('tape-a', TAPE_DRAG_TYPE, 0, 1),

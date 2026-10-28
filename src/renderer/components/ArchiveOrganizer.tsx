@@ -79,8 +79,8 @@ export function ArchiveOrganizer() {
     },
   )
 
-  function onDragEnd(event: DragEndEvent, previewTargetId?: string) {
-    const plan = planArchiveDrop(event, tapes.map((tape) => tape.id), previewTargetId)
+  function onDragEnd(event: DragEndEvent) {
+    const plan = planArchiveDrop(event)
     if (!plan) return
     if (plan.kind === 'reorder-box') {
       reorderBox(plan.boxId, plan.toIndex)

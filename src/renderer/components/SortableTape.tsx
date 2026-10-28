@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type CSSProperties, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { TAPE_DRAG_TYPE, TAPE_SORT_GROUP } from '@renderer/lib/dnd'
 
@@ -13,20 +13,14 @@ export function SortableTape({
   id,
   index,
   children,
-  style,
-  measureRef,
-  onDragSource,
 }: {
   id: string
   index: number
   children: ReactNode
-  style?: CSSProperties
-  measureRef?: (node: HTMLElement | null) => void
-  onDragSource?: (id: string, active: boolean) => void
 }) {
   // The current hook registers transport without projecting DOM attributes.
   // role="presentation" keeps the inner TapeRow option as a clean listbox child.
-  const { ref, isDragSource } = useSortable({
+  const { ref } = useSortable({
     id,
     index,
     type: TAPE_DRAG_TYPE,
@@ -34,13 +28,8 @@ export function SortableTape({
     group: TAPE_SORT_GROUP,
     data: { type: 'tape' },
   })
-  const attachRef = useCallback((node: HTMLLIElement | null) => { ref(node); measureRef?.(node) }, [ref, measureRef])
-  useEffect(() => {
-    onDragSource?.(id, isDragSource)
-    return () => onDragSource?.(id, false)
-  }, [id, isDragSource, onDragSource])
   return (
-    <li ref={attachRef} style={style} role="presentation" className="dnd-sortable">
+    <li ref={ref} role="presentation" className="dnd-sortable">
       {children}
     </li>
   )
