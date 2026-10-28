@@ -79,11 +79,10 @@ export const defaultJobDeps: JobDeps = {
  */
 export class Job {
   readonly tapeId: string
+  // The abort reason says who stopped the job: a stop at quit leaves the tape's
+  // persisted state alone so it resumes on the next launch; a user cancel parks
+  // it as paused.
   private controller = new AbortController()
-  private cancelled = false
-  // A stop at quit leaves the tape's persisted state alone so it resumes on the
-  // next launch; a user cancel parks it as paused.
-  private stopping = false
   private runPromise: Promise<void> | null = null
   private readonly d: JobDeps
 
@@ -107,12 +106,10 @@ export class Job {
    * it to the queue.
    */
   stop(): Promise<void> {
-    this.stopping = true
     return this.abort('quit')
   }
 
   private abort(by: StopCause): Promise<void> {
-    this.cancelled = true
     this.controller.abort(new StopRequest(by))
     return this.runPromise ?? Promise.resolve()
   }
@@ -137,11 +134,12 @@ export class Job {
       if (!release) throw new Error('This download namespace is still being changed')
       if (await this.adoptFinishedDownload()) return
       const isVideo = await this.probe()
-      if (!isVideo || this.cancelled) return
+      if (!isVideo || this.controller.signal.aborted) return
       await this.download()
     } catch (err) {
-      if (this.stopping) return
-      if (this.cancelled) {
+      const { aborted, reason } = this.controller.signal
+      if (aborted && reason instanceof StopRequest && reason.by === 'quit') return
+      if (aborted) {
         this.update({ state: 'paused', failureCode: null, lastError: null })
         return
       }
