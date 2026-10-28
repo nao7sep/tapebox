@@ -232,25 +232,40 @@ export async function apiKeyState(id: string): Promise<ApiKeyState> {
   return (await resolveKey(id)).state
 }
 
+// One serialized owner changes api-keys.json: each change reads the file and
+// writes it back before the next one starts.
+let writeChain: Promise<unknown> = Promise.resolve()
+
+function serialized(change: () => Promise<void>): Promise<void> {
+  const run = writeChain.then(change)
+  // A failed change must not wedge every later one.
+  writeChain = run.catch(() => undefined)
+  return run
+}
+
 /** Persist a key (trimmed, obfuscated). A blank key clears it instead. */
 export async function writeApiKey(id: string, apiKey: string): Promise<void> {
   assertKeyId(id)
   const trimmed = apiKey.trim()
-  const { all, replace } = await readAllForWrite()
-  const encoded = trimmed.length === 0 ? undefined : encodeApiKey(trimmed)
-  // The same key saved again changes nothing on disk (content-lifecycle conventions).
-  if (!replace && all.keys[id] === encoded) return
-  if (encoded === undefined) delete all.keys[id]
-  else all.keys[id] = encoded
-  await writeAll(all)
+  return serialized(async () => {
+    const { all, replace } = await readAllForWrite()
+    const encoded = trimmed.length === 0 ? undefined : encodeApiKey(trimmed)
+    // The same key saved again changes nothing on disk (content-lifecycle conventions).
+    if (!replace && all.keys[id] === encoded) return
+    if (encoded === undefined) delete all.keys[id]
+    else all.keys[id] = encoded
+    await writeAll(all)
+  })
 }
 
 /** Remove the stored key. Any environment value is unaffected. */
 export async function clearApiKey(id: string): Promise<void> {
   assertKeyId(id)
-  const { all, replace } = await readAllForWrite()
-  if (replace || id in all.keys) {
-    delete all.keys[id]
-    await writeAll(all)
-  }
+  return serialized(async () => {
+    const { all, replace } = await readAllForWrite()
+    if (replace || id in all.keys) {
+      delete all.keys[id]
+      await writeAll(all)
+    }
+  })
 }

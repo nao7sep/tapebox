@@ -114,6 +114,13 @@ describe('api-keys storage', () => {
     expect(await apiKeys.resolveApiKey('openai')).toBeNull()
   })
 
+  it('keeps both keys when two are saved at once', async () => {
+    await Promise.all([apiKeys.writeApiKey('openai', 'general-stored'), apiKeys.writeApiKey('openai.slug', 'slug-stored')])
+    expect(await apiKeys.resolveApiKey('openai')).toBe('general-stored')
+    expect(await apiKeys.resolveApiKey('openai.slug')).toBe('slug-stored')
+    await apiKeys.clearApiKey('openai.slug')
+  })
+
   it('prefers OPENAI_API_KEY over the stored value and trims it', async () => {
     await apiKeys.writeApiKey('openai', 'sk-stored-123')
     process.env[OPENAI] = '  sk-from-env  '
