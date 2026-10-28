@@ -200,8 +200,11 @@ async function getStatus(name: BinaryName): Promise<BinaryStatus> {
   }
 }
 
+/** One tool at a time: a few local probes, no measured delay to parallelize. */
 export async function getAllStatuses(): Promise<BinaryStatus[]> {
-  return Promise.all(binaryNames.map(getStatus))
+  const statuses: BinaryStatus[] = []
+  for (const name of binaryNames) statuses.push(await getStatus(name))
+  return statuses
 }
 
 /**
@@ -220,22 +223,21 @@ export async function checkForUpdates(signal?: AbortSignal): Promise<BinaryCheck
   const resolved = new Map<BinaryName, { version: string; observation: Observation }>()
   const failures: BinaryCheckFailure[] = []
 
-  await Promise.all(
-    binaryNames.map(async (name) => {
-      try {
-        const observation = startObservation()
-        const asset = await binarySpecs[name].resolveLatest(signal)
-        resolved.set(name, { version: asset.version, observation })
-      } catch (err) {
-        if (signal?.aborted) throw signal.reason
-        // A failed lookup leaves this tool's successful observation unchanged.
-        // The global attempt timestamp was already saved for the daily gate.
-        // Log the failure without replacing the displayed last-known version.
-        failures.push({ name, message: message('tools.checkFailed', { tool: name }) })
-        log.warn('binary update check failed', { name, error: describeError(err) })
-      }
-    }),
-  )
+  // One lookup at a time (Serial by default).
+  for (const name of binaryNames) {
+    try {
+      const observation = startObservation()
+      const asset = await binarySpecs[name].resolveLatest(signal)
+      resolved.set(name, { version: asset.version, observation })
+    } catch (err) {
+      if (signal?.aborted) throw signal.reason
+      // A failed lookup leaves this tool's successful observation unchanged.
+      // The global attempt timestamp was already saved for the daily gate.
+      // Log the failure without replacing the displayed last-known version.
+      failures.push({ name, message: message('tools.checkFailed', { tool: name }) })
+      log.warn('binary update check failed', { name, error: describeError(err) })
+    }
+  }
 
   log.info('binary update check complete', { resolved: resolved.size, failed: failures.length })
   // Apply inside the dependencies critical section: read the *current* entry (so a
@@ -377,14 +379,10 @@ async function performInstall(
         if (process.platform !== 'win32') {
           // Strip macOS Gatekeeper quarantine if present; harmless when absent.
           if (process.platform === 'darwin') {
-            const xattrSignal = AbortSignal.any([
-              signal,
-              AbortSignal.timeout(FINAL_PREP_TIMEOUT_MS),
-            ])
             try {
               await execCapture('xattr', ['-d', 'com.apple.quarantine', stage], {
                 reject: false,
-                signal: xattrSignal,
+                signal,
                 idleTimeoutMs: FINAL_PREP_TIMEOUT_MS,
               })
             } catch {
