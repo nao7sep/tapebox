@@ -37,10 +37,10 @@ function fat(cpus: number[], wide: boolean, little: boolean): Buffer {
   return buffer
 }
 
-async function inspect(bytes: Buffer, signal?: AbortSignal): Promise<void> {
+async function inspect(bytes: Buffer): Promise<void> {
   const path = join(directory, 'tool')
   await writeFile(path, bytes)
-  return assertArm64Slice(path, signal)
+  return assertArm64Slice(path)
 }
 
 describe('staged native Mach-O admission', () => {
@@ -67,11 +67,5 @@ describe('staged native Mach-O admission', () => {
     const mislabeled = fat([0x0100000c], false, false)
     thin(0x01000007).copy(mislabeled, 28)
     await expect(inspect(mislabeled)).rejects.toThrow('not arm64-native')
-  })
-
-  it('honors cancellation before inspection', async () => {
-    const controller = new AbortController()
-    controller.abort()
-    await expect(inspect(thin(), controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

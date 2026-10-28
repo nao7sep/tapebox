@@ -397,7 +397,7 @@ async function performInstall(
         // published, so a wrong-arch download fails clean here rather than at exec
         // time on Apple Silicon (no Rosetta). A universal binary passes.
         if (process.platform === 'darwin') {
-          await assertArm64Slice(stage, signal)
+          await assertArm64Slice(stage)
         }
         signal.throwIfAborted()
       },

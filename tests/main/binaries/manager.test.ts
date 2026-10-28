@@ -363,22 +363,6 @@ describe('install final-preparation cancellation', () => {
     expect(assertArm64Slice).not.toHaveBeenCalled()
   })
 
-  it('aborts architecture inspection and removes the stage instead of publishing it', async () => {
-    arrangeInstall()
-    execCapture.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
-    assertArm64Slice.mockImplementation((_filePath: string, signal: AbortSignal) =>
-      rejectWhenAborted(signal),
-    )
-
-    const operationId = 'op-arch'
-    const install = installOrUpdate('yt-dlp', operationId)
-    await vi.waitFor(() => expect(assertArm64Slice).toHaveBeenCalledOnce())
-    expect(assertArm64Slice).toHaveBeenCalledWith(expect.any(String), expect.any(AbortSignal))
-
-    cancelInstall('yt-dlp', operationId)
-    await expectNoPublishedArtifact(install, operationId)
-  })
-
   it('passes cancellation into zip extraction and removes both partial and stage', async () => {
     arrangeInstall()
     vi.mocked(binarySpecs['yt-dlp'].resolveLatest).mockResolvedValue({
