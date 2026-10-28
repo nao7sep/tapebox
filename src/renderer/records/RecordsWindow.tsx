@@ -298,14 +298,8 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
 
   const records = list.status === 'ready' ? list.records : []
   const keys = records.map(recordKey)
-  const recordOffsets = useMemo(() => {
-    const offsets = [0]
-    for (const page of list.pages) offsets.push(offsets.at(-1)! + page.count)
-    return offsets
-  }, [list.pages])
 
   const select = (record: RecordSummary): void => {
-    list.activate(record)
     if (recordKey(record) !== selectedKey) setSelected({ kind: record.kind, id: record.id })
   }
 
@@ -323,12 +317,6 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
     },
     idPrefix: 'record',
     page: LIST_PAGE,
-    onCommandKey: (event) => {
-      if (!['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) return false
-      event.preventDefault()
-      void list.navigate(event.key).then((record) => { if (record) select(record) })
-      return true
-    },
   })
 
   // A drag is the user's intended width, which a narrower window only overrides
@@ -412,60 +400,51 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
             ref={scrollRef}
             data-records-scroll
             className="relative min-h-0 flex-1 overflow-y-auto"
-            aria-busy={list.status === 'loading' || list.pending.size > 0}
+            aria-busy={list.status === 'loading' || list.loadingMore}
             onScroll={onListScroll}
           >
             {list.status === 'failed' ? null : list.status === 'loading' ? (
               <p className="p-4 text-sm text-fg">{t.t('records.loading')}</p>
-            ) : list.pages.every((page) => page.count === 0) ? (
+            ) : records.length === 0 ? (
               <p className="p-4 text-sm text-fg">{t.t('records.empty')}</p>
             ) : (
               <div
                 ref={kb.ref}
                 {...kb.listboxProps}
                 aria-label={t.t('records.title')}
-                className="p-2 outline-none"
+                className="space-y-1 p-2 outline-none"
               >
-                {list.pages.map((page, index) => {
-                  const cached = list.cache.get(index)
-                  return cached ? (
-                    <div key={index} ref={list.pageRef(index)} data-record-page={index} className="space-y-1 pb-1">
-                      {cached.map((record, rowIndex) => {
-                        const key = recordKey(record)
-                        const isSelected = key === selectedKey
-                        return (
-                          <div
-                            key={key}
-                            id={kb.optionId(key)}
-                            role="option"
-                            aria-selected={isSelected}
-                            aria-posinset={recordOffsets[index]! + rowIndex + 1}
-                            aria-setsize={list.pages.at(-1)?.more ? -1 : recordOffsets.at(-1)}
-                            data-record-key={key}
-                            onClick={() => select(record)}
-                            className={
-                              'listbox-item cursor-pointer rounded border px-3 py-2 transition ' +
-                              (isSelected
-                                ? 'border-selected ring-1 ring-inset ring-selected/40'
-                                : 'border-transparent hover:bg-hover')
-                            }
-                          >
-                            <div className="flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
-                              <span className="tabular-nums">{timeFormat.format(new Date(record.time))}</span>
-                              <span className={`font-medium ${LEVEL_CLASSES[record.level]}`}>{t.t(LEVEL_LABELS[record.level])}</span>
-                              {record.kind !== 'log' && <span>{t.t(KIND_LABELS[record.kind])}</span>}
-                            </div>
-                            <div className="mt-0.5 truncate text-sm text-fg-strong" data-record-title data-literal>{record.title}</div>
-                            {record.text && <div className="line-clamp-2 text-xs text-fg wrap-anywhere" data-literal>{record.text}</div>}
-                          </div>
-                        )
-                      })}
+                {records.map((record) => {
+                  const key = recordKey(record)
+                  const isSelected = key === selectedKey
+                  return (
+                    <div
+                      key={key}
+                      id={kb.optionId(key)}
+                      role="option"
+                      aria-selected={isSelected}
+                      data-record-key={key}
+                      onClick={() => select(record)}
+                      className={
+                        'listbox-item cursor-pointer rounded border px-3 py-2 transition ' +
+                        (isSelected
+                          ? 'border-selected ring-1 ring-inset ring-selected/40'
+                          : 'border-transparent hover:bg-hover')
+                      }
+                    >
+                      <div className="flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
+                        <span className="tabular-nums">{timeFormat.format(new Date(record.time))}</span>
+                        <span className={`font-medium ${LEVEL_CLASSES[record.level]}`}>{t.t(LEVEL_LABELS[record.level])}</span>
+                        {record.kind !== 'log' && <span>{t.t(KIND_LABELS[record.kind])}</span>}
+                      </div>
+                      <div className="mt-0.5 truncate text-sm text-fg-strong" data-record-title data-literal>{record.title}</div>
+                      {record.text && <div className="line-clamp-2 text-xs text-fg wrap-anywhere" data-literal>{record.text}</div>}
                     </div>
-                  ) : <div key={index} role="presentation" aria-hidden="true" style={{ height: page.height }} />
+                  )
                 })}
               </div>
             )}
-            {list.status === 'ready' && list.pending.size > 0 && (
+            {list.status === 'ready' && list.loadingMore && (
               <p className="p-4 text-sm text-fg">{t.t('records.loading')}</p>
             )}
           </div>

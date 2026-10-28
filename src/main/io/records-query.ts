@@ -202,38 +202,18 @@ function registerOutputSearch(db: DatabaseSync): void {
   outputSearchConnections.add(db)
 }
 
-type SourceCache = {
-  cursors: Map<string, number>
-  sessions: Set<string>
-  tapes: Map<string, string>
-}
-
-// Records are append-only. Each reader connection accumulates the distinct
-// choices once and only visits newly appended IDs on later refreshes.
-const sourceCaches = new WeakMap<DatabaseSync, SourceCache>()
-
 export function readSources(db: DatabaseSync): RecordsReadResults['sources'] {
-  let cache = sourceCaches.get(db)
-  if (!cache) {
-    cache = { cursors: new Map(), sessions: new Set(), tapes: new Map() }
-    sourceCaches.set(db, cache)
-  }
-  for (const source of SOURCES) {
-    const rows = db.prepare(`SELECT id, session, tape_id AS tapeId, ${source.time} AS time
-      FROM ${source.table} WHERE id > ? ORDER BY id`).iterate(cache.cursors.get(source.table) ?? 0)
-    for (const value of rows) {
-      const row = value as { id: number; session: string; tapeId: string | null; time: string }
-      cache.sessions.add(row.session)
-      if (row.tapeId !== null && row.time > (cache.tapes.get(row.tapeId) ?? '')) {
-        cache.tapes.set(row.tapeId, row.time)
-      }
-      cache.cursors.set(source.table, row.id)
-    }
-  }
-  const tapes = [...cache.tapes].sort(([leftId, leftTime], [rightId, rightTime]) =>
-    leftTime === rightTime ? (leftId < rightId ? -1 : leftId > rightId ? 1 : 0) : leftTime > rightTime ? -1 : 1,
-  )
-  return { sessions: [...cache.sessions].sort().reverse(), tapeIds: tapes.map(([id]) => id) }
+  const sessions = db
+    .prepare(SOURCES.map((source) => `SELECT session FROM ${source.table}`).join(' UNION ') + ' ORDER BY session DESC')
+    .all() as { session: string }[]
+  const tapes = db
+    .prepare(
+      `SELECT tape_id AS tapeId, MAX(time) AS last FROM (
+        ${SOURCES.map((source) => `SELECT tape_id, ${source.time} AS time FROM ${source.table}`).join(' UNION ALL ')}
+      ) WHERE tape_id IS NOT NULL GROUP BY tape_id ORDER BY last DESC, tapeId`,
+    )
+    .all() as { tapeId: string }[]
+  return { sessions: sessions.map((row) => row.session), tapeIds: tapes.map((row) => row.tapeId) }
 }
 
 const DETAIL_SQL: Readonly<Record<RecordKind, string>> = {

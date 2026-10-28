@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { readPage, readSources, readDetail, readOutput } from '@main/io/records-query'
 import type { RecordKind, RecordsQuery, RecordSummary } from '@shared/records'
 import { createRecordsDatabase, growRecords, pageQueryPlan, recordsQuery } from '../../helpers/records-query-growth'
@@ -192,49 +192,20 @@ describe('Records chronological page queries', () => {
 })
 
 
-it('refreshes source choices by new IDs while preserving complete sorted options across reads', async () => {
-  const { db, path } = await freshDatabase()
+it('lists every launch and tape as complete sorted choices across reads', async () => {
+  const { db } = await freshDatabase()
   growRecords(db, 0, 40)
   const tables = ['logs', 'ai_calls', 'ytdlp_runs', 'ffmpeg_runs']
-  const cursors = tables.map((table) => Number((db.prepare(`SELECT MAX(id) AS id FROM ${table}`).get() as { id: number }).id))
-  const originalPrepare = db.prepare.bind(db)
-  const observed: Array<{ sql: string; cursor: unknown }> = []
-  const prepare = vi.spyOn(db, 'prepare').mockImplementation((sql) => {
-    const statement = originalPrepare(sql)
-    if (sql.includes('WHERE id > ?')) {
-      const iterate = statement.iterate.bind(statement)
-      statement.iterate = ((...params: Parameters<typeof iterate>) => {
-        observed.push({ sql, cursor: params[0] })
-        return iterate(...params)
-      }) as typeof statement.iterate
-    }
-    return statement
-  })
   const oracle = () => {
     const sources = tables.map((table) => `SELECT session, tape_id, ${table === 'logs' ? 'time' : 'started_at_utc'} AS time FROM ${table}`).join(' UNION ALL ')
     const sessions = db.prepare(`SELECT DISTINCT session FROM (${sources}) ORDER BY session DESC`).all() as { session: string }[]
     const tapes = db.prepare(`SELECT tape_id AS tapeId, MAX(time) AS last FROM (${sources}) WHERE tape_id IS NOT NULL GROUP BY tape_id ORDER BY last DESC, tape_id ASC`).all() as { tapeId: string }[]
     return { sessions: sessions.map((row) => row.session), tapeIds: tapes.map((row) => row.tapeId) }
   }
-  try {
-    expect(readSources(db)).toEqual(oracle())
-    expect(observed.map((entry) => entry.cursor)).toEqual([0, 0, 0, 0])
-    observed.length = 0
-    growRecords(db, 40, 80)
-    db.prepare("INSERT INTO logs (session, time, level, message, tape_id, fields) VALUES ('new-session', '2026-10-23T00:00:00.000Z', 'info', 'new fact', 'new-tape', '{}')").run()
-    const expected = oracle()
-    expect(readSources(db)).toEqual(expected)
-    expect(observed.map((entry) => entry.cursor)).toEqual(cursors)
-    for (const [index, table] of tables.entries()) {
-      expect(observed[index]!.sql).toContain(`FROM ${table} WHERE id > ?`)
-      const plan = db.prepare(`EXPLAIN QUERY PLAN ${observed[index]!.sql}`).all(cursors[index]!) as { detail: string }[]
-      expect(plan.some((row) => row.detail.includes('USING INTEGER PRIMARY KEY (rowid>?)'))).toBe(true)
-    }
-    const reopened = new DatabaseSync(path)
-    databases.push(reopened)
-    expect(readSources(reopened)).toEqual(expected)
-    expect(readSources(db)).toEqual(expected)
-  } finally { prepare.mockRestore() }
+  expect(readSources(db)).toEqual(oracle())
+  growRecords(db, 40, 80)
+  db.prepare("INSERT INTO logs (session, time, level, message, tape_id, fields) VALUES ('new-session', '2026-10-23T00:00:00.000Z', 'info', 'new fact', 'new-tape', '{}')").run()
+  expect(readSources(db)).toEqual(oracle())
 })
 
 describe('bounded run output history', () => {

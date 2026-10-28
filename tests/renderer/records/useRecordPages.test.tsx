@@ -21,24 +21,13 @@ let host: HTMLDivElement
 let viewport: HTMLDivElement
 let api: ReturnType<typeof useRecordPages>
 let top = 0
-let height = 100
-const observers = new Set<Observer>()
-class Observer {
-  nodes = new Set<Element>()
-  constructor(readonly callback: ResizeObserverCallback) { observers.add(this) }
-  observe(node: Element) { this.nodes.add(node) }
-  unobserve(node: Element) { this.nodes.delete(node) }
-  disconnect() { this.nodes.clear(); observers.delete(this) }
-}
+const ROW_HEIGHT = 40
+const VIEWPORT_HEIGHT = 100
 function Harness({ query = filters }: { query?: Omit<RecordsQuery, 'after'> }) {
   const ref = useRef<HTMLDivElement | null>(null)
   api = useRecordPages(query, ref, onFailure)
   return createElement('div', { ref, 'data-viewport': '', onScroll: api.onScroll },
-    api.pages.map((page, index) => api.cache.has(index)
-      ? createElement('div', { key: index, ref: api.pageRef(index), 'data-record-page': index },
-        api.cache.get(index)!.map((record) => createElement('div', { key: recordKey(record), 'data-row': recordKey(record) }, record.title)))
-      : createElement('div', { key: index, 'data-spacer': index, style: { height: page.height } })),
-  )
+    api.records.map((record) => createElement('div', { key: recordKey(record) }, record.title)))
 }
 async function render(query = filters) {
   await act(async () => root!.render(createElement(Harness, { query })))
@@ -52,22 +41,18 @@ function deferred() {
 async function scroll(value: number) {
   await act(async () => { top = value; viewport.dispatchEvent(new Event('scroll')) })
 }
-async function visitEnd() {
-  await scroll(Math.max(0, api.pages.reduce((sum, page) => sum + page.height, 0) - height))
-}
 function backend(_channel: string, query: RecordsQuery): Promise<RecordsPage> {
   const index = query.after ? rows.findIndex((row) => row.time === query.after!.time && row.kind === query.after!.kind && row.id === query.after!.id) + 1 : 0
   return Promise.resolve({ records: rows.slice(index, index + 2), more: index + 2 < rows.length })
 }
 beforeEach(() => {
-  top = 0; height = 100
+  top = 0
   invoke.mockReset().mockImplementation(backend)
   onFailure.mockReset()
-  vi.stubGlobal('ResizeObserver', Observer)
   Object.defineProperties(HTMLElement.prototype, {
     scrollTop: { configurable: true, get() { return top }, set(value: number) { top = value } },
-    clientHeight: { configurable: true, get() { return height } },
-    scrollHeight: { configurable: true, get() { return api?.pages.reduce((sum, page) => sum + page.height, 0) ?? 0 } },
+    clientHeight: { configurable: true, get() { return VIEWPORT_HEIGHT } },
+    scrollHeight: { configurable: true, get() { return (api?.records.length ?? 0) * ROW_HEIGHT } },
   })
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
@@ -75,131 +60,35 @@ afterEach(async () => {
   if (root) await act(async () => root!.unmount())
   root = null
   host.remove()
-  vi.unstubAllGlobals()
   for (const key of ['scrollTop', 'clientHeight', 'scrollHeight']) Reflect.deleteProperty(HTMLElement.prototype, key)
 })
 
-describe('bounded Records cursor pages', () => {
-  it('retains compact history but bounds cached and mounted rows, then reloads in either direction', async () => {
+describe('Records list pages', () => {
+  it('reads the next page with the complete cursor as the end nears, including tied timestamps', async () => {
     await render()
-    for (let index = 0; index < 14; index++) await visitEnd()
-    expect(api.pages).toHaveLength(12)
-    expect(api.cache.size).toBeLessThanOrEqual(4)
-    expect(host.querySelectorAll('[data-row]').length).toBeLessThanOrEqual(8)
-    expect(host.querySelectorAll('[data-spacer]').length).toBeGreaterThan(0)
-    const extent = api.pages.reduce((sum, page) => sum + page.height, 0)
-    const reads = invoke.mock.calls.length
-    await scroll(0)
-    expect(api.pages).toHaveLength(12)
-    expect(api.cache.has(0)).toBe(true)
-    expect(api.cache.has(11)).toBe(false)
-    expect(invoke.mock.calls.length).toBeGreaterThan(reads)
-    expect(host.textContent).toContain('row 0')
-    expect(api.pages.reduce((sum, page) => sum + page.height, 0)).toBe(extent)
-    await visitEnd()
-    expect(api.cache.has(11)).toBe(true)
-    expect(api.cache.has(0)).toBe(false)
-    expect(host.textContent).toContain('row 23')
-  })
-
-  it('derives its cache window from the current viewport and reduces it after a resize', async () => {
-    await render()
-    for (let index = 0; index < 14; index++) await visitEnd()
-    height = 700
-    await scroll(0)
-    expect(api.cache.size).toBeGreaterThan(4)
-    expect(api.cache.size).toBeLessThanOrEqual(6)
-    expect(host.querySelectorAll('[data-row]').length).toBe(api.cache.size * 2)
-    height = 100
-    await act(async () => {
-      for (const observer of observers) if (observer.nodes.has(viewport)) observer.callback([], observer as unknown as ResizeObserver)
-    })
-    expect(api.cache.size).toBeLessThanOrEqual(3)
-  })
-
-  it('records natural measured page heights and keeps them in evicted spacers', async () => {
-    await render()
-    const first = host.querySelector('[data-record-page="0"]')!
-    await act(async () => {
-      for (const observer of observers) if (observer.nodes.has(first)) {
-        observer.callback([{ target: first, borderBoxSize: [{ blockSize: 347 }] } as unknown as ResizeObserverEntry], observer as unknown as ResizeObserver)
-      }
-    })
-    expect(api.pages[0]!.height).toBe(347)
-    for (let index = 0; index < 8; index++) await visitEnd()
-    expect(api.cache.has(0)).toBe(false)
-    expect(host.querySelector<HTMLElement>('[data-spacer="0"]')!.style.height).toBe('347px')
-  })
-
-  it('keeps End on the last real page after an empty terminal page', async () => {
-    invoke.mockResolvedValueOnce({ records: rows.slice(0, 2), more: true })
-      .mockResolvedValue({ records: [], more: false })
-    await render()
-    expect(api.pages).toHaveLength(1)
-    let end: RecordSummary | undefined
-    await act(async () => { end = await api.navigate('End') })
-    expect(end).toEqual(rows[1])
-    expect(invoke).toHaveBeenCalledTimes(2)
-  })
-
-  it('uses the complete cursor including kind and id when timestamp values tie', async () => {
-    await render()
-    await visitEnd()
     const queries = invoke.mock.calls.map((call) => call[1] as RecordsQuery)
+    expect(queries[0]!.after).toBeNull()
     expect(queries[1]!.after).toEqual({ time, kind: 'ytdlp-run', id: 23 })
     expect(queries[2]!.after).toEqual({ time, kind: 'log', id: 21 })
+    const filled = api.records.length
+    await scroll(filled * ROW_HEIGHT - VIEWPORT_HEIGHT)
+    expect(api.records.length).toBeGreaterThan(filled)
     expect(new Set(api.records.map(recordKey)).size).toBe(api.records.length)
+    expect(api.records).toEqual(rows.slice(0, api.records.length))
   })
 
-  it('bridges unloaded keyboard pages and returns Home/End to visited boundaries', async () => {
+  it('replaces the shown rows on live refresh and ignores an older pending page', async () => {
     await render()
-    for (let index = 0; index < 8; index++) await visitEnd()
-    expect(api.cache.has(0)).toBe(false)
-    let home: RecordSummary | undefined
-    await act(async () => { home = await api.navigate('Home') })
-    expect(home).toEqual(rows[0])
-    expect(top).toBe(0)
-    api.activate(home!)
-    let next: RecordSummary | undefined
-    await act(async () => { next = await api.navigate('ArrowDown') })
-    expect(next).toEqual(rows[1])
-    api.activate(next!)
-    await act(async () => { next = await api.navigate('ArrowDown') })
-    expect(next).toEqual(rows[2])
-    const lastVisited = api.pages.length - 1
-    let end: RecordSummary | undefined
-    await act(async () => { end = await api.navigate('End') })
-    expect(end).toEqual(rows[lastVisited * 2 + 1])
-  })
-
-  it('invalidates cursor history on live refresh and ignores an older pending reload', async () => {
-    await render()
-    for (let index = 0; index < 7; index++) await visitEnd()
     const pending = deferred()
     invoke.mockImplementationOnce(() => pending.promise)
+    await scroll(api.records.length * ROW_HEIGHT - VIEWPORT_HEIGHT)
     await scroll(0)
     const fresh = { ...rows[0]!, id: 100, title: 'newest' }
     invoke.mockResolvedValue({ records: [fresh], more: false })
     await act(async () => api.refresh())
-    await act(async () => pending.resolve({ records: rows.slice(0, 2), more: true }))
-    expect(api.pages).toHaveLength(1)
+    await act(async () => pending.resolve({ records: rows.slice(6, 8), more: true }))
     expect(api.records).toEqual([fresh])
     expect(host.textContent).toBe('newest')
-  })
-
-  it('does not start reads from retired page boundaries while live refresh is pending', async () => {
-    await render()
-    const pending = deferred()
-    invoke.mockImplementationOnce(() => pending.promise)
-    let refresh!: Promise<void>
-    await act(async () => { refresh = api.refresh() })
-    const reads = invoke.mock.calls.length
-    await act(async () => { api.loadMore(); api.onScroll() })
-    expect(invoke).toHaveBeenCalledTimes(reads)
-    await act(async () => pending.resolve({ records: [rows[0]!], more: false }))
-    await refresh
-    expect(api.pages).toHaveLength(1)
-    expect(api.records).toEqual([rows[0]])
   })
 
   it('drops late results from a previous filter generation', async () => {
@@ -211,7 +100,6 @@ describe('bounded Records cursor pages', () => {
     await render({ ...filters, search: 'filtered' })
     await act(async () => pending.resolve({ records: rows, more: false }))
     expect(api.records).toEqual([match])
-    expect(api.pages).toHaveLength(1)
     expect(top).toBe(0)
   })
 })

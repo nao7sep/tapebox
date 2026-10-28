@@ -506,25 +506,6 @@ describe('RecordsWindow', () => {
     expect(detailCalls()).toHaveLength(1)
   })
 
-  it('keeps selected detail stable when its summary page leaves the viewport cache', async () => {
-    const pages: RecordsPage[] = Array.from({ length: 10 }, (_, index) => ({
-      records: [{ ...line, id: 100 + index, title: `Older record ${index}` }], more: index < 9,
-    }))
-    answer('records:page', { records: [call, line], more: true }, ...pages)
-    await mount()
-    await act(async () => options()[0]!.click())
-    const detail = document.querySelector('[data-records-detail]')!
-    expect(detail.textContent).toContain('gpt-x')
-    await scrollTo(700)
-    expect(options().some((option) => option.dataset.recordKey === 'ai-call:4')).toBe(false)
-    expect(Number(options()[0]!.getAttribute('aria-posinset'))).toBeGreaterThan(1)
-    expect(options()[0]!.getAttribute('aria-setsize')).toBe('12')
-    expect(listbox().getAttribute('aria-activedescendant')).toBeNull()
-    expect(document.querySelector('[data-records-detail]')).toBe(detail)
-    expect(detail.textContent).toContain('gpt-x')
-    expect(detailCalls()).toHaveLength(1)
-  })
-
   it('stops reading on new-record signals after a failed read, so a logged failure cannot start the next read', async () => {
     await mount()
     vi.useFakeTimers()
