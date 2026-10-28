@@ -190,25 +190,7 @@ describe('accepting refreshed metadata', () => {
     expect(emit).toHaveBeenCalledWith('tapes:updated', expect.objectContaining({ title: 'New title' }))
   })
 
-  it.each(['removed', 'changed-in-place'])('refuses a delayed poster result after its tape was %s', async (kind) => {
-    const tape = makeTape({ id: 'Stale001aa' })
-    state.tapes = [tape]
-    let release!: (value: string | null) => void
-    downloadThumbnail.mockImplementationOnce(() => new Promise<string | null>((resolve) => { release = resolve }))
-    const apply = invoke<Tape>('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })
-    const result = apply.catch((error: unknown) => error)
-    try {
-      await until(() => expect(downloadThumbnail).toHaveBeenCalledOnce())
-      if (kind === 'removed') state.tapes = []
-      else tape.title = 'Newer authored title'
-    } finally { release(null) }
-    expect(await result).toMatchObject({ userMessage: { key: 'refresh.applyStale' } })
-    expect(saveThumbnailJpeg).not.toHaveBeenCalled()
-    expect(persistNow).not.toHaveBeenCalled()
-    expect(state.tapes).toEqual(kind === 'removed' ? [] : [tape])
-  })
-
-  it('preserves unrelated archive and order changes while rejecting overlapping file mutations', async () => {
+  it('preserves unrelated archive and order changes made during Apply', async () => {
     const tape = makeTape({ id: 'Busy001aaa' })
     state.tapes = [tape]
     let release!: (value: string | null) => void
@@ -216,9 +198,6 @@ describe('accepting refreshed metadata', () => {
     const apply = invoke<Tape>('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })
     try {
       await until(() => expect(downloadThumbnail).toHaveBeenCalledOnce())
-      await expect(invoke('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })).rejects.toMatchObject({ userMessage: { key: 'errors.tapeBusy' } })
-      await expect(invoke('library:rename', { tapeId: tape.id, name: 'New name' })).rejects.toMatchObject({ userMessage: { key: 'errors.tapeBusy' } })
-      await expect(invoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })).rejects.toMatchObject({ userMessage: { key: 'errors.removeFilesKept' } })
       state.tapes = [{ ...tape, archivedAtUtc: PROBED_AT, order: 7 }]
     } finally { release(null); await apply }
     expect(state.tapes[0]).toMatchObject({ title: 'New title', archivedAtUtc: PROBED_AT, order: 7 })

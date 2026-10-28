@@ -1,68 +1,37 @@
 import { getLibraryDir } from '@main/store/config'
-import { UserFacingError } from '@main/user-facing-error'
-import { message } from '@shared/i18n/translate'
 
 /**
- * The one owner of writes into the library folder. Every run that creates,
- * rewrites or removes library files — a download job, an import, a rename, an
- * export (which may remove the originals), a metadata refresh that saves a poster,
- * a removal — holds a write claim for its whole run and resolves the library
- * folder under it. A library move runs only while no claim is held and blocks new
- * claims until it has committed or rolled back, so no file lands in, or leaves, the
- * old folder while its contents are being moved.
+ * The one owner of file actions in the library folder. Import, rename, Apply's
+ * poster and sidecar, export, removal, a library move and a finished download's
+ * step into the library each take a turn and run one at a time, in arrival
+ * order; an action that waits shows as in progress until its turn has run
+ * (developer decision). Downloads themselves run side by side outside turns,
+ * each in its own tape's file namespace.
  *
- * A move refuses rather than waits: the user finishes or stops the work first. A
- * write started during a move is refused too, except downloads, which the queue
- * simply does not start until the move ends.
+ * A move runs in its turn with `moving` set, so the queue starts no download
+ * until it ends; its caller refuses the move while a download runs.
  */
 
-let writers = 0
+let turns: Promise<unknown> = Promise.resolve()
 let moving = false
 
-const MOVE_BLOCKED_MESSAGE = message('errors.libraryMoveBlocked')
-const WRITE_BLOCKED_MESSAGE = message('errors.libraryWriteBlocked')
-
-/**
- * Claim a write, or get null while a move runs. The returned release is
- * idempotent; the caller calls it once the run has settled.
- */
-export function tryClaimLibraryWrite(): (() => void) | null {
-  if (moving) return null
-  writers += 1
-  let released = false
-  return () => {
-    if (released) return
-    released = true
-    writers -= 1
-  }
+/** Run `work` at its turn, with the library folder resolved when the turn starts. */
+export function withLibraryTurn<T>(work: (libraryDir: string) => Promise<T>): Promise<T> {
+  const run = turns.then(() => work(getLibraryDir()))
+  turns = run.catch(() => {})
+  return run
 }
 
-/** Run `work` under a write claim, with the library folder resolved inside it. */
-export async function withLibraryWrite<T>(work: (libraryDir: string) => Promise<T>): Promise<T> {
-  return withLibraryClaim(() => work(getLibraryDir()))
-}
-
-/** Catalog-only mutations need the same lifetime claim without resolving files. */
-export async function withLibraryClaim<T>(work: () => Promise<T>): Promise<T> {
-  const release = tryClaimLibraryWrite()
-  if (!release) throw new UserFacingError('refused', WRITE_BLOCKED_MESSAGE)
-  try {
-    return await work()
-  } finally {
-    release()
-  }
-}
-
-/** Run a library move once no write is in flight, holding off every new write until it settles. */
-export async function withLibraryMove<T>(work: () => Promise<T>): Promise<T> {
-  if (moving) throw new UserFacingError('refused', WRITE_BLOCKED_MESSAGE)
-  if (writers > 0) throw new UserFacingError('refused', MOVE_BLOCKED_MESSAGE)
-  moving = true
-  try {
-    return await work()
-  } finally {
-    moving = false
-  }
+/** Run a library move at its turn, holding off new downloads until it settles. */
+export function withLibraryMove<T>(work: () => Promise<T>): Promise<T> {
+  return withLibraryTurn(async () => {
+    moving = true
+    try {
+      return await work()
+    } finally {
+      moving = false
+    }
+  })
 }
 
 export function isLibraryMoving(): boolean {

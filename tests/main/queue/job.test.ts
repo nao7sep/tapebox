@@ -107,6 +107,7 @@ function makeDeps(opts: {
       },
     },
     getLibraryDir: () => LIBRARY_DIR,
+    withLibraryTurn: (work) => work(LIBRARY_DIR),
     emit: ((channel: string, payload: unknown) => {
       emits.push(channel)
       payloads.push(payload)

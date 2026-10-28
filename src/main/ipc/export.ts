@@ -1,10 +1,9 @@
 import { realpath, writeFile } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { handle } from './handle'
-import { removeTapes } from './library'
+import { removeTapesFrom } from './library'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
-import { tryClaimManagedFiles } from '@main/core/managed-files'
 import { readSidecarFile, sidecarNamespace, SIDECAR_JSON } from '@main/core/sidecar'
 import { serializeStoreJson } from '@main/io/atomic-json'
 import { maskYtdlpOutput, maskUrlCredentials } from '@main/io/mask'
@@ -17,7 +16,7 @@ import {
 } from '@main/io/atomic-file'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { runCancellable } from '@main/work-registry'
-import { withLibraryWrite } from '@main/library-writes'
+import { withLibraryTurn } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
@@ -36,10 +35,10 @@ import { nowUtcIso } from '@shared/utc'
  * Trash setting), making export a "move out".
  */
 export function registerExportHandlers(): void {
-  // Holds a library write claim: the export reads the library's files and, with
-  // deleteFromApp, removes them, so a library move must not run underneath it.
+  // A library turn: the export reads the library's files and, with
+  // deleteFromApp, removes them.
   handle('export:files', (req) => runCancellable((signal) =>
-    withLibraryWrite((libraryDir) => exportTape(req, libraryDir, signal))))
+    withLibraryTurn((libraryDir) => exportTape(req, libraryDir, signal))))
 }
 
 /**
@@ -74,79 +73,73 @@ async function exportTape(
   const names = [mediaName, sidecarName, ...(newThumbName ? [newThumbName] : [])]
   const owned = managedDestination && names.find((file) => session.filenameOwner(file))
   if (owned) throw new UserFacingError('conflict', message('errors.exportDestinationExists', { path: join(destinationDir, owned) }))
-  const release = managedDestination ? tryClaimManagedFiles(libDir, { names }) : null
-  if (managedDestination && !release) throw new UserFacingError('refused', message('errors.tapeBusy'))
+  const mediaDst = join(destinationDir, mediaName)
+  const sidecarDst = join(destinationDir, sidecarName)
+  const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null
+
+  // Case-insensitive so a sibling differing only in case (which macOS/Windows would
+  // silently clobber) is refused too, per storage-path-conventions' invariant.
+  const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
+  for (const dst of writtenPaths) {
+    if (await portableSiblingExists(dst)) {
+      throw new UserFacingError('conflict', message('errors.exportDestinationExists', { path: dst }))
+    }
+  }
+
+  // Read + rewrite + validate the sidecar's tapebox namespace UP FRONT — before any
+  // file is copied out — so a corrupt source sidecar (or a rewrite that would
+  // downgrade it below what import accepts) fails the export before it leaves
+  // partial files in the user's folder.
+  const original = await readSidecarFile(join(libDir, tape.sidecarFilename))
+  const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
+  const tb = sidecarNamespace(sidecar, tape)
+  // Exporting under another name renames the bundle, so the sidecar records when.
+  if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
+  tb['name'] = cleanName
+  tb['mediaFilename'] = mediaName
+  tb['thumbnailFilename'] = newThumbName
+  sidecar['tapebox'] = tb
+
+  // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
+  // written to the user's chosen destination and then forgotten. They are OUTPUT,
+  // and the sidecar is also colocated with binary media, so none enters backups.
+  const committed: string[] = []
   try {
-    const mediaDst = join(destinationDir, mediaName)
-    const sidecarDst = join(destinationDir, sidecarName)
-    const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null
-
-    // Case-insensitive so a sibling differing only in case (which macOS/Windows would
-    // silently clobber) is refused too, per storage-path-conventions' invariant.
-    const writtenPaths = [mediaDst, sidecarDst, ...(thumbDst ? [thumbDst] : [])]
-    for (const dst of writtenPaths) {
-      if (await portableSiblingExists(dst)) {
-        throw new UserFacingError('conflict', message('errors.exportDestinationExists', { path: dst }))
-      }
+    const hardLinks = await directorySupportsHardLinks(destinationDir)
+    await copyFileNoOverwrite(join(libDir, tape.filename), mediaDst, { hardLinks, signal })
+    committed.push(mediaDst)
+    if (thumbDst && tape.thumbnailFilename) {
+      await copyFileNoOverwrite(join(libDir, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
+      committed.push(thumbDst)
     }
-
-    // Read + rewrite + validate the sidecar's tapebox namespace UP FRONT — before any
-    // file is copied out — so a corrupt source sidecar (or a rewrite that would
-    // downgrade it below what import accepts) fails the export before it leaves
-    // partial files in the user's folder.
-    const original = await readSidecarFile(join(libDir, tape.sidecarFilename))
-    const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
-    const tb = sidecarNamespace(sidecar, tape)
-    // Exporting under another name renames the bundle, so the sidecar records when.
-    if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
-    tb['name'] = cleanName
-    tb['mediaFilename'] = mediaName
-    tb['thumbnailFilename'] = newThumbName
-    sidecar['tapebox'] = tb
-
-    // not recorded: media, thumbnail, and rewritten sidecar are one exported bundle
-    // written to the user's chosen destination and then forgotten. They are OUTPUT,
-    // and the sidecar is also colocated with binary media, so none enters backups.
-    const committed: string[] = []
+    signal.throwIfAborted()
+    const sidecarBytes = Buffer.from(serializeStoreJson(sidecar, SIDECAR_JSON), 'utf8')
+    await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes))
+    committed.push(sidecarDst)
+  } catch (err) {
     try {
-      const hardLinks = await directorySupportsHardLinks(destinationDir)
-      await copyFileNoOverwrite(join(libDir, tape.filename), mediaDst, { hardLinks, signal })
-      committed.push(mediaDst)
-      if (thumbDst && tape.thumbnailFilename) {
-        await copyFileNoOverwrite(join(libDir, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
-        committed.push(thumbDst)
-      }
-      signal.throwIfAborted()
-      const sidecarBytes = Buffer.from(serializeStoreJson(sidecar, SIDECAR_JSON), 'utf8')
-      await writeFileAtomicNoOverwriteVia(sidecarDst, (temp) => writeFile(temp, sidecarBytes))
-      committed.push(sidecarDst)
-    } catch (err) {
-      try {
-        await unlinkFiles(managedDestination
-          ? committed.filter((path) => !session.filenameOwner(basename(path)))
-          : committed)
-      } catch (cleanupError) {
-        throw new AggregateError(
-          [err, cleanupError],
-          `Export failed: ${String(err)}. Published files could not be fully cleaned up.`,
-        )
-      }
-      throw err
+      await unlinkFiles(committed)
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [err, cleanupError],
+        `Export failed: ${String(err)}. Published files could not be fully cleaned up.`,
+      )
     }
+    throw err
+  }
 
-    log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })
+  log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })
 
-    // Copies are safely written; only now take the tape out of the library. The copy
-    // already succeeded, so a discard failure must say "exported, but the original
-    // wasn't removed" rather than leave an untracked orphan while claiming success.
-    if (deleteFromApp) {
-      const { failed, busy } = await removeTapes([tapeId], true)
-      if (failed.length > 0 || busy.length > 0) {
-        throw new UserFacingError('conflict', message('errors.exportOriginalsKept'))
-      }
+  // Copies are safely written; only now take the tape out of the library. The copy
+  // already succeeded, so a discard failure must say "exported, but the original
+  // wasn't removed" rather than leave an untracked orphan while claiming success.
+  if (deleteFromApp) {
+    const { failed } = await removeTapesFrom(libDir, [tapeId], true)
+    if (failed.length > 0) {
+      throw new UserFacingError('conflict', message('errors.exportOriginalsKept'))
     }
+  }
 
-    return { writtenPaths }
-  } finally { release?.() }
+  return { writtenPaths }
 }
 

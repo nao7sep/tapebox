@@ -13,7 +13,7 @@ import type { Tape } from '@shared/domain'
 import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { StopRequest, type StopCause } from '@main/stop-request'
 import { findFinishedBundle } from '@main/queue/finished-bundle'
-import { nameInStem, tryClaimManagedFiles } from '@main/core/managed-files'
+import { withLibraryTurn } from '@main/library-writes'
 
 const DOWNLOAD_FAILURE_MESSAGE =
   'The download could not be completed. Check the source and your connection, then try again.'
@@ -46,6 +46,7 @@ export interface JobDeps {
     persistNow: typeof session.persistNow
   }
   getLibraryDir: typeof getLibraryDir
+  withLibraryTurn: typeof withLibraryTurn
   emit: typeof emit
   log: { info: typeof log.info; warn: typeof log.warn; error: typeof log.error }
   now: () => string
@@ -65,6 +66,7 @@ export const defaultJobDeps: JobDeps = {
     persistNow: session.persistNow,
   },
   getLibraryDir,
+  withLibraryTurn,
   emit,
   log: { info: log.info, warn: log.warn, error: log.error },
   now: nowUtcIso,
@@ -123,16 +125,12 @@ export class Job {
   private async runInner(): Promise<void> {
     // Fresh attempt: clear any log buffered from a prior (failed) run.
     this.d.emit('tapes:logReset', { tapeId: this.tapeId })
-    const libraryDir = this.d.getLibraryDir()
-    let release: (() => void) | null = null
     try {
       // Recovery and a new attempt both own <id>.*, including provider cleanup
       // and raw/JPEG postprocessing. Legacy foreign owners stop the attempt
       // before it can adopt their files or clear the namespace.
       if (this.d.session.stemOwner(this.tapeId, this.tapeId)) throw new Error('Another tape owns this download namespace')
-      release = tryClaimManagedFiles(libraryDir, { stems: [this.tapeId] })
-      if (!release) throw new Error('This download namespace is still being changed')
-      if (await this.adoptFinishedDownload()) return
+      if (await this.d.withLibraryTurn(() => this.adoptFinishedDownload())) return
       const isVideo = await this.probe()
       if (!isVideo || this.controller.signal.aborted) return
       await this.download()
@@ -150,7 +148,7 @@ export class Job {
         lastError: DOWNLOAD_FAILURE_MESSAGE,
       })
       this.d.emit('tapes:failed', { tapeId: this.tapeId, code: 'download' })
-    } finally { release?.() }
+    }
   }
 
   private current(): Tape | undefined {
@@ -176,6 +174,7 @@ export class Job {
    * Adopt a download that finished on disk before its catalog commit landed,
    * instead of probing and downloading again over it (queue/finished-bundle.ts).
    * Returns true once the job is settled: adopted, or failed with the files kept.
+   * Runs at a library turn, so no file action changes ownership meanwhile.
    */
   private async adoptFinishedDownload(): Promise<boolean> {
     const cur = this.current()
@@ -191,31 +190,17 @@ export class Job {
       return true
     }
     this.controller.signal.throwIfAborted()
-    const names = [found.move.filename, found.move.sidecarFilename, found.move.thumbnailFilename].filter((name): name is string => typeof name === 'string')
-    if (this.d.session.stemOwner(this.tapeId, this.tapeId) ||
-      names.some((name) => this.d.session.filenameOwner(name, this.tapeId))) {
-      throw new Error('Another tape acquired a finished filename during recovery')
-    }
-    // A valid older sidecar can name an untracked poster outside the ID stem.
-    // Admit and own that extra filename too before publishing it in the catalog.
-    const extraNames = names.filter((name) => !nameInStem(name, this.tapeId))
-    const releaseExtras = extraNames.length > 0
-      ? tryClaimManagedFiles(this.d.getLibraryDir(), { names: extraNames })
-      : () => {}
-    if (!releaseExtras) throw new Error('A finished filename is still being changed')
+    this.move(found.move)
+    const committed = await this.d.session.persistNow()
+    const adopted = this.current()
+    this.d.log.info('job adopted a finished download', { tapeId: this.tapeId, filename: adopted?.filename ?? null, committed })
     try {
-      this.move(found.move)
-      const committed = await this.d.session.persistNow()
-      const adopted = this.current()
-      this.d.log.info('job adopted a finished download', { tapeId: this.tapeId, filename: adopted?.filename ?? null, committed })
-      try {
-        if (adopted) this.d.emit('tapes:updated', adopted)
-        this.d.emit('tapes:completed', { tapeId: this.tapeId })
-      } catch (err) {
-        this.d.log.error('download completion could not be sent to the window', { tapeId: this.tapeId, error: describeError(err) })
-      }
-      return true
-    } finally { releaseExtras() }
+      if (adopted) this.d.emit('tapes:updated', adopted)
+      this.d.emit('tapes:completed', { tapeId: this.tapeId })
+    } catch (err) {
+      this.d.log.error('download completion could not be sent to the window', { tapeId: this.tapeId, error: describeError(err) })
+    }
+    return true
   }
 
   /** Returns true if a downloadable video; false if the URL is a page of videos. */
@@ -349,20 +334,23 @@ export class Job {
       },
     })
 
-    this.move({
-      state: 'downloaded',
-      failureCode: null,
-      filename: mediaBasename,
-      sidecarFilename,
-      thumbnailFilename,
-      downloadedAtUtc,
+    // The finished files are on disk; adding them to the library is this job's
+    // one library turn. Commit the row that names them before reporting success,
+    // so a crash now cannot restore the tape as queued and have its next attempt
+    // delete the finished download. The download is done either way: a failed
+    // catalog write is the session store's to retry and report, never a download
+    // failure that would invite a Retry over these files.
+    const committed = await this.d.withLibraryTurn(() => {
+      this.move({
+        state: 'downloaded',
+        failureCode: null,
+        filename: mediaBasename,
+        sidecarFilename,
+        thumbnailFilename,
+        downloadedAtUtc,
+      })
+      return this.d.session.persistNow()
     })
-    // The finished files are on disk; commit the row that names them before
-    // reporting success, so a crash now cannot restore the tape as queued and
-    // have its next attempt delete the finished download. The download is done
-    // either way: a failed catalog write is the session store's to retry and
-    // report, never a download failure that would invite a Retry over these files.
-    const committed = await this.d.session.persistNow()
     // Close the bracket opened by 'job start': the queue logs start and the catch
     // logs failure, so without this the app's central operation — a finished
     // download — would be the one outcome absent from the session log.

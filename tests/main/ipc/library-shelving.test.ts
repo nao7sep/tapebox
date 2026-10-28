@@ -367,25 +367,6 @@ describe('removing tapes from the library', () => {
     expect(emitted('tapes:removed')).toEqual([[{ tapeIds: ['Quitwaits1'] }]])
   })
 
-  it('reports a busy tape as busy, and as kept files only when files were to go', async () => {
-    state.tapes = [makeTape({ id: 'Busytape01', state: 'downloading' })]
-    queueManager.isActive.mockReturnValue(true)
-    let settle!: () => void
-    queueManager.cancel.mockImplementation(() => new Promise<void>((resolve) => { settle = resolve }))
-    const first = invoke('library:remove', { tapeIds: ['Busytape01'], deleteFiles: false })
-    await until(() => expect(queueManager.cancel).toHaveBeenCalledOnce())
-
-    await expect(invoke('library:remove', { tapeIds: ['Busytape01'], deleteFiles: false })).rejects.toThrow(
-      'This tape is being changed. Wait for the current operation to finish.',
-    )
-    await expect(invoke('library:remove', { tapeIds: ['Busytape01'], deleteFiles: true })).rejects.toThrow(
-      'The files for 1 tape could not be removed. The library entries were kept.',
-    )
-    settle()
-    await first
-    expect(state.tapes).toEqual([])
-  })
-
   it('keeps the entry and says so when the files cannot be discarded, and still removes the rest', async () => {
     state.trashOnRemove = true
     state.tapes = [await stageFiles('Stuckhere1'), await stageFiles('Removable1')]

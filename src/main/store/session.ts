@@ -44,6 +44,8 @@ let catalogPath: string | null = null
 let persistChain: Promise<void> = Promise.resolve()
 /** Serialized durable content last written or loaded, to skip unchanged writes. */
 let lastWritten: Buffer | null = null
+/** The bytes a library move's copy published, which the moved catalog starts from. */
+let copiedForMove: Buffer | null = null
 const tapePositions = new Map<string, number>()
 const boxPositions = new Map<string, number>()
 /** True from a failed catalog save until the next successful one. */
@@ -174,7 +176,7 @@ export async function loadSession(): Promise<SessionLoadResult> {
 }
 
 /** Bind only after the destination location has durably committed. The caller
- * holds the library gate and has flushed all previous writes. */
+ * runs at its library turn and has flushed all previous writes. */
 export function bindSession(target: string, session: Session): void {
   cancelScheduledSave()
   catalogPath = target
@@ -191,13 +193,19 @@ export function copyCatalogTo(destination: string, signal?: AbortSignal): Promis
   assertLoaded()
   return enqueueCatalogWrite(async () => {
     await writeCatalog(cache)
+    copiedForMove = lastWritten
     return linkOrCopyNoOverwrite(catalogPath!, destination, signal)
   })
 }
 
-/** A move preserves the same cache and durable bytes at its new location. */
-export function bindMovedSession(libraryDir: string): void {
-  catalogPath = collectionCatalog(libraryDir)
+/** A move keeps the same cache at its new location. Changes saved in the old
+ * folder after the copy reach the new one with the first save there. */
+export function bindMovedSession(libraryDir: string): Promise<boolean> {
+  void enqueueCatalogWrite(async () => {
+    catalogPath = collectionCatalog(libraryDir)
+    lastWritten = copiedForMove
+  })
+  return persistNow()
 }
 
 /** Materialize even an empty collection before it is copied or moved. */

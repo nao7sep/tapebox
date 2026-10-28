@@ -36,10 +36,11 @@ vi.mock('electron', () => ({
   },
 }))
 
-const tick = vi.hoisted(() => vi.fn())
+const { tick, hasActiveJobs } = vi.hoisted(() => ({ tick: vi.fn(), hasActiveJobs: vi.fn(() => false) }))
 vi.mock('@main/queue/manager', () => ({
   resumePaused: vi.fn(),
   tick,
+  hasActiveJobs,
 }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
@@ -62,7 +63,7 @@ vi.mock('@main/store/library-move', () => ({
   rollbackLibraryRelocation,
 }))
 
-vi.mock('@main/store/session', () => ({ getTapes: vi.fn(() => []), prepareCollection: vi.fn(async () => {}), bindMovedSession: vi.fn(), bindSession: vi.fn(), loadSessionFile: vi.fn() }))
+vi.mock('@main/store/session', () => ({ getTapes: vi.fn(() => []), prepareCollection: vi.fn(async () => {}), bindMovedSession: vi.fn(async () => true), persistNow: vi.fn(async () => true), bindSession: vi.fn(), loadSessionFile: vi.fn() }))
 vi.mock('@main/services/api-keys', () => ({
   writeApiKey: vi.fn(),
   clearApiKey: vi.fn(),
@@ -78,7 +79,7 @@ vi.mock('@main/io/logger', () => ({
 }))
 
 const { registerSettingsHandlers } = await import('@main/ipc/settings')
-const { isLibraryMoving, tryClaimLibraryWrite } = await import('@main/library-writes')
+const { isLibraryMoving, withLibraryTurn } = await import('@main/library-writes')
 
 function update(patch: Partial<Settings>): Promise<{ settings: Settings; warning: Message | null }> {
   const fn = handlers.get('settings:update')
@@ -193,30 +194,39 @@ describe('settings:update — normalizeUserDir at the boundary', () => {
   })
 })
 
-describe('settings:update — relocation refused while library writes run', () => {
-  it('throws and moves nothing when the library dir changes while a download or import is writing', async () => {
-    const release = tryClaimLibraryWrite()!
-    try {
-      // A real change: from the current resolved dir to a new absolute custom folder.
-      await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow(
-        "Can't move the library while downloads, imports, renames or exports are running.",
-      )
-    } finally {
-      release()
-    }
+describe('settings:update — relocation at its library turn', () => {
+  it('throws and moves nothing when the library dir changes while a download runs', async () => {
+    hasActiveJobs.mockReturnValueOnce(true)
+    // A real change: from the current resolved dir to a new absolute custom folder.
+    await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow(
+      "Can't move the library while downloads are running.",
+    )
     // The safety guard fires BEFORE the move and BEFORE the commit.
     expect(relocateLibrary).not.toHaveBeenCalled()
     expect(updateSettings).not.toHaveBeenCalled()
   })
 
-  it('saves other settings while library writes run when the folder is unchanged', async () => {
-    const release = tryClaimLibraryWrite()!
-    try {
-      await update({ autoplay: false })
-    } finally {
-      release()
-    }
+  it('waits for a library action in progress, then moves', async () => {
+    relocateLibrary.mockResolvedValue({ moved: true, count: 0, crossDevice: false, files: [] })
+    let finishImport!: () => void
+    const importing = withLibraryTurn(() => new Promise<void>((resolve) => { finishImport = resolve }))
+    const pending = update({ libraryDir: '/data/new-library' })
+    await Promise.resolve()
+    expect(relocateLibrary).not.toHaveBeenCalled()
+    finishImport()
+    await importing
+    await pending
+    expect(relocateLibrary).toHaveBeenCalledOnce()
     expect(updateSettings).toHaveBeenCalledOnce()
+  })
+
+  it('saves other settings while a library action runs when the folder is unchanged', async () => {
+    let finishImport!: () => void
+    const importing = withLibraryTurn(() => new Promise<void>((resolve) => { finishImport = resolve }))
+    await update({ autoplay: false })
+    expect(updateSettings).toHaveBeenCalledOnce()
+    finishImport()
+    await importing
   })
 
   it('proceeds with the move and commit when no library write is in flight', async () => {
@@ -308,12 +318,10 @@ describe('settings:update — library move control', () => {
     expect(updateSettings).not.toHaveBeenCalled()
   })
 
-  it('holds off library writes while the move runs, and Stop Move aborts it without committing', async () => {
-    const seenDuringMove: Array<{ moving: boolean; claim: boolean }> = []
+  it('holds off downloads while the move runs, and Stop Move aborts it without committing', async () => {
+    const seenDuringMove: boolean[] = []
     relocateLibrary.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => {
-      const claim = tryClaimLibraryWrite()
-      seenDuringMove.push({ moving: isLibraryMoving(), claim: claim !== null })
-      claim?.()
+      seenDuringMove.push(isLibraryMoving())
       return new Promise((_resolve, reject) => {
         options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
       })
@@ -324,7 +332,7 @@ describe('settings:update — library move control', () => {
     await handlers.get('settings:cancelLibraryMove')!(undefined)
 
     await expect(pending).rejects.toMatchObject({ code: 'cancelled' })
-    expect(seenDuringMove).toEqual([{ moving: true, claim: false }])
+    expect(seenDuringMove).toEqual([true])
     expect(isLibraryMoving()).toBe(false)
     // The queue catches up once the move has settled.
     expect(tick).toHaveBeenCalled()

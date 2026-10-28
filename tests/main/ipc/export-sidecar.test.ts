@@ -33,11 +33,11 @@ vi.mock('@main/store/session', () => ({ getTape: () => tape }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => libraryState.dir }))
 vi.mock('@main/ipc/library', () => ({
   caseInsensitiveSiblingExists: vi.fn(async () => false),
-  removeTapes: vi.fn(async () => ({ removed: [], failed: [] as string[], busy: [] as string[] })),
+  removeTapesFrom: vi.fn(async () => ({ removed: [], failed: [] as string[] })),
 }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 
-const { removeTapes } = await import('@main/ipc/library')
+const { removeTapesFrom } = await import('@main/ipc/library')
 const { registerExportHandlers } = await import('@main/ipc/export')
 
 let root: string
@@ -45,7 +45,7 @@ let destinationDir: string
 
 beforeEach(async () => {
   handlers.clear()
-  vi.mocked(removeTapes).mockClear().mockResolvedValue({ removed: [], failed: [], busy: [] })
+  vi.mocked(removeTapesFrom).mockClear().mockResolvedValue({ removed: [], failed: [] })
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-sidecar-'))
   libraryState.dir = join(root, 'library')
   destinationDir = join(root, 'destination')
@@ -75,8 +75,8 @@ async function exportedSidecar(name: string): Promise<Record<string, unknown>> {
 }
 
 describe('export:files sidecar', () => {
-  it('reports a kept busy original without undoing the completed export', async () => {
-    vi.mocked(removeTapes).mockClear().mockResolvedValue({ removed: [], failed: [], busy: [tape.id] })
+  it('reports a kept original without undoing the completed export', async () => {
+    vi.mocked(removeTapesFrom).mockClear().mockResolvedValue({ removed: [], failed: [tape.id] })
     await expect(handlers.get('export:files')!({ tapeId: tape.id, destinationDir, name: 'Holiday', deleteFromApp: true }))
       .rejects.toMatchObject({ code: 'conflict', userMessage: { key: 'errors.exportOriginalsKept' } })
     expect(await readFile(join(destinationDir, 'Holiday.mp4'), 'utf8')).toBe('video')

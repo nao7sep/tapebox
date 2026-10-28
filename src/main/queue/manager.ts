@@ -3,7 +3,7 @@ import { durableTape } from '@shared/durable-tape'
 import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
-import { isLibraryMoving, tryClaimLibraryWrite } from '@main/library-writes'
+import { isLibraryMoving } from '@main/library-writes'
 import { moveTape } from '@main/core/tape-state'
 import { nowUtcIso } from '@shared/utc'
 import { Job } from './job'
@@ -34,10 +34,9 @@ const stoppedTapeIds = new Set<string>()
 const held = new Set<string>()
 
 /**
- * Start what the concurrency cap allows. Each job holds a library write claim for
- * its whole run (it finalizes straight into the library folder), so a library move
- * refuses while any runs; during a move nothing starts, and the move's owner ticks
- * again when it ends.
+ * Start what the concurrency cap allows. A job downloads straight into the
+ * library folder, so a library move refuses while any runs; during a move
+ * nothing starts, and the move's owner ticks again when it ends.
  */
 export function tick(): void {
   if (stopped || isLibraryMoving()) return
@@ -46,15 +45,12 @@ export function tick(): void {
   const toStart = selectTapesToStart(candidates, new Set(active.keys()), max)
 
   for (const tape of toStart) {
-    const release = tryClaimLibraryWrite()
-    if (!release) return
     const job = new Job(tape)
     active.set(tape.id, job)
     log.info('job start', { tapeId: tape.id, url: maskYtdlpOutput(maskUrlCredentials(tape.sourceUrl)) })
     void job
       .run()
       .finally(() => {
-        release()
         active.delete(tape.id)
         if (!stopped && stoppedTapeIds.delete(tape.id)) restoreStoppedTape(tape.id)
         tick()

@@ -209,17 +209,20 @@ describe('importing a bundle', () => {
     expect((await readdir(state.libraryDir)).sort()).toEqual(['holiday.json', 'holiday.mp4'])
   })
 
-  it('is refused while the library is being moved, and copies nothing into the old folder', async () => {
+  it('waits for a library move to end before copying anything', async () => {
     const sidecar = await stageBundle({ stem: 'late' })
     let finishMove!: () => void
     const moving = withLibraryMove(() => new Promise<void>((resolve) => { finishMove = resolve }))
 
-    await expect(importPaths(sidecar)).rejects.toThrow('The library is being moved to a new folder.')
+    const importing = importPaths(sidecar)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(await readdir(state.libraryDir)).toEqual([])
 
     finishMove()
     await moving
-    expect(await readdir(state.libraryDir)).toEqual([])
-    expect(state.tapes).toEqual([])
+    const result = await importing
+    expect(result.imported).toHaveLength(1)
+    expect((await readdir(state.libraryDir)).sort()).toEqual(['late.json', 'late.mp4'])
   })
 
   it('reports a bundle of a video already in the library under a URL with tracking parameters', async () => {

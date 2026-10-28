@@ -48,7 +48,7 @@ const libraryState = vi.hoisted(() => ({ dir: '' }))
 const sessionState = vi.hoisted(() => ({ tape: null as Tape | null }))
 vi.mock('@main/store/session', () => ({ getTape: () => sessionState.tape }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => libraryState.dir }))
-vi.mock('@main/ipc/library', () => ({ removeTapes: vi.fn(async () => ({ removed: [], failed: [] as string[], busy: [] as string[] })) }))
+vi.mock('@main/ipc/library', () => ({ removeTapesFrom: vi.fn(async () => ({ removed: [], failed: [] as string[] })) }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() } }))
 
 const { registerExportHandlers } = await import('@main/ipc/export')

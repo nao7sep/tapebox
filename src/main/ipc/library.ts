@@ -22,12 +22,11 @@ import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
 import { readSidecarFile, sidecarNamespace, SIDECAR_JSON, writeSidecar } from '@main/core/sidecar'
 import { portableFilenameIdentity } from '@main/core/filename'
-import { claimManagedFiles, managedFilenameClaimed, tryClaimManagedFiles } from '@main/core/managed-files'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
 import { cancelWork, runCancellable } from '@main/work-registry'
-import { withLibraryWrite } from '@main/library-writes'
+import { withLibraryTurn } from '@main/library-writes'
 import { type SourceRef } from '@shared/source-identity'
 import { downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
@@ -40,20 +39,6 @@ import { message } from '@shared/i18n/translate'
 import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
 
 const PASSIVE_MEDIA_EXTENSIONS = new Set(['.mp4', '.m4v', '.mkv', '.webm', '.mov', '.avi', '.mpg', '.mpeg', '.ogv', '.flv', '.wmv', '.3gp', '.mp3', '.m4a', '.aac', '.flac', '.wav', '.ogg', '.opus', '.aiff'])
-
-const tapeWrites = new Set<string>()
-
-function claimTapeWrite(id: string): (() => void) | null {
-  if (tapeWrites.has(id)) return null
-  tapeWrites.add(id)
-  return () => { tapeWrites.delete(id) }
-}
-
-async function withTapeWrite<T>(id: string, work: () => Promise<T>): Promise<T> {
-  const release = claimTapeWrite(id)
-  if (!release) throw new UserFacingError('refused', message('errors.tapeBusy'))
-  try { return await work() } finally { release() }
-}
 
 export function registerLibraryHandlers(): void {
   session.onCatalogSaveFailure(() => emit('library:saveFailed', null))
@@ -113,16 +98,13 @@ export function registerLibraryHandlers(): void {
   // Registered as work so a quit waits for it, files and catalog commit alike,
   // before its final catalog save. Removal is not abandoned midway: it settles.
   handle('library:remove', ({ tapeIds, deleteFiles }) => runCancellable(async () => {
-    const { failed, busy } = await removeTapes(tapeIds, deleteFiles)
+    const { failed } = await removeTapes(tapeIds, deleteFiles)
     // Tapes whose files couldn't be discarded are KEPT (not removed from the list);
     // surface the failure so the user is never told a removal succeeded while the
-    // files (and the catalog entry) actually remain. A busy tape kept its files too,
-    // but when no files were to go, it is only busy.
-    const kept = failed.length + (deleteFiles ? busy.length : 0)
-    if (kept > 0) {
-      throw new UserFacingError('conflict', message('errors.removeFilesKept', { count: kept }))
+    // files (and the catalog entry) actually remain.
+    if (failed.length > 0) {
+      throw new UserFacingError('conflict', message('errors.removeFilesKept', { count: failed.length }))
     }
-    if (busy.length > 0) throw new UserFacingError('refused', message('errors.tapeBusy'))
   }))
 
   handle('library:getSidecar', async ({ tapeId }) => {
@@ -158,7 +140,7 @@ export function registerLibraryHandlers(): void {
   })
 
   handle('library:rename', ({ tapeId, name }) => runCancellable((signal) =>
-    withLibraryWrite((libraryDir) => withTapeWrite(tapeId, () => renameTape(tapeId, name, libraryDir, signal)))))
+    withLibraryTurn((libraryDir) => renameTape(tapeId, name, libraryDir, signal))))
 
   handle('library:probeMetadata', async ({ tapeId, requestId }) => {
     const tape = session.getTape(tapeId)
@@ -184,15 +166,15 @@ export function registerLibraryHandlers(): void {
     cancelWork(`metadata-probe:${requestId}`)
   })
 
-  // Writes the sidecar and may save a poster into the library, so it holds a write claim.
+  // Writes the sidecar and may save a poster into the library, so it takes a library turn.
   handle('library:applyMetadata', ({ tapeId, metadata }) => runCancellable((signal) =>
-    withLibraryWrite((dir) => withTapeWrite(tapeId, () => applyMetadata(tapeId, metadata, dir, signal)))))
+    withLibraryTurn((dir) => applyMetadata(tapeId, metadata, dir, signal))))
 
   // Sidecar-driven import: the whole selection arrives here so this filesystem-owning
   // boundary can tell referenced bundle companions from unsupported extras. One
   // sidecar = one tape, so a duplicate is reported once, not once per selected file.
   handle('library:import', ({ paths }) => runCancellable((signal) =>
-    withLibraryWrite((libraryDir) => importBundles(paths, libraryDir, signal))))
+    withLibraryTurn((libraryDir) => importBundles(paths, libraryDir, signal))))
 }
 
 async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: string, signal: AbortSignal): Promise<Tape> {
@@ -200,17 +182,6 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: s
   if (!existing) throw new Error(`Tape not found: ${tapeId}`)
   if (queue.isActive(tapeId)) throw new UserFacingError('refused', message('errors.tapeBusy'))
   const tape = structuredClone(existing)
-  const stem = tape.filename?.slice(0, -extname(tape.filename).length)
-  // The raw fetch uses a private name under the tape ID; conversion replaces
-  // the literal media-stem JPEG. Both stay owned through the catalog settlement.
-  const posterFree = stem !== undefined && tape.thumbnailFilename === null &&
-    !session.stemOwner(stem, tapeId) && !session.stemOwner(tapeId, tapeId)
-  const release = posterFree ? tryClaimManagedFiles(dir, { stems: [stem, tapeId] }) : null
-  try { return await applyMetadataToTape(tape, metadata, dir, signal, release !== null) } finally { release?.() }
-}
-
-async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir: string, signal: AbortSignal, posterReserved: boolean): Promise<Tape> {
-  const tapeId = tape.id
   // Refuse a protected sidecar before attempting its optional poster backfill.
   const sidecar = tape.sidecarFilename ? await readSidecarFile(join(dir, tape.sidecarFilename)) : null
 
@@ -219,7 +190,9 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
   // metadata the user reviewed must still apply even if the fetch fails. Routed
   // through the same image gate as a fresh download.
   let thumbnailFilename = tape.thumbnailFilename
-  if (thumbnailFilename === null && tape.filename && posterReserved) {
+  // The raw fetch uses a private name under the tape ID; conversion replaces
+  // the literal media-stem JPEG, so no other tape may own either stem.
+  if (thumbnailFilename === null && tape.filename && !session.stemOwner(tapeId, tapeId)) {
     const stem = tape.filename.slice(0, -extname(tape.filename).length)
     try {
       if (await posterStemFree(tape, dir, stem)) {
@@ -242,14 +215,7 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
       log.warn('thumbnail backfill failed', { tapeId, error: describeError(err) })
     }
   }
-  // The one check that the reviewed tape is still the one being changed, right
-  // before the sidecar and catalog commit; the tape write claim holds it after.
   signal.throwIfAborted()
-  const reviewed = session.getTape(tapeId)
-  const fields = ['sourceUrl', 'state', 'filename', 'sidecarFilename', 'thumbnailFilename', 'title', 'uploader', 'probedAtUtc', 'name'] as const
-  if (!reviewed || fields.some((key) => reviewed[key] !== tape[key])) {
-    throw new UserFacingError('refused', message('refresh.applyStale'))
-  }
 
   // The sidecar is the bundle's own record: export carries it and import reads
   // its title, uploader and poster back. So it takes everything the catalog is
@@ -257,12 +223,12 @@ async function applyMetadataToTape(tape: Tape, metadata: RefreshedMetadata, dir:
   // the catalog as it was rather than the two disagreeing. A poster fetched for
   // it stays in the library under the tape's own stem, for the next Apply.
   if (tape.sidecarFilename) {
-    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, reviewed, sidecar!)
+    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, tape, sidecar!)
   }
 
   // Once the sidecar has committed, Apply finishes with its catalog commit even if
-  // it is cancelled or the app is quitting, so the two never disagree; the tape
-  // write claim keeps the fields checked above unchanged.
+  // it is cancelled or the app is quitting, so the two never disagree. No other
+  // file action runs during this turn.
   const current = session.getTape(tapeId)
   if (!current) throw new Error(`Tape not found: ${tapeId}`)
 
@@ -398,14 +364,12 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // tracked filename before awaiting any of the companion-file work.
     const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
     const bundleNames = [mediaFilename, `${mediaStem}.json`]
-    const conflict = importBundleConflict(source, bundleNames, sidecarPath, libraryDir)
+    const conflict = importBundleConflict(source, bundleNames, sidecarPath)
     if (conflict) {
       issues.push(conflict)
       continue
     }
-    const thumbnailTaken = tbThumb !== null && (
-      session.filenameOwner(tbThumb) || managedFilenameClaimed(libraryDir, tbThumb)
-    )
+    const thumbnailTaken = tbThumb !== null && !!session.filenameOwner(tbThumb)
 
     const srcMedia = join(dir, mediaFilename)
     try {
@@ -428,20 +392,20 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       // the user's library membership, is what is backed up.
       if (srcMedia !== targetMedia) {
         assertImportDestination(targetMedia, destinationNames)
-        await withImportFileClaim(targetMedia, () => copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal }))
+        await copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal })
         copied.push(targetMedia)
         destinationNames.add(portableFilenameIdentity(basename(targetMedia)))
       }
       if (sidecarPath !== targetSidecar) {
         assertImportDestination(targetSidecar, destinationNames)
-        await withImportFileClaim(targetSidecar, () => copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal }))
+        await copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal })
         copied.push(targetSidecar)
         destinationNames.add(portableFilenameIdentity(basename(targetSidecar)))
       }
     } catch (err) {
       try {
-        await rollbackImportCopies(copied)
-        for (const path of copied) if (!session.filenameOwner(basename(path))) destinationNames.delete(portableFilenameIdentity(basename(path)))
+        await unlinkFiles(copied)
+        for (const path of copied) destinationNames.delete(portableFilenameIdentity(basename(path)))
         log.error('import bundle copy failed', {
           path: sidecarPath,
           error: describeError(err),
@@ -486,7 +450,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
         // not recorded: the imported poster is library content, like its media.
         if (srcThumb !== dstThumb) {
           assertImportDestination(dstThumb, destinationNames)
-          await withImportFileClaim(dstThumb, () => copyFileNoOverwrite(srcThumb, dstThumb, { hardLinks, signal }))
+          await copyFileNoOverwrite(srcThumb, dstThumb, { hardLinks, signal })
           copied.push(dstThumb)
           destinationNames.add(portableFilenameIdentity(basename(dstThumb)))
         }
@@ -504,36 +468,15 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       }
     }
 
-    // Another import may have committed while the copies waited, including one
-    // that adopted this run's already-published files from inside the library.
-    // Recheck synchronously through upsert; rollback retires only copies that no
-    // live row now owns, and never the referenced originals of an in-place import.
-    const commitTapes = session.getTapes()
-    const commitConflict = importBundleConflict(source, bundleNames, sidecarPath, libraryDir)
-    if (commitConflict) {
-      issues.push(commitConflict)
-      try {
-        await rollbackImportCopies(copied)
-        for (const path of copied) if (!session.filenameOwner(basename(path))) destinationNames.delete(portableFilenameIdentity(basename(path)))
-      } catch (cleanupError) {
-        log.error('import admission rollback failed', { path: sidecarPath, error: describeError(cleanupError) })
-        issues.push({ path: sidecarPath, reason: message('import.copyIncomplete'), severity: 'error' })
-      }
-      continue
-    }
-    if (thumbnailFilename && (
-      session.filenameOwner(thumbnailFilename) || managedFilenameClaimed(libraryDir, thumbnailFilename)
-    )) {
-      issues.push({ path: join(dir, thumbnailFilename), reason: message('import.thumbnailNameTaken'), severity: 'warning' })
-      thumbnailFilename = null
-    }
+    // No other file action runs during this turn, so the admission above still
+    // holds; the batch's inbox order is allocated at publication below.
     const tape = tapeFromSidecar(sidecar, {
       id: nanoid(10),
       sourceUrl,
       mediaFilename,
       sidecarFilename: `${mediaStem}.json`,
       thumbnailFilename,
-      order: frontOrders(commitTapes.filter((t) => !t.archivedAtUtc).map((t) => t.order), 1)[0]!,
+      order: frontOrders(session.getTapes().filter((t) => !t.archivedAtUtc).map((t) => t.order), 1)[0]!,
       nowUtc: nowUtcIso(),
     })
     session.upsertTape(tape)
@@ -541,8 +484,8 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
   }
 
   if (imported.length > 0) {
-    // Allocate the final block at publication, after all copy waits. Other batches
-    // and URL additions may have joined the inbox while these files were copied.
+    // Allocate the final block at publication, after all copy waits. URL
+    // additions may have joined the inbox while these files were copied.
     const importedIds = new Set(imported.map((tape) => tape.id))
     const currentInbox = session.getTapes().filter((tape) => !tape.archivedAtUtc)
     const members = imported.map((tape) => session.getTape(tape.id)).filter((tape): tape is Tape => !!tape && !tape.archivedAtUtc)
@@ -576,39 +519,12 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
 }
 
 /** The catalog owns source and portable filename admission, even for missing files. */
-function importBundleConflict(source: SourceRef, names: readonly string[], path: string, libraryDir: string): ImportIssue | null {
+function importBundleConflict(source: SourceRef, names: readonly string[], path: string): ImportIssue | null {
   if (session.sourceOwner(source)) {
     return { path, reason: message(ALREADY_IN_LIBRARY), severity: 'information' }
   }
-  const clash = names.find((name) => session.filenameOwner(name) || managedFilenameClaimed(libraryDir, name))
+  const clash = names.find((name) => session.filenameOwner(name))
   return clash ? { path, reason: message('import.nameTaken', { name: clash }), severity: 'warning' } : null
-}
-
-/** Remove this run's copies, rechecking ownership immediately before each unlink. */
-async function rollbackImportCopies(copied: readonly string[]): Promise<void> {
-  const failures: unknown[] = []
-  for (const path of copied) {
-    try {
-      const release = claimManagedFiles(dirname(path), { names: [basename(path)] })
-      try {
-        if (session.filenameOwner(basename(path))) continue
-        await unlinkFiles([path])
-      } finally { release() }
-    } catch (error) {
-      failures.push(error)
-    }
-  }
-  if (failures.length > 0) throw new AggregateError(failures, 'Imported files could not be fully cleaned up.')
-}
-
-/** Keep adoption out of a copy's visible destination and any primitive cleanup. */
-async function withImportFileClaim(path: string, work: () => Promise<void>): Promise<void> {
-  const release = tryClaimManagedFiles(dirname(path), { names: [basename(path)] })
-  if (!release || session.filenameOwner(basename(path))) {
-    release?.()
-    throw new UserFacingError('refused', message('errors.tapeBusy'))
-  }
-  try { await work() } finally { release() }
 }
 
 /**
@@ -642,15 +558,6 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
       cause: new Error(`Rename destination ${item.fresh} belongs to catalog tape ${owner}.`),
     })
   }
-  // New names remain rollback-only until the catalog commits; old names remain
-  // owned until their post-commit physical retirement finishes.
-  const release = tryClaimManagedFiles(libraryDir, { names: plan.items.flatMap((item) => [item.old, item.fresh]) })
-  if (!release) throw new UserFacingError('refused', message('errors.tapeBusy'))
-  try { return await publishRenamedTape(tape, plan, libraryDir, signal) } finally { release() }
-}
-
-async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof planRename>, { status: 'rename' }>, libraryDir: string, signal: AbortSignal): Promise<Tape> {
-  const tapeId = tape.id
   const { cleanName } = plan
   const p = (rel: string) => join(libraryDir, rel)
   const nowUtc = nowUtcIso()
@@ -702,7 +609,7 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
   const done: string[] = []
   const rollbackBeforeCatalogCommit = async (initiatingError: unknown): Promise<never> => {
     try {
-      await unlinkFiles(done.filter((path) => !session.filenameOwner(basename(path), tapeId)))
+      await unlinkFiles(done)
     } catch (cleanupError) {
       throw new AggregateError(
         [initiatingError, cleanupError],
@@ -779,99 +686,80 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
  * only the library entries go. An in-flight download is stopped first so we never
  * race yt-dlp's writes, and no download starts for a tape being removed.
  *
- * Shared by library:remove and Export's "delete from app" (export copies the
- * files out, then calls this to take the tape out of the library). A tape another
- * operation is changing is reported busy and kept.
+ * library:remove takes its own turn; Export's "delete from app" copies the
+ * files out, then removes the tape within its turn through {@link removeTapesFrom}.
  */
-export function removeTapes(
+export async function removeTapes(
   tapeIds: string[],
   deleteFiles: boolean,
-): Promise<{ removed: string[]; failed: string[]; busy: string[] }> {
-  return withLibraryWrite((libraryDir) => removeTapesFrom(libraryDir, tapeIds, deleteFiles))
+): Promise<{ removed: string[]; failed: string[] }> {
+  const ids = new Set(tapeIds)
+  // Before anything is cancelled, so a finishing job cannot start another of
+  // these. Downloads stop before the turn is taken: a stopping job may need a
+  // turn of its own to add its finished download.
+  const release = queue.holdFromScheduling(ids)
+  try {
+    for (const id of ids) if (queue.isActive(id)) await queue.cancel(id)
+    return await withLibraryTurn((libraryDir) => removeTapesFrom(libraryDir, [...ids], deleteFiles))
+  } finally {
+    release()
+  }
 }
 
-async function removeTapesFrom(
+/** Remove tapes at the caller's library turn; none of them has a running download. */
+export async function removeTapesFrom(
   libraryDir: string,
   tapeIds: string[],
   deleteFiles: boolean,
-): Promise<{ removed: string[]; failed: string[]; busy: string[] }> {
+): Promise<{ removed: string[]; failed: string[] }> {
   const settings = getSettings()
   const removed: string[] = []
   const failed: string[] = []
-  const busy: string[] = []
-  const ids = new Set(tapeIds)
-  // Before anything is cancelled, so a finishing job cannot start another of these.
-  const releases: Array<() => void> = [queue.holdFromScheduling(ids)]
-
-  try {
-    const selected: Tape[] = []
-    for (const id of ids) {
-      if (!session.getTape(id)) continue
-      const release = claimTapeWrite(id)
-      if (!release) { busy.push(id); continue }
-      releases.push(release)
-      if (queue.isActive(id)) await queue.cancel(id)
-      const tape = session.getTape(id)
-      if (!tape) continue
-      if (deleteFiles) {
-        const releaseFiles = tryClaimManagedFiles(libraryDir, {
-          names: TRACKED_FILENAME_FIELDS.flatMap((field) => tape[field] === null ? [] : [tape[field]!]),
-          stems: [tape.id],
-        })
-        if (!releaseFiles) { busy.push(id); continue }
-        releases.push(releaseFiles)
-      }
-      selected.push(tape)
-    }
-
-    // All selected producers have settled and their namespaces remain claimed.
-    // Enumerate once, retaining only candidates for the selected namespaces.
-    const candidates = new Map<string, string[]>()
-    if (deleteFiles && selected.length) {
-      const stems = new Map(selected.map((tape) => [portableFilenameIdentity(tape.id), tape.id]))
-      try {
-        for (const name of await readdir(libraryDir)) {
-          const identity = portableFilenameIdentity(name)
-          for (let at = identity.indexOf('.'); at !== -1; at = identity.indexOf('.', at + 1)) {
-            const id = stems.get(identity.slice(0, at))
-            if (id === undefined) continue
-            let names = candidates.get(id)
-            if (!names) candidates.set(id, names = [])
-            names.push(name)
-          }
-        }
-      } catch (error) {
-        log.error('library removal listing failed', { error: describeError(error) })
-        failed.push(...selected.map((tape) => tape.id))
-        return { removed, failed, busy }
-      }
-    }
-    for (const tape of selected) {
-      if (deleteFiles) {
-        try {
-          if (tape.sidecarFilename) await refuseNewerSidecar(join(libraryDir, tape.sidecarFilename))
-          await discardTapeFiles(libraryDir, tape, settings.trashOnRemove, candidates.get(tape.id) ?? [])
-        } catch (err) {
-          log.error('library removal failed', { tapeId: tape.id, error: describeError(err) })
-          failed.push(tape.id)
-          continue
+  const selected = tapeIds.map((id) => session.getTape(id)).filter((tape): tape is Tape => !!tape)
+  // Enumerate once, retaining only candidates for the selected namespaces.
+  const candidates = new Map<string, string[]>()
+  if (deleteFiles && selected.length) {
+    const stems = new Map(selected.map((tape) => [portableFilenameIdentity(tape.id), tape.id]))
+    try {
+      for (const name of await readdir(libraryDir)) {
+        const identity = portableFilenameIdentity(name)
+        for (let at = identity.indexOf('.'); at !== -1; at = identity.indexOf('.', at + 1)) {
+          const id = stems.get(identity.slice(0, at))
+          if (id === undefined) continue
+          let names = candidates.get(id)
+          if (!names) candidates.set(id, names = [])
+          names.push(name)
         }
       }
-      removed.push(tape.id)
+    } catch (error) {
+      log.error('library removal listing failed', { error: describeError(error) })
+      failed.push(...selected.map((tape) => tape.id))
+      return { removed, failed }
     }
-
-    if (removed.length > 0) {
-      session.removeTapes(removed)
-      // Files are already discarded; commit the removal before reporting it, so a
-      // crash now cannot bring back rows that point at trashed files. The removal
-      // stands either way; a failed write is the session store's to retry and report.
-      await session.persistNow()
-      emit('tapes:removed', { tapeIds: removed })
-    }
-    return { removed, failed, busy }
-  } finally {
-    for (const release of releases.reverse()) release()
   }
+  for (const tape of selected) {
+    if (deleteFiles) {
+      try {
+        if (tape.sidecarFilename) await refuseNewerSidecar(join(libraryDir, tape.sidecarFilename))
+        await discardTapeFiles(libraryDir, tape, settings.trashOnRemove, candidates.get(tape.id) ?? [])
+      } catch (err) {
+        log.error('library removal failed', { tapeId: tape.id, error: describeError(err) })
+        failed.push(tape.id)
+        continue
+      }
+    }
+    removed.push(tape.id)
+  }
+
+  if (removed.length > 0) {
+    session.removeTapes(removed)
+    // Files are already discarded; commit the removal before reporting it, so a
+    // crash now cannot bring back rows that point at trashed files. The removal
+    // stands either way; a failed write is the session store's to retry and report.
+    await session.persistNow()
+    emit('tapes:removed', { tapeIds: removed })
+  }
+  return { removed, failed }
 }
 
 /**

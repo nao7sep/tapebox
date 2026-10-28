@@ -53,23 +53,6 @@ it.each(['removed', 'selection', 'collection', 'replacement'])('does not restore
   expect(play).not.toHaveBeenCalled()
 })
 
-it('waits for overlapping operations before restoring the original snapshot', async () => {
-  let finishFirst!: () => void
-  let finishSecond!: () => void
-  const first = withReleasedTapeVideo(tape, ref, () => new Promise<void>(resolve => { finishFirst = resolve }))
-  const second = withReleasedTapeVideo(tape, ref, () => new Promise<void>(resolve => { finishSecond = resolve }))
-  expect(video.pause).toHaveBeenCalledOnce()
-  finishFirst()
-  await first
-  expect(video.hasAttribute('src')).toBe(false)
-  finishSecond()
-  await second
-  expect(video.src).toBe(source)
-  video.currentTime = 0
-  video.dispatchEvent(new Event('loadedmetadata'))
-  expect(video.currentTime).toBe(37)
-})
-
 it('does not release an unrelated playing tape', async () => {
   await withReleasedTapeVideo({ ...tape, filename: 'other.mp4' }, ref, async () => {})
   expect(video.pause).not.toHaveBeenCalled()

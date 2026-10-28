@@ -5,17 +5,8 @@ import type { IpcReply } from '@shared/ipc-reply'
 import { describeError } from '@shared/error'
 import { log } from '@main/io/logger'
 import { UserFacingError } from '@main/user-facing-error'
-import { withLibraryClaim } from '@main/library-writes'
 import { ipcRequestSchemas } from './schemas'
 import { isTrustedApplicationSender } from './trust'
-
-// These catalog-only mutations also hold the collection claim across awaits.
-// Filesystem writers already claim at their owning operation; reads stay usable.
-const CATALOG_WRITERS = new Set<keyof IpcCalls>([
-  'downloads:add', 'downloads:addBulk', 'downloads:retry', 'downloads:cancel',
-  'library:archive', 'library:unarchive', 'tapes:reorder',
-  'boxes:create', 'boxes:rename', 'boxes:delete', 'boxes:reorder', 'boxes:place',
-])
 
 /**
  * Typed wrapper around ipcMain.handle.
@@ -52,9 +43,7 @@ export function handle<K extends keyof IpcCalls>(
       return { ok: false, failure: { code: 'internal', userMessage: null } }
     }
     try {
-      return { ok: true, value: await (CATALOG_WRITERS.has(channel)
-        ? withLibraryClaim(async () => handler(req, _event))
-        : handler(req, _event)) }
+      return { ok: true, value: await handler(req, _event) }
     } catch (err) {
       if (err instanceof UserFacingError) {
         if (err.code !== 'cancelled') log.warn('ipc handler refused', { channel, error: describeError(err) })

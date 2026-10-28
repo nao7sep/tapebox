@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   failConfig: false,
   cancelOnCatalog: false,
   beforeCatalog: null as null | (() => Promise<void>),
-  progress: null as null | (() => void),
+  progress: null as null | ((progress: { filesDone: number; filesTotal: number }) => void),
   tick: vi.fn(),
   emit: vi.fn(),
 }))
@@ -24,10 +24,10 @@ vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: 
 vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn(), systemAppearance: vi.fn(() => 'light') }))
 vi.mock('@main/i18n', () => ({ applyLanguagePreference: vi.fn(), mainTranslator: () => ({ t: () => 'New Box' }) }))
 vi.mock('@main/power-blocker', () => ({ reconcileWakeLock: vi.fn() }))
-vi.mock('@main/queue/manager', () => ({ tick: state.tick, resumePaused: vi.fn() }))
+vi.mock('@main/queue/manager', () => ({ tick: state.tick, resumePaused: vi.fn(), hasActiveJobs: () => false }))
 vi.mock('@main/ipc/events', () => ({ emit: (channel: string, payload: unknown) => {
   state.emit(channel, payload)
-  if (channel === 'settings:libraryMoveProgress') state.progress?.()
+  if (channel === 'settings:libraryMoveProgress') state.progress?.(payload as { filesDone: number; filesTotal: number })
 } }))
 vi.mock('@main/io/atomic-json', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
@@ -153,6 +153,20 @@ describe('portable collection through settings and the actual catalog owner', ()
     expect(await readFile(app.collectionCatalog(target), 'utf8')).toContain('After move')
   })
 
+  it('carries a catalog change saved in the old folder during the move to the new one', async () => {
+    const app = await seed()
+    const target = join(root, 'moved')
+    state.progress = ({ filesDone, filesTotal }) => {
+      // After every file, the catalog included, has been copied.
+      if (filesDone < filesTotal) return
+      app.session.upsertBox({ id: 'Box1234567', name: 'During move', order: 7 })
+      void app.session.persistNow()
+    }
+    await update({ libraryDir: target })
+    expect(app.config.getLibraryDir()).toBe(target)
+    expect(await readFile(app.collectionCatalog(target), 'utf8')).toContain('During move')
+  })
+
   it('refuses to move over another collection even when media names do not collide', async () => {
     const app = await seed()
     const target = join(root, 'other')
@@ -165,17 +179,18 @@ describe('portable collection through settings and the actual catalog owner', ()
     expect(await readdir(target)).toEqual(['.tapebox'])
   })
 
-  it('refuses another settings save while a collection switch owns the writer', async () => {
+  it('keeps another settings save made while a collection switch runs', async () => {
     const app = await seed()
     const autoplay = app.config.getSettings().autoplay
     let competing: Promise<unknown> | undefined
     state.progress = () => {
       state.progress = null
-      competing = update({ autoplay: !autoplay }).catch((error: unknown) => error)
+      competing = update({ autoplay: !autoplay })
     }
     await update({ libraryDir: join(root, 'moved') })
-    expect(await competing).toBeInstanceOf(Error)
-    expect(app.config.getSettings().autoplay).toBe(autoplay)
+    await competing
+    expect(app.config.getSettings().autoplay).toBe(!autoplay)
+    expect(app.config.getLibraryDir()).toBe(join(root, 'moved'))
   })
 
   it('rolls a cancelled move back including metadata without changing authority', async () => {
@@ -235,7 +250,7 @@ describe('portable collection through settings and the actual catalog owner', ()
     expect(state.emit.mock.calls.some(([channel]) => channel === 'library:opened')).toBe(false)
   })
 
-  it('keeps a pending organization write with its original collection before opening another', async () => {
+  it('lands a pending organization write in its original collection before opening another', async () => {
     const app = await seed()
     const target = join(root, 'other')
     await cp(app.config.getLibraryDir(), target, { recursive: true })
@@ -247,11 +262,10 @@ describe('portable collection through settings and the actual catalog owner', ()
     state.beforeCatalog = async () => { state.beforeCatalog = null; began(); await hold }
     const edit = state.handlers.get('boxes:reorder')!({ orderedIds: ['Box1234567', 'Box7654321'] })
     await started
-    await expect(update({ libraryDir: target, libraryAction: 'open' })).rejects.toThrow()
+    const opening = update({ libraryDir: target, libraryAction: 'open' })
     finish()
     await edit
-    expect(JSON.parse(await readFile(app.collectionCatalog(app.paths.library), 'utf8')).boxes[0].order).toBe(0)
-    await update({ libraryDir: target, libraryAction: 'open' })
+    await opening
     expect(app.session.getBoxes()[0]!.order).toBe(7)
     expect(JSON.parse(await readFile(app.collectionCatalog(app.paths.library), 'utf8')).boxes[0].order).toBe(0)
   })

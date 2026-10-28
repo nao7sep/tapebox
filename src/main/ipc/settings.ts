@@ -22,7 +22,7 @@ import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
 import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import { settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
-import { withLibraryClaim, withLibraryMove } from '@main/library-writes'
+import { withLibraryMove } from '@main/library-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { message } from '@shared/i18n/translate'
 
@@ -56,16 +56,16 @@ function effectiveLibraryDir(libraryDir: string): string {
 
 /**
  * Relocate the library when a settings patch changes the effective library dir.
- * Publishes destination copies BEFORE the new setting is committed while retaining
- * every source claim. Only after config.json durably names the destination does the
+ * Publishes destination copies BEFORE the new setting is committed, keeping every
+ * source. Only after config.json durably names the destination does the
  * caller clean the obsolete sources. A crash or failure before that commit leaves
  * the old libraryDir and every catalog-visible source coherent; a no-op (effective
  * dir unchanged) returns immediately and the normal update proceeds.
  *
- * It runs inside the library write gate (library-writes.ts), which refuses it while
- * any download, import, rename or export is writing into the current folder and
- * holds new ones off until the settings commit, so nothing is stranded in the old
- * folder.
+ * It runs at its library turn (library-writes.ts), so no import, rename, export or
+ * removal runs beside it; it refuses while a download runs, and none starts until
+ * the settings commit, so nothing is stranded in the old folder. Catalog changes
+ * made meanwhile go through the catalog's owner, which carries them to the new folder.
  */
 type CompletedRelocation = { fromDir: string; files: RelocatedFile[] }
 
@@ -127,10 +127,10 @@ export function registerSettingsHandlers(): void {
     // unsaved. updateSettings re-validates too (this doesn't replace it); doing it
     // here just guarantees the move only runs for a patch that will persist.
     settingsAfterPatch(config.getSettings(), normalized)
-    // Move the library first; if it throws (collision, library writes in flight,
+    // Move the library first; if it throws (collision, downloads running,
     // a failed-and-rolled-back move) the new libraryDir is never committed, so the
     // renderer surfaces the error and the catalog still points at the old folder.
-    // The write gate is held for the whole move and settings commit so no download,
+    // The library turn lasts for the whole move and settings commit so no download,
     // import or rename writes into the old folder meanwhile; the queue catches up
     // after. Stop (settings:cancelLibraryMove) or quitting aborts the copy and rolls
     // back every file already published.
@@ -149,9 +149,12 @@ export function registerSettingsHandlers(): void {
       },
       LIBRARY_MOVE_KEY,
     )
-    if (!movesLibrary(normalized)) return withLibraryClaim(apply)
+    if (!movesLibrary(normalized)) return apply()
     try {
-      return await withLibraryMove(apply)
+      return await withLibraryMove(() => {
+        if (queue.hasActiveJobs()) throw new UserFacingError('refused', message('errors.libraryMoveBlocked'))
+        return apply()
+      })
     } finally {
       queue.tick()
     }
@@ -215,10 +218,13 @@ async function applySettingsPatch(
     throw saveError
   }
   if (opened) {
+    // Changes made to the current collection while it was being opened reach
+    // its own catalog before the opened one replaces it.
+    await session.persistNow()
     session.bindSession(collectionCatalog(toDir), opened.session)
     emit('library:opened', opened.session)
   } else if (relocation) {
-    session.bindMovedSession(toDir)
+    await session.bindMovedSession(toDir)
   }
   // Settings apply on Save, the theme (app-chrome conventions, Theme) and the
   // language (localization-conventions) included.

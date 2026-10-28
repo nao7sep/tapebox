@@ -61,6 +61,7 @@ function deps(tapes: Map<string, Tape>, overrides: { download: JobDeps['ytdlp'][
       persistNow: async () => overrides.committed,
     },
     getLibraryDir: () => dir,
+    withLibraryTurn: (work) => work(dir),
     emit: noop as JobDeps['emit'],
     log: { info: noop, warn: noop, error: noop },
     now: () => overrides.now,
