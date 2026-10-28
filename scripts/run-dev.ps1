@@ -48,7 +48,7 @@ function Invoke-Native {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
-$runtimeToken = [guid]::NewGuid().ToString("N")
+$appPid = $null
 $rendererUrl = "http://127.0.0.1:27143"
 
 try {
@@ -57,6 +57,10 @@ try {
     Require-Command npm
 
     Set-Location $repoDir
+
+    Write-Step "Replacing any existing TapeBox runtime"
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "check-endpoint", "127.0.0.1", "27143")
 
     Write-Step "Installing dependencies"
     Invoke-Native -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
@@ -69,9 +73,15 @@ try {
     }
 
     Write-Step "Starting TapeBox in development mode"
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "launch-dev", $runtimeToken, "127.0.0.1", "27143")
+    $devProcess = Start-Process -FilePath (Get-Command "npm.cmd").Source -ArgumentList @("run", "dev") -NoNewWindow -PassThru
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-http", $rendererUrl, "60000")
+    $appPid = & node $runtimeHelper record-wrapped $devProcess.Id (Join-Path $repoDir "node_modules/electron/dist/electron.exe")
+    if ($LASTEXITCODE -ne 0) { throw "TapeBox did not start." }
     Write-Step "TapeBox is ready at $rendererUrl"
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "wait-owner", $runtimeToken)
+    $devProcess.WaitForExit()
+    if ($devProcess.ExitCode -notin @(0, 130, -1073741510)) {
+        throw "TapeBox development runtime failed with exit code $($devProcess.ExitCode)."
+    }
 }
 catch {
     Write-Host ""
@@ -79,15 +89,8 @@ catch {
     $scriptExitCode = 1
 }
 finally {
-    if (Get-Command node -ErrorAction SilentlyContinue) {
-        try {
-            Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop-if-owner", $runtimeToken)
-        }
-        catch {
-            Write-Host "TapeBox cleanup failed: $($_.Exception.Message)" -ForegroundColor Red
-            $scriptExitCode = 1
-        }
-    }
+    # Closing this launcher closes the app it started, unless a later launcher has replaced it.
+    if ($appPid) { & node $runtimeHelper stop-if-recorded $appPid }
     if ($scriptExitCode -ne 0) { Read-Host "Press Enter to close" | Out-Null }
 }
 

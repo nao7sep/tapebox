@@ -27,7 +27,6 @@ function Write-Step {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
-$runtimeToken = [guid]::NewGuid().ToString("N")
 $appName = "TapeBox"
 $outDir = "dist"
 $exePath = Join-Path $repoDir "$outDir/win-unpacked/$appName.exe"
@@ -49,11 +48,13 @@ try {
     }
 
     $builtAt = (Get-Item $exePath).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+    & node $runtimeHelper stop
+    if ($LASTEXITCODE -ne 0) { throw "The running TapeBox did not close." }
     Write-Step "Launching the existing packaged app (built: $builtAt)"
     Write-Host "If you changed source since then, run rebuild instead."
 
-    & node $runtimeHelper launch $runtimeToken $exePath
-    if ($LASTEXITCODE -ne 0) { throw "TapeBox did not become ready." }
+    & node $runtimeHelper launch-exe $exePath
+    if ($LASTEXITCODE -ne 0) { throw "TapeBox could not be started." }
 }
 catch {
     Write-Host ""

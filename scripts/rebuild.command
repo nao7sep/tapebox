@@ -12,8 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="TapeBox"
 RUNTIME_HELPER="$SCRIPT_DIR/launcher-runtime.mjs"
-RUNTIME_TOKEN="rebuild-$$-$(date +%s)-$RANDOM"
-CANDIDATE_DIR="$REPO_DIR/dist.candidate-$RUNTIME_TOKEN"
+CANDIDATE_DIR="$REPO_DIR/dist.candidate-$$-$(date +%s)"
 
 log_step() {
   printf '\n==> %s\n' "$1"
@@ -85,6 +84,10 @@ if [[ -z "$APP_BUNDLE" || ! -x "$APP_BUNDLE/Contents/MacOS/TapeBox" ]]; then
   exit 1
 fi
 
+APP_RELATIVE="${APP_BUNDLE#"$CANDIDATE_DIR/"}"
+log_step "Publishing the verified package"
+node "$RUNTIME_HELPER" stop
+node "$RUNTIME_HELPER" publish "$CANDIDATE_DIR" "$APP_RELATIVE/Contents/MacOS/TapeBox"
+
 log_step "Launching the packaged app"
-EXECUTABLE_RELATIVE="${APP_BUNDLE#"$CANDIDATE_DIR/"}/Contents/MacOS/TapeBox"
-node "$RUNTIME_HELPER" publish-launch "$RUNTIME_TOKEN" "$CANDIDATE_DIR" "$EXECUTABLE_RELATIVE"
+node "$RUNTIME_HELPER" launch-bundle "$REPO_DIR/dist/$APP_RELATIVE"

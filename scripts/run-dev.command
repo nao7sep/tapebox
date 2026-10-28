@@ -9,7 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUNTIME_HELPER="$SCRIPT_DIR/launcher-runtime.mjs"
-RUNTIME_TOKEN="run-dev-$$-$(date +%s)-$RANDOM"
+APP_PID=""
 RENDERER_URL="http://127.0.0.1:27143"
 
 log_step() {
@@ -35,10 +35,9 @@ pause_on_failure() {
 cleanup() {
   local status="$?"
   trap - EXIT
-  if command -v node >/dev/null 2>&1; then
-    local cleanup_status=0
-    node "$RUNTIME_HELPER" stop-if-owner "$RUNTIME_TOKEN" || cleanup_status=$?
-    if [[ "$status" -eq 0 && "$cleanup_status" -ne 0 ]]; then status="$cleanup_status"; fi
+  # Closing this launcher closes the app it started, unless a later launcher has replaced it.
+  if [[ -n "$APP_PID" ]]; then
+    node "$RUNTIME_HELPER" stop-if-recorded "$APP_PID" || true
   fi
   pause_on_failure "$status"
   exit "$status"
@@ -51,6 +50,10 @@ require_command npm
 
 cd "$REPO_DIR"
 
+log_step "Replacing any existing TapeBox runtime"
+node "$RUNTIME_HELPER" stop
+node "$RUNTIME_HELPER" check-endpoint 127.0.0.1 27143
+
 log_step "Installing dependencies"
 npm install --no-audit --no-fund
 
@@ -62,6 +65,9 @@ if [[ ! -f node_modules/electron/path.txt ]]; then
 fi
 
 log_step "Starting TapeBox in development mode"
-node "$RUNTIME_HELPER" launch-dev "$RUNTIME_TOKEN" 127.0.0.1 27143
+npm run dev &
+DEV_PID=$!
+node "$RUNTIME_HELPER" wait-http "$RENDERER_URL" 60000
+APP_PID="$(node "$RUNTIME_HELPER" record-wrapped "$DEV_PID" "$REPO_DIR/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron")"
 log_step "TapeBox is ready at $RENDERER_URL"
-node "$RUNTIME_HELPER" wait-owner "$RUNTIME_TOKEN"
+wait "$DEV_PID"

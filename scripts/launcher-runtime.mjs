@@ -1,209 +1,301 @@
-// Repository-owned launch transaction. Usage: launch <token> <executable> [args],
-// launch-dev <token> <host> <port>, publish-launch <token> <candidate> <relative-exe>,
-// stop-if-owner <token>, wait-owner <token>, or check-endpoint <host> <port>.
-// Ownership is a captured PID/creation identity plus a private app control token;
-// executable paths and occupied ports never authorize closing another instance.
-import { execFile, spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { open, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve, sep } from 'node:path';
-import { promisify } from 'node:util';
+/**
+ * Shared by the launchers (run-dev, run-built, rebuild) of both platforms: one
+ * TapeBox runtime per repository. The launcher that starts TapeBox records its
+ * process ID and executable under .git; the next launcher asks that process to
+ * quit only while it still runs that executable, and stops with a message
+ * rather than force-closing it when it stays open. TapeBox started any other way
+ * is left to its single-instance behavior, which brings its window forward
+ * instead of opening a second one.
+ *
+ * CLI: node launcher-runtime.mjs <command>
+ *   stop                              ask the recorded runtime to quit
+ *   stop-if-recorded <pid>            the same, only while <pid> is the recorded one
+ *   launch-bundle <app bundle>        open a new instance (macOS) and record it
+ *   launch-exe <executable>           start the executable (Windows) and record it
+ *   publish <candidate> <executable>  replace dist with a validated candidate package,
+ *                                     keeping the previous one until the swap succeeds
+ *   record-wrapped <pid> <executable> record the app process a wrapper started; prints its pid
+ *   check-endpoint <host> <port>      fail when the port is taken
+ *   wait-http <url> [timeout-ms]      wait until the URL responds
+ */
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
+import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
+import { basename, dirname, join, relative, resolve, isAbsolute } from "node:path";
+import { promisify } from "node:util";
 
-const execute = promisify(execFile);
-export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OWNER_FILE = join(tmpdir(), `company-launcher-${createHash('sha256').update(REPO_ROOT).digest('hex').slice(0, 20)}.json`);
-const delay = (ms) => new Promise((done) => setTimeout(done, ms));
+const execFileAsync = promisify(execFile);
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const RECORD_FILE = join(REPO_ROOT, ".git", "launcher-runtime-process");
+/** The app's processes are named after its product name, read from its one source. */
+const { productName } = JSON.parse(await readFile(join(REPO_ROOT, "package.json"), "utf8")).build;
+const windows = process.platform === "win32";
 
-export async function processIdentity(pid) {
-  if (process.platform === 'win32') {
-    const { stdout } = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
-      `$ErrorActionPreference = 'Stop'; $p = Get-CimInstance Win32_Process -Filter "ProcessId = ${Number(pid)}"; if ($p) { $p.CreationDate.ToUniversalTime().ToString('o') }`], { timeout: 10000 });
-    return stdout.trim() || null;
+const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+
+async function powershell(script) {
+  const { stdout } = await execFileAsync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return stdout.trim();
+}
+
+async function osascript(script, ...args) {
+  const { stdout } = await execFileAsync("/usr/bin/osascript", ["-l", "JavaScript", "-e", script, ...args], { encoding: "utf8" });
+  return stdout.trim();
+}
+
+function sameExecutable(left, right) {
+  return windows ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
+/** The executable a process runs, or "" when no such process exists. */
+async function executableOf(pid) {
+  if (windows) return powershell(`(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).Path`);
+  // ps shows the path a process was started with, which a wrapper can give relative; lsof names the file it runs.
+  try {
+    const { stdout } = await execFileAsync("lsof", ["-a", "-p", String(pid), "-d", "txt", "-Fn"], { encoding: "utf8" });
+    return stdout.split("\n").find((line) => line.startsWith("n"))?.slice(1) ?? "";
+  } catch (error) {
+    if (error?.code === 1) return ""; // lsof lists nothing for an ended process
+    throw error;
+  }
+}
+
+async function record(pid, executable) {
+  await writeFile(RECORD_FILE, `${pid}\n${executable}\n`, "utf8");
+}
+
+/** The recorded process ID, returned only while that process still runs the recorded executable. */
+async function recordedPid() {
+  let text;
+  try {
+    text = await readFile(RECORD_FILE, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  }
+  const [pidText, executable] = text.split(/\r?\n/);
+  const pid = Number(pidText);
+  if (!Number.isInteger(pid) || pid <= 0 || !executable) return undefined;
+  return sameExecutable(await executableOf(pid), executable) ? pid : undefined;
+}
+
+/** Ask the process to quit as a user would, so it can still finish or ask about running work. */
+async function requestClose(pid) {
+  if (windows) {
+    await powershell(`$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { $null = $p.CloseMainWindow() }`);
+    return;
+  }
+  await osascript(`ObjC.import('AppKit');
+function run(args) {
+  var application = $.NSRunningApplication.runningApplicationWithProcessIdentifier(Number(args[0]));
+  if (application) application.terminate;
+}`, String(pid));
+}
+
+async function stopRecorded(onlyPid) {
+  const pid = await recordedPid();
+  if (pid === undefined || (onlyPid !== undefined && pid !== onlyPid)) return;
+  process.stdout.write(`Asking the running ${productName} (pid ${pid}) to quit.\n`);
+  await requestClose(pid);
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (await recordedPid() !== pid) return;
+    await delay(100);
+  }
+  throw new Error(`${productName} is still open, perhaps finishing or asking about running work. Close it, then run this launcher again.`);
+}
+
+const singleInstanceNote = `If ${productName} was already running outside these launchers, its window is brought forward instead.\n`;
+
+/** Open a new instance of the bundle through Launch Services, which gives it its bundle identity. */
+async function launchBundle(bundle) {
+  const pid = Number(await osascript(`ObjC.import('AppKit');
+function run(args) {
+  var application = $.NSWorkspace.sharedWorkspace.launchApplicationAtURLOptionsConfigurationError(
+    $.NSURL.fileURLWithPath(args[0]), $.NSWorkspaceLaunchNewInstance, $({}), null);
+  return application.isNil() ? '' : String(application.processIdentifier);
+}`, resolve(bundle)));
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`${productName} could not be opened.`);
+  await record(pid, await executableOf(pid));
+  process.stdout.write(singleInstanceNote);
+}
+
+async function launchExecutable(executable) {
+  const child = spawn(resolve(executable), [], { detached: true, stdio: "ignore" });
+  await once(child, "spawn");
+  child.unref();
+  await record(child.pid, resolve(executable));
+  process.stdout.write(singleInstanceNote);
+}
+
+/**
+ * Swap the validated `dist.candidate-<id>` package into dist. The previous
+ * package waits at `dist.previous-<id>` until the candidate is in place and is
+ * restored when the swap fails, so a failed rebuild never removes the only
+ * runnable package.
+ */
+async function publishPackage(candidate, executable) {
+  const destination = join(REPO_ROOT, "dist");
+  candidate = resolve(candidate);
+  const suffix = basename(candidate).match(/^dist\.candidate-(.+)$/)?.[1];
+  const inside = relative(candidate, resolve(candidate, executable));
+  if (!suffix || dirname(candidate) !== REPO_ROOT || inside.startsWith("..") || isAbsolute(inside)) throw new Error("Invalid candidate package path.");
+  if (!(await stat(join(candidate, inside))).isFile()) throw new Error("The candidate executable is not a file.");
+  const previous = join(REPO_ROOT, `dist.previous-${suffix}`);
+  let retained = false;
+  try {
+    await rename(destination, previous);
+    retained = true;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
   }
   try {
-    const { stdout } = await execute('ps', ['-p', String(pid), '-o', 'lstart='], { timeout: 5000 });
-    return stdout.trim() || null;
+    await rename(candidate, destination);
   } catch (error) {
-    if (error.code === 1 && !error.stdout?.trim()) return null;
-    throw error;
-  }
-}
-
-async function readJson(path) {
-  try { return JSON.parse(await readFile(path, 'utf8')); }
-  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-}
-
-export function runtimeOwner({ recordPath = OWNER_FILE, identity = processIdentity, wait = delay,
-  now = Date.now, close = async (record) => {
-    const response = await fetch(`http://127.0.0.1:${record.app.port}/quit`, {
-      method: 'POST', headers: { authorization: `Bearer ${record.token}` }, signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) throw new Error(`The app refused the close request (${response.status}).`);
-  }, timeout = 10000 } = {}) {
-  const lockPath = `${recordPath}.lock`;
-  const read = () => readJson(recordPath);
-  const save = async (record) => {
-    const stage = `${recordPath}.tmp`;
-    await writeFile(stage, JSON.stringify(record), { mode: 0o600 });
-    await rename(stage, recordPath);
-  };
-  const alive = async (process) => process?.created && await identity(process.pid) === process.created;
-  async function locked(work) {
-    let lock;
-    const deadline = now() + timeout;
-    for (;;) {
-      try { lock = await open(lockPath, 'wx', 0o600); break; }
-      catch (error) {
-        if (error.code !== 'EEXIST') throw error;
-        if (now() >= deadline) throw new Error(`Another launcher is still working. Wait for it to finish. If it crashed, close its terminal and remove ${lockPath}, then retry.`);
-        await wait(100);
-      }
-    }
-    try { return await work(); }
-    finally { await lock.close(); await unlink(lockPath); }
-  }
-  async function stop(record) {
-    if (!record) return;
-    const requested = new Set();
-    const deadline = now() + timeout;
-    for (;;) {
-      // electron-vite can replace its Electron child on a main-process edit.
-      // Its inherited private token registers the new child of this generation.
-      const ready = record.readyPath ? await readJson(record.readyPath) : null;
-      if (ready?.token === record.token && (ready.pid !== record.app?.pid || ready.port !== record.app?.port)) {
-        const created = await identity(ready.pid);
-        if (created) {
-          record.app = { pid: ready.pid, created, port: ready.port };
-          record.launching = false;
-          await save(record);
-        }
-      }
-      const appAlive = await alive(record.app);
-      const key = record.app && `${record.app.pid}:${record.app.created}:${record.app.port}`;
-      if (appAlive && !requested.has(key)) { await close(record); requested.add(key); }
-      if (!await alive(record.root) && !await alive(record.app)) {
-        if (record.launching) throw new Error(`A previous launch never registered readiness. Close its app and terminal, then remove ${recordPath} and retry.`);
-        if (record.readyPath) await unlink(record.readyPath).catch((error) => { if (error.code !== 'ENOENT') throw error; });
-        return;
-      }
-      if (now() >= deadline) throw new Error('TapeBox is still running. Finish or cancel its close question, or close its launcher terminal, then retry. Nothing was force-closed.');
-      await wait(100);
-    }
-  }
-  return {
-    read, save, alive,
-    replace: (token, launch) => locked(async () => {
-      await stop(await read());
-      const record = { token, root: null, app: null };
-      await save(record);
-      // Keep the transaction locked through readiness: no later invocation can
-      // claim this generation between closure, launch and registration.
-      return await launch(record, save);
-    }),
-    stopIfOwner: (token) => locked(async () => {
-      const record = await read();
-      if (record?.token !== token) return false;
-      await stop(record);
-      await unlink(recordPath);
-      return true;
-    }),
-  };
-}
-
-async function launch(token, executable, args, prepare = async () => undefined) {
-  if (!/^[a-zA-Z0-9-]+$/.test(token)) throw new Error('Invalid launcher token.');
-  const owner = runtimeOwner();
-  await owner.replace(token, async (record, save) => {
-    const cleanup = await prepare();
-    const readyPath = `${OWNER_FILE}.${token}.ready`;
-    record.readyPath = readyPath;
-    record.launching = true;
-    await save(record);
-    const child = spawn(executable, args, {
-      cwd: REPO_ROOT, detached: true, windowsHide: true, stdio: 'inherit',
-      env: { ...process.env, TAPEBOX_LAUNCHER_READY: readyPath, TAPEBOX_LAUNCHER_TOKEN: token },
-    });
-    try { await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); }); }
-    catch (error) { record.launching = false; await save(record); throw error; }
-    child.unref();
-    record.root = { pid: child.pid, created: await processIdentity(child.pid) };
-    await save(record);
-    {
-      const deadline = Date.now() + 60000;
-      while (Date.now() < deadline) {
-        const ready = await readJson(readyPath);
-        if (ready?.token === token) {
-          const created = await processIdentity(ready.pid);
-          if (!created) throw new Error('TapeBox exited before becoming ready.');
-          record.app = { pid: ready.pid, created, port: ready.port };
-          record.launching = false;
-          await save(record);
-          await cleanup?.();
-          process.stdout.write('TapeBox is ready.\n');
-          return;
-        }
-        if (!record.root.created || !await owner.alive(record.root)) throw new Error('The launched app exited before becoming ready. An independently launched TapeBox may have been activated; close it and retry.');
-        await delay(100);
-      }
-      throw new Error('TapeBox did not become ready. Check its terminal output, close it, then retry.');
-    }
-  });
-}
-
-/** Keep the last runnable package until its validated replacement is published. */
-export async function publishCandidate(candidate, destination, token, move = rename) {
-  const previous = `${destination}.previous-${token}`;
-  let retained = false;
-  try { await move(destination, previous); retained = true; }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
-  try { await move(candidate, destination); }
-  catch (error) {
     if (retained) {
-      try { await move(previous, destination); }
-      catch (restore) { throw new AggregateError([error, restore], `Package publication failed; the previous package remains at ${previous}.`); }
+      try { await rename(previous, destination); }
+      catch (restoreError) {
+        throw new AggregateError([error, restoreError], `Package publication failed; the previous package remains at ${previous}.`);
+      }
     }
     throw error;
   }
-  return async () => { if (retained) await rm(previous, { recursive: true }); };
+  if (retained) {
+    await rm(previous, { recursive: true, force: true }).catch((error) => {
+      process.stderr.write(`The new package is ready; removing the previous one at ${previous} failed: ${error.message}\n`);
+    });
+  }
+}
+
+async function listProcesses() {
+  if (!windows) {
+    const { stdout } = await execFileAsync("ps", ["-axo", "pid=,ppid=,comm="], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+    return stdout.split("\n").map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)).filter(Boolean)
+      .map((match) => ({ pid: Number(match[1]), parentPid: Number(match[2]), executable: match[3].trim() }));
+  }
+  const decoded = JSON.parse(await powershell(
+    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,ExecutablePath | ConvertTo-Json -Compress",
+  ) || "[]");
+  return (Array.isArray(decoded) ? decoded : [decoded]).map((row) => ({
+    pid: Number(row.ProcessId),
+    parentPid: Number(row.ParentProcessId),
+    executable: row.ExecutablePath ?? "",
+  }));
+}
+
+/**
+ * Record the app process that the wrapper (npm run dev, then electron-vite)
+ * starts, once it appears: the topmost descendant running the executable, since
+ * Electron's own child processes can share it. Fails when the wrapper ends
+ * first, as it does when the build fails.
+ */
+async function recordWrapped(wrapperPid, executable) {
+  const expected = resolve(executable);
+  for (;;) {
+    const processes = await listProcesses();
+    if (!processes.some((item) => item.pid === wrapperPid)) {
+      throw new Error(`The ${productName} development runtime ended before the app started.`);
+    }
+    const descendants = new Set([wrapperPid]);
+    for (let grown = true; grown;) {
+      grown = false;
+      for (const item of processes) {
+        if (descendants.has(item.parentPid) && !descendants.has(item.pid)) {
+          descendants.add(item.pid);
+          grown = true;
+        }
+      }
+    }
+    const candidates = processes.filter((item) => item.pid !== wrapperPid && descendants.has(item.pid) && sameExecutable(basename(item.executable), basename(expected)));
+    const matches = [];
+    for (const item of candidates) {
+      const executable = windows ? item.executable : await executableOf(item.pid);
+      if (sameExecutable(executable, expected)) matches.push({ ...item, executable });
+    }
+    const app = matches.find((item) => !matches.some((other) => other.pid === item.parentPid));
+    if (app) {
+      await record(app.pid, app.executable);
+      process.stdout.write(`${app.pid}\n`);
+      return;
+    }
+    await delay(200);
+  }
 }
 
 async function assertEndpointAvailable(host, port) {
   await new Promise((resolveProbe, rejectProbe) => {
     const probe = createServer();
-    probe.once('error', (error) => rejectProbe(new Error(`Cannot bind ${host}:${port}: ${error.code ?? error.message}. The listener was left running because its ownership is unknown.`)));
-    probe.listen({ host, port, exclusive: true }, () => probe.close((error) => error ? rejectProbe(error) : resolveProbe()));
+    probe.unref();
+    probe.once("error", (error) => {
+      rejectProbe(new Error(
+        `Cannot bind ${host}:${port}: ${error.code ?? error.message}. The listener was left running because its app identity is unknown.`,
+      ));
+    });
+    probe.listen({ host, port, exclusive: true }, () => {
+      probe.close((error) => error ? rejectProbe(error) : resolveProbe());
+    });
   });
 }
 
-async function main([command, ...args]) {
-  const owner = runtimeOwner();
-  if (command === 'launch-dev' && args[0] && args[1] && Number.isInteger(Number(args[2]))) {
-    return launch(args[0], process.execPath, [join(REPO_ROOT, 'node_modules/electron-vite/bin/electron-vite.js'), 'dev'],
-      async () => { await assertEndpointAvailable(args[1], Number(args[2])); });
-  }
-  if (command === 'publish-launch' && args[0] && args[1] && args[2]) {
-    const candidate = resolve(args[1]);
-    const destination = join(REPO_ROOT, 'dist');
-    const executable = resolve(destination, args[2]);
-    if (candidate !== `${destination}.candidate-${args[0]}` || !executable.startsWith(destination + sep)) throw new Error('Invalid candidate package path.');
-    return launch(args[0], executable, [], () => publishCandidate(candidate, destination, args[0]));
-  }
-  if (command === 'launch' && args[0] && args[1]) return launch(args[0], args[1], args.slice(2));
-  if (command === 'stop-if-owner' && args[0]) return owner.stopIfOwner(args[0]);
-  if (command === 'wait-owner' && args[0]) {
-    for (;;) {
-      const record = await owner.read();
-      if (record?.token !== args[0] || (!await owner.alive(record.root) && !await owner.alive(record.app))) return;
-      await delay(250);
+async function waitForHttp(url, timeoutMilliseconds) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  let lastError = "no response";
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
+      if (response.ok) return;
+      lastError = `HTTP ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
     }
+    await delay(200);
   }
-  if (command === 'check-endpoint' && args[0] && Number.isInteger(Number(args[1]))) return assertEndpointAvailable(args[0], Number(args[1]));
-  throw new Error('Expected launch <token> <executable> [args], stop-if-owner <token>, wait-owner <token>, or check-endpoint <host> <port>.');
+  throw new Error(`${url} did not become ready within ${timeoutMilliseconds} ms (${lastError}).`);
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+
+async function main([command, ...args]) {
+  if (command === "stop") return stopRecorded();
+  if (command === "stop-if-recorded") {
+    const pid = Number(args[0]);
+    if (!Number.isInteger(pid)) throw new Error("Expected stop-if-recorded <pid>.");
+    return stopRecorded(pid);
+  }
+  if (command === "launch-bundle") {
+    if (!args[0]) throw new Error("Expected launch-bundle <app bundle>.");
+    return launchBundle(args[0]);
+  }
+  if (command === "launch-exe") {
+    if (!args[0]) throw new Error("Expected launch-exe <executable>.");
+    return launchExecutable(args[0]);
+  }
+  if (command === "publish") {
+    if (!args[0] || !args[1]) throw new Error("Expected publish <candidate> <executable>.");
+    return publishPackage(args[0], args[1]);
+  }
+  if (command === "record-wrapped") {
+    const pid = Number(args[0]);
+    if (!Number.isInteger(pid) || !args[1]) throw new Error("Expected record-wrapped <pid> <executable>.");
+    return recordWrapped(pid, args[1]);
+  }
+  if (command === "check-endpoint") {
+    const port = Number(args[1]);
+    if (!args[0] || !Number.isInteger(port)) throw new Error("Expected check-endpoint <host> <port>.");
+    return assertEndpointAvailable(args[0], port);
+  }
+  if (command === "wait-http") {
+    const timeout = Number(args[1] ?? "60000");
+    if (!args[0] || !Number.isFinite(timeout)) throw new Error("Expected wait-http <url> [timeout-ms].");
+    return waitForHttp(args[0], timeout);
+  }
+  throw new Error("Expected one of: stop, stop-if-recorded, launch-bundle, launch-exe, publish, record-wrapped, check-endpoint, wait-http.");
 }
+
+main(process.argv.slice(2)).catch((error) => {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+});

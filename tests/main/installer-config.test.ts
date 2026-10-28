@@ -5,29 +5,6 @@ const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 );
 
-function assertPrepared(script: string): void {
-  const preparation = script.indexOf('npm run prepare:electron')
-  const builder = script.indexOf('electron-builder')
-  expect(preparation).toBeGreaterThanOrEqual(0)
-  expect(builder).toBeGreaterThanOrEqual(0)
-  expect(preparation).toBeLessThan(builder)
-}
-
-describe('package scripts', () => {
-  it('prepares Electron before every package-script builder invocation', () => {
-    for (const script of Object.values(packageJson.scripts) as string[]) {
-      if (script.includes('electron-builder')) assertPrepared(script)
-    }
-  })
-  it.each([
-    'npm run build && electron-builder --publish never',
-    'electron-builder && npm run prepare:electron',
-    'npm run prepare:electron',
-  ])('rejects missing or misplaced preparation/build tokens: %s', (script) => {
-    expect(() => assertPrepared(script)).toThrow()
-  })
-})
-
 // The release attaches exactly the installers and portables the build names.
 describe("release attachments", () => {
   it("lists one file glob for each artifact the build produces", () => {

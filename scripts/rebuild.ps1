@@ -49,9 +49,8 @@ function Invoke-Native {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = Split-Path -Parent $scriptDir
 $runtimeHelper = Join-Path $scriptDir "launcher-runtime.mjs"
-$runtimeToken = [guid]::NewGuid().ToString("N")
 $appName = "TapeBox"
-$candidateDir = Join-Path $repoDir "dist.candidate-$runtimeToken"
+$candidateDir = Join-Path $repoDir "dist.candidate-$([guid]::NewGuid().ToString("N"))"
 $executableRelative = "win-unpacked/$appName.exe"
 $exePath = Join-Path $candidateDir $executableRelative
 
@@ -99,8 +98,12 @@ try {
         throw "Packaging did not produce $appName.exe under $candidateDir/win-unpacked/."
     }
 
+    Write-Step "Publishing the verified package"
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "stop")
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "publish", $candidateDir, $executableRelative)
+
     Write-Step "Launching the packaged app"
-    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "publish-launch", $runtimeToken, $candidateDir, $executableRelative)
+    Invoke-Native -FilePath "node" -ArgumentList @($runtimeHelper, "launch-exe", (Join-Path $repoDir "dist/$executableRelative"))
 }
 catch {
     Write-Host ""
