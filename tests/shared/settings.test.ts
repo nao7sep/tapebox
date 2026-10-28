@@ -60,8 +60,8 @@ describe('SettingsSchema', () => {
   // A key the schema does not define, such as view state that belongs to the
   // layout store, is dropped rather than kept as config.
   it('drops a key it does not define', () => {
-    const parsed = SettingsSchema.parse({ ...defaultSettings(), volume: 0.5 } as Record<string, unknown>)
-    expect(parsed).not.toHaveProperty('volume')
+    const parsed = SettingsSchema.parse({ ...defaultSettings(), leftPaneWidth: 300 } as Record<string, unknown>)
+    expect(parsed).not.toHaveProperty('leftPaneWidth')
   })
 
   // libraryDir defaults to blank ("use the default folder"), exactly like

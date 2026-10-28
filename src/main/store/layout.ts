@@ -86,7 +86,7 @@ export async function persistNow(): Promise<void> {
     const snapshot = structuredClone(cache)
     const key = JSON.stringify(snapshot)
     if (key === lastWritten) return
-    // layout.json is volatile state only (pane sizes, volume): the raw atomic
+    // layout.json is volatile state only (pane sizes): the raw atomic
     // writer saves it without recording to the backup history.
     await writeJsonAtomic(paths.layout, snapshot, { formatVersion: FORMAT_VERSIONS.layout, schema: LayoutSchema })
     lastWritten = key

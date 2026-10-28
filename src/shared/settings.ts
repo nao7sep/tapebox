@@ -116,7 +116,9 @@ export const SettingsObjectSchema = z.object({
   // Start playback automatically when a downloaded tape is opened in the player.
   autoplay: z.boolean(),
 
-  // Playback volume lives in the layout store, not here (see shared/layout.ts).
+  // Playback volume, 0–1; zero is mute. Set from the toolbar slider and the
+  // player's own volume control.
+  volume: z.number().min(0).max(1),
 
   // Hold an OS wake lock while a tape is playing, so the screen doesn't dim and
   // the machine doesn't sleep mid-watch; released the moment playback stops.
@@ -307,6 +309,7 @@ export function defaultSettings(): Settings {
     autoStartDownloads: true,
     maxConcurrentDownloads: 2,
     autoplay: true,
+    volume: 1,
     keepAwakeWhilePlaying: true,
     trashOnRemove: true,
     confirmRemove: true,
@@ -343,6 +346,7 @@ export function summarizeSettings(s: Settings): Record<string, unknown> {
     autoStartDownloads: s.autoStartDownloads,
     maxConcurrentDownloads: s.maxConcurrentDownloads,
     autoplay: s.autoplay,
+    volume: s.volume,
     keepAwakeWhilePlaying: s.keepAwakeWhilePlaying,
     trashOnRemove: s.trashOnRemove,
     confirmRemove: s.confirmRemove,

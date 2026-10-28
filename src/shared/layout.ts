@@ -1,16 +1,12 @@
 import { z } from 'zod'
 
 /**
- * View state — the pane sizes the user drags and the playback volume they dial
- * in. This is disposable chrome, not a preference and not data: it lives in its
- * own layout.json, separate from settings (which the user authors) and session
- * (which holds the library and must never be reset). It is named for its dominant
- * content (geometry) but holds every "how the app is presented right now" value
- * (persisted-store-separation-conventions), which is why volume — a live view
- * adjustment, not an authored setting — belongs here and not in settings. Every
- * field self-heals — an out-of-range or missing value falls back to its default
- * rather than blocking load — because losing a pane width or the volume costs the
- * user nothing.
+ * View state — the pane sizes the user drags. This is disposable chrome, not a
+ * preference and not data: it lives in its own layout.json, separate from
+ * settings (which the user authors) and session (which holds the library and must
+ * never be reset). Every field self-heals — an out-of-range or missing value falls
+ * back to its default rather than blocking load — because losing a pane width
+ * costs the user nothing.
  *
  * Bounds live HERE only. The schema (which clamps the persisted value), the
  * resize handles in the UI (which clamp the drag), AND the window's own minimum
@@ -150,20 +146,11 @@ export const RECORDS_WINDOW_MIN_HEIGHT = RECORDS_FILTERS_HEIGHT + RECORDS_LIST_M
 const dim = (b: { min: number; max: number; default: number }) =>
   z.number().int().min(b.min).max(b.max).default(b.default).catch(b.default)
 
-/**
- * Default playback volume — full. A fresh <video> starts here, and it is what a
- * missing or out-of-range persisted volume self-heals to. Not an integer
- * dimension, so it does not go through `dim()`; it is a float in [0, 1] set live
- * from the player's volume slider (view state, not a setting).
- */
-export const VOLUME_DEFAULT = 1
-
 export const LayoutSchema = z.object({
   leftPaneWidth: dim(LAYOUT_BOUNDS.leftPaneWidth),
   chaptersPaneWidth: dim(LAYOUT_BOUNDS.chaptersPaneWidth),
   archiveBoxesHeight: dim(LAYOUT_BOUNDS.archiveBoxesHeight),
   recordsListWidth: dim(LAYOUT_BOUNDS.recordsListWidth),
-  volume: z.number().min(0).max(1).default(VOLUME_DEFAULT).catch(VOLUME_DEFAULT),
 })
 export type Layout = z.infer<typeof LayoutSchema>
 
@@ -172,5 +159,4 @@ export const defaultLayout: Layout = {
   chaptersPaneWidth: LAYOUT_BOUNDS.chaptersPaneWidth.default,
   archiveBoxesHeight: LAYOUT_BOUNDS.archiveBoxesHeight.default,
   recordsListWidth: LAYOUT_BOUNDS.recordsListWidth.default,
-  volume: VOLUME_DEFAULT,
 }

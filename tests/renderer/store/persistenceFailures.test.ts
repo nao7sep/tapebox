@@ -57,20 +57,20 @@ describe('truthful renderer persistence', () => {
 
   it('keeps independent layout fields when one concurrent write rejects', async () => {
     let resolveLeft!: (value: typeof defaultLayout) => void
-    let rejectVolume!: (error: Error) => void
+    let rejectChapters!: (error: Error) => void
     const leftResponse = new Promise<typeof defaultLayout>((resolve) => { resolveLeft = resolve })
-    const volumeResponse = new Promise<typeof defaultLayout>((_resolve, reject) => { rejectVolume = reject })
-    ipcInvoke.mockReturnValueOnce(leftResponse).mockReturnValueOnce(volumeResponse)
+    const chaptersResponse = new Promise<typeof defaultLayout>((_resolve, reject) => { rejectChapters = reject })
+    ipcInvoke.mockReturnValueOnce(leftResponse).mockReturnValueOnce(chaptersResponse)
 
     const leftWrite = patchLayout({ leftPaneWidth: 500 }, true)
-    const volumeWrite = patchLayout({ volume: 0.25 }, true)
-    rejectVolume(new Error(HOSTILE))
-    await volumeWrite
+    const chaptersWrite = patchLayout({ chaptersPaneWidth: 250 }, true)
+    rejectChapters(new Error(HOSTILE))
+    await chaptersWrite
     resolveLeft({ ...defaultLayout, leftPaneWidth: 500 })
     await leftWrite
 
-    expect(useLayoutStore.getState().layout).toMatchObject({ leftPaneWidth: 500, volume: defaultLayout.volume })
+    expect(useLayoutStore.getState().layout).toMatchObject({ leftPaneWidth: 500, chaptersPaneWidth: defaultLayout.chaptersPaneWidth })
     expect(useLayoutStore.getState().writeErrors.leftPaneWidth).toBeUndefined()
-    expect(inEnglish(useLayoutStore.getState().writeErrors.volume)).toContain('playback volume was not saved')
+    expect(inEnglish(useLayoutStore.getState().writeErrors.chaptersPaneWidth)).toContain('chapters pane size was not saved')
   })
 })

@@ -1,9 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { useSettingsStore, savePlaybackSettings } from '@renderer/store/settings'
-import { useLayoutStore, patchLayout } from '@renderer/store/layout'
-import { VOLUME_DEFAULT } from '@shared/layout'
+import { useSettingsStore, savePlaybackSettings, patchVolume } from '@renderer/store/settings'
 import { InlineError } from '@renderer/components/ui'
-import { LayoutWriteResult } from '@renderer/components/LayoutWriteResult'
 import { useI18n } from '@renderer/i18n/I18nContext'
 
 /** How long the slider must settle before the volume is written to disk. */
@@ -12,7 +9,7 @@ const PERSIST_DELAY_MS = 500
 /**
  * App-wide playback controls, shown at the right of the Inbox/Archived row: the
  * Autoplay toggle (lit = on) and the playback volume, whose zero is mute. Both
- * read and write the stores the player uses, so they stay in sync with it.
+ * are settings the player reads, so they stay in sync with it.
  */
 export function PlaybackToggles() {
   const autoplay = useSettingsStore((s) => s.settings?.autoplay ?? true)
@@ -40,7 +37,7 @@ export function PlaybackToggles() {
  * the player's own slider does.
  */
 function VolumeControl() {
-  const volume = useLayoutStore((s) => s.layout?.volume ?? VOLUME_DEFAULT)
+  const volume = useSettingsStore((s) => s.settings?.volume ?? 1)
   const pending = useRef<{ timer: ReturnType<typeof setTimeout>; volume: number } | null>(null)
   const t = useI18n()
   const percent = Math.round(volume * 100)
@@ -48,17 +45,17 @@ function VolumeControl() {
   useEffect(() => () => {
     if (!pending.current) return
     clearTimeout(pending.current.timer)
-    void patchLayout({ volume: pending.current.volume }, true)
+    void patchVolume(pending.current.volume, true)
   }, [])
 
   const change = (next: number) => {
-    void patchLayout({ volume: next }, false)
+    void patchVolume(next, false)
     if (pending.current) clearTimeout(pending.current.timer)
     pending.current = {
       volume: next,
       timer: setTimeout(() => {
         pending.current = null
-        void patchLayout({ volume: next }, true)
+        void patchVolume(next, true)
       }, PERSIST_DELAY_MS),
     }
   }
@@ -83,7 +80,7 @@ function VolumeControl() {
 
 export function PlaybackSettingResults() {
   const autoplay = useSettingsStore((s) => s.writeErrors.autoplay)
-  const volume = useLayoutStore((s) => s.writeErrors.volume)
+  const volume = useSettingsStore((s) => s.writeErrors.volume)
   const setWriteError = useSettingsStore((s) => s.setWriteError)
   const t = useI18n()
   if (!autoplay && !volume) return null
@@ -94,7 +91,11 @@ export function PlaybackSettingResults() {
           {t.text(autoplay)}
         </InlineError>
       )}
-      <LayoutWriteResult field="volume" />
+      {volume && (
+        <InlineError onDismiss={() => setWriteError('volume', null)} closeLabel={t.t('playback.closeVolumeResult')}>
+          {t.text(volume)}
+        </InlineError>
+      )}
     </div>
   )
 }

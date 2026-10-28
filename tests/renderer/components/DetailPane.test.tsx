@@ -70,12 +70,12 @@ beforeEach(() => {
   play.mockClear(); pause.mockClear(); load.mockClear()
   ipcInvoke.mockReset().mockImplementation(async (channel: string, req: unknown) => {
     if (channel === 'library:getSidecar') return {}
-    if (channel === 'layout:update') return { ...useLayoutStore.getState().layout, ...req as object }
+    if (channel === 'settings:update') return { settings: { ...useSettingsStore.getState().settings, ...req as object }, warning: null }
     return undefined
   })
   useMediaStore.setState({ baseUrl: 'http://localhost/media', collectionRevision: 0 })
-  useLayoutStore.getState().setHydratedLayout({ ...defaultLayout, volume: 0.7 })
-  useSettingsStore.setState({ settings: { ...defaultSettings(), autoplay: true } })
+  useLayoutStore.getState().setHydratedLayout(defaultLayout)
+  useSettingsStore.getState().setHydratedSettings({ ...defaultSettings(), autoplay: true, volume: 0.7 })
   tape = { id: 'Tape000001', title: 'Title', sourceUrl: 'https://example.com/video', state: 'downloaded', filename: 'old.mp4', sidecarFilename: 'old.info.json', name: 'Old', probedAtUtc: '2026-10-23T00:00:00Z' } as Tape
   videoRef = createRef<HTMLVideoElement>()
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
@@ -99,7 +99,7 @@ describe('DetailPane media lifecycle', () => {
     { playing: false, ended: true, fails: true },
   ])('restores rename position and play intent: %j', async ({ playing, ended, fails }) => {
     // An opposite global preference proves the rename snapshot owns this remount.
-    useSettingsStore.setState({ settings: { ...defaultSettings(), autoplay: !playing } })
+    useSettingsStore.setState({ settings: { ...defaultSettings(), autoplay: !playing, volume: 0.7 } })
     const rename = deferred<void>()
     ipcInvoke.mockImplementation((channel: string) => channel === 'library:rename' ? rename.promise : Promise.resolve({}))
     await render()
@@ -139,19 +139,19 @@ describe('DetailPane media lifecycle', () => {
     const first = video()
     expect(first.volume).toBe(0.7)
     await act(async () => { await first.play(); first.volume = 0.4; first.dispatchEvent(new Event('volumechange')) })
-    expect(useLayoutStore.getState().layout?.volume).toBe(0.4)
+    expect(useSettingsStore.getState().settings?.volume).toBe(0.4)
     await act(async () => releaseVideo(first))
     expect(ipcInvoke).toHaveBeenLastCalledWith('app:setVideoPlaying', { playing: false })
     await render({ ...tape, id: 'Tape000002', filename: 'second.mp4' })
     expect(video().volume).toBe(0.4)
-    expect(ipcInvoke).toHaveBeenCalledWith('layout:update', { volume: 0.4 })
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { volume: 0.4 })
     ipcInvoke.mockClear()
     await act(async () => first.dispatchEvent(new Event('play')))
     expect(ipcInvoke).not.toHaveBeenCalled()
     const second = video()
     await act(async () => { await second.play(); second.volume = 0.2; second.dispatchEvent(new Event('volumechange')) })
     await act(async () => root!.unmount()); root = null
-    expect(ipcInvoke).toHaveBeenCalledWith('layout:update', { volume: 0.2 })
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { volume: 0.2 })
     expect(ipcInvoke).toHaveBeenCalledWith('app:setVideoPlaying', { playing: false })
   })
 
@@ -223,7 +223,7 @@ it('turns the native mute button into volume zero', async () => {
   expect(current.muted).toBe(false)
   expect(current.volume).toBe(0)
   await act(async () => current.dispatchEvent(new Event('volumechange')))
-  expect(useLayoutStore.getState().layout?.volume).toBe(0)
+  expect(useSettingsStore.getState().settings?.volume).toBe(0)
 })
 
 it('applies rejected volume rollback to the live element without an echo save', async () => {
@@ -232,17 +232,17 @@ it('applies rejected volume rollback to the live element without an echo save', 
     await render()
     const current = video()
     ipcInvoke.mockImplementation(async (channel: string) => {
-      if (channel === 'layout:update') throw new Error('volume rejected')
+      if (channel === 'settings:update') throw new Error('volume rejected')
       return {}
     })
     await act(async () => { current.volume = 0.2; current.dispatchEvent(new Event('volumechange')) })
-    expect(useLayoutStore.getState().layout?.volume).toBe(0.2)
+    expect(useSettingsStore.getState().settings?.volume).toBe(0.2)
     await act(async () => vi.advanceTimersByTimeAsync(500))
-    expect(useLayoutStore.getState().layout?.volume).toBe(0.7)
+    expect(useSettingsStore.getState().settings?.volume).toBe(0.7)
     expect(current.volume).toBe(0.7)
     await act(async () => current.dispatchEvent(new Event('volumechange')))
     await act(async () => vi.advanceTimersByTimeAsync(500))
-    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'layout:update')).toHaveLength(1)
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'settings:update')).toHaveLength(1)
   } finally { vi.useRealTimers() }
 })
 

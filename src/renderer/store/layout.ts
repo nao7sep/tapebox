@@ -42,7 +42,6 @@ const FAILURE_COPY: Record<LayoutField, Message> = {
   leftPaneWidth: message('layout.leftPaneSaveFailed'),
   chaptersPaneWidth: message('layout.chaptersPaneSaveFailed'),
   archiveBoxesHeight: message('layout.boxesPaneSaveFailed'),
-  volume: message('layout.volumeSaveFailed'),
 }
 
 /**
