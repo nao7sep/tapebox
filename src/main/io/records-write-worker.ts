@@ -11,9 +11,7 @@ export type RecordRow = Record<string, SQLInputValue>
 export type ExecutionFacts = { elapsedMs?: number | null; succeeded?: boolean | null; outputKey?: string; outputChunks?: { stdout: number; stderr: number } }
 export type RecordWriteRequest = { facts?: ExecutionFacts; id: number; chunk?: { runKey: string; stream: 'stdout' | 'stderr'; sequence: number; content: string }; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer }
 export type RecordWriteResponse = { id: number; stored: boolean; console?: string; diagnostics: string[] }
-/** `textOnly`: the replacement for a writer that stalled, which writes only the
- *  text file and never opens the database that stalled it. */
-export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; responsePort?: MessagePort; textOnly?: boolean }
+export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; responsePort?: MessagePort }
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS run_output_chunks (
@@ -140,8 +138,7 @@ port.on('message', (request: RecordWriteRequest) => {
   const response: RecordWriteResponse = { id: request.id, stored: false, diagnostics: [] }
   if (!initialized) {
     initialized = true
-    if (data.textOnly) fallback(failureNote('records writer replaced after a stall; writing to a text file', new Error('replaced')), response, true)
-    else try { db = openWritableDatabase(data.databasePath, FORMAT_VERSIONS.records, SCHEMA) }
+    try { db = openWritableDatabase(data.databasePath, FORMAT_VERSIONS.records, SCHEMA) }
     catch (error) { fallback(failureNote('records database could not be opened; writing to a text file', error), response, true) }
   }
   if (request.table && request.row) {

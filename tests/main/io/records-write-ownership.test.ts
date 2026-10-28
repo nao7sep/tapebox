@@ -21,9 +21,8 @@ class FakeWorker extends EventEmitter {
   retirement = new Promise<number>((resolve) => { this.release = () => resolve(0) })
   terminate = vi.fn(() => this.retirement)
   responsePort: FakePort
-  textOnly: boolean
-  constructor(_url: URL, options: { workerData: { responsePort: FakePort; textOnly?: boolean } }) {
-    super(); this.responsePort = options.workerData.responsePort; this.textOnly = options.workerData.textOnly ?? false; state.workers.push(this)
+  constructor(_url: URL, options: { workerData: { responsePort: FakePort } }) {
+    super(); this.responsePort = options.workerData.responsePort; state.workers.push(this)
   }
   override emit(event: string, ...args: unknown[]): boolean {
     if (event === 'message') { this.responsePort.postMessage(args[0]); return true }
@@ -53,35 +52,29 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 
-it('bounds a held writer, retains unknown outcome diagnostics and joins its actual retirement', async () => {
+it('reports a failed writer, sends unfinished and later records to the console and joins its actual retirement', async () => {
   records.openRecords()
   const initialization = records.waitForRecordsInitialization()
   records.writeRecord('logs', { time: 'now', level: 'info', message: 'record', tape_id: null, fields: '{}' }, () => 'record fallback')
   const worker = state.workers[0]!
   const flushed = records.flushRecords()
-  await vi.advanceTimersByTimeAsync(records.RECORD_WRITE_TIMEOUT_MS)
+  worker.emit('error', new Error('writer failed'))
   await flushed
   await initialization
   expect(worker.terminate).toHaveBeenCalledOnce()
   expect(console.error).toHaveBeenCalledWith(expect.stringContaining('unfinished write outcomes are unknown'))
   expect(console.log).toHaveBeenCalledWith('record fallback')
-  // Later records still reach the launch's text file through one replacement writer.
-  expect(state.workers.map((created) => created.textOnly)).toEqual([false, true])
-  const replacement = state.workers[1]!
-  expect(records.waitForRecordsInitialization()).toBe(initialization)
-  records.writeRecord('logs', { message: 'after the stall' }, () => 'after the stall')
-  expect(replacement.requests.map((request) => request.text ?? null)).toEqual([null, 'after the stall'])
-  for (const request of replacement.requests) replacement.emit('message', { id: request.id, stored: false, diagnostics: [] })
+  expect(records.writeRecord('logs', { message: 'after the failure' }, () => 'after the failure')).toBe(true)
+  expect(console.log).toHaveBeenCalledWith('after the failure')
+  expect(state.workers).toHaveLength(1)
   const closing = records.closeRecords()
   let closed = false
   void closing.then(() => { closed = true })
   await vi.advanceTimersByTimeAsync(1_000)
   expect(closed).toBe(false)
   worker.emit('error', new Error('stale error'))
-  worker.emit('message', { id: worker.requests[1]!.id, stored: true, diagnostics: [] })
   expect(worker.terminate).toHaveBeenCalledOnce()
   worker.release()
-  replacement.release()
   await closing
   expect(vi.getTimerCount()).toBe(0)
 })
@@ -121,7 +114,7 @@ it('captures only the first initialization settlement per open and ignores a pre
   await nextInitialization
   expect(initialized).toBe(true)
   expect(records.waitForRecordsInitialization()).toBe(nextInitialization)
-  expect(vi.getTimerCount()).toBe(1) // The later write is still admitted and held.
+  expect(current.requests).toHaveLength(2) // The later write is still admitted and held.
   current.emit('message', { id: current.requests[1]!.id, stored: true, diagnostics: [] })
   await records.flushRecords()
 })

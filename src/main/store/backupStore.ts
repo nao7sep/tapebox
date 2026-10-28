@@ -9,12 +9,12 @@ import type { BackupRequest, BackupResponse, BackupWorkerData } from './backup-w
  *  so the two can be matched, or failing that the time the first backup ran. */
 let launch: string | null = null
 
-/** Best-effort backup hashing and SQLite work run on their own bounded thread.
- * Completed managed writes hand off their exact bytes; failures never undo them. */
-export const BACKUP_RECORD_TIMEOUT_MS = 10_000
+/** Best-effort backup hashing and SQLite work run on their own thread.
+ * Completed managed writes hand off their exact bytes; failures never undo them.
+ * Local storage work has no deadline; only the exit sequence bounds its drain. */
 const CLOSE_DRAIN_TIMEOUT_MS = 1_000
 
-type Pending = { worker: Worker; timer: NodeJS.Timeout }
+type Pending = { worker: Worker }
 let worker: Worker | null = null
 let disabled = false
 let accepting = true
@@ -46,11 +46,7 @@ function retire(current: Worker): Promise<void> {
 function abandon(current: Worker, error: unknown): void {
   if (worker !== current && ![...pending.values()].some((entry) => entry.worker === current)) return
   if (worker === current) { worker = null; disabled = true }
-  for (const [id, entry] of pending) {
-    if (entry.worker !== current) continue
-    pending.delete(id)
-    clearTimeout(entry.timer)
-  }
+  for (const [id, entry] of pending) if (entry.worker === current) pending.delete(id)
   waiting.clear()
   settleDrains()
   log.warn('backup store: worker failed; unfinished record outcomes are unknown', { error: describeError(error) })
@@ -67,7 +63,6 @@ function ensureWorker(): Worker {
     const entry = pending.get(response.id)
     if (!entry || entry.worker !== created) return
     pending.delete(response.id)
-    clearTimeout(entry.timer)
     if (response.disabled && worker === created) disabled = true
     if (response.warning) log.warn(response.warning.message, response.warning.fields)
     if (disabled) waiting.clear()
@@ -98,8 +93,7 @@ function dispatchNext(): void {
     return
   }
   const id = nextId++
-  const timer = setTimeout(() => abandon(current, new Error(`Backup record did not finish within ${BACKUP_RECORD_TIMEOUT_MS} ms.`)), BACKUP_RECORD_TIMEOUT_MS)
-  pending.set(id, { worker: current, timer })
+  pending.set(id, { worker: current })
   try { current.postMessage({ id, absolutePath, bytes } satisfies BackupRequest) }
   catch (error) { abandon(current, error) }
 }
@@ -129,11 +123,7 @@ export function closeBackupStore(): Promise<void> {
       if ([...pending.values()].some((entry) => entry.worker === current)) {
         log.warn('backup store: quit drain expired; unfinished record outcomes are unknown', {})
       }
-      for (const [id, entry] of pending) {
-        if (entry.worker !== current) continue
-        pending.delete(id)
-        clearTimeout(entry.timer)
-      }
+      for (const [id, entry] of pending) if (entry.worker === current) pending.delete(id)
       void retire(current)
     }
     waiting.clear()

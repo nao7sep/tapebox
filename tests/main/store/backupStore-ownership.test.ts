@@ -32,12 +32,12 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 
-it('bounds a held record, ignores its stale reply, and joins the actual retirement once', async () => {
+it('settles a failed worker\'s record, ignores its stale reply, and joins the actual retirement once', async () => {
   backup.record('/file', Buffer.from('bytes'))
   const worker = state.workers[0]!
   let flushed = false
   const flush = backup.flushBackupStore().then(() => { flushed = true })
-  await vi.advanceTimersByTimeAsync(backup.BACKUP_RECORD_TIMEOUT_MS)
+  worker.emit('error', new Error('worker failed'))
   await flush
   expect(flushed).toBe(true)
   expect(worker.terminate).toHaveBeenCalledOnce()

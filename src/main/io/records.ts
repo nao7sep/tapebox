@@ -10,8 +10,8 @@ export type { RecordTable, RecordRow } from './records-write-worker'
 import type { RecordTable, RecordRow, ExecutionFacts } from './records-write-worker'
 
 /** Records SQLite and fallback filesystem work belong to the writer thread.
- * Main owns admission, acknowledgements, deadlines and commit notifications. */
-export const RECORD_WRITE_TIMEOUT_MS = 10_000
+ * Main owns admission, acknowledgements and commit notifications. Local storage
+ * work has no deadline; only the exit sequence bounds its drain. */
 const CLOSE_DRAIN_TIMEOUT_MS = 1_000
 export const TERMINAL_RECORD_DRAIN_MS = 500
 /** Records waiting on the writer at most; beyond it a record goes to the console
@@ -19,8 +19,6 @@ export const TERMINAL_RECORD_DRAIN_MS = 500
 export const RECORD_PENDING_LIMIT = 1_000
 let session: string | null = null
 let fallbackPath: string | null = null
-/** Whether this launch's writer was already replaced once after a stall. */
-let replaced = false
 let worker: Worker | null = null
 let closed = false
 let nextId = 1
@@ -29,7 +27,7 @@ let terminalFlushed = false
 let initialization: Promise<void> = Promise.resolve()
 const responsePorts = new Map<Worker, MessagePort>()
 let storedListener: (() => void) | null = null
-type Pending = { worker: Worker; settled: Promise<void>; resolve: () => void; timer: NodeJS.Timeout; text: string; level: LogLevel; mirrored: boolean }
+type Pending = { worker: Worker; settled: Promise<void>; resolve: () => void; text: string; level: LogLevel; mirrored: boolean }
 const pending = new Map<number, Pending>()
 const retirements = new Map<Worker, Promise<void>>()
 
@@ -49,30 +47,22 @@ function retire(current: Worker): Promise<void> {
 
 function abandon(current: Worker, error: unknown): void {
   if (worker !== current && ![...pending.values()].some((entry) => entry.worker === current)) return
-  const wasCurrent = worker === current
-  if (wasCurrent) worker = null
+  if (worker === current) worker = null
   toConsole('error', note('records writer failed; unfinished write outcomes are unknown', error))
   for (const [id, entry] of pending) {
     if (entry.worker !== current) continue
     pending.delete(id)
-    clearTimeout(entry.timer)
     if (entry.text && !entry.mirrored) toConsole(entry.level, entry.text)
     entry.resolve()
   }
+  // Later records go to the console.
   void retire(current)
-  // Later records still reach this launch's text file, through one replacement
-  // writer that never touches the database the first one stalled on.
-  if (wasCurrent && !closed && !replaced && session !== null && fallbackPath !== null) {
-    replaced = true
-    startWriter(true)
-  }
 }
 
 function acknowledge(created: Worker, response: RecordWriteResponse): void {
   const entry = pending.get(response.id)
   if (!entry || entry.worker !== created) return
   pending.delete(response.id)
-  clearTimeout(entry.timer)
   for (const diagnostic of response.diagnostics) toConsole('error', diagnostic)
   if (response.console && !entry.mirrored) toConsole(entry.level, response.console)
   if (response.stored) {
@@ -91,18 +81,17 @@ export function openRecords(): string {
   closed = false
   closing = null
   terminalFlushed = false
-  replaced = false
-  initialization = startWriter(false)
+  initialization = startWriter()
   return session
 }
 
-function startWriter(textOnly: boolean): Promise<void> {
+function startWriter(): Promise<void> {
   const { port1, port2 } = new MessageChannel()
   try {
     const module = import.meta.url.endsWith('.ts') ? './records-write-worker.ts' : './records-write-worker.js'
     const created = new Worker(new URL(module, import.meta.url), { workerData: {
       databasePath: paths.records, logsPath: paths.logs, responsePort: port2,
-      fallbackPath: fallbackPath!, session: session!, textOnly,
+      fallbackPath: fallbackPath!, session: session!,
     } satisfies RecordWriteData, transferList: [port2] })
     responsePorts.set(created, port1)
     port1.on('message', (response: RecordWriteResponse) => acknowledge(created, response))
@@ -121,7 +110,7 @@ export function onRecordStored(listener: (() => void) | null): void { storedList
 
 /** Wait only for this launch's first schema attempt to settle. It may select the
  * fallback, so the reader still owns opening and validating the database. Later
- * writes and a replacement fallback writer never replace this barrier. */
+ * writes never replace this barrier. */
 export function waitForRecordsInitialization(): Promise<void> { return initialization }
 
 function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: LogLevel, mirrored: boolean): Promise<void> {
@@ -130,8 +119,7 @@ function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: L
   const id = nextId++
   let resolve!: () => void
   const settled = new Promise<void>((done) => { resolve = done })
-  const timer = setTimeout(() => abandon(current, new Error(`Records write did not finish within ${RECORD_WRITE_TIMEOUT_MS} ms.`)), RECORD_WRITE_TIMEOUT_MS)
-  pending.set(id, { worker: current, settled, resolve, timer, text, level, mirrored })
+  pending.set(id, { worker: current, settled, resolve, text, level, mirrored })
   try { current.postMessage({ ...request, id } satisfies RecordWriteRequest) }
   catch (error) { abandon(current, error) }
   return settled

@@ -9,12 +9,13 @@ import { recordsQuery } from '../../helpers/records-query-growth'
 import type { RecordWriteRequest, RecordWriteResponse } from '@main/io/records-write-worker'
 
 it.each([false, true])('retains output chunk identity and completed metadata mapping (fallback=%s)', async (textOnly) => {
+  // The fallback case points the database at a folder, which cannot be opened.
   const root = await mkdtemp(join(tmpdir(), 'tapebox-record-output-'))
   const databasePath = join(root, 'records.sqlite3')
   const fallbackPath = join(root, 'fallback.log')
   const session = 'synthetic-session'
   const worker = new Worker(new URL('../../../src/main/io/records-write-worker.ts', import.meta.url), {
-    workerData: { databasePath, logsPath: root, fallbackPath, session, textOnly },
+    workerData: { databasePath: textOnly ? root : databasePath, logsPath: root, fallbackPath, session },
   })
   const send = (request: RecordWriteRequest) => new Promise<RecordWriteResponse>((resolve, reject) => {
     worker.once('error', reject)
