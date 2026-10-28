@@ -40,9 +40,6 @@ import { sha256OfFile } from './integrity'
 // seconds in OS validation before it prints its version. Keep the probe bounded,
 // but leave enough room for that supported artifact to start on a fast local disk.
 const PROBE_IDLE_TIMEOUT_MS = 30_000
-// Hashing a large binary under antivirus scanning can be slow; a read that runs
-// out of time is retried at the next read rather than kept for the session.
-const SIDECAR_HASH_TIMEOUT_MS = 30_000
 
 /**
  * `bin/<name>.json` — the version sidecar beside `bin/<name>[.exe]`. Stem plus the
@@ -55,9 +52,10 @@ export function versionSidecarPath(name: BinaryName): string {
 
 type VersionSidecar = { version: string; binarySha256: string }
 
+/** Hashing a local file has no deadline of its own; only an install's own
+ *  cancellation stops it. */
 function hashBinary(name: BinaryName, signal?: AbortSignal): Promise<string> {
-  const timeout = AbortSignal.timeout(SIDECAR_HASH_TIMEOUT_MS)
-  return sha256OfFile(binaryPath(name), signal ? AbortSignal.any([signal, timeout]) : timeout)
+  return sha256OfFile(binaryPath(name), signal)
 }
 
 /**
@@ -96,8 +94,8 @@ export function readInstalledVersion(name: BinaryName): Promise<string | null> {
   const cached = cache.get(name)
   if (cached) return cached
   // resolveInstalledVersion never rejects, so a rejected promise can never be
-  // cached and re-thrown at every later reader. A read that ran out of time is
-  // dropped once settled, so the next reader tries again.
+  // cached and re-thrown at every later reader. An unavailable probe is dropped
+  // once settled, so the next reader tries again.
   const pending: Promise<string | null> = resolveInstalledVersion(name).then((read) => {
     if (read.retry && cache.get(name) === pending) cache.delete(name)
     return read.version
@@ -110,7 +108,7 @@ async function resolveInstalledVersion(name: BinaryName): Promise<{ version: str
   const source = binarySpecs[name].installedVersion
   return source.kind === 'probe'
     ? probe(name, source.args, source.parse)
-    : readSidecar(name, source.parse)
+    : { version: await readSidecarVersion(name, versionSidecarPath(name), source.parse), retry: false }
 }
 
 async function probe(
@@ -145,17 +143,6 @@ async function probe(
   }
 }
 
-async function readSidecar(name: BinaryName, parse: (stored: string) => string | null): Promise<{ version: string | null; retry: boolean }> {
-  const path = versionSidecarPath(name)
-  try {
-    return { version: await readSidecarVersion(name, path, parse), retry: false }
-  } catch (err) {
-    // Only the hash's time bound reaches here: every other failure reads as unknown.
-    log.warn('version sidecar check ran out of time; it is tried again at the next read', { name, path, error: describeError(err) })
-    return { version: null, retry: true }
-  }
-}
-
 async function readSidecarVersion(name: BinaryName, path: string, parse: (stored: string) => string | null): Promise<string | null> {
   try {
     const found = parseStoreJson(await readFile(path, 'utf8'), FORMAT_VERSIONS.binaryVersion)
@@ -179,10 +166,9 @@ async function readSidecarVersion(name: BinaryName, path: string, parse: (stored
     if (version === null) log.warn('version sidecar holds an unrecognized version', { name, path, stored })
     return version
   } catch (err) {
-    // A read has no other signal than the hash's time bound, so an abort is it.
-    if (['TimeoutError', 'AbortError'].includes((err as Error | null)?.name ?? '')) throw err
-    // Absent (a binary placed by hand, or installed before this sidecar existed) or
-    // unreadable — either way the version is unknown, never assumed current.
+    // Absent (a binary placed by hand, or installed before this sidecar existed),
+    // unreadable, or a binary that could not be hashed — either way the version is
+    // unknown, never assumed current.
     log.warn('version sidecar unreadable', { name, path, error: describeError(err) })
     return null
   }
