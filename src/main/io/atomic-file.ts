@@ -7,11 +7,10 @@ import { applyFileStamp, chmodWhereHeld, fileStampOf, keepOriginalMode } from '.
 
 /**
  * Atomically publish a file. Runs `produce(tempPath)` to write the complete,
- * ready-to-use contents into a temporary path, then fsyncs that file, renames it
- * onto `destPath`, and fsyncs the destination directory — the
- * write-temp → fsync → rename → fsync-dir discipline every managed file and
- * library replacement shares, so a power loss can never expose a half-written or
- * unflushed file at `destPath`.
+ * ready-to-use contents into a temporary path, then fsyncs that file and renames
+ * it onto `destPath` — the write-temp → fsync → rename discipline every managed
+ * file and library replacement shares, so a crash or power loss can never expose
+ * a half-written file at `destPath`, though it may lose the newest save.
  *
  * `produce` is handed an exclusively created, empty private file and must leave a finished artifact there —
  * stream into it, run a subprocess that writes it, or move a file onto it. On any
@@ -65,8 +64,6 @@ export async function writeFileAtomicVia(
     if (stageCreated) await removeStage(tempPath)
     throw err
   }
-  // The rename is the commit; the directory sync after it cannot undo it.
-  await fsyncDirBestEffort(dirname(destPath))
 }
 
 /** Codes with which a volume refuses a hard link (exFAT and FAT32 cannot hold
@@ -144,7 +141,6 @@ export async function publishFileNoOverwrite(tempPath: string, destPath: string,
     await copyExclusive(tempPath, destPath)
   }
   await unlink(tempPath).catch(() => {})
-  await fsyncDirBestEffort(dirname(destPath))
 }
 
 /** Produce and durably publish a file only if the destination is still absent at
@@ -206,7 +202,6 @@ export async function copyFileNoOverwrite(
 ): Promise<void> {
   if (!options.hardLinks) {
     await copyExclusive(sourcePath, destPath, options.signal)
-    await fsyncDirBestEffort(dirname(destPath))
     return
   }
   const tempPath = defaultTempPath(destPath)
@@ -234,7 +229,6 @@ export async function linkOrCopyNoOverwrite(
 ): Promise<{ crossDevice: boolean }> {
   try {
     await link(sourcePath, destPath)
-    await fsyncDirBestEffort(dirname(destPath))
     return { crossDevice: false }
   } catch (err) {
     if (!linkUnsupported(err)) throw err
@@ -285,50 +279,11 @@ function defaultTempPath(destPath: string): string {
  * requires write access to the handle; the producer has already closed its own
  * writer, so fsync here flushes the inode's dirty pages to disk.
  */
-export async function fsyncFile(path: string): Promise<void> {
+async function fsyncFile(path: string): Promise<void> {
   const handle = await open(path, 'r+')
   try {
     await handle.sync()
   } finally {
     await handle.close()
   }
-}
-
-/** Confirm all publication directories before a transaction discards recovery
- * sources. This final group flush covers both bundle files and the authority
- * file, which may have been committed by separate persistence owners. */
-export async function confirmPublicationDurability(files: readonly string[]): Promise<boolean> {
-  let confirmed = true
-  for (const directory of new Set(files.map((file) => dirname(file)))) {
-    if (!await fsyncDirBestEffort(directory)) confirmed = false
-  }
-  return confirmed
-}
-
-/** Publication has already committed. Unsupported directory sync is the platform
- * boundary; genuine I/O failure is diagnosed and returns uncertain durability,
- * never a thrown failure that could roll back an already committed authority. */
-async function fsyncDirBestEffort(path: string): Promise<boolean> {
-  let handle: Awaited<ReturnType<typeof open>> | undefined
-  let confirmed = true
-  try {
-    handle = await open(path, 'r')
-    await handle.sync()
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    const unsupported = code === 'EINVAL' || code === 'ENOTSUP' || code === 'EOPNOTSUPP' ||
-      (process.platform === 'win32' && (code === 'EPERM' || code === 'EISDIR' || code === 'EACCES'))
-    if (!unsupported) {
-      confirmed = false
-      log.warn('published directory durability is uncertain', { path, error: describeError(error) })
-    }
-  } finally {
-    if (handle) {
-      try { await handle.close() } catch (error) {
-        confirmed = false
-        log.warn('published directory handle did not close cleanly', { path, error: describeError(error) })
-      }
-    }
-  }
-  return confirmed
 }

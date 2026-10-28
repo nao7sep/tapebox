@@ -1,5 +1,3 @@
-const confirmPublicationDurability = vi.hoisted(() => vi.fn(async () => true))
-vi.mock('@main/io/atomic-file', async (original) => ({ ...await original<typeof import('@main/io/atomic-file')>(), confirmPublicationDurability }))
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { homedir } from 'node:os'
@@ -90,7 +88,6 @@ function update(patch: Partial<Settings>): Promise<{ settings: Settings; warning
 let base: Settings
 
 beforeEach(() => {
-  confirmPublicationDurability.mockResolvedValue(true)
   handlers.clear()
   base = defaultSettings()
   getSettings.mockReturnValue(base)
@@ -297,16 +294,6 @@ describe('settings:update — relocation refused while library writes run', () =
 })
 
 describe('settings:update — library move control', () => {
-  it('keeps the committed setting and all old copies when durability is uncertain', async () => {
-    relocateLibrary.mockResolvedValueOnce({ moved: true, files: [{ source: '/old/a', destination: '/new/a', name: 'a' }], count: 1, crossDevice: true })
-    confirmPublicationDurability.mockResolvedValueOnce(false)
-    const result = await update({ libraryDir: '/data/new-library' })
-    expect(result.settings.libraryDir).toBe('/data/new-library')
-    expect(result.warning).not.toBeNull()
-    expect(completeLibraryRelocation).not.toHaveBeenCalled()
-    expect(rollbackLibraryRelocation).not.toHaveBeenCalled()
-  })
-
   it.each(['disk', 'rollback'])('keeps a %s failure distinct from a concurrent Stop request', async (kind) => {
     relocateLibrary.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
       options.signal.addEventListener('abort', () => reject(kind === 'disk'

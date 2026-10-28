@@ -5,8 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { serializeStoreJson, writeJsonAtomic, writeManagedJson } from '@main/io/atomic-json'
-import { record } from '@main/store/backupStore'
+import { serializeStoreJson, writeJsonAtomic } from '@main/io/atomic-json'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>()
@@ -147,24 +146,3 @@ describe('serializeStoreJson', () => {
   })
 })
 
-describe('writeManagedJson', () => {
-  it('records the committed bytes when the directory sync after the rename fails', async () => {
-    const target = join(dir, 'catalog.json')
-    const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
-    const opened = vi.spyOn(fileIo, 'open').mockImplementation(async (...args) => {
-      if (String(args[0]) !== dir || args[1] !== 'r') return original.open(...args)
-      const failure = Object.assign(new Error('directory sync failed'), { code: 'EIO' })
-      return {
-        sync: async () => { throw failure },
-        close: async () => { throw failure },
-      } as unknown as Awaited<ReturnType<typeof original.open>>
-    })
-    vi.mocked(record).mockClear()
-    await writeManagedJson(target, { tapes: [] }, V1)
-    expect(opened).toHaveBeenCalledWith(dir, 'r')
-    const written = await readFile(target)
-    expect(written.toString('utf8')).toBe(serializeStoreJson({ tapes: [] }, V1))
-    expect(record).toHaveBeenCalledOnce()
-    expect(Buffer.from(vi.mocked(record).mock.calls[0]![1]).equals(written)).toBe(true)
-  })
-})

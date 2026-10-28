@@ -52,7 +52,6 @@ vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 const rollbackMutation = vi.hoisted(() => ({
   mode: null as null | 'second-fails' | 'final-cleanup',
   durableFails: false,
-  uncertain: false,
   publishes: 0,
   cleanupPath: '',
   order: [] as string[],
@@ -72,7 +71,6 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
   }
   return {
     ...actual,
-    confirmPublicationDurability: vi.fn(async () => !rollbackMutation.uncertain),
     writeFileAtomicNoOverwriteVia: vi.fn(async (...args: Parameters<typeof actual.writeFileAtomicNoOverwriteVia>) =>
       tracked(args[0], () => actual.writeFileAtomicNoOverwriteVia(...args))),
     linkOrCopyNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.linkOrCopyNoOverwrite>) =>
@@ -103,7 +101,6 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'tapebox-rename-'))
   state.libraryDir = dir
   rollbackMutation.mode = null
-  rollbackMutation.uncertain = false
   rollbackMutation.durableFails = false
   rollbackMutation.publishes = 0
   rollbackMutation.cleanupPath = ''
@@ -273,15 +270,6 @@ describe('library:rename', () => {
     await expect(readFile(join(dir, 'renamed.json'))).rejects.toThrow()
     await expect(readFile(join(dir, 'renamed.jpg'))).rejects.toThrow()
     expect(rollbackMutation.order.at(-1)).toBe('cleanup:rollback')
-  })
-
-  it('retains old bundle names after a committed rename with uncertain durability', async () => {
-    rollbackMutation.uncertain = true
-    await expect(handlers.get('library:rename')!({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow()
-    expect(state.tape?.name).toBe('renamed')
-    expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe(await readFile(join(dir, 'renamed.mp4'), 'utf8'))
-    expect(rollbackMutation.order).not.toContain('cleanup:obsolete')
-    expect(rollbackMutation.order).not.toContain('cleanup:rollback')
   })
 
   it('keeps committed cleanup paths diagnostic-only while the catalog stays authoritative', async () => {

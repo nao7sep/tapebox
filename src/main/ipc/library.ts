@@ -1,4 +1,3 @@
-import { collectionCatalog } from '@main/paths'
 import { access, constants, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { shell } from 'electron'
@@ -10,7 +9,6 @@ import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import {
-  confirmPublicationDurability,
   copyFileNoOverwrite,
   directorySupportsHardLinks,
   linkOrCopyNoOverwrite,
@@ -769,11 +767,7 @@ async function publishRenamedTape(tape: Tape, plan: Extract<ReturnType<typeof pl
   }
   const obsolete = publishing.map((item) => item.old)
   try {
-    if (await confirmPublicationDurability([collectionCatalog(libraryDir), ...done])) {
-      await unlinkFiles(obsolete.filter((path) => !session.filenameOwner(basename(path), tapeId)))
-    } else {
-      postCommitErrors.push(new Error('Rename committed with uncertain directory durability; old files retained.'))
-    }
+    await unlinkFiles(obsolete.filter((path) => !session.filenameOwner(basename(path), tapeId)))
   } catch (cleanupError) {
     postCommitErrors.push(cleanupError)
   }

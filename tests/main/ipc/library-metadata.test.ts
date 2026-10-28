@@ -57,7 +57,7 @@ vi.mock('@main/io/logger', () => ({ log }))
 vi.mock('@main/ipc/events', () => ({ emit }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...original, open: vi.fn(original.open) }
+  return { ...original, open: vi.fn(original.open), rename: vi.fn(original.rename) }
 })
 
 const { registerLibraryHandlers } = await import('@main/ipc/library')
@@ -89,6 +89,7 @@ beforeEach(async () => {
   handlers.clear()
   vi.clearAllMocks()
   vi.mocked(fileIo.open).mockImplementation((await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).open)
+  vi.mocked(fileIo.rename).mockImplementation((await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).rename)
   persistNow.mockReset().mockResolvedValue(true)
   state.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-library-metadata-'))
   state.tapes = []
@@ -413,10 +414,10 @@ describe('accepting refreshed metadata', () => {
     state.tapes = [makeTape({ id: 'Lateabort1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
     const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
     let quitting: Promise<void> | undefined
-    // The library folder is opened for its sync right after the sidecar's rename.
-    vi.mocked(fileIo.open).mockImplementation(async (...args) => {
-      if (String(args[0]) === state.libraryDir && !quitting) quitting = cancelAllWork()
-      return original.open(...args)
+    // The quit arrives right after the sidecar's rename commits it.
+    vi.mocked(fileIo.rename).mockImplementation(async (from, to) => {
+      await original.rename(from, to)
+      if (String(to) === sidecar && !quitting) quitting = cancelAllWork()
     })
     const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Lateabort1', metadata: ACCEPTED })
     expect(quitting, 'the quit arrived after the sidecar committed').toBeDefined()
