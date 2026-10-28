@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { downloadWithProgress, pumpToFile } from '@main/binaries/http'
 import { isRetryableHttpFailure } from '@main/io/network'
 import { IdleTimeoutError } from '@main/io/spawn'
+import { until } from '../../helpers/until'
 
 // pumpToFile is the streaming core of downloadWithProgress, lifted out so the
 // edge cases that used to be impossible to exercise (a write error stranding a
@@ -33,12 +34,13 @@ function stallingBodyAfter(chunk: Uint8Array): ReadableStream<Uint8Array> {
 }
 
 /** A Writable that records every chunk it is handed. */
-function collector(chunks: Buffer[], opts: { delayMs?: number; highWaterMark?: number } = {}): Writable {
+function collector(chunks: Buffer[], opts: { slow?: boolean; highWaterMark?: number } = {}): Writable {
   return new Writable({
     highWaterMark: opts.highWaterMark,
     write(chunk: Buffer, _enc, cb) {
       chunks.push(Buffer.from(chunk))
-      if (opts.delayMs) setTimeout(cb, opts.delayMs)
+      // A slow sink acknowledges each chunk on a later turn, holding back the source.
+      if (opts.slow) setImmediate(cb)
       else cb()
     },
   })
@@ -169,7 +171,7 @@ describe('pumpToFile', () => {
     // A slow sink with a tiny buffer forces pipeline to pause the source
     // repeatedly; all bytes must still arrive intact and in order.
     const received: Buffer[] = []
-    const out = collector(received, { delayMs: 2, highWaterMark: 1 })
+    const out = collector(received, { slow: true, highWaterMark: 1 })
     const chunks = Array.from({ length: 20 }, (_, i) => new Uint8Array([i]))
 
     await pumpToFile(bodyOf(...chunks), out, { ...OPTS, total: 20 })
@@ -233,13 +235,15 @@ describe('pumpToFile', () => {
   it('rejects with an AbortError (and does not hang) when the caller aborts mid-stream', async () => {
     const ac = new AbortController()
     const body = stallingBodyAfter(new Uint8Array([1]))
-    setTimeout(() => ac.abort(), 20)
+    const received: Buffer[] = []
+    const pumping = pumpToFile(body, collector(received), { ...OPTS, signal: ac.signal })
+    // Abort once the first chunk is through and the body has stalled.
+    await until(() => expect(received).toHaveLength(1))
+    ac.abort()
 
     // idleTimeoutMs is omitted here, so an abort is the ONLY thing that can reject:
     // assert the rejection is the abort, not some other failure.
-    await expect(
-      pumpToFile(body, collector([]), { ...OPTS, signal: ac.signal }),
-    ).rejects.toHaveProperty('name', 'AbortError')
+    await expect(pumping).rejects.toHaveProperty('name', 'AbortError')
   })
 
   it('completes an empty body cleanly without reporting progress', async () => {
@@ -277,7 +281,7 @@ it('creates a private download before streaming bytes, then keeps those bytes', 
   const run = downloadWithProgress({ ...OPTS, destPath: path, signal: controller.signal })
   const settled = run.catch(() => {})
   try {
-    await vi.waitFor(async () => { expect((await stat(path)).size).toBe(0) })
+    await until(async () => { expect((await stat(path)).size).toBe(0) })
     if (process.platform !== 'win32') expect((await stat(path)).mode & 0o777).toBe(0o600)
     source.enqueue(new Uint8Array([1, 2, 3])); source.close()
     await run

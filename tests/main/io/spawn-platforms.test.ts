@@ -71,7 +71,7 @@ describe('stopping an owned tree on Windows', () => {
     expect(spawned[1]).toMatchObject({ command: 'taskkill', args: ['/PID', String(tool.pid), '/T', '/F'], options: { windowsHide: true } })
 
     tool.emit('close', 1, null)
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setImmediate(resolve))
     let done = false
     void settled.then(() => { done = true })
     await Promise.resolve()

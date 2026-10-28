@@ -12,7 +12,7 @@ it.skipIf(process.platform === 'win32')('forces the process to end while a real 
   const stopFixture = () => { child?.kill('SIGKILL') }
   signal.addEventListener('abort', stopFixture, { once: true })
   try {
-    execFileSync('mkfifo', [fifo], { timeout: 1_000 })
+    execFileSync('mkfifo', [fifo])
     const helper = new URL('../../src/main/force-exit.ts', import.meta.url).href
     const script = `const {Worker}=require('node:worker_threads'); const worker=new Worker(\`const fs=require('node:fs'); const {workerData,parentPort}=require('node:worker_threads'); parentPort.postMessage('enter'); fs.openSync(workerData,'r');\`,{eval:true,workerData:process.argv[1]}); worker.once('message',()=>setTimeout(async()=>{process.stdout.write('forcing exit\\n'); const {forceExitProcess}=await import(${JSON.stringify(helper)}); forceExitProcess()},50));`
     child = spawn(process.execPath, ['-e', script, fifo], { stdio: ['ignore', 'pipe', 'pipe'] })

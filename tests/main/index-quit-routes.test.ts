@@ -17,11 +17,21 @@ import { EXIT_DEADLINE_MS } from '@main/quit'
 
 type Handler = (...args: unknown[]) => unknown
 
-const state = vi.hoisted(() => ({
+const state = vi.hoisted(() => {
+  // Tests wait for what the entry does by its effects, never by a deadline: each
+  // recorded step wakes the waiters, which check their condition again.
+  const waiters: Array<() => void> = []
+  const changed = (): void => { for (const wake of waiters.splice(0)) wake() }
+  class Steps extends Array<string> {
+    override push(...steps: string[]): number { const length = super.push(...steps); changed(); return length }
+  }
+  return {
+  waiters,
+  changed,
   app: new Map<string, Handler>(),
   power: new Map<string, Handler>(),
   windows: [] as Array<{ handlers: Map<string, Handler>; renderer: Map<string, Handler> }>,
-  order: [] as string[],
+  order: new Steps(),
   releaseLanguage: (() => {}) as () => void,
   stopStalls: false,
   focused: null as unknown,
@@ -29,12 +39,18 @@ const state = vi.hoisted(() => ({
   minimized: false,
   about: (() => {}) as () => void,
   reload: ((_window: unknown, _force: boolean) => {}) as (window: unknown, force: boolean) => void,
-  reloadPage: vi.fn(),
-  reloadIgnoringCache: vi.fn(),
+  reloadPage: vi.fn(() => changed()),
+  reloadIgnoringCache: vi.fn(() => changed()),
   boot: [] as string[],
   blockers: new Set<number>(),
   nextBlocker: 0,
-}))
+  }
+})
+
+/** Resolves once `check` holds, checking it first and again after each step. */
+async function until(check: () => boolean): Promise<void> {
+  while (!check()) await new Promise<void>((resolve) => state.waiters.push(resolve))
+}
 
 vi.mock('electron', () => {
   class BrowserWindow {
@@ -42,7 +58,7 @@ vi.mock('electron', () => {
     readonly handlers = new Map<string, Handler>()
     readonly renderer = new Map<string, Handler>()
     readonly webContents = { reload: state.reloadPage, reloadIgnoringCache: state.reloadIgnoringCache, on: (event: string, handler: Handler) => { this.renderer.set(event, handler) }, setWindowOpenHandler: vi.fn(), send: vi.fn(), isDestroyed: () => false }
-    constructor() { state.windows.push(this) }
+    constructor() { state.windows.push(this); state.changed() }
     on(event: string, handler: Handler): this { this.handlers.set(event, handler); return this }
     once(event: string, handler: Handler): this { return this.on(event, handler) }
     isDestroyed(): boolean { return false }
@@ -65,7 +81,7 @@ vi.mock('electron', () => {
       isPackaged: false,
     },
     BrowserWindow,
-    powerMonitor: { on: (event: string, handler: Handler) => { state.power.set(event, handler) } },
+    powerMonitor: { on: (event: string, handler: Handler) => { state.power.set(event, handler); state.changed() } },
     shell: { openExternal: vi.fn() },
     powerSaveBlocker: {
       start: vi.fn(() => { const id = ++state.nextBlocker; state.blockers.add(id); return id }),
@@ -100,7 +116,7 @@ vi.mock('@main/queue/manager', () => ({
 }))
 vi.mock('@main/binaries/manager', () => ({ hasInstalls: () => false }))
 vi.mock('@main/ipc/scan', () => ({ cancelAllScans: vi.fn(async () => {}), resumeScans: vi.fn(), hasActiveScans: () => false }))
-vi.mock('@main/work-registry', () => ({ cancelAllWork: vi.fn(async () => {}), resumeWork: vi.fn(), hasRunningWork: () => false }))
+vi.mock('@main/work-registry', () => ({ cancelAllWork: vi.fn(async () => {}), resumeWork: vi.fn(() => { state.order.push('resume') }), hasRunningWork: () => false }))
 vi.mock('@main/media-server', () => ({ startMediaServer: vi.fn(async () => {}), stopMediaServer: vi.fn(async () => {}) }))
 vi.mock('@main/window-options', () => ({ windowOptions: () => ({}) }))
 vi.mock('@main/theme', () => ({ applyThemePreference: vi.fn(), followOsThemeChanges: vi.fn(), windowBackground: () => '#000' }))
@@ -142,14 +158,14 @@ async function boot(): Promise<void> {
       if (!listeners.includes(listener)) processHandlers.push([event, listener as (...args: unknown[]) => void])
     }
   }
-  await vi.waitFor(() => expect(state.power.has('shutdown')).toBe(true))
+  await until(() => state.power.has('shutdown'))
 }
 
 /** A fresh Electron entry, started up to its main window. */
 async function launch(): Promise<{ handlers: Map<string, Handler>; renderer: Map<string, Handler> }> {
   await boot()
   state.releaseLanguage()
-  await vi.waitFor(() => expect(state.windows).toHaveLength(1))
+  await until(() => state.windows.length === 1)
   state.order.length = 0
   return state.windows[0]!
 }
@@ -192,7 +208,7 @@ describe('the quit questions', () => {
     const settle = vi.mocked((await import('@main/window-close')).settleWindowDrafts)
     settle.mockImplementationOnce(async (_window, signal, _standalone, unavailable) => unavailable(signal))
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    await until(() => state.order.includes('dialog'))
     expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0]).toMatchObject({
       title: 'TapeBox',
       message: 'quit.unresponsive.message',
@@ -207,15 +223,15 @@ describe('the quit questions', () => {
     await launch()
     state.working = true
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order).toContain('work-dialog'))
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(state.order).toEqual(['drafts', 'work-dialog'])
+    // Cancel resumes the app, the quit's last act when it stops nothing.
+    await until(() => state.order.includes('resume'))
+    expect(state.order).toEqual(['drafts', 'work-dialog', 'resume'])
   })
 
   it('asks nothing about work when none is running', async () => {
     await launch()
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order).toContain('save-library'))
+    await until(() => state.order.includes('save-library'))
     expect(state.order[0]).toBe('drafts')
     expect(state.order).not.toContain('work-dialog')
   })
@@ -225,7 +241,7 @@ describe('the quit questions', () => {
     state.working = true
     state.power.get('shutdown')!({ preventDefault: vi.fn() })
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order.at(-1)).toBe('app-exit'))
+    await until(() => state.order.at(-1) === 'app-exit')
     expect(state.order).not.toContain('drafts')
     expect(state.order).not.toContain('work-dialog')
   })
@@ -243,7 +259,6 @@ describe('an OS session end delivered to the Electron entry', () => {
     const late = { preventDefault: vi.fn() }
     state.app.get('before-quit')!(late)
     expect(late.preventDefault).toHaveBeenCalledOnce()
-    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(state.order).toEqual(['records-drain', 'kill-tools', 'force-exit'])
   })
 
@@ -255,7 +270,7 @@ describe('an OS session end delivered to the Electron entry', () => {
 
     const quitEvent = { preventDefault: vi.fn() }
     state.app.get('before-quit')!(quitEvent)
-    await vi.waitFor(() => expect(state.order.at(-1)).toBe('app-exit'))
+    await until(() => state.order.at(-1) === 'app-exit')
     expect(state.order).not.toContain('dialog')
     expect(state.order).toEqual(['save-library', 'stop-downloads', 'save-library', 'close-records', 'kill-tools', 'app-exit'])
   })
@@ -287,7 +302,7 @@ describe('a quit that begins during startup', () => {
     state.power.get('shutdown')!({ preventDefault: vi.fn() })
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
     state.releaseLanguage()
-    await vi.waitFor(() => expect(state.order.at(-1)).toBe('app-exit'))
+    await until(() => state.order.at(-1) === 'app-exit')
     expect(state.windows).toHaveLength(0)
   })
 
@@ -295,8 +310,8 @@ describe('a quit that begins during startup', () => {
     await boot()
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
     state.releaseLanguage()
-    await vi.waitFor(() => expect(state.windows).toHaveLength(1))
-    expect(state.order).toEqual(['drafts', 'save-library', 'dialog'])
+    await until(() => state.windows.length === 1)
+    expect(state.order).toEqual(['drafts', 'save-library', 'dialog', 'resume'])
   })
 })
 
@@ -308,7 +323,7 @@ describe('the failed-save question at a user quit', () => {
     const records = { name: 'records' }
     state.focused = records
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    await until(() => state.order.includes('dialog'))
     expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0].owner).toBe(records)
   })
 
@@ -316,14 +331,14 @@ describe('the failed-save question at a user quit', () => {
     await launch()
     state.minimized = true
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    await until(() => state.order.includes('dialog'))
     expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0].owner).toBeUndefined()
   })
 
   it('opens above the main window when no app window has focus', async () => {
     const main = await launch()
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    await until(() => state.order.includes('dialog'))
     expect(vi.mocked(showPlainMessageDialog).mock.lastCall![0].owner).toBe(main)
   })
 })
@@ -356,7 +371,7 @@ describe('playback assertion lifetime', () => {
     setVideoPlaying(true)
     const ids = [...state.blockers]
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await vi.waitFor(() => expect(state.order).toContain('dialog'))
+    await until(() => state.order.includes('dialog'))
     expect(state.order).toContain('stop-downloads')
     expect([...state.blockers]).toEqual(ids)
     expect(state.blockers.size).toBe(1)
@@ -392,7 +407,7 @@ describe('renderer reload consent', () => {
     expect(state.reloadIgnoringCache).not.toHaveBeenCalled()
     settle.mockResolvedValueOnce(true)
     state.reload(window, force)
-    await vi.waitFor(() => expect(force ? state.reloadIgnoringCache : state.reloadPage).toHaveBeenCalledOnce())
+    await until(() => (force ? state.reloadIgnoringCache : state.reloadPage).mock.calls.length === 1)
     expect(state.order).not.toContain('stop-downloads')
     expect(state.order).not.toContain('save-library')
   })

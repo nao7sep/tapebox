@@ -7,6 +7,7 @@ import zlib, { crc32, deflateRawSync, type InflateRaw } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { extractFileFromZip } from '@main/binaries/archive'
 import { writeFileAtomicVia } from '@main/io/atomic-file'
+import { until } from '../../helpers/until'
 
 vi.mock('@main/io/logger', () => ({ log: { warn: vi.fn() } }))
 
@@ -337,7 +338,7 @@ describe('extractFileFromZip', () => {
     const error = new Error('injected source failure')
     if (action === 'abort') controller.abort(new DOMException('cancel extraction', 'AbortError'))
     else source.destroy(error)
-    await vi.waitFor(() => expect(outcome).toBeDefined())
+    await until(() => expect(outcome).toBeDefined())
     await extraction
     if (action === 'abort') expect(outcome).toMatchObject({ name: 'AbortError' })
     else expect(outcome).toBe(error)
@@ -372,10 +373,10 @@ describe('extractFileFromZip', () => {
     const extraction = writeFileAtomicVia(destination, (path) => extractFileFromZip(zip, 'deno', action === 'write failure' ? join(dir, 'absent', 'deno') : path, action === 'stream limit' ? 3 : data.length, controller.signal), stage, controller.signal)
       .then(() => { settled = true; return 'resolved' }, (err: unknown) => { settled = true; return err })
     if (action === 'write failure' || action === 'stream limit') {
-      await vi.waitFor(() => expect(source).toBeDefined())
+      await until(() => expect(source).toBeDefined())
     } else {
       await parked.promise
-      await vi.waitFor(() => expect(inflaters.length).toBeGreaterThan(0))
+      await until(() => expect(inflaters.length).toBeGreaterThan(0))
       if (action === 'abort') controller.abort(new DOMException('cancel extraction', 'AbortError'))
       if (action === 'source error') source.destroy(new Error('injected payload failure'))
     }
@@ -387,7 +388,7 @@ describe('extractFileFromZip', () => {
     expect(await exists(stage)).toBe(true)
     expect(await readFile(destination, 'utf8')).toBe('previous executable')
     releaseClose!()
-    await vi.waitFor(() => expect(settled).toBe(true))
+    await until(() => expect(settled).toBe(true))
     const outcome = await extraction
     if (action === 'abort') expect(outcome).toMatchObject({ name: 'AbortError' })
     else expect(outcome).toBeInstanceOf(Error)

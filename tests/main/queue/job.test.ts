@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { Job, type JobDeps } from '@main/queue/job'
+import { until } from '../../helpers/until'
 import { StopRequest } from '@main/stop-request'
 import type { ProbeVideo } from '@main/services/ytdlp'
 import type { Tape } from '@shared/domain'
@@ -318,8 +319,7 @@ describe('Job lifecycle (driven with fakes)', () => {
     let stoppedBy: string | null = null
     const job = new Job(t, deps)
     const run = job.run()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(tapes.get('t1')!.state).toBe('downloading')
+    await until(() => expect(tapes.get('t1')!.state).toBe('downloading'))
     await job.stop()
     await run
     expect(stoppedBy).toBe('quit')

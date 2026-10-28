@@ -14,6 +14,7 @@ import { useFilterStore } from '@renderer/store/filter'
 import { useArchiveStore } from '@renderer/store/archive'
 import { inEnglish, inEnglishAll } from '../../helpers/i18n'
 import { message } from '@shared/i18n/translate'
+import { until } from '../../helpers/until'
 
 function tape(overrides: Partial<Tape> = {}): Tape {
   return TapeSchema.parse({
@@ -67,7 +68,7 @@ describe('archive and placement settlement', () => {
     invalidateTapeActions()
     useTapesStore.setState({ tapes: [copied] })
     fail(new Error('late archive failure'))
-    await vi.waitFor(() => expect(logError).toHaveBeenCalled())
+    await until(() => expect(logError).toHaveBeenCalled())
     expect(useTapesStore.getState().tapes).toEqual([copied])
     expect(useTapeActionResultsStore.getState().byTape).toEqual({})
   })
@@ -81,7 +82,7 @@ describe('archive and placement settlement', () => {
     archiveTape(original, 'tape')
     expect(useTapesStore.getState().tapes[0]?.archivedAtUtc).not.toBeNull()
 
-    await vi.waitFor(() => expect(useTapesStore.getState().tapes[0]).toEqual(original))
+    await until(() => expect(useTapesStore.getState().tapes[0]).toEqual(original))
     expect(useFilterStore.getState().filter).toBe('inbox')
     const shown = inEnglish(useTapeActionResultsStore.getState().byTape[original.id]?.archive)
     expect(shown).toBe('This tape could not be archived. It remains in the Inbox; try again.')
@@ -96,7 +97,7 @@ describe('archive and placement settlement', () => {
     ipcInvoke.mockRejectedValueOnce(new Error('hostile placement diagnostic'))
 
     moveTapeToBox(original, 'BoxTarget1', 'list')
-    await vi.waitFor(() => expect(useTapesStore.getState().tapes[0]).toEqual(original))
+    await until(() => expect(useTapesStore.getState().tapes[0]).toEqual(original))
 
     expect(inEnglishAll(useTapeActionResultsStore.getState().byTape[original.id])).toEqual({
       reveal: 'This tape could not be shown in its folder. The tape is unchanged; try again.',
@@ -130,7 +131,7 @@ describe.each([
     useTapesStore.getState().upsert(updated)
     reject(new Error('organization write rejected'))
 
-    await vi.waitFor(() => expect(useTapesStore.getState().tapes[0]).toEqual({
+    await until(() => expect(useTapesStore.getState().tapes[0]).toEqual({
       ...updated,
       archivedAtUtc: original.archivedAtUtc,
       boxId: original.boxId,
@@ -151,7 +152,7 @@ describe.each([
     useTapesStore.getState().upsert({ ...useTapesStore.getState().tapes[0]!, order: 77 })
     reject(new Error('organization write rejected'))
 
-    await vi.waitFor(() => expect(useTapesStore.getState().tapes[0]).toEqual({ ...original, order: 77 }))
+    await until(() => expect(useTapesStore.getState().tapes[0]).toEqual({ ...original, order: 77 }))
     expect(useTapeActionResultsStore.getState().byTape[original.id]?.[action]).toBeDefined()
   })
 })
@@ -168,7 +169,7 @@ describe('relocation supersession and authoritative updates', () => {
     useTapesStore.getState().upsert(placed)
     reject(new Error('earlier archive rejected'))
 
-    await vi.waitFor(() => expect(useTapeActionResultsStore.getState().byTape[original.id]?.archive).toBeDefined())
+    await until(() => expect(useTapeActionResultsStore.getState().byTape[original.id]?.archive).toBeDefined())
     expect(useTapesStore.getState().tapes[0]).toEqual(placed)
     expect(useFilterStore.getState().filter).toBe('archived')
   })
@@ -182,7 +183,7 @@ describe('relocation supersession and authoritative updates', () => {
     useTapesStore.getState().removeMany([original.id])
     reject(new Error('placement rejected'))
 
-    await vi.waitFor(() => expect(useTapeActionResultsStore.getState().byTape[original.id]?.placement).toBeDefined())
+    await until(() => expect(useTapeActionResultsStore.getState().byTape[original.id]?.placement).toBeDefined())
     expect(useTapesStore.getState().tapes).toEqual([])
   })
 
@@ -213,7 +214,7 @@ describe('relocation supersession and authoritative updates', () => {
     moveTapeToBox(useTapesStore.getState().tapes[0]!, 'BoxTarget2', 'list')
     const latest = useTapesStore.getState().tapes[0]
     rejectOlder(new Error('older placement rejected'))
-    await vi.waitFor(() => expect(logError).toHaveBeenCalled())
+    await until(() => expect(logError).toHaveBeenCalled())
 
     expect(useTapesStore.getState().tapes[0]).toEqual(latest)
     expect(useTapeActionResultsStore.getState().byTape[original.id]?.placement).toBeUndefined()
@@ -253,7 +254,7 @@ describe('selection after an action settles', () => {
     archiveTape(archived, 'tape')
     useSelectionStore.getState().select(other.id)
     reject(new Error('archive failed'))
-    await vi.waitFor(() => expect(useTapesStore.getState().tapes.find((t) => t.id === archived.id)?.archivedAtUtc).toBeNull())
+    await until(() => expect(useTapesStore.getState().tapes.find((t) => t.id === archived.id)?.archivedAtUtc).toBeNull())
     expect(useSelectionStore.getState().selectedId).toBe(other.id)
   })
 })

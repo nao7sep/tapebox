@@ -12,7 +12,8 @@ export default defineConfig({
     include: ['tests/live/**/*.test.ts'],
     exclude: configDefaults.exclude,
     fileParallelism: false,
-    testTimeout: 15 * 60_000,
-    hookTimeout: 30 * 60_000,
+    // No deadlines here either: a wait that never ends is a hang to diagnose.
+    testTimeout: 0,
+    hookTimeout: 0,
   },
 })

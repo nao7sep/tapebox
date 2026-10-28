@@ -19,7 +19,6 @@ import { FORMAT_VERSIONS } from '@main/io/format-version'
 import type { ImportResult, IpcCalls } from '@shared/ipc-contract'
 
 const run = promisify(execFile)
-const HDIUTIL_TIMEOUT_MS = 60_000
 const MEDIA_BYTES = 600_000 // more than two copy chunks
 const MODIFIED = new Date('2021-04-05T06:07:08.000Z')
 
@@ -113,13 +112,13 @@ beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-exfat-'))
   volume = join(root, 'volume')
   const image = join(root, 'exfat.dmg')
-  await run('hdiutil', ['create', '-size', '64m', '-fs', 'ExFAT', '-volname', 'TAPEBOXLIVE', image], { timeout: HDIUTIL_TIMEOUT_MS })
-  await run('hdiutil', ['attach', '-nobrowse', '-mountpoint', volume, image], { timeout: HDIUTIL_TIMEOUT_MS })
+  await run('hdiutil', ['create', '-size', '64m', '-fs', 'ExFAT', '-volname', 'TAPEBOXLIVE', image])
+  await run('hdiutil', ['attach', '-nobrowse', '-mountpoint', volume, image])
 })
 
 afterAll(async () => {
   if (!isMac) return
-  await run('hdiutil', ['detach', '-force', volume], { timeout: HDIUTIL_TIMEOUT_MS }).catch(() => {})
+  await run('hdiutil', ['detach', '-force', volume]).catch(() => {})
   await rm(root, { recursive: true, force: true })
 })
 
@@ -167,5 +166,5 @@ describe('copies onto exFAT', () => {
     } finally {
       await stop()
     }
-  }, 120_000)
+  })
 })

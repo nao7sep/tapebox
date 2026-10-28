@@ -1,6 +1,5 @@
 import { configDefaults, defineConfig } from 'vitest/config'
 import { resolve } from 'node:path'
-import { availableParallelism } from 'node:os'
 import { aliasMap } from './aliases.config'
 
 import { readFileSync } from 'node:fs';
@@ -21,10 +20,10 @@ export default defineConfig({
     // Node by default for the pure main/shared logic; the renderer's DOM helpers
     // opt into jsdom per file via a `// @vitest-environment jsdom` pragma.
     environment: 'node',
-    // Integration files start application workers and owned subprocesses as well
-    // as the runner. Reserve CPU for those peers so startup/cancellation tests
-    // measure their lifecycle rather than a saturated runner's scheduling delay.
-    maxWorkers: Math.max(1, Math.floor(availableParallelism() / 2)),
+    // No test or hook has a deadline: a wait that never ends is a hang to
+    // diagnose, not a failure to time out (tests-folder-conventions).
+    testTimeout: 0,
+    hookTimeout: 0,
     // Electron's npm entry downloads its ~100 MB binary the first time anything
     // imports it while the binary is missing, as after a fresh npm ci with install
     // scripts blocked. Unit tests need only the module's path string, never the

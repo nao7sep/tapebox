@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 import { cancelAllWork, hasRunningWork, resumeWork } from '@main/work-registry'
+import { until } from '../../helpers/until'
 
 // Re-probing a tape and accepting the result. The catalog fields and the
 // sidecar's description are written for real; only the network-facing services
@@ -171,7 +172,7 @@ describe('accepting refreshed metadata', () => {
     let settled = false
     void apply.then(() => { settled = true }, () => { settled = true })
     try {
-      await vi.waitFor(() => expect(persistNow).toHaveBeenCalledOnce())
+      await until(() => expect(persistNow).toHaveBeenCalledOnce())
       expect(settled).toBe(false)
       expect(state.tapes[0]?.title).toBe('New title')
     } finally { release(true); await apply }
@@ -197,7 +198,7 @@ describe('accepting refreshed metadata', () => {
     const apply = invoke<Tape>('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })
     const result = apply.catch((error: unknown) => error)
     try {
-      await vi.waitFor(() => expect(downloadThumbnail).toHaveBeenCalledOnce())
+      await until(() => expect(downloadThumbnail).toHaveBeenCalledOnce())
       if (kind === 'removed') state.tapes = []
       else tape.title = 'Newer authored title'
     } finally { release(null) }
@@ -214,7 +215,7 @@ describe('accepting refreshed metadata', () => {
     downloadThumbnail.mockImplementationOnce(() => new Promise<string | null>((resolve) => { release = resolve }))
     const apply = invoke<Tape>('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })
     try {
-      await vi.waitFor(() => expect(downloadThumbnail).toHaveBeenCalledOnce())
+      await until(() => expect(downloadThumbnail).toHaveBeenCalledOnce())
       await expect(invoke('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })).rejects.toMatchObject({ userMessage: { key: 'errors.tapeBusy' } })
       await expect(invoke('library:rename', { tapeId: tape.id, name: 'New name' })).rejects.toMatchObject({ userMessage: { key: 'errors.tapeBusy' } })
       await expect(invoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })).rejects.toMatchObject({ userMessage: { key: 'errors.removeFilesKept' } })
@@ -402,7 +403,7 @@ describe('accepting refreshed metadata', () => {
       signal.addEventListener('abort', () => reject(signal.reason), { once: true })
     }))
     const apply = invoke('library:applyMetadata', { tapeId: 'Quitapply1', metadata: ACCEPTED }).catch((error: unknown) => error)
-    try { await vi.waitFor(() => expect(downloadThumbnail).toHaveBeenCalledOnce()) }
+    try { await until(() => expect(downloadThumbnail).toHaveBeenCalledOnce()) }
     finally { await cancelAllWork(); await apply }
     expect(state.tapes[0]?.title).toBe('Old title')
     expect(saveThumbnailJpeg).not.toHaveBeenCalled()

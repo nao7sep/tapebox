@@ -3,6 +3,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { collectRunFacts, killOwnedProcessesNow, spawnStreaming, waitForExit } from '@main/io/spawn'
 import { StopRequest } from '@main/stop-request'
+import { until } from '../../helpers/until'
 
 function readReadyPid(child: ReturnType<typeof spawnStreaming>, signal?: AbortSignal): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -34,7 +35,7 @@ function readReadyPid(child: ReturnType<typeof spawnStreaming>, signal?: AbortSi
 describe('owned subprocess cancellation', () => {
   it.runIf(process.platform !== 'win32')(
     'escalates from SIGTERM and terminates the owned POSIX process group',
-    async ({ signal, task }) => {
+    async ({ signal }) => {
       const descendant =
         `process.on('SIGTERM', () => {}); ` +
         `process.send('ready'); setInterval(() => {}, 1000)`
@@ -61,7 +62,7 @@ describe('owned subprocess cancellation', () => {
         // would keep it alive. The OS may retain the dead descendant's PID briefly
         // after removing its group membership, so reaping is observed separately.
         expect(() => process.kill(-child.pid!, 0)).toThrow()
-        await vi.waitFor(() => expect(() => process.kill(descendantPid!, 0)).toThrow(), { timeout: task.timeout })
+        await until(() => expect(() => process.kill(descendantPid!, 0)).toThrow())
       } finally {
         // Clean up even when readiness or the escalation assertion fails. Use the
         // fixture's recorded group, independently of the termination under test.
@@ -69,11 +70,10 @@ describe('owned subprocess cancellation', () => {
         child.kill('SIGKILL')
         await closed
         if (descendantPid !== undefined) {
-          await vi.waitFor(() => expect(() => process.kill(descendantPid!, 0)).toThrow(), { timeout: task.timeout })
+          await until(() => expect(() => process.kill(descendantPid!, 0)).toThrow())
         }
       }
     },
-    15_000,
   )
 
   it.runIf(process.platform === 'win32')(
@@ -94,18 +94,13 @@ describe('owned subprocess cancellation', () => {
       // the descendant must already be gone, not merely scheduled for taskkill.
       expect(() => process.kill(descendantPid, 0)).toThrow()
     },
-    30_000,
   )
 })
 
 describe('a forced exit', () => {
-  /** Whether `pid` is gone, waiting for the OS to reap it. */
-  async function goneSoon(pid: number): Promise<boolean> {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      try { process.kill(pid, 0) } catch { return true }
-      await new Promise((resolve) => setTimeout(resolve, 25))
-    }
-    return false
+  /** Resolves once `pid` is gone, waiting for the OS to reap it. */
+  function gone(pid: number): Promise<void> {
+    return until(() => expect(() => process.kill(pid, 0)).toThrow())
   }
 
   it.runIf(process.platform !== 'win32')('kills every owned POSIX process group at once, without a grace', async () => {
@@ -121,7 +116,8 @@ describe('a forced exit', () => {
     killOwnedProcessesNow()
 
     await exited
-    expect(await goneSoon(descendantPid), 'the descendant died with its group').toBe(true)
+    // The descendant dies with its group.
+    await gone(descendantPid)
     expect(() => process.kill(-child.pid!, 0)).toThrow()
   })
 
@@ -133,7 +129,7 @@ describe('a forced exit', () => {
     killOwnedProcessesNow()
 
     await exited
-    expect(await goneSoon(pid)).toBe(true)
+    await gone(pid)
   })
 })
 

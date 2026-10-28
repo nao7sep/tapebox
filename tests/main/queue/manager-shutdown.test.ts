@@ -22,11 +22,11 @@ vi.mock('@main/queue/job', () => ({
     }
     stop(): Promise<void> {
       jobs.stopped.push(this.tapeId)
-      // The process tree takes a moment to exit; stop resolves only after it has.
-      setTimeout(() => {
+      // The process tree exits later; stop resolves only after it has.
+      setImmediate(() => {
         jobs.settled.push(this.tapeId)
         this.finish()
-      }, 5)
+      })
       return this.done
     }
     cancel(): Promise<void> { return this.stop() }
@@ -151,7 +151,7 @@ describe('queue shutdown', () => {
     expect(jobs.stopped.sort()).toEqual(['a', 'b'])
     expect(jobs.settled.sort()).toEqual(['a', 'b'])
     // The finished jobs' finally → tick() must not start the third tape.
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setImmediate(resolve))
     queue.tick()
     expect(jobs.started).toEqual(['a', 'b'])
     tapes.length = 0

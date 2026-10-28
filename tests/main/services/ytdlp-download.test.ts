@@ -12,6 +12,7 @@ vi.mock('@main/services/ytdlp-args', () => ({ resolveYtdlpArgs: () => [] }))
 vi.mock('@main/io/spawn', async (original) => ({ ...await original<object>(), spawnStreaming }))
 
 import { download } from '@main/services/ytdlp'
+import { until } from '../../helpers/until'
 
 let dir: string
 let child: EventEmitter & { stdout: PassThrough; stderr: PassThrough }
@@ -36,7 +37,7 @@ describe('download output lines', () => {
     const onLog = vi.fn()
     const mediaPath = join(dir, 'output.mp4')
     const result = download({ tapeId: 't1', url: 'https://example.test/v', libraryDir: dir, outputId: 'output', onProgress, onLog, signal: new AbortController().signal })
-    await vi.waitFor(() => expect(spawnStreaming).toHaveBeenCalledOnce())
+    await until(() => expect(spawnStreaming).toHaveBeenCalledOnce())
 
     child.stderr.write('tapebox-progress:50')
     child.stdout.write(`tapebox-final-filepath:${mediaPath}\n`)
@@ -60,7 +61,7 @@ describe('download output lines', () => {
     const onLog = vi.fn()
     const mediaPath = join(dir, 'output.mp4')
     const result = download({ tapeId: 't1', url: 'https://example.test/v', libraryDir: dir, outputId: 'output', onProgress, onLog, signal: new AbortController().signal })
-    await vi.waitFor(() => expect(spawnStreaming).toHaveBeenCalledOnce())
+    await until(() => expect(spawnStreaming).toHaveBeenCalledOnce())
 
     child.stdout.write(`tapebox-final-filepath:${dir}/`)
     child.stderr.write('tapebox-progress:75.0%|20|1\n')

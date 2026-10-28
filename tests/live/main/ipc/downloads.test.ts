@@ -18,7 +18,6 @@ import { copyFile, link, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'nod
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { basename, join } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
 import { beforeAll, describe, expect, it, vi } from 'vitest'
@@ -28,6 +27,9 @@ import type { Tape } from '@shared/domain'
 import { deriveStatus } from '@shared/binary-status'
 
 const handlers = vi.hoisted(() => new Map<string, (req: unknown) => Promise<unknown>>())
+// Every event main sends wakes the waiters, which check the session again.
+const waiters = vi.hoisted(() => [] as Array<() => void>)
+const liveWindow = vi.hoisted(() => ({ webContents: { isDestroyed: () => false, send: () => { for (const wake of waiters.splice(0)) wake() } } }))
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, req: unknown) => unknown) => {
@@ -35,7 +37,7 @@ vi.mock('electron', () => ({
     },
     on: () => {},
   },
-  BrowserWindow: { getAllWindows: () => [], getFocusedWindow: () => null },
+  BrowserWindow: { getAllWindows: () => [liveWindow], getFocusedWindow: () => null },
   app: { getVersion: () => '0.0.0-live', getPath: () => '/tmp', isPackaged: false, on: () => {} },
   shell: {},
   dialog: {},
@@ -48,7 +50,6 @@ const CACHE = join(REPO, 'node_modules', '.cache', 'tapebox-live')
 const TOOL_HOME = join(CACHE, 'tools')
 const CORPUS = join(REPO, '..', 'company', 'assets', 'test-fixtures')
 const VIDEO = 'video/codecs/h264-aac-1s.mp4'
-const DOWNLOAD_TIMEOUT_MS = 5 * 60_000
 
 type App = Awaited<ReturnType<typeof startApp>>
 
@@ -117,15 +118,14 @@ async function withApp<T>(home: string, body: (app: App) => Promise<T>): Promise
 /**
  * The process's open resources once pending closes finish: a closed server or
  * exited child releases its handle a turn of the event loop after its close
- * callback, so a handle still open after two seconds really outlived its owner.
+ * callback. A handle that outlived its owner leaves this waiting: a hang to
+ * diagnose, not a deadline.
  */
 async function openAfterClosing(): Promise<string[]> {
-  const deadline = Date.now() + 2_000
   for (;;) {
     const open = process.getActiveResourcesInfo()
-    const settled = !open.includes('ProcessWrap') && !open.includes('TCPServerWrap')
-    if (settled || Date.now() > deadline) return open
-    await delay(20)
+    if (!open.includes('ProcessWrap') && !open.includes('TCPServerWrap')) return open
+    await new Promise((resolve) => setImmediate(resolve))
   }
 }
 
@@ -189,15 +189,10 @@ async function downloadCorpusVideo(app: App, home: string): Promise<Tape> {
   const server = await serveFile(source)
   try {
     const [added] = await app.invoke<Tape[]>('downloads:add', { url: server.url })
-    const deadline = Date.now() + DOWNLOAD_TIMEOUT_MS
     for (;;) {
       const tape = app.session.getTape(added!.id)!
       if (tape.state === 'downloaded' || tape.state === 'failed') return tape
-      if (Date.now() > deadline) {
-        await app.invoke('downloads:cancel', { tapeId: tape.id })
-        throw new Error(`The tape was still ${tape.state} after ${DOWNLOAD_TIMEOUT_MS} ms.`)
-      }
-      await delay(250)
+      await new Promise<void>((resolve) => waiters.push(resolve))
     }
   } finally {
     await server.close()

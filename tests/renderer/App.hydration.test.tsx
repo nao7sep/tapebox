@@ -47,6 +47,7 @@ import { useLayoutStore } from '@renderer/store/layout'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useDownloadLogStore } from '@renderer/store/downloadLog'
 import { loadAllCatalogues } from '../helpers/i18n'
+import { until } from '../helpers/until'
 
 await loadAllCatalogues()
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -150,7 +151,7 @@ describe('App hydration and live IPC handoff', () => {
 
   it('reserves normal header height while allowing inline results to grow it', async () => {
     await mount()
-    await vi.waitFor(() => expect(shellMounted()).toBe(true))
+    await until(() => expect(shellMounted()).toBe(true))
     const header = document.querySelector<HTMLElement>('main > header')!
     expect(header.style.minHeight).toBe(`${HEADER_HEIGHT}px`)
     expect(header.style.height).toBe('')

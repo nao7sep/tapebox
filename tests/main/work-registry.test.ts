@@ -17,10 +17,11 @@ function abortable(signal: AbortSignal, onSettle: () => void): Promise<string> {
   return new Promise((_resolve, reject) => {
     signal.addEventListener('abort', () => {
       reasons.push((signal.reason as StopRequest).by)
-      setTimeout(() => {
+      // Settles on a later turn, as a stopped process would.
+      setImmediate(() => {
         onSettle()
         reject(new Error('aborted'))
-      }, 5)
+      })
     }, { once: true })
   })
 }
@@ -31,7 +32,8 @@ describe('work registry', () => {
     const a = registry.runCancellable((signal) => abortable(signal, () => settled++), 'a')
     let bAborted = false
     const b = registry.runCancellable(async (signal) => {
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      // Still running once the cancelled run has settled.
+      await a.catch(() => {})
       bAborted = signal.aborted
       return 'b'
     }, 'b')

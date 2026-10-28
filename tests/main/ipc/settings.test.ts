@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings, type Settings } from '@shared/settings'
 import type { Message } from '@shared/i18n/translate'
 import { inEnglish } from '../../helpers/i18n'
+import { until } from '../../helpers/until'
 
 // The settings:update boundary owns two load-bearing safety behaviors that are
 // otherwise untested:
@@ -301,7 +302,7 @@ describe('settings:update — library move control', () => {
         : new AggregateError([options.signal.reason, new Error('rollback failed')], 'rollback incomplete')), { once: true })
     }))
     const pending = update({ libraryDir: '/data/new-library' })
-    await vi.waitFor(() => expect(relocateLibrary).toHaveBeenCalledOnce())
+    await until(() => expect(relocateLibrary).toHaveBeenCalledOnce())
     await handlers.get('settings:cancelLibraryMove')!(undefined)
     await expect(pending).rejects.toMatchObject({ code: 'internal' })
     expect(updateSettings).not.toHaveBeenCalled()
@@ -319,7 +320,7 @@ describe('settings:update — library move control', () => {
     })
 
     const pending = update({ libraryDir: '/data/new-library' })
-    await vi.waitFor(() => expect(relocateLibrary).toHaveBeenCalledTimes(1))
+    await until(() => expect(relocateLibrary).toHaveBeenCalledTimes(1))
     await handlers.get('settings:cancelLibraryMove')!(undefined)
 
     await expect(pending).rejects.toMatchObject({ code: 'cancelled' })

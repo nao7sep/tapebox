@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { until } from '../helpers/until'
 
 // The real loopback server, driven over real HTTP — the point of this module is
 // what Chromium's media stack receives, so nothing about the request path is
@@ -132,7 +133,7 @@ describe('serving a library file', () => {
     const client = httpGet(`${base}/tape.mp4`)
     client.on('error', () => {})
     const [socket] = await connection
-    await vi.waitFor(() => expect(mocks.streams).toHaveLength(1))
+    await until(() => expect(mocks.streams).toHaveLength(1))
     const stream = mocks.streams[0]!
     const closed = once(stream, 'close')
     client.destroy()

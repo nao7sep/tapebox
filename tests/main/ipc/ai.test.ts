@@ -1,6 +1,7 @@
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { until } from '../../helpers/until'
 
 const handlers = vi.hoisted(() => new Map<string, (req: unknown) => Promise<unknown>>())
 vi.mock('electron', () => ({
@@ -47,7 +48,7 @@ describe('AI name suggestion', () => {
     source.sidecarFilename = 't1.json'
     source.read.mockResolvedValue({ title: 'No description' })
     const request = handlers.get('ai:generateSlug')!({ tapeId: 't1', requestId: 'empty-description', include: { title: true, uploader: false, description: true } })
-    await vi.waitFor(() => expect(seenSignals).toHaveLength(1))
+    await until(() => expect(seenSignals).toHaveLength(1))
     await handlers.get('ai:cancelSlug')!({ requestId: 'empty-description' })
     await expect(request).rejects.toThrow()
   })
@@ -56,7 +57,7 @@ describe('AI name suggestion', () => {
     const include = { title: true, uploader: false, description: false }
     const first = handlers.get('ai:generateSlug')!({ tapeId: 't1', include, requestId: 'r1' })
     const other = handlers.get('ai:generateSlug')!({ tapeId: 't1', include, requestId: 'r2' })
-    await vi.waitFor(() => expect(seenSignals).toHaveLength(2))
+    await until(() => expect(seenSignals).toHaveLength(2))
 
     await handlers.get('ai:cancelSlug')!({ requestId: 'r1' })
 

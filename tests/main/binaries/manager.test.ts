@@ -72,6 +72,7 @@ vi.mock('@main/binaries/installed-version', () => ({
   writeVersionSidecar: vi.fn(async () => undefined),
 }))
 
+import { until } from '../../helpers/until'
 import {
   cancelInstall,
   checkForUpdates,
@@ -351,7 +352,7 @@ describe('install final-preparation cancellation', () => {
 
     const operationId = 'op-xattr'
     const install = installOrUpdate('yt-dlp', operationId)
-    await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce())
+    await until(() => expect(execCapture).toHaveBeenCalledOnce())
     expect(execCapture).toHaveBeenCalledWith(
       'xattr',
       expect.any(Array),
@@ -380,7 +381,7 @@ describe('install final-preparation cancellation', () => {
 
     const operationId = 'op-zip'
     const install = installOrUpdate('yt-dlp', operationId)
-    await vi.waitFor(() => expect(extractFileFromZip).toHaveBeenCalledOnce())
+    await until(() => expect(extractFileFromZip).toHaveBeenCalledOnce())
     expect(extractFileFromZip).toHaveBeenCalledWith(
       expect.any(String),
       'yt-dlp',
@@ -402,7 +403,7 @@ describe('install final-preparation cancellation', () => {
     )
     const operationId = 'op-shutdown'
     const install = installOrUpdate('yt-dlp', operationId)
-    await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce())
+    await until(() => expect(execCapture).toHaveBeenCalledOnce())
 
     await shutdownInstalls()
     await expectNoPublishedArtifact(install, operationId)
@@ -421,7 +422,7 @@ describe('install final-preparation cancellation', () => {
     const install = installOrUpdate('yt-dlp', 'held-shutdown')
     let closing: Promise<void> | undefined
     try {
-      await vi.waitFor(() => expect(execCapture).toHaveBeenCalledOnce())
+      await until(() => expect(execCapture).toHaveBeenCalledOnce())
       closing = shutdownInstalls()
       resumeInstalls()
       await expect(installOrUpdate('yt-dlp', 'too-early')).resolves.toMatchObject({ outcome: 'failed', error: { key: 'tools.installBusy' } })

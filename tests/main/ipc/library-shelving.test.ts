@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 import { cancelAllWork, resumeWork } from '@main/work-registry'
+import { until } from '../../helpers/until'
 
 // Moving tapes between the inbox and the archive, and taking them out of the
 // library altogether. The library directory is real — a removal that claims to
@@ -353,10 +354,10 @@ describe('removing tapes from the library', () => {
     persistNow.mockImplementation(() => new Promise<void>((resolve) => { commit = resolve }))
 
     const removal = invoke('library:remove', { tapeIds: ['Quitwaits1'], deleteFiles: true })
-    await vi.waitFor(() => expect(persistNow).toHaveBeenCalledOnce())
+    await until(() => expect(persistNow).toHaveBeenCalledOnce())
     let quitDone = false
     const quit = cancelAllWork().then(() => { quitDone = true })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setImmediate(resolve))
     expect(quitDone, 'the quit waits for the removal').toBe(false)
 
     commit()
@@ -372,7 +373,7 @@ describe('removing tapes from the library', () => {
     let settle!: () => void
     queueManager.cancel.mockImplementation(() => new Promise<void>((resolve) => { settle = resolve }))
     const first = invoke('library:remove', { tapeIds: ['Busytape01'], deleteFiles: false })
-    await vi.waitFor(() => expect(queueManager.cancel).toHaveBeenCalledOnce())
+    await until(() => expect(queueManager.cancel).toHaveBeenCalledOnce())
 
     await expect(invoke('library:remove', { tapeIds: ['Busytape01'], deleteFiles: false })).rejects.toThrow(
       'This tape is being changed. Wait for the current operation to finish.',

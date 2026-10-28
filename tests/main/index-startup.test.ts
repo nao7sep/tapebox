@@ -1,6 +1,6 @@
 import { waitForFixture } from '../helpers/fixture-readiness'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -17,6 +17,9 @@ import { killOwnedProcessesNow } from '@main/io/spawn'
 
 const appHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
 const windows = vi.hoisted(() => [] as Array<{ focus: ReturnType<typeof vi.fn> }>)
+// Each handler or window the entry adds wakes the waiters, which check again.
+const waiters = vi.hoisted(() => [] as Array<() => void>)
+const changed = vi.hoisted(() => () => { for (const wake of waiters.splice(0)) wake() })
 const order = vi.hoisted(() => [] as string[])
 const language = vi.hoisted(() => ({ release: (() => {}) as () => void }))
 const versionFixture = vi.hoisted(() => ({ script: '' }))
@@ -29,6 +32,7 @@ vi.mock('electron', () => {
     constructor() {
       order.push('window')
       windows.push(this)
+      changed()
     }
     on(): this { return this }
     once(): this { return this }
@@ -44,7 +48,7 @@ vi.mock('electron', () => {
     app: {
       requestSingleInstanceLock: () => true,
       setPath: vi.fn(),
-      on: (event: string, handler: (...args: unknown[]) => unknown) => { appHandlers.set(event, handler) },
+      on: (event: string, handler: (...args: unknown[]) => unknown) => { appHandlers.set(event, handler); changed() },
       whenReady: () => Promise.resolve(),
       quit: vi.fn(),
       exit: vi.fn(() => { order.push('app-exit'); exitCalled.resolve() }),
@@ -139,31 +143,37 @@ afterAll(() => {
   processHandlers = []
 })
 
+/** Resolves once `check` holds, checking it first and again after each change. */
+async function until(check: () => boolean): Promise<void> {
+  while (!check()) await new Promise<void>((resolve) => waiters.push(resolve))
+}
+
 function waitingFixture(directory: string, name: string) {
   const script = join(directory, `${name}.cjs`)
   const ready = join(directory, `${name}-ready.txt`)
   const release = join(directory, `${name}-release.txt`)
   const pulse = join(directory, `${name}-pulse.txt`)
+  const gone = join(directory, `${name}-gone.txt`)
   writeFileSync(script,
     `const fs = require('node:fs');\n` +
     `fs.writeFileSync(${JSON.stringify(ready)}, String(process.pid));\n` +
     `let pulse = 0; setInterval(() => {\n` +
-    `  if (fs.existsSync(${JSON.stringify(release)})) process.exit(0);\n` +
+    `  if (fs.existsSync(${JSON.stringify(release)})) { fs.writeFileSync(${JSON.stringify(gone)}, ''); process.exit(0); }\n` +
     `  fs.writeFileSync(${JSON.stringify(pulse)}, String(++pulse));\n` +
     `}, 25);\n`,
   )
-  return { script, ready, release, pulse }
+  return { script, ready, release, pulse, gone }
 }
 
 describe('the Electron entry', () => {
   it('creates no window for a second launch or activation during the language load, then exactly one', async () => {
-    await vi.waitFor(() => expect(appHandlers.has('activate')).toBe(true))
+    await until(() => appHandlers.has('activate'))
     appHandlers.get('second-instance')!()
     appHandlers.get('activate')!()
     expect(windows).toHaveLength(0)
 
     language.release()
-    await vi.waitFor(() => expect(windows).toHaveLength(1))
+    await until(() => windows.length === 1)
     expect(order.slice(0, order.indexOf('window'))).toEqual(expect.arrayContaining(['session', 'layout', 'media', 'ipc', 'queue']))
 
     appHandlers.get('second-instance')!()
@@ -171,7 +181,7 @@ describe('the Electron entry', () => {
     expect(windows[0]!.focus).toHaveBeenCalledOnce()
   })
 
-  it('ends a standalone version probe on ordinary quit while the independent player keeps running', async ({ signal, task }) => {
+  it('ends a standalone version probe on ordinary quit while the independent player keeps running', async ({ signal }) => {
     const directory = mkdtempSync(join(tmpdir(), 'tapebox-quit-processes-'))
     const version = waitingFixture(directory, 'version')
     const player = waitingFixture(directory, 'player')
@@ -228,10 +238,8 @@ describe('the Electron entry', () => {
       killOwnedProcessesNow()
       try {
         await readingVersion
-        if (playerStarted) await vi.waitFor(() => {
-          const pid = playerPid || Number(readFileSync(player.ready, 'utf8'))
-          expect(() => process.kill(pid, 0)).toThrow()
-        }, { timeout: task.timeout })
+        // The player reports leaving as its last act before it exits.
+        if (playerStarted) await waitForFixture(directory, () => existsSync(player.gone) || undefined, signal)
       } finally {
         forgetInstalledVersion('yt-dlp')
         versionFixture.script = ''

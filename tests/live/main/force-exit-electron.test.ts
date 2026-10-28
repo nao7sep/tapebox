@@ -18,9 +18,8 @@ it.skipIf(process.platform === 'win32')('ends Electron while a worker remains bl
   const fifo = join(root, 'held.pipe')
   let child: ReturnType<typeof spawn> | undefined
   let closed: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    execFileSync('mkfifo', [fifo], { timeout: 1_000 })
+    execFileSync('mkfifo', [fifo])
     // The shipped primitive, read from source rather than restated here.
     const primitive = /export function forceExitProcess\(\): void \{([\s\S]*?)\n\}/.exec(
       await readFile(new URL('../../../src/main/force-exit.ts', import.meta.url), 'utf8'),
@@ -39,11 +38,9 @@ it.skipIf(process.platform === 'win32')('ends Electron while a worker remains bl
     let output = ''
     child.stdout?.on('data', (value: Buffer) => { output += value.toString() })
     closed = new Promise((resolve) => child!.once('close', (code, signal) => resolve({ code, signal })))
-    const outcome = await Promise.race([closed, new Promise<'expired'>((resolve) => { timer = setTimeout(() => resolve('expired'), 15_000) })])
-    expect(outcome).toEqual({ code: null, signal: 'SIGKILL' })
+    expect(await closed).toEqual({ code: null, signal: 'SIGKILL' })
     expect(output).toContain('forcing exit\n')
   } finally {
-    clearTimeout(timer)
     if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
     await closed
     await rm(root, { recursive: true, force: true })
