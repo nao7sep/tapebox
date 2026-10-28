@@ -55,7 +55,7 @@ export const ipcRequestSchemas = {
   'downloads:retry':       z.object({ tapeId: z.string() }),
 
   // ── Library ──────────────────────────────────────────────────────────────
-  'library:list':          z.undefined(),
+  'library:subscribe':     z.undefined(),
   'library:remove':        z.object({ tapeIds: z.array(z.string()), deleteFiles: z.boolean() }),
   'library:rename':        z.object({ tapeId: z.string(), name: z.string() }),
   'library:import':        z.object({ paths: z.array(z.string()) }),
@@ -72,7 +72,6 @@ export const ipcRequestSchemas = {
   'tapes:reorder':         z.object({ orderedIds: z.array(z.string()) }),
 
   // ── Boxes ──────────────────────────────────────────────────────────────────
-  'boxes:list':            z.undefined(),
   'boxes:create':          z.object({ name: z.string() }),
   'boxes:rename':          z.object({ boxId: z.string(), name: z.string() }),
   'boxes:delete':          z.object({ boxId: z.string() }),

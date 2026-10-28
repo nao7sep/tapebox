@@ -58,26 +58,30 @@ describe('order failure ownership', () => {
     expect(useOrderFailuresStore.getState().inbox).toEqual(note('Inbox failed'))
   })
 
-  it('retains one confirmed arrangement through overlapping settlements, then seeds fresh intent', () => {
+  it('advances the confirmed arrangement by each saved reply while saves overlap, then seeds a fresh one', () => {
     const state = useOrderFailuresStore.getState()
     const confirmed = [{ id: 'a', order: 10 }, { id: 'b', order: 20 }]
+    const saved = [{ id: 'b', order: 0 }, { id: 'a', order: 1 }]
     const older = state.beginAttempt('inbox', confirmed)
-    const newer = state.beginAttempt('inbox', [{ id: 'b', order: 0 }, { id: 'a', order: 1 }])
+    const newer = state.beginAttempt('inbox', saved)
     const independent = state.beginAttempt('boxes', [{ id: 'box', order: 40 }])
 
     expect(state.confirmedOrder('inbox')).toEqual(confirmed)
-    // The current result can physically settle before an older response arrives.
-    state.finishAttempt('inbox', newer)
+    // A failed reply leaves the base; a saved one becomes it.
+    state.finishAttempt('inbox', newer, null)
     expect(state.confirmedOrder('inbox')).toEqual(confirmed)
-    state.finishAttempt('inbox', older)
-    expect(useOrderFailuresStore.getState().pending.inbox).toBeUndefined()
-    expect(state.confirmedOrder('boxes')).toEqual([{ id: 'box', order: 40 }])
+    state.finishAttempt('boxes', independent, [{ id: 'box', order: 2 }])
+    const third = state.beginAttempt('inbox', [])
+    state.finishAttempt('inbox', older, saved)
+    expect(state.confirmedOrder('inbox')).toEqual(expect.arrayContaining(saved))
+    expect(state.confirmedOrder('inbox')).toHaveLength(saved.length)
+    state.finishAttempt('inbox', third, null)
+    expect(useOrderFailuresStore.getState().pending).toEqual({})
 
     const fresh = [{ id: 'a', order: 8 }, { id: 'b', order: 9 }]
     const next = state.beginAttempt('inbox', fresh)
     expect(state.confirmedOrder('inbox')).toEqual(fresh)
-    state.finishAttempt('inbox', next)
-    state.finishAttempt('boxes', independent)
+    state.finishAttempt('inbox', next, fresh)
     expect(useOrderFailuresStore.getState().pending).toEqual({})
   })
 })

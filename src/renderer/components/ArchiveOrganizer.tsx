@@ -116,7 +116,7 @@ export function ArchiveOrganizer() {
       })),
       () => setBoxOrderError(null),
       (error) => setBoxOrderError(presentFailure(error, message('archive.boxOrderSaveFailed'), 'box order save failed')),
-      () => useOrderFailuresStore.getState().finishAttempt('boxes', attempt),
+      (saved) => useOrderFailuresStore.getState().finishAttempt('boxes', attempt, saved ? optimistic : null),
     )
   }
 
@@ -136,7 +136,7 @@ export function ArchiveOrganizer() {
       })),
       () => setTapeOrderError(tapeListKey, null),
       (error) => setTapeOrderError(tapeListKey, presentFailure(error, message('tapes.orderSaveFailed'), 'archive tape order save failed')),
-      () => useOrderFailuresStore.getState().finishAttempt(list, attempt),
+      (saved) => useOrderFailuresStore.getState().finishAttempt(list, attempt, saved ? optimistic : null),
     )
   }
 

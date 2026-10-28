@@ -6,7 +6,7 @@ import { presentFailure } from '@renderer/lib/presentFailure'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message, type Message } from '@shared/i18n/translate'
 import { LAYOUT_BOUNDS, detailPaneWidth, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT, CONTENT_MIN_HEIGHT, HEADER_HEIGHT } from '@shared/layout'
-import { pullInitialSyncState, startIpcSync, type IpcSync } from '@renderer/ipc/sync'
+import { applyInitialSyncState, pullInitialSyncState, startIpcSync, type IpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
@@ -47,24 +47,23 @@ export default function App() {
   const t = useI18n()
   const [loadError, setLoadError] = useState<Message | null>(null)
   const [ready, setReady] = useState(false)
-  const hydrationGeneration = useRef(0)
   const ipcSync = useRef<IpcSync | null>(null)
   const loading = !ready && !loadError
 
   function hydrate() {
     const sync = ipcSync.current
     if (!sync) return
-    const generation = ++hydrationGeneration.current
-    const attempt = sync.beginHydration()
     setLoadError(null)
+    // A reply after this App unmounted belongs to no one.
+    const mounted = () => ipcSync.current === sync
     void pullInitialSyncState().then(
       (state) => {
-        if (hydrationGeneration.current !== generation) return
-        if (attempt.commit(state)) setReady(true)
+        if (!mounted()) return
+        applyInitialSyncState(state)
+        setReady(true)
       },
       (error) => {
-        attempt.cancel()
-        if (hydrationGeneration.current !== generation) return
+        if (!mounted()) return
         setLoadError(presentFailure(
           error,
           message('app.hydrationFailed'),
@@ -79,7 +78,6 @@ export default function App() {
     ipcSync.current = sync
     hydrate()
     return () => {
-      hydrationGeneration.current += 1
       ipcSync.current = null
       sync.stop()
     }

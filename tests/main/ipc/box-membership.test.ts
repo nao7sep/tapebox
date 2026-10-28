@@ -83,12 +83,6 @@ beforeEach(() => {
   registerBoxHandlers()
 })
 
-describe('listing boxes', () => {
-  it('hands back the session list', async () => {
-    await expect(invoke('boxes:list')).resolves.toEqual(state.boxes)
-  })
-})
-
 describe('deleting a box', () => {
   it('drops its tapes into Unboxed as a block, on top, still in the order they held', async () => {
     state.tapes = [

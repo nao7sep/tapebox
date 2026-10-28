@@ -16,7 +16,6 @@ import { message } from '@shared/i18n/translate'
  * within-box order live on the tapes; the box list itself is in the session.
  */
 export function registerBoxHandlers(): void {
-  handle('boxes:list', async () => session.getBoxes())
 
   handle('boxes:create', async ({ name }) => {
     const boxes = session.getBoxes()

@@ -38,8 +38,8 @@ describe('ipcRequestSchemas — validation at the IPC trust boundary', () => {
   })
 
   it('requires bare undefined for a no-argument channel', () => {
-    expect(ipcRequestSchemas['library:list'].safeParse(undefined).success).toBe(true)
-    expect(ipcRequestSchemas['library:list'].safeParse({ sneaky: 1 }).success).toBe(false)
+    expect(ipcRequestSchemas['library:subscribe'].safeParse(undefined).success).toBe(true)
+    expect(ipcRequestSchemas['library:subscribe'].safeParse({ sneaky: 1 }).success).toBe(false)
   })
 
   it('strips unknown keys from an object request', () => {

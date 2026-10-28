@@ -361,13 +361,13 @@ describe('concurrent bundle admission at the catalog boundary', () => {
     let removing: Promise<unknown> | undefined
     try {
       await gate.started
-      const listed = await handlers.get('library:list')!(undefined) as Tape[]
+      const listed = session.getTapes()
       expect(listed).toHaveLength(1)
       if (change === 'organization') {
         session.upsertTape({ ...listed[0]!, archivedAtUtc: '2026-01-02T00:00:00.000Z', order: -12 })
       } else {
         removing = handlers.get('library:remove')!({ tapeIds: [listed[0]!.id], deleteFiles: false })
-        expect(await handlers.get('library:list')!(undefined)).toEqual([])
+        expect(session.getTapes()).toEqual([])
       }
     } finally { gate.release() }
     const result = await importing

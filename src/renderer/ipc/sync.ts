@@ -12,7 +12,7 @@ import { downloadFailurePresentation } from '@renderer/lib/downloadFailure'
 import { useMediaStore } from '@renderer/store/media'
 import { useLayoutStore } from '@renderer/store/layout'
 import { useSettingsStore } from '@renderer/store/settings'
-import type { Tape, Box } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import type { BinaryStatus, RuntimeInfo } from '@shared/ipc-contract'
 import type { Layout } from '@shared/layout'
 import type { Settings } from '@shared/settings'
@@ -25,8 +25,6 @@ import { message } from '@shared/i18n/translate'
 export const LIBRARY_SAVE_FAILED_MESSAGE = message('app.librarySaveFailed')
 
 export type InitialSyncState = {
-  tapes: Tape[]
-  boxes: Box[]
   binaries: BinaryStatus[]
   runtime: RuntimeInfo
   mediaBaseUrl: string
@@ -34,24 +32,25 @@ export type InitialSyncState = {
   settings: Settings
 }
 
-/** Pull every required renderer mirror without publishing partial snapshots. */
+/**
+ * Pull every required renderer mirror. The catalog is not pulled: subscribing
+ * makes main send it as library:current, on the same ordered channel as every
+ * later catalog event, and before the subscription's reply, so the window has
+ * one source for it and nothing to merge.
+ */
 export async function pullInitialSyncState(): Promise<InitialSyncState> {
-  const [tapes, boxes, binaries, runtime, media, layout, settings] = await Promise.all([
-    ipcInvoke('library:list'),
-    ipcInvoke('boxes:list'),
+  const [, binaries, runtime, media, layout, settings] = await Promise.all([
+    ipcInvoke('library:subscribe'),
     ipcInvoke('binaries:status'),
     ipcInvoke('app:runtimeInfo'),
     ipcInvoke('media:endpoint'),
     ipcInvoke('layout:get'),
     ipcInvoke('settings:get'),
   ])
-  return { tapes, boxes, binaries, runtime, mediaBaseUrl: media.baseUrl, layout, settings }
+  return { binaries, runtime, mediaBaseUrl: media.baseUrl, layout, settings }
 }
 
 export function applyInitialSyncState(state: InitialSyncState): void {
-  useOrderFailuresStore.getState().confirmCatalog(state.tapes, state.boxes)
-  useTapesStore.getState().setAll(state.tapes)
-  useBoxesStore.getState().setBoxes(state.boxes)
   useBinariesStore.getState().setStatuses(state.binaries)
   useRuntimeStore.getState().setInfo(state.runtime)
   useMediaStore.getState().setBaseUrl(state.mediaBaseUrl)
@@ -59,38 +58,22 @@ export function applyInitialSyncState(state: InitialSyncState): void {
   useSettingsStore.getState().setHydratedSettings(state.settings)
 }
 
-export type HydrationAttempt = {
-  commit: (state: InitialSyncState) => boolean
-  cancel: () => void
-}
-
 export type IpcSync = {
-  beginHydration: () => HydrationAttempt
   stop: () => void
 }
 
-/** Own subscriptions and the snapshot-to-live handoff for one mounted App. */
+/** Own the live subscriptions for one mounted App. */
 export function startIpcSync(): IpcSync {
-  type Changes = { tapes: Map<string, Tape | null>; boxes: Box[] | null; replacement: Tape[] | null }
-  let pending: Changes | null = null
-  let stopped = false
-
-  // A slow required pull must not roll the catalog back over events received
-  // meanwhile. Keep only the latest mutation per tape and one box snapshot,
-  // rather than a growing history of repeated progress or catalog events.
   function upsert(tapes: Tape[]): void {
-    for (const tape of tapes) pending?.tapes.set(tape.id, tape)
-    useOrderFailuresStore.getState().confirmTapes(tapes)
     useTapesStore.getState().upsertMany(tapes)
   }
 
   const offs = [
+    ipcOn('library:current', ({ tapes, boxes }) => {
+      useTapesStore.getState().setAll(tapes)
+      useBoxesStore.getState().setBoxes(boxes)
+    }),
     ipcOn('library:opened', ({ tapes, boxes }) => {
-      if (pending) {
-        pending.replacement = tapes
-        pending.tapes.clear()
-        pending.boxes = boxes
-      }
       useDownloadLogStore.setState({ entries: {}, trimmed: {} })
       useMediaStore.setState((media) => ({ collectionRevision: media.collectionRevision + 1 }))
       invalidateTapeActions()
@@ -112,19 +95,13 @@ export function startIpcSync(): IpcSync {
     ipcOn('tapes:updated',     (tape) => upsert([tape])),
     ipcOn('tapes:updatedMany', upsert),
     ipcOn('tapes:removed',     ({ tapeIds }) => {
-      for (const id of tapeIds) pending?.tapes.set(id, null)
-      useOrderFailuresStore.getState().confirmTapeRemoval(tapeIds)
       useTapesStore.getState().removeMany(tapeIds)
       tapeIds.forEach((id) => {
         useDownloadLogStore.getState().reset(id)
         useTapeActionResultsStore.getState().clearTape(id)
       })
     }),
-    ipcOn('boxes:changed',    (boxes) => {
-      if (pending) pending.boxes = boxes
-      useOrderFailuresStore.getState().confirmBoxes(boxes)
-      useBoxesStore.getState().setBoxes(boxes)
-    }),
+    ipcOn('boxes:changed',    (boxes) => useBoxesStore.getState().setBoxes(boxes)),
     ipcOn('library:saveFailed', () => useToastStore.getState().notify(LIBRARY_SAVE_FAILED_MESSAGE, 'error')),
     ipcOn('tapes:progress',  ({ tapeId, phase, percent, speedBps, etaSec }) =>
       useTapesStore.getState().setProgress(tapeId, { phase, percent, speedBps, etaSec }),
@@ -150,31 +127,7 @@ export function startIpcSync(): IpcSync {
     ),
   ]
   return {
-    beginHydration() {
-      const changes: Changes = { tapes: new Map(), boxes: null, replacement: null }
-      pending = stopped ? null : changes
-      return {
-        commit(state) {
-          if (stopped || pending !== changes) return false
-          // Merge before publishing, so even a synchronous store observer sees
-          // the current catalog rather than the stale intermediate snapshot.
-          const tapes = new Map((changes.replacement ?? state.tapes).map((tape) => [tape.id, tape]))
-          for (const [id, tape] of changes.tapes) {
-            if (tape === null) tapes.delete(id)
-            else tapes.set(id, tape)
-          }
-          pending = null
-          applyInitialSyncState({ ...state, tapes: [...tapes.values()], boxes: changes.boxes ?? state.boxes })
-          return true
-        },
-        cancel() {
-          if (pending === changes) pending = null
-        },
-      }
-    },
     stop() {
-      stopped = true
-      pending = null
       offs.forEach((off) => off())
     },
   }

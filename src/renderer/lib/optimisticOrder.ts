@@ -39,7 +39,8 @@ export function rollbackOptimisticOrder<T extends OrderedItem>(
 /**
  * Settles one optimistic reorder while its list attempt is still current. The
  * caller restores only still-owned fields, so an unrelated whole-row refresh
- * cannot hide the failure or strand other members at the rejected order.
+ * cannot hide the failure or strand other members at the rejected order. Its
+ * reply alone confirms the order: `finish` learns whether main saved it.
  */
 export function settleOptimisticOrder(
   persistence: Promise<unknown>,
@@ -47,13 +48,13 @@ export function settleOptimisticOrder(
   rollback: () => void,
   succeed: () => void,
   fail: (error: unknown) => void,
-  finish: () => void,
+  finish: (saved: boolean) => void,
 ): void {
   void persistence.then(
     () => {
       try {
         if (isStillCurrent()) succeed()
-      } finally { finish() }
+      } finally { finish(true) }
     },
     (error) => {
       // A later reorder of this list owns its outcome, including across view
@@ -62,7 +63,7 @@ export function settleOptimisticOrder(
         if (!isStillCurrent()) return
         rollback()
         fail(error)
-      } finally { finish() }
+      } finally { finish(false) }
     },
   )
 }

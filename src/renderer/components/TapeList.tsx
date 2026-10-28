@@ -76,7 +76,7 @@ export function TapeList() {
       })),
       () => setOrderError(null),
       (error) => setOrderError(presentFailure(error, message('tapes.orderSaveFailed'), 'tape order save failed')),
-      () => useOrderFailuresStore.getState().finishAttempt('inbox', attempt),
+      (saved) => useOrderFailuresStore.getState().finishAttempt('inbox', attempt, saved ? optimistic : null),
     )
   }
 

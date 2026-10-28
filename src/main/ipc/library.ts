@@ -3,7 +3,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { shell } from 'electron'
 import { nanoid } from 'nanoid'
 import { handle } from './handle'
-import { emit } from './events'
+import { emit, sendTo } from './events'
 import * as session from '@main/store/session'
 import { getLibraryDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
@@ -58,7 +58,11 @@ async function withTapeWrite<T>(id: string, work: () => Promise<T>): Promise<T> 
 export function registerLibraryHandlers(): void {
   session.onCatalogSaveFailure(() => emit('library:saveFailed', null))
 
-  handle('library:list', async () => session.getTapes())
+  // The catalog goes as this subscription's first event, sent in the same turn
+  // as any later change would be, so the window needs no second source.
+  handle('library:subscribe', async (_req, event) => {
+    sendTo(event.sender, 'library:current', { tapes: session.getTapes(), boxes: session.getBoxes() })
+  })
 
   handle('library:archive', async ({ tapeIds }) => {
     const at = nowUtcIso()

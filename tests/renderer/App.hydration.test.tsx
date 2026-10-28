@@ -71,6 +71,8 @@ function deferred<T>() {
 
 const listeners = new Map<string, (payload: unknown) => void>()
 const answers = new Map<keyof IpcCalls, unknown | (() => Promise<unknown>)>()
+/** What main sends as library:current when the window subscribes. */
+const catalog: { tapes: Tape[]; boxes: Box[] } = { tapes: [], boxes: [] }
 let root: Root | null = null
 
 beforeEach(() => {
@@ -79,8 +81,9 @@ beforeEach(() => {
   logError.mockReset()
   listeners.clear()
   answers.clear()
-  answers.set('library:list', [tape()])
-  answers.set('boxes:list', [])
+  catalog.tapes = [tape()]
+  catalog.boxes = []
+  answers.set('library:subscribe', async () => { listeners.get('library:current')?.({ ...catalog }) })
   answers.set('binaries:status', [])
   answers.set('app:runtimeInfo', { platform: 'darwin', arch: 'arm64', version: '1.0.0' })
   answers.set('media:endpoint', { baseUrl: 'http://127.0.0.1:1234' })
@@ -181,11 +184,11 @@ describe('App hydration and live IPC handoff', () => {
     expect(header.style.minHeight).toBe(`${HEADER_HEIGHT}px`)
   })
 
-  it('replays additions, latest bulk updates, removals and boxes over the initial snapshot', async () => {
+  it('applies additions, latest bulk updates, removals and boxes after the subscription\'s catalog', async () => {
     const binaries = deferred<BinaryStatus[]>()
     const removed = tape({ id: 'Hydrate002' })
-    answers.set('library:list', [tape(), removed])
-    answers.set('boxes:list', [{ id: 'HydrateBox', name: 'Old box', order: 0 }])
+    catalog.tapes = [tape(), removed]
+    catalog.boxes = [{ id: 'HydrateBox', name: 'Old box', order: 0 }]
     answers.set('binaries:status', () => binaries.promise)
     await mount()
     const added = tape({ id: 'Hydrate003', title: 'Added while loading' })
@@ -221,7 +224,7 @@ describe('App hydration and live IPC handoff', () => {
     expect(document.body.textContent).not.toContain('HYDRATION_SENTINEL')
     const retryBinaries = deferred<BinaryStatus[]>()
     answers.set('binaries:status', () => retryBinaries.promise)
-    answers.set('library:list', [tape({ title: 'New retry snapshot' })])
+    catalog.tapes = [tape({ title: 'New retry snapshot' })]
     await act(async () => document.querySelector<HTMLButtonElement>('button')!.click())
     const latest = tape({ state: 'downloaded', title: 'Retry completed' })
     emit('tapes:updated', latest)
@@ -234,7 +237,7 @@ describe('App hydration and live IPC handoff', () => {
     expect(ipcOn.mock.calls.filter(([channel]) => channel === 'tapes:updated')).toHaveLength(1)
   })
 
-  it('ignores an obsolete generation when a replacement subscription hydrates first', async () => {
+  it('ignores a superseded mount when a replacement subscription hydrates first', async () => {
     const first = deferred<BinaryStatus[]>()
     const second = deferred<BinaryStatus[]>()
     let attempts = 0

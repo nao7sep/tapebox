@@ -26,7 +26,8 @@ export type IpcCalls = {
   'downloads:retry':       { req: { tapeId: string };               res: void }
 
   // ── Library ──────────────────────────────────────────────────────────────
-  'library:list':            { req: undefined;                                       res: Tape[] }
+  // Subscribe to the catalog: main sends it as library:current before replying.
+  'library:subscribe':       { req: undefined;                                       res: void }
   'library:remove':          { req: { tapeIds: string[]; deleteFiles: boolean };     res: void }
   // Rename a downloaded tape's on-disk files (media + sidecar + thumbnail) to a
   // user-chosen name — any filesystem-safe name, not just a slug. The AI can
@@ -62,7 +63,6 @@ export type IpcCalls = {
   // `boxes:place` files tapes INTO `boxId` (null = Unboxed) at the front of that
   // list, reindexing it — the cross-list move (click menu or drag onto a box).
   // Reordering WITHIN a list goes through tapes:reorder above.
-  'boxes:list':    { req: undefined;                         res: Box[] }
   'boxes:create':   { req: { name: string };                  res: Box }
   'boxes:rename':   { req: { boxId: string; name: string }; res: Box }
   'boxes:delete':   { req: { boxId: string };               res: void }
@@ -307,6 +307,8 @@ export type IpcEvents = {
   // main keeps the changes and retries the save.
   'library:saveFailed': null
 
+  // The catalog as it is now, the first event of a library:subscribe.
+  'library:current': { tapes: Tape[]; boxes: Box[] }
   // Replace the renderer's collection after an explicitly committed Open.
   'library:opened': { tapes: Tape[]; boxes: Box[] }
   // The box list changed (created / renamed / deleted / reordered).
