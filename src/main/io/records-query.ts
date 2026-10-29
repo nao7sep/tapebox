@@ -11,9 +11,10 @@ import type {
 
 /**
  * The Records window's reads of records.sqlite3 (io/records.ts owns the schema
- * and the writes). Pure queries over an open database, so the reader worker
- * (records-worker.ts) runs them off the main thread and tests run them directly.
- * Only type imports leave this file, so Node can run it as the worker's source.
+ * and the writes). Pure queries over an open database, so the records writer
+ * thread (records-write-worker.ts) runs them on its connection and tests run them
+ * directly. Only type imports leave this file, so Node can run it as the worker's
+ * source.
  */
 
 export type RecordsRead =

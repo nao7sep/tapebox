@@ -6,8 +6,8 @@ import { Worker } from 'node:worker_threads'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RecordsQuery } from '@shared/records'
 
-// The Records window's reads, through the real reader thread over a real
-// records database written by io/records.ts.
+// The Records window's reads, answered by the real records writer thread over
+// the records database it writes (io/records.ts).
 
 const prevHome = process.env.TAPEBOX_DATA_DIR
 const roots: string[] = []
@@ -19,9 +19,8 @@ async function freshApp() {
   process.env.TAPEBOX_DATA_DIR = root
   vi.resetModules()
   const records = await import('@main/io/records')
-  const reader = await import('@main/io/records-read')
-  closers.push(reader.closeRecordsReader, records.closeRecords)
-  return { records, reader }
+  closers.push(records.closeRecords)
+  return { records, reader: records }
 }
 
 afterEach(async () => {
@@ -68,7 +67,7 @@ async function seed(records: Records): Promise<void> {
 }
 
 describe('records reads', () => {
-  it('reads committed WAL page, detail and sources while an unrelated admitted write stays held', async () => {
+  it('answers page, detail and sources reads while a later write has not reached the writer', async () => {
     const { records, reader } = await freshApp()
     const { paths } = await import('@main/paths')
     const session = records.openRecords()
@@ -99,8 +98,8 @@ describe('records reads', () => {
     let drained = false
     const drain = records.flushRecords().then(() => { drained = true })
     try {
-      // Observe actual reader dispatch while the unrelated writer request has
-      // not crossed its boundary, rather than asserting a wall-clock bound.
+      // Observe actual read dispatch while the unrelated write request has not
+      // crossed its boundary, rather than asserting a wall-clock bound.
       await Promise.resolve()
       expect(dispatched).toEqual(['page', 'detail', 'sources'])
       expect((await page).records.map((record) => record.title)).toEqual(['committed seed'])
@@ -116,7 +115,7 @@ describe('records reads', () => {
     }
   })
 
-  it('lets the reader report cold database initialization failure instead of claiming ready storage', async () => {
+  it('reports a database that could not be opened instead of claiming ready storage', async () => {
     const { records, reader } = await freshApp()
     const { paths } = await import('@main/paths')
     mkdirSync(paths.records)
@@ -381,7 +380,7 @@ describe('records reads', () => {
 
   it('fails a read the database cannot answer, and reads again afterwards', async () => {
     const { records, reader } = await freshApp()
-    // No database has been opened yet, so the read-only reader finds no file.
+    // Records are not open yet, so no writer is there to answer.
     await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow()
 
     const session = records.openRecords()

@@ -13,9 +13,8 @@ vi.mock('electron', () => ({
 
 const readRecords = vi.hoisted(() => vi.fn())
 const openRecordsWindow = vi.hoisted(() => vi.fn(async () => {}))
-vi.mock('@main/io/records-read', () => ({ readRecords }))
 vi.mock('@main/records-window', () => ({ openRecordsWindow }))
-vi.mock('@main/io/records', () => ({ currentSession: () => '2026-10-04T10:00:00.000Z' }))
+vi.mock('@main/io/records', () => ({ currentSession: () => '2026-10-04T10:00:00.000Z', readRecords }))
 vi.mock('@main/store/session', () => ({
   getTapes: () => [{ id: 't1', title: 'A tape' }, { id: 't3', title: null }],
 }))

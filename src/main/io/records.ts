@@ -5,13 +5,16 @@ import { describeError } from '@shared/error'
 import type { LogLevel } from '@shared/log'
 import { utcTimestampForFilename } from '@shared/utc'
 import { toJson } from './log-format'
-import type { RecordWriteData, RecordWriteRequest, RecordWriteResponse } from './records-write-worker'
+import type { RecordsRead, RecordsReadResults } from './records-query'
+import type { RecordReadResponse, RecordWriteData, RecordWriteRequest, RecordWriteResponse } from './records-write-worker'
 export type { RecordTable, RecordRow } from './records-write-worker'
 import type { RecordTable, RecordRow, ExecutionFacts } from './records-write-worker'
 
-/** Records SQLite and fallback filesystem work belong to the writer thread.
- * Main owns admission, acknowledgements and commit notifications. Local storage
- * work has no deadline; only the exit sequence's one deadline bounds its drain. */
+/** Records SQLite and fallback filesystem work belong to the writer thread, which
+ * holds the database's one connection and also answers the Records window's
+ * reads, in turn with the writes. Main owns admission, acknowledgements and
+ * commit notifications. Local storage work has no deadline; only the exit
+ * sequence's one deadline bounds its drain. */
 let session: string | null = null
 let fallbackPath: string | null = null
 let worker: Worker | null = null
@@ -23,6 +26,14 @@ let terminalFlushed = false
 let storedListener: (() => void) | null = null
 type Pending = { settled: Promise<void>; resolve: () => void; text: string; level: LogLevel; mirrored: boolean }
 const pending = new Map<number, Pending>()
+const reads = new Map<number, { resolve: (value: never) => void; reject: (error: Error) => void }>()
+
+function failReads(error: Error): void {
+  for (const [id, read] of reads) {
+    reads.delete(id)
+    read.reject(error)
+  }
+}
 
 function note(message: string, error: unknown): string {
   return toJson({ time: new Date().toISOString(), level: 'error', message, error: describeError(error) })
@@ -34,6 +45,7 @@ function stopWriter(): Promise<void> {
   const port = responsePort
   worker = null
   responsePort = null
+  failReads(new Error('The records writer was closed.'))
   if (!current) return Promise.resolve()
   return current.terminate().then(() => {}, (error: unknown) => {
     toConsole('error', note('records writer did not stop cleanly', error))
@@ -53,7 +65,15 @@ function abandon(error: unknown): void {
   void stopWriter()
 }
 
-function acknowledge(response: RecordWriteResponse): void {
+function acknowledge(response: RecordWriteResponse | RecordReadResponse): void {
+  if ('read' in response) {
+    const read = reads.get(response.id)
+    if (!read) return
+    reads.delete(response.id)
+    if (response.ok) read.resolve(response.value as never)
+    else read.reject(new Error(response.error))
+    return
+  }
   const entry = pending.get(response.id)
   if (!entry) return
   pending.delete(response.id)
@@ -108,6 +128,19 @@ function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: L
   try { worker.postMessage({ ...request, id } satisfies RecordWriteRequest) }
   catch (error) { abandon(error) }
   return settled
+}
+
+/** A Records window read, answered by the writer thread after the writes queued
+ * before it. Fails once the records are closing or the writer has stopped. */
+export function readRecords<R extends RecordsRead>(read: R): Promise<RecordsReadResults[R['op']]> {
+  const current = worker
+  if (closed || !current) return Promise.reject(new Error('The records writer was closed.'))
+  return new Promise((resolve, reject) => {
+    const id = nextId++
+    reads.set(id, { resolve: resolve as (value: never) => void, reject })
+    try { current.postMessage({ id, read } satisfies RecordWriteRequest) }
+    catch (error) { abandon(error) }
+  })
 }
 
 /** Whether this call already printed its fallback to the console. */

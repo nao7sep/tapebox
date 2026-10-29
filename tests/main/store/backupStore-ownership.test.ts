@@ -73,38 +73,38 @@ it('seals ordinary admission immediately and drains what was admitted before sto
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('dispatches one snapshot at a time and coalesces waiting saves to their latest bytes', async () => {
+it('dispatches one snapshot at a time, in save order', async () => {
   backup.record('/first', Buffer.from('first'))
   const worker = state.workers[0]!
-  for (let version = 0; version < 100; version += 1) {
-    backup.record('/catalog', Buffer.from(`catalog-${version}`))
-  }
+  backup.record('/catalog', Buffer.from('catalog-0'))
+  backup.record('/catalog', Buffer.from('catalog-1'))
   backup.record('/settings', Buffer.from([0xff, 0x00, 0x0d, 0x0a]))
   expect(worker.messages).toHaveLength(1)
   let drained = false
   const flush = backup.flushBackupStore().then(() => { drained = true })
   worker.emit('message', { id: 1 })
   expect(worker.messages).toHaveLength(2)
-  expect(worker.messages[1]).toMatchObject({ absolutePath: '/catalog', bytes: Buffer.from('catalog-99') })
+  expect(worker.messages[1]).toMatchObject({ absolutePath: '/catalog', bytes: Buffer.from('catalog-0') })
   await Promise.resolve()
   expect(drained).toBe(false)
   worker.emit('message', { id: 2 })
-  expect(worker.messages[2]).toMatchObject({ absolutePath: '/settings', bytes: Buffer.from([0xff, 0x00, 0x0d, 0x0a]) })
+  expect(worker.messages[2]).toMatchObject({ absolutePath: '/catalog', bytes: Buffer.from('catalog-1') })
   worker.emit('message', { id: 3 })
+  expect(worker.messages[3]).toMatchObject({ absolutePath: '/settings', bytes: Buffer.from([0xff, 0x00, 0x0d, 0x0a]) })
+  worker.emit('message', { id: 4 })
   await flush
   expect(drained).toBe(true)
   expect(state.warn).not.toHaveBeenCalled()
 })
 
-it('drains the latest waiting version at close without admitting a newer save', async () => {
+it('drains every waiting save at close without admitting a newer one', async () => {
   backup.record('/file', Buffer.from('initial'))
-  backup.record('/file', Buffer.from('superseded'))
-  backup.record('/file', Buffer.from('latest'))
+  backup.record('/file', Buffer.from('later'))
   const worker = state.workers[0]!
   const closing = backup.closeBackupStore()
   backup.record('/file', Buffer.from('after close'))
   worker.emit('message', { id: 1 })
-  expect(worker.messages[1]).toMatchObject({ absolutePath: '/file', bytes: Buffer.from('latest') })
+  expect(worker.messages[1]).toMatchObject({ absolutePath: '/file', bytes: Buffer.from('later') })
   worker.emit('message', { id: 2 })
   worker.release()
   await closing

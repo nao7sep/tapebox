@@ -3,8 +3,8 @@ import type { DatabaseSync } from 'node:sqlite'
 /**
  * Every store's format version, and the one way each kind of store reads and
  * writes its marker (store-recovery-conventions). Each format has its own
- * number. This module imports nothing at run time, so the records reader thread
- * (records-worker.ts) can run it as it is.
+ * number. This module imports nothing at run time, so the store worker threads
+ * can run it as it is.
  */
 export const FORMAT_VERSIONS = {
   /** catalog.json */

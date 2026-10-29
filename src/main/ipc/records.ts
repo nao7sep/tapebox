@@ -1,12 +1,11 @@
 import { handle } from './handle'
-import { currentSession } from '@main/io/records'
-import { readRecords } from '@main/io/records-read'
+import { currentSession, readRecords } from '@main/io/records'
 import { openRecordsWindow } from '@main/records-window'
 import * as session from '@main/store/session'
 
 /**
- * The Records window: opening it, and its reads of records.sqlite3, which run on
- * the reader thread (io/records-read.ts). The filters' launches and tapes come
+ * The Records window: opening it, and its reads of records.sqlite3, which the
+ * records writer thread answers (io/records.ts). The filters' launches and tapes come
  * from the records themselves; a tape still in the library is named by its title.
  */
 export function registerRecordsHandlers(): void {

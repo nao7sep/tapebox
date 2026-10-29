@@ -21,13 +21,13 @@ let accepting = true
 let nextId = 1
 let closing: Promise<void> | null = null
 const pending = new Map<number, Pending>()
-// Only the latest exact published bytes per waiting file survive supersession.
-// Dispatch one clone at a time, rather than filling the worker message queue.
-const waiting = new Map<string, Buffer>()
+// Waiting backups in save order, each applied by the worker. Dispatch one clone
+// at a time, rather than filling the worker message queue.
+let waiting: Array<{ absolutePath: string; bytes: Buffer }> = []
 const drains = new Set<() => void>()
 
 function settleDrains(): void {
-  if (pending.size || waiting.size) return
+  if (pending.size || waiting.length) return
   for (const resolve of drains) resolve()
   drains.clear()
 }
@@ -47,7 +47,7 @@ function abandon(current: Worker, error: unknown): void {
   if (worker !== current && ![...pending.values()].some((entry) => entry.worker === current)) return
   if (worker === current) { worker = null; disabled = true }
   for (const [id, entry] of pending) if (entry.worker === current) pending.delete(id)
-  waiting.clear()
+  waiting = []
   settleDrains()
   log.warn('backup store: worker failed; unfinished record outcomes are unknown', { error: describeError(error) })
   void retire(current)
@@ -65,7 +65,7 @@ function ensureWorker(): Worker {
     pending.delete(response.id)
     if (response.disabled && worker === created) disabled = true
     if (response.warning) log.warn(response.warning.message, response.warning.fields)
-    if (disabled) waiting.clear()
+    if (disabled) waiting = []
     dispatchNext()
     settleDrains()
   })
@@ -80,15 +80,14 @@ function ensureWorker(): Worker {
 
 function dispatchNext(): void {
   if (disabled || pending.size) return
-  const next = waiting.entries().next()
-  if (next.done) return
-  const [absolutePath, bytes] = next.value
-  waiting.delete(absolutePath)
+  const next = waiting.shift()
+  if (!next) return
+  const { absolutePath, bytes } = next
   let current: Worker
   try { current = ensureWorker() } catch (error) {
     disabled = true
     log.warn('backup store: worker could not start; recording disabled', { error: describeError(error) })
-    waiting.clear()
+    waiting = []
     settleDrains()
     return
   }
@@ -100,13 +99,12 @@ function dispatchNext(): void {
 
 export function record(absolutePath: string, bytes: Buffer): void {
   if (!accepting || disabled) return
-  waiting.delete(absolutePath)
-  waiting.set(absolutePath, bytes)
+  waiting.push({ absolutePath, bytes })
   dispatchNext()
 }
 
 export function flushBackupStore(): Promise<void> {
-  if (!pending.size && !waiting.size) return Promise.resolve()
+  if (!pending.size && !waiting.length) return Promise.resolve()
   return new Promise<void>((resolve) => { drains.add(resolve) })
 }
 

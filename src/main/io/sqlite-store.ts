@@ -18,12 +18,12 @@ export function databaseTransaction<T>(db: DatabaseSync, write: boolean, run: ()
 
 /** Open a current writable store. An empty database at version 0 is new and is
  * initialized in place, including one an interrupted first launch left behind.
- * Existing unsupported stores remain intact and are refused. */
+ * Existing unsupported stores remain intact and are refused. Its owner's thread
+ * holds the store's only connection, so it sets no busy timeout. */
 export function openWritableDatabase(path: string, current: number, schema: string): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true })
   const db = new DatabaseSync(path)
   try {
-    db.exec('PRAGMA busy_timeout = 100')
     db.exec('PRAGMA synchronous = FULL')
     // The journal mode persists in the file and cannot change inside a
     // transaction, so only a new store gets it, before its marker exists.

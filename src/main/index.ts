@@ -6,7 +6,6 @@ import { ensureDirs, paths, sweepAbandonedStaging } from './paths.js'
 import { notifyCorruptConfig, notifyCorruptSession, notifySettingsKept, notifyStartupFailure } from './startup-dialog.js'
 import { initLogger, isDebugEnabled, log } from './io/logger.js'
 import { closeRecords, flushRecords, flushRecordsBeforeExit, onRecordStored, openRecords } from './io/records.js'
-import { closeRecordsReader } from './io/records-read.js'
 import { notifyRecordsChanged } from './records-window.js'
 import { describeError } from '@shared/error'
 import { getSettings, loadSettings } from './store/config.js'
@@ -299,7 +298,6 @@ const quit = createQuit({
     // Every cancellable quit question has settled; playback is now ending.
     releaseWakeLock()
     await Promise.all([stopMediaServer(), closeBackupStore()])
-    await closeRecordsReader()
     await closeRecords()
   },
   // The forced exit follows at once, so only the synchronous records drain can

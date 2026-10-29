@@ -4,13 +4,18 @@ import { parentPort, workerData, type MessagePort } from 'node:worker_threads'
 import { describeError } from '../../shared/error.ts'
 import { toJson } from './log-format.ts'
 import { FORMAT_VERSIONS } from './format-version.ts'
+import { readRecords, type RecordsRead, type RecordsReadResult } from './records-query.ts'
 import { databaseTransaction, openWritableDatabase } from './sqlite-store.ts'
 
 export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
 export type RecordRow = Record<string, SQLInputValue>
 export type ExecutionFacts = { elapsedMs?: number | null; succeeded?: boolean | null; outputKey?: string; outputChunks?: { stdout: number; stderr: number } }
-export type RecordWriteRequest = { facts?: ExecutionFacts; id: number; chunk?: { runKey: string; stream: 'stdout' | 'stderr'; sequence: number; content: string }; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer }
+export type RecordWriteRequest = { facts?: ExecutionFacts; id: number; chunk?: { runKey: string; stream: 'stdout' | 'stderr'; sequence: number; content: string }; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer; read?: RecordsRead }
 export type RecordWriteResponse = { id: number; stored: boolean; console?: string; diagnostics: string[] }
+/** The answer to a Records window read, which this thread runs in turn with the writes. */
+export type RecordReadResponse =
+  | { id: number; read: true; ok: true; value: RecordsReadResult }
+  | { id: number; read: true; ok: false; error: string }
 export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; responsePort?: MessagePort }
 
 const SCHEMA = `
@@ -116,6 +121,8 @@ const data = workerData as RecordWriteData
 const replyPort = data.responsePort ?? port
 let db: DatabaseSync | null = null
 let initialized = false
+// Why the database did not open; this launch's reads report it.
+let openFailure: unknown = null
 let failing = false
 const statements = new Map<string, StatementSync>()
 
@@ -139,7 +146,18 @@ port.on('message', (request: RecordWriteRequest) => {
   if (!initialized) {
     initialized = true
     try { db = openWritableDatabase(data.databasePath, FORMAT_VERSIONS.records, SCHEMA) }
-    catch (error) { fallback(failureNote('records database could not be opened; writing to a text file', error), response, true) }
+    catch (error) { openFailure = error; fallback(failureNote('records database could not be opened; writing to a text file', error), response, true) }
+  }
+  if (request.read) {
+    let reply: RecordReadResponse
+    try {
+      if (!db) throw openFailure
+      reply = { id: request.id, read: true, ok: true, value: readRecords(db, request.read) }
+    } catch (error) {
+      reply = { id: request.id, read: true, ok: false, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }
+    }
+    replyPort.postMessage(reply)
+    return
   }
   if (request.table && request.row) {
     const row = request.row
