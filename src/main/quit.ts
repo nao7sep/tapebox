@@ -52,8 +52,9 @@ export interface QuitSteps {
   stopWork(): Promise<void>
   /** Saves the layout (view state). */
   saveLayout(): Promise<void>
-  /** Stops the media server and closes the backup history and records. */
-  close(): Promise<void>
+  /** Stops the media server and closes the backup history and records; a
+   * session end skips the backups still waiting. */
+  close(sessionEnding: boolean): Promise<void>
   /** Closes the records synchronously within `remainingMs`, for a Windows
    * session end, after which the process may be ended at any time. The catalog
    * keeps its last committed state; nothing writes it synchronously. */
@@ -204,7 +205,7 @@ export function createQuit(steps: QuitSteps): Quit {
       return
     }
     await step('the layout save', layout)
-    await step('closing the stores', steps.close())
+    await step('closing the stores', steps.close(sessionEnding))
     exit()
   }
 

@@ -111,3 +111,15 @@ it('drains every waiting save at close without admitting a newer one', async () 
   expect(worker.messages).toHaveLength(2)
   expect(state.warn).not.toHaveBeenCalled()
 })
+
+it('skips the waiting backups at a session end and stops the worker', async () => {
+  backup.record('/file', Buffer.from('initial'))
+  backup.record('/file', Buffer.from('later'))
+  const worker = state.workers[0]!
+  const closing = backup.closeBackupStore({ drain: false })
+  worker.emit('message', { id: 1 })
+  worker.release()
+  await closing
+  expect(worker.terminate).toHaveBeenCalledOnce()
+  expect(worker.messages).toHaveLength(1)
+})

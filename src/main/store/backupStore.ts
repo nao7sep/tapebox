@@ -108,9 +108,16 @@ export function flushBackupStore(): Promise<void> {
   return new Promise<void>((resolve) => { drains.add(resolve) })
 }
 
-export function closeBackupStore(): Promise<void> {
+/** Seals admission and stops the worker. With `drain` (ordinary quit) the
+ * waiting backups are written first, within what remains of the exit deadline;
+ * at OS session end they are skipped (data-backup-conventions). */
+export function closeBackupStore({ drain = true }: { drain?: boolean } = {}): Promise<void> {
   if (closing) return closing
   accepting = false
+  if (!drain) {
+    waiting = []
+    pending.clear()
+  }
   closing = (async () => {
     await flushBackupStore()
     const current = worker

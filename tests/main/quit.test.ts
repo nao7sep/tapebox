@@ -48,6 +48,7 @@ describe('quit', () => {
     expect(second.preventDefault).toHaveBeenCalledOnce()
     expect(order).toEqual(['saveLibrary', 'stopWork', 'saveLibrary', 'saveLayout', 'close', 'exit'])
     expect(steps.exit).toHaveBeenCalledWith(false)
+    expect(steps.close).toHaveBeenCalledWith(false)
     expect(steps.ask).not.toHaveBeenCalled()
 
     const late = quitEvent()
@@ -101,6 +102,7 @@ describe('quit', () => {
     quit.beforeQuit(quitEvent())
     await vi.runAllTimersAsync()
     expect(steps.confirm).not.toHaveBeenCalled()
+    expect(steps.close).toHaveBeenCalledWith(true)
     expect(steps.exit).toHaveBeenCalledOnce()
   })
 

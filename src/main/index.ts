@@ -294,10 +294,10 @@ const quit = createQuit({
     await Promise.all([shutdownBinaryOperations(), queue.shutdown(), cancelAllScans(), cancelAllWork()])
   },
   saveLayout: () => layout.persistNow(),
-  close: async () => {
+  close: async (sessionEnding) => {
     // Every cancellable quit question has settled; playback is now ending.
     releaseWakeLock()
-    await Promise.all([stopMediaServer(), closeBackupStore()])
+    await Promise.all([stopMediaServer(), closeBackupStore({ drain: !sessionEnding })])
     await closeRecords()
   },
   // The forced exit follows at once, so only the synchronous records drain can
