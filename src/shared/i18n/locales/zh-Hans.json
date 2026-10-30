@@ -506,6 +506,8 @@
   "settings.autostart": "自动开始下载",
   "settings.autostartHint": "新添加的录像带会立即开始下载。关闭 = 以暂停状态添加。",
   "settings.maxConcurrent": "最大同时下载数",
+  "settings.maxConcurrentInvalid": "{min} 到 {max} 的整数",
+  "settings.generalInvalid": "请先修正“通用”中的设置，然后再保存。",
   "settings.libraryFolder": "资料库文件夹",
   "settings.libraryFolderHint": "录像带的保存位置。更改后，现有录像带会移到新文件夹。有下载、导入、重命名或导出正在进行时不可用。",
   "settings.autoplay": "自动播放",

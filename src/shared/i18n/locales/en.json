@@ -535,6 +535,8 @@
   "settings.autostart": "Autostart downloads",
   "settings.autostartHint": "Newly added tapes start downloading immediately. Off = added as paused.",
   "settings.maxConcurrent": "Max concurrent downloads",
+  "settings.maxConcurrentInvalid": "Whole number from {min} to {max}",
+  "settings.generalInvalid": "A setting in General needs fixing before you can save.",
   "settings.libraryFolder": "Library folder",
   "settings.libraryFolderHint": "Where tapes are saved. Changing this moves your existing tapes to the new folder. Not available while downloads, imports, renames or exports are running.",
   "settings.autoplay": "Autoplay",

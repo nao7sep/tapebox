@@ -564,6 +564,8 @@
   "settings.autostart": "Avvia i download automaticamente",
   "settings.autostartHint": "Le cassette appena aggiunte iniziano subito a scaricarsi. Disattivato = vengono aggiunte in pausa.",
   "settings.maxConcurrent": "Download simultanei massimi",
+  "settings.maxConcurrentInvalid": "Numero intero da {min} a {max}",
+  "settings.generalInvalid": "Correggi un’impostazione in Generali prima di salvare.",
   "settings.libraryFolder": "Cartella della libreria",
   "settings.libraryFolderHint": "Dove vengono salvate le cassette. Modificandola, le cassette esistenti vengono spostate nella nuova cartella. Non disponibile mentre sono in corso download, importazioni, rinomine o esportazioni.",
   "settings.autoplay": "Riproduzione automatica",

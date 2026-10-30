@@ -506,6 +506,8 @@
   "settings.autostart": "ダウンロードを自動開始",
   "settings.autostartHint": "新しく追加したテープのダウンロードをすぐに始めます。オフにすると一時停止の状態で追加されます。",
   "settings.maxConcurrent": "同時ダウンロードの最大数",
+  "settings.maxConcurrentInvalid": "{min}～{max} の整数",
+  "settings.generalInvalid": "保存する前に「一般」の設定を修正してください。",
   "settings.libraryFolder": "ライブラリフォルダ",
   "settings.libraryFolderHint": "テープを保存する場所です。変更すると、既存のテープが新しいフォルダに移動します。ダウンロード、読み込み、名前の変更、書き出しの実行中は変更できません。",
   "settings.autoplay": "自動再生",

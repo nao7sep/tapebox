@@ -564,6 +564,8 @@
   "settings.autostart": "Iniciar descargas automáticamente",
   "settings.autostartHint": "Las cintas recién agregadas empiezan a descargarse de inmediato. Desactivado = se agregan en pausa.",
   "settings.maxConcurrent": "Máximo de descargas simultáneas",
+  "settings.maxConcurrentInvalid": "Número entero de {min} a {max}",
+  "settings.generalInvalid": "Corrige un ajuste en General antes de guardar.",
   "settings.libraryFolder": "Carpeta de la biblioteca",
   "settings.libraryFolderHint": "Dónde se guardan las cintas. Al cambiarla, tus cintas existentes se mueven a la carpeta nueva. No está disponible mientras haya descargas, importaciones, cambios de nombre o exportaciones en curso.",
   "settings.autoplay": "Reproducción automática",

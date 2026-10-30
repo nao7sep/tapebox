@@ -564,6 +564,8 @@
   "settings.autostart": "Démarrer les téléchargements automatiquement",
   "settings.autostartHint": "Les cassettes ajoutées commencent à se télécharger immédiatement. Désactivé = elles sont ajoutées en pause.",
   "settings.maxConcurrent": "Téléchargements simultanés maximum",
+  "settings.maxConcurrentInvalid": "Nombre entier de {min} à {max}",
+  "settings.generalInvalid": "Un réglage de l’onglet Général doit être corrigé avant d’enregistrer.",
   "settings.libraryFolder": "Dossier de la bibliothèque",
   "settings.libraryFolderHint": "Emplacement où les cassettes sont enregistrées. Le modifier déplace vos cassettes existantes vers le nouveau dossier. Indisponible pendant les téléchargements, importations, renommages ou exportations.",
   "settings.autoplay": "Lecture automatique",

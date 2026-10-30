@@ -506,6 +506,8 @@
   "settings.autostart": "다운로드 자동 시작",
   "settings.autostartHint": "새로 추가한 테이프를 바로 다운로드하기 시작합니다. 끄면 일시 정지 상태로 추가됩니다.",
   "settings.maxConcurrent": "최대 동시 다운로드 수",
+  "settings.maxConcurrentInvalid": "{min}~{max} 사이의 정수",
+  "settings.generalInvalid": "저장하려면 먼저 일반 탭의 설정을 고쳐 주세요.",
   "settings.libraryFolder": "라이브러리 폴더",
   "settings.libraryFolderHint": "테이프가 저장되는 위치입니다. 변경하면 기존 테이프가 새 폴더로 이동합니다. 다운로드, 가져오기, 이름 변경 또는 내보내기가 진행 중일 때는 사용할 수 없습니다.",
   "settings.autoplay": "자동 재생",

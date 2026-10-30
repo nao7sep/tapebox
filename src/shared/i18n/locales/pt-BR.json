@@ -564,6 +564,8 @@
   "settings.autostart": "Iniciar downloads automaticamente",
   "settings.autostartHint": "As fitas recém-adicionadas começam a baixar imediatamente. Desativado = são adicionadas pausadas.",
   "settings.maxConcurrent": "Máximo de downloads simultâneos",
+  "settings.maxConcurrentInvalid": "Número inteiro de {min} a {max}",
+  "settings.generalInvalid": "Corrija uma configuração em Geral antes de salvar.",
   "settings.libraryFolder": "Pasta da biblioteca",
   "settings.libraryFolderHint": "Onde as fitas são salvas. Ao alterar, suas fitas existentes são movidas para a nova pasta. Indisponível enquanto houver downloads, importações, renomeações ou exportações em andamento.",
   "settings.autoplay": "Reprodução automática",

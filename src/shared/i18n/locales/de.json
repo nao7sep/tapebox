@@ -535,6 +535,8 @@
   "settings.autostart": "Downloads automatisch starten",
   "settings.autostartHint": "Neu hinzugefügte Bänder werden sofort heruntergeladen. Aus = sie werden pausiert hinzugefügt.",
   "settings.maxConcurrent": "Maximale gleichzeitige Downloads",
+  "settings.maxConcurrentInvalid": "Ganze Zahl von {min} bis {max}",
+  "settings.generalInvalid": "Eine Einstellung unter Allgemein muss korrigiert werden, bevor Sie speichern können.",
   "settings.libraryFolder": "Mediathekordner",
   "settings.libraryFolderHint": "Wo Bänder gespeichert werden. Eine Änderung verschiebt Ihre vorhandenen Bänder in den neuen Ordner. Nicht verfügbar, solange Downloads, Importe, Umbenennungen oder Exporte laufen.",
   "settings.autoplay": "Automatische Wiedergabe",

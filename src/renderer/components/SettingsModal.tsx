@@ -23,6 +23,7 @@ import {
   INPUT_CLASS,
   INPUT_LINE_CLASS,
   NumberField,
+  parseWholeNumber,
   Spinner,
   TextField,
   Toggle,
@@ -63,6 +64,8 @@ export function SettingsModal({ onClose }: Props) {
   const [tab, setTab] = useState<Tab>('general')
   const [original, setOriginal] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Settings | null>(null)
+  // What the concurrency field holds as typed; the draft takes it only while valid.
+  const [concurrentText, setConcurrentText] = useState('')
   const [keyState, setKeyState] = useState<IpcCalls['settings:apiKeyState']['res']>('absent')
   const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
   const [openExistingLibrary, setOpenExistingLibrary] = useState(false)
@@ -89,6 +92,7 @@ export function SettingsModal({ onClose }: Props) {
     ]).then(([s, state, defaultLibDir]) => {
       setOriginal(s)
       setDraft(s)
+      setConcurrentText(String(s.maxConcurrentDownloads))
       setKeyState(state)
       setDefaultLibraryDir(defaultLibDir)
     }, (error) => {
@@ -146,7 +150,9 @@ export function SettingsModal({ onClose }: Props) {
   const settingsDirty =
     !!original && !!draft && JSON.stringify(pickEditable(original)) !== JSON.stringify(pickEditable(draft))
   const apiKeyDirty = apiKeyDraft.length > 0 || wantsClearKey
-  const dirty = settingsDirty || apiKeyDirty
+  const concurrentInvalid =
+    parseWholeNumber(concurrentText, MAX_CONCURRENT_DOWNLOADS.min, MAX_CONCURRENT_DOWNLOADS.max) === null
+  const dirty = settingsDirty || apiKeyDirty || concurrentInvalid
   useWindowCloseGuard(() => ({ dirty }))
 
   // How many existing tapes have files on disk that a library move would relocate.
@@ -168,8 +174,14 @@ export function SettingsModal({ onClose }: Props) {
   // Save splits into a request (which may prompt) and the commit. A library move is
   // a real, user-visible relocation of their files, so it gets a confirm first when
   // there are tapes to move; everything else saves straight through.
+  function changeConcurrentText(text: string) {
+    setConcurrentText(text)
+    const value = parseWholeNumber(text, MAX_CONCURRENT_DOWNLOADS.min, MAX_CONCURRENT_DOWNLOADS.max)
+    if (value !== null) patchDraft({ maxConcurrentDownloads: value })
+  }
+
   function requestSave() {
-    if (!draft) return
+    if (!draft || concurrentInvalid) return
     const boxes = useBoxesStore.getState()
     if (openExistingLibrary && libraryDirChanged() && boxes.editingId !== null &&
       boxes.draftName !== boxes.boxes.find((box) => box.id === boxes.editingId)?.name) {
@@ -200,6 +212,7 @@ export function SettingsModal({ onClose }: Props) {
         useSettingsStore.getState().setSettings(updated)
         setOriginal(updated)
         setDraft(updated)
+        setConcurrentText(String(updated.maxConcurrentDownloads))
         // A committed save's cleanup warning remains after the dialog closes.
         if (warning) useToastStore.getState().notify(warning, 'error')
       }
@@ -262,7 +275,7 @@ export function SettingsModal({ onClose }: Props) {
           {t.t('common.cancel')}
         </Button>
       )}
-      <Button variant="primary" onClick={requestSave} disabled={!dirty} loading={busy}>
+      <Button variant="primary" onClick={requestSave} disabled={!dirty || concurrentInvalid} loading={busy}>
         {t.t(moving ? 'settings.moving' : busy ? 'common.saving' : 'common.save')}
       </Button>
     </>
@@ -285,6 +298,9 @@ export function SettingsModal({ onClose }: Props) {
                 draft={draft}
                 busy={busy}
                 onPatch={patchDraft}
+                concurrentText={concurrentText}
+                concurrentInvalid={concurrentInvalid}
+                onConcurrentText={changeConcurrentText}
                 defaultLibraryDir={defaultLibraryDir}
                 openExistingLibrary={openExistingLibrary}
                 onOpenExistingLibrary={setOpenExistingLibrary}
@@ -332,6 +348,9 @@ export function SettingsModal({ onClose }: Props) {
               bytesTotal: t.bytes(moveProgress.bytesTotal),
             })}
           </p>
+        )}
+        {concurrentInvalid && tab !== 'general' && (
+          <p className="mt-4 text-xs text-danger-fg">{t.t('settings.generalInvalid')}</p>
         )}
         {error && <InlineError className="mt-4">{t.text(error)}</InlineError>}
       </Modal>
@@ -484,6 +503,9 @@ function GeneralTab({
   draft,
   busy,
   onPatch,
+  concurrentText,
+  concurrentInvalid,
+  onConcurrentText,
   defaultLibraryDir,
   openExistingLibrary,
   onOpenExistingLibrary,
@@ -491,6 +513,9 @@ function GeneralTab({
   draft: Settings
   busy: boolean
   onPatch: (p: Partial<Settings>) => void
+  concurrentText: string
+  concurrentInvalid: boolean
+  onConcurrentText: (text: string) => void
   defaultLibraryDir: string
   openExistingLibrary: boolean
   onOpenExistingLibrary: (value: boolean) => void
@@ -638,11 +663,12 @@ function GeneralTab({
       />
       <NumberField
         label={t.t('settings.maxConcurrent')}
-        value={draft.maxConcurrentDownloads}
-        min={MAX_CONCURRENT_DOWNLOADS.min}
-        max={MAX_CONCURRENT_DOWNLOADS.max}
+        text={concurrentText}
+        error={concurrentInvalid
+          ? t.t('settings.maxConcurrentInvalid', { min: MAX_CONCURRENT_DOWNLOADS.min, max: MAX_CONCURRENT_DOWNLOADS.max })
+          : undefined}
         disabled={busy}
-        onChange={(v) => onPatch({ maxConcurrentDownloads: v })}
+        onChange={onConcurrentText}
       />
       <div>
         <div className="text-xs font-medium text-fg">{t.t('settings.libraryFolder')}</div>
