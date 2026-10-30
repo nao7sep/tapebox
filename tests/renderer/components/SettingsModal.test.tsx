@@ -104,6 +104,26 @@ describe('SettingsModal', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('keeps a typed concurrency that is not a whole number from 1 to 16, says so and blocks Save', async () => {
+    stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
+    await render()
+    const field = [...document.querySelectorAll('label')].find((label) => label.textContent?.startsWith('Max concurrent downloads'))!.querySelector('input')!
+    for (const text of ['.5', '0', '17', '2.5', '', ' ']) {
+      await type(field, text)
+      expect(field.value).toBe(text)
+      expect(field.getAttribute('aria-invalid')).toBe('true')
+      expect(document.body.textContent).toContain('Whole number from 1 to 16')
+      expect(button('Save').disabled).toBe(true)
+    }
+    await click('AI')
+    expect(document.body.textContent).toContain('A setting in General needs fixing before you can save.')
+    await click('General')
+    await type(document.querySelector<HTMLInputElement>('input[aria-invalid="true"]')!, '16')
+    expect(document.body.textContent).not.toContain('Whole number from 1 to 16')
+    await click('Save')
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { maxConcurrentDownloads: 16 })
+  })
+
   it('keeps an unsaved box name when opening is cancelled and asks before discarding it', async () => {
     useBoxesStore.setState({ editingId: 'box1', draftName: 'Unsaved box', boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
