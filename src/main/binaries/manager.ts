@@ -328,7 +328,6 @@ async function performInstall(
           url: resolved.downloadUrl,
           destPath: downloadTemp,
           idleTimeoutMs: BINARY_DOWNLOAD_IDLE_TIMEOUT_MS,
-          maxBytes: resolved.maxDownloadBytes,
           signal,
           onProgress: (received, total) => {
             const pct = total > 0 ? Math.floor((received / total) * 100) : 0
@@ -369,7 +368,6 @@ async function performInstall(
             downloadTemp,
             resolved.archive.innerName,
             stage,
-            resolved.maxInstalledBytes,
             signal,
           )
         } else {

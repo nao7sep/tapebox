@@ -65,8 +65,6 @@ vi.mock('@main/binaries/registry', async (importOriginal) => {
     version: '2026.08.21',
     downloadUrl: 'https://x',
     archive: null,
-    maxDownloadBytes: 1024,
-    maxInstalledBytes: 1024,
     integrity: { kind: 'sums', url: 'https://x/sums', assetName: 'x' },
   }
   const spec = (name: string) => ({

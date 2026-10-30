@@ -224,7 +224,7 @@ describe('extractFileFromZip', () => {
   it.each([0, 8])('extracts a real ZIP entry with compression method %s and closes every stream', async (method) => {
     const zip = await archive({ path: 'deno', data: Buffer.from([1, 2, 3]), method })
     const out = join(dir, 'deno')
-    await extractFileFromZip(zip, 'deno', out, 1024)
+    await extractFileFromZip(zip, 'deno', out)
     expect([...(await readFile(out))]).toEqual([1, 2, 3])
     expectClosed()
   })
@@ -232,21 +232,21 @@ describe('extractFileFromZip', () => {
   it('matches a nested entry by basename', async () => {
     const zip = await archive({ path: 'ffmpeg-7.1/readme.txt' }, { path: 'ffmpeg-7.1/bin/ffmpeg', data: Buffer.from([9, 9]) })
     const out = join(dir, 'ffmpeg')
-    await extractFileFromZip(zip, 'ffmpeg', out, 1024)
+    await extractFileFromZip(zip, 'ffmpeg', out)
     expect([...(await readFile(out))]).toEqual([9, 9])
   })
 
   it('prefers an exact path match over a basename match', async () => {
     const zip = await archive({ path: 'nested/ffmpeg', data: Buffer.from([1]) }, { path: 'ffmpeg', data: Buffer.from([2, 2]) })
     const out = join(dir, 'ffmpeg')
-    await extractFileFromZip(zip, 'ffmpeg', out, 1024)
+    await extractFileFromZip(zip, 'ffmpeg', out)
     expect([...(await readFile(out))]).toEqual([2, 2])
   })
 
   it('rejects ambiguous basenames without writing', async () => {
     const zip = await archive({ path: 'x/ffmpeg' }, { path: 'y/ffmpeg' })
     const out = join(dir, 'ffmpeg')
-    await expect(extractFileFromZip(zip, 'ffmpeg', out, 1024)).rejects.toThrow('File ffmpeg matches multiple entries in archive: x/ffmpeg, y/ffmpeg')
+    await expect(extractFileFromZip(zip, 'ffmpeg', out)).rejects.toThrow('File ffmpeg matches multiple entries in archive: x/ffmpeg, y/ffmpeg')
     expect(await exists(out)).toBe(false)
     expectClosed()
   })
@@ -254,14 +254,14 @@ describe('extractFileFromZip', () => {
   it('ignores directory entries and names available files on a missing match', async () => {
     const zip = await archive({ path: 'bin/ffmpeg/' }, { path: 'readme.txt' }, { path: 'LICENSE' })
     const out = join(dir, 'ffmpeg')
-    await expect(extractFileFromZip(zip, 'ffmpeg', out, 1024)).rejects.toThrow('File ffmpeg not found in archive. Available: readme.txt, LICENSE')
+    await expect(extractFileFromZip(zip, 'ffmpeg', out)).rejects.toThrow('File ffmpeg not found in archive. Available: readme.txt, LICENSE')
     expect(await exists(out)).toBe(false)
   })
 
   it('uses central sizes for a deflated entry with a data descriptor and ZIP64 extras', async () => {
     const zip = await archive({ path: 'deno', data: Buffer.from('executable'), descriptor: true, zip64: true })
     const out = join(dir, 'deno')
-    await extractFileFromZip(zip, 'deno', out, 1024)
+    await extractFileFromZip(zip, 'deno', out)
     expect(await readFile(out, 'utf8')).toBe('executable')
     expectClosed()
   })
@@ -270,7 +270,7 @@ describe('extractFileFromZip', () => {
     const zip = join(dir, 'zip64.zip')
     await writeFile(zip, zipBytes([{ path: 'LICENSE' }, { path: 'bin/deno', data: Buffer.from('executable'), zip64: true, descriptor: true }], true))
     const out = join(dir, 'deno')
-    await extractFileFromZip(zip, 'deno', out, 1024)
+    await extractFileFromZip(zip, 'deno', out)
     expect(await readFile(out, 'utf8')).toBe('executable')
     expectClosed()
   })
@@ -278,7 +278,7 @@ describe('extractFileFromZip', () => {
   it('extracts an empty stored entry without reading bytes from the next header', async () => {
     const zip = await archive({ path: 'deno', method: 0 })
     const out = join(dir, 'deno')
-    await extractFileFromZip(zip, 'deno', out, 10)
+    await extractFileFromZip(zip, 'deno', out)
     expect(await readFile(out)).toHaveLength(0)
     expectClosed()
   })
@@ -288,34 +288,25 @@ describe('extractFileFromZip', () => {
     const corrupt = await readFile(zip)
     corrupt.fill(0xff, 34, 34 + deflateRawSync(Buffer.from('executable')).length)
     await writeFile(zip, corrupt)
-    await expect(extractFileFromZip(zip, 'deno', join(dir, 'deno'), 1024)).rejects.toBeInstanceOf(Error)
+    await expect(extractFileFromZip(zip, 'deno', join(dir, 'deno'))).rejects.toBeInstanceOf(Error)
     expectClosed()
   })
 
-  it('rejects a real central-directory advertised size before creating the writer', async () => {
-    const zip = await archive({ path: 'deno', data: Buffer.from([1, 2, 3, 4]) })
-    const out = join(dir, 'deno')
-    await expect(extractFileFromZip(zip, 'deno', out, 3)).rejects.toThrow('too large')
-    expect(writers).toHaveLength(0)
-    expect(await exists(out)).toBe(false)
-    expectClosed()
-  })
-
-  it('enforces the streamed limit when the advertised size is false', async () => {
+  it('rejects an entry longer than its advertised size', async () => {
     const zip = await archive({ path: 'deno', data: Buffer.from([1, 2, 3, 4]), advertisedSize: 1 })
-    await expect(extractFileFromZip(zip, 'deno', join(dir, 'deno'), 3)).rejects.toThrow('exceeded 3 bytes')
+    await expect(extractFileFromZip(zip, 'deno', join(dir, 'deno'))).rejects.toThrow('size does not match ZIP metadata')
     expectClosed()
   })
 
   it('rejects a decompressed length different from the central-directory size', async () => {
     const zip = await archive({ path: 'deno', data: Buffer.from([1, 2, 3]), advertisedSize: 4 })
-    await expect(extractFileFromZip(zip, 'deno', join(dir, 'deno'), 10)).rejects.toThrow('size')
+    await expect(extractFileFromZip(zip, 'deno', join(dir, 'deno'))).rejects.toThrow('size')
     expectClosed()
   })
 
   it.each([{ flags: 1, message: 'encrypted' }, { method: 12, message: 'compression' }, { offset: 0xfffffff0, message: 'offset' }])('rejects unsupported or invalid entry metadata: $message', async (options) => {
     const zip = await archive({ path: 'deno', data: Buffer.from([1, 2, 3]), ...options })
-    await expect(extractFileFromZip(zip, 'deno', join(dir, 'deno'), 10)).rejects.toThrow(options.message)
+    await expect(extractFileFromZip(zip, 'deno', join(dir, 'deno'))).rejects.toThrow(options.message)
     expect(writers).toHaveLength(0)
     expectClosed()
   })
@@ -332,7 +323,7 @@ describe('extractFileFromZip', () => {
     }
     const controller = new AbortController()
     let outcome: unknown
-    const extraction = extractFileFromZip(zip, 'deno', join(dir, 'deno'), 10, controller.signal)
+    const extraction = extractFileFromZip(zip, 'deno', join(dir, 'deno'), controller.signal)
       .then(() => { outcome = 'resolved' }, (err: unknown) => { outcome = err })
     await parked.promise
     const error = new Error('injected source failure')
@@ -346,11 +337,11 @@ describe('extractFileFromZip', () => {
     expect(writers).toHaveLength(0)
   })
 
-  it.each(['abort', 'write failure', 'source error', 'stream limit'])('waits for payload physical close on %s before releasing the atomic stage', async (action) => {
+  it.each(['abort', 'write failure', 'source error'])('waits for payload physical close on %s before releasing the atomic stage', async (action) => {
     // Incompressible enough to park before the compressed range reaches EOF.
     const data = Buffer.alloc(4096)
     for (let i = 0; i < data.length; i++) data[i] = (i * 137 + (i >>> 3)) & 255
-    const zip = await archive({ path: 'deno', data, advertisedSize: action === 'stream limit' ? 1 : data.length })
+    const zip = await archive({ path: 'deno', data, advertisedSize: data.length })
     const destination = join(dir, 'installed-deno')
     const stage = join(dir, 'deno-owned.tmp')
     await writeFile(destination, 'previous executable')
@@ -362,17 +353,15 @@ describe('extractFileFromZip', () => {
       if (!isPayload(index, start, end)) return
       source = stream
       closeStarted = holdPhysicalClose(stream)
-      if (action !== 'stream limit') {
-        const read = stream._read.bind(stream)
-        stream._read = (size) => { if (!isParked) read(size) }
-        stream.once('data', () => { isParked = true; parked.resolve() })
-      }
+      const read = stream._read.bind(stream)
+      stream._read = (size) => { if (!isParked) read(size) }
+      stream.once('data', () => { isParked = true; parked.resolve() })
     }
     const controller = new AbortController()
     let settled = false
-    const extraction = writeFileAtomicVia(destination, (path) => extractFileFromZip(zip, 'deno', action === 'write failure' ? join(dir, 'absent', 'deno') : path, action === 'stream limit' ? 3 : data.length, controller.signal), stage, controller.signal)
+    const extraction = writeFileAtomicVia(destination, (path) => extractFileFromZip(zip, 'deno', action === 'write failure' ? join(dir, 'absent', 'deno') : path, controller.signal), stage, controller.signal)
       .then(() => { settled = true; return 'resolved' }, (err: unknown) => { settled = true; return err })
-    if (action === 'write failure' || action === 'stream limit') {
+    if (action === 'write failure') {
       await until(() => expect(source).toBeDefined())
     } else {
       await parked.promise

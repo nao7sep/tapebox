@@ -115,8 +115,6 @@ const resolved = (version: string) =>
     version,
     downloadUrl: 'https://x',
     archive: null,
-    maxDownloadBytes: 64 * 1024 * 1024,
-    maxInstalledBytes: 64 * 1024 * 1024,
     integrity: { kind: 'sums', url: 'https://x/sums', assetName: 'x' },
   }) as never
 
@@ -370,12 +368,10 @@ describe('install final-preparation cancellation', () => {
       version: '2026.08.21',
       downloadUrl: 'https://x',
       archive: { kind: 'zip', innerName: 'yt-dlp' },
-      maxDownloadBytes: 64 * 1024 * 1024,
-      maxInstalledBytes: 64 * 1024 * 1024,
       integrity: { kind: 'sums', url: 'https://x/sums', assetName: 'x' },
     } as never)
     extractFileFromZip.mockImplementation(
-      (_zip: string, _inner: string, _stage: string, _maxBytes: number, signal: AbortSignal) =>
+      (_zip: string, _inner: string, _stage: string, signal: AbortSignal) =>
         rejectWhenAborted(signal),
     )
 
@@ -386,7 +382,6 @@ describe('install final-preparation cancellation', () => {
       expect.any(String),
       'yt-dlp',
       expect.any(String),
-      64 * 1024 * 1024,
       expect.any(AbortSignal),
     )
 

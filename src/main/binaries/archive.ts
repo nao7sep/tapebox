@@ -66,7 +66,7 @@ async function readDirectory(zipPath: string, archiveSize: number, signal?: Abor
  *
  * Use unzipper only for central metadata. Its file.stream() hides the file reader
  * and inflater, so destroying the returned stream can leave both alive. Here the
- * complete read/inflate/limit/write pipeline is owned through physical close;
+ * complete read/inflate/count/write pipeline is owned through physical close;
  * the caller can safely remove its stage or release its install claim on return.
  * Atomic publication and durability remain writeFileAtomicVia's responsibility.
  */
@@ -74,7 +74,6 @@ export async function extractFileFromZip(
   zipPath: string,
   innerName: string,
   outPath: string,
-  maxBytes: number,
   signal?: AbortSignal,
 ): Promise<void> {
   signal?.throwIfAborted()
@@ -105,9 +104,6 @@ export async function extractFileFromZip(
   if (!Number.isSafeInteger(file.uncompressedSize) || file.uncompressedSize < 0 ||
       !Number.isSafeInteger(file.compressedSize) || file.compressedSize < 0) {
     throw new Error(`Invalid ZIP entry size for ${innerName}`)
-  }
-  if (file.uncompressedSize > maxBytes) {
-    throw new Error(`Extracted ${innerName} is too large (${file.uncompressedSize} bytes; limit ${maxBytes})`)
   }
   const headerEnd = rangeEnd(file.offsetToLocalFileHeader, 30, archiveSize)
   if (!Number.isSafeInteger(directory.offsetToStartOfCentralDirectory) ||
@@ -142,18 +138,14 @@ export async function extractFileFromZip(
       : createReadStream(zipPath, { start: dataStart, end: rangeEnd(dataStart, file.compressedSize, archiveSize) }), owned)
     const inflater = file.compressionMethod === 8 ? trackClose(createInflateRaw(), owned) : undefined
     let extracted = 0
-    const limiter = trackClose(new Transform({
+    const counter = trackClose(new Transform({
       transform(chunk: Buffer, _encoding, callback) {
-        if (extracted + chunk.byteLength > maxBytes) {
-          callback(new Error(`Extracted ${innerName} exceeded ${maxBytes} bytes`))
-          return
-        }
         extracted += chunk.byteLength
         callback(null, chunk)
       },
     }), owned)
     const writer = trackClose(createWriteStream(outPath, { mode: 0o600 }), owned)
-    await pipeline(inflater ? [reader, inflater, limiter, writer] : [reader, limiter, writer], { signal })
+    await pipeline(inflater ? [reader, inflater, counter, writer] : [reader, counter, writer], { signal })
     // The central sizes remain authoritative when local headers use a data
     // descriptor or ZIP64 placeholders; truncated/false lengths never succeed.
     if (extracted !== file.uncompressedSize || ('bytesRead' in reader && reader.bytesRead !== file.compressedSize)) {

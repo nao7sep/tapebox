@@ -64,8 +64,6 @@ export type ResolvedAsset = {
   version: string
   downloadUrl: string
   archive: { kind: 'zip'; innerName: string } | null
-  maxDownloadBytes: number
-  maxInstalledBytes: number
   // How this asset's bytes are verified before being made executable.
   integrity: AssetIntegrity
 }
@@ -108,8 +106,6 @@ const ytDlpSpec: BinarySpec = {
       version: normalizeVersion(release.tag_name),
       downloadUrl: asset.browser_download_url,
       archive: null,
-      maxDownloadBytes: 64 * 1024 * 1024,
-      maxInstalledBytes: 64 * 1024 * 1024,
       integrity: { kind: 'sums', url: sums.browser_download_url, assetName },
     }
   },
@@ -156,8 +152,6 @@ const denoSpec: BinarySpec = {
       version: normalizeVersion(release.tag_name),
       downloadUrl: asset.browser_download_url,
       archive: { kind: 'zip', innerName: process.platform === 'win32' ? 'deno.exe' : 'deno' },
-      maxDownloadBytes: 128 * 1024 * 1024,
-      maxInstalledBytes: 256 * 1024 * 1024,
       integrity: { kind: 'sums', url: sums.browser_download_url, assetName },
     }
   },
@@ -211,8 +205,6 @@ async function resolveFfmpegMacOS(signal?: AbortSignal): Promise<ResolvedAsset> 
     version: parseMartinBuildVersion(new URL(downloadUrl).pathname),
     downloadUrl,
     archive: { kind: 'zip', innerName: 'ffmpeg' },
-    maxDownloadBytes: 512 * 1024 * 1024,
-    maxInstalledBytes: 512 * 1024 * 1024,
     // The sibling `<file>.sha256` holds a single `<hash>  ffmpeg.zip` line, verified
     // against the downloaded bytes at install (see integrity.ts).
     integrity: { kind: 'sums', url: `${downloadUrl}.sha256`, assetName: 'ffmpeg.zip' },
@@ -252,8 +244,6 @@ export async function resolveFfmpegWindows(signal?: AbortSignal): Promise<Resolv
     version: release.tag_name,
     downloadUrl: asset.browser_download_url,
     archive: { kind: 'zip', innerName: 'ffmpeg.exe' },
-    maxDownloadBytes: 1024 * 1024 * 1024,
-    maxInstalledBytes: 512 * 1024 * 1024,
     integrity: { kind: 'sums', url: sums.browser_download_url, assetName: asset.name },
   }
 }
