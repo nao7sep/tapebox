@@ -68,4 +68,13 @@ describe('planRename', () => {
     expect(plan.status).toBe('error')
     if (plan.status === 'error') expect(inEnglish(plan.message)).toMatch(/same name/)
   })
+
+  it('rejects a name whose sidecar would take the tape folder\'s own tape.json', () => {
+    const plan = planRename(
+      { name: null, filename: 'a.mp4', sidecarFilename: 'a.json', thumbnailFilename: null },
+      'TAPE',
+    )
+    expect(plan.status).toBe('error')
+    if (plan.status === 'error') expect(inEnglish(plan.message)).toMatch(/same name: TAPE\.json/)
+  })
 })

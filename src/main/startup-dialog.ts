@@ -14,7 +14,7 @@ import type { BrowserWindow } from 'electron'
  */
 
 type Notice =
-  | 'settingsUnreadable' | 'libraryUnreadable' | 'settingsKept'
+  | 'settingsUnreadable' | 'libraryUnreadable' | 'settingsKept' | 'tapesDamaged'
   | 'failed' | 'storeNewer' | 'storeInaccessible' | 'libraryFolderUnreadable'
 
 async function showNotice(notice: Notice, owner?: BrowserWindow, values?: MessageValues): Promise<void> {
@@ -37,6 +37,12 @@ export async function notifyCorruptConfig(quarantinePath: string, owner?: Browse
 
 export async function notifyCorruptSession(quarantinePath: string, owner?: BrowserWindow): Promise<void> {
   await showNotice('libraryUnreadable', owner, { path: quarantinePath })
+}
+
+/** Tapes whose own tape.json could not be read are named by that file, which
+ *  was left as it is with the rest of the tape's folder. */
+export async function notifyDamagedTapes(paths: readonly string[], owner?: BrowserWindow): Promise<void> {
+  await showNotice('tapesDamaged', owner, { paths: paths.join('\n') })
 }
 
 /** Settings that failed their check stay in the file while the built-ins stand

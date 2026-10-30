@@ -92,7 +92,7 @@ describe('tapeFromSidecar', () => {
     mediaFilename: 'v.mp4',
     sidecarFilename: 'v.json',
     thumbnailFilename: 'v.webp',
-    order: 5,
+    addedIndex: 5,
     nowUtc: '2026-01-01T00:00:00.000Z',
   }
 
@@ -114,7 +114,10 @@ describe('tapeFromSidecar', () => {
       filename: 'v.mp4',
       sidecarFilename: 'v.json',
       thumbnailFilename: 'v.webp',
-      order: 5,
+      addedIndex: 5,
+      shelved: false,
+      boxId: null,
+      order: 0,
       probedAtUtc: null,
       addedAtUtc: params.nowUtc,
       downloadedAtUtc: null,

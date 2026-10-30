@@ -1,17 +1,17 @@
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 // @vitest-environment jsdom
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { act, createElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionSchema, type Tape } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { defaultLayout } from '@shared/layout'
 
 const bridge = vi.hoisted(() => ({
-  catalog: '',
+  dir: '',
   handlers: new Map<string, (req: unknown) => Promise<unknown>>(),
   listeners: new Map<string, Set<(payload: unknown) => void>>(),
   gates: [] as { started: () => void; release: Promise<void>; fail: boolean }[],
@@ -23,8 +23,7 @@ vi.mock('electron', () => ({
   } },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/paths', () => ({ paths: { get legacyCatalog() { return bridge.catalog + '.legacy' } }, collectionCatalog: () => bridge.catalog }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => join(bridge.catalog, '..'), getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
+vi.mock('@main/store/config', () => ({ getLibraryDir: () => bridge.dir, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/ipc/events', () => ({ emit: (channel: string, payload: unknown) => {
@@ -72,7 +71,7 @@ vi.mock('@dnd-kit/dom', () => ({ Accessibility: class {}, PointerActivationConst
 import { registerLibraryHandlers } from '@main/ipc/library'
 import { registerBoxHandlers } from '@main/ipc/boxes'
 import * as session from '@main/store/session'
-import { TapeList } from '@renderer/components/TapeList'
+import { readCollection } from '@main/store/collection-files'
 import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
 import { startIpcSync, type IpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
@@ -96,7 +95,7 @@ function tape(id: string, order: number): Tape {
     sourceId: null, extractor: null, title: id, uploader: null, durationSeconds: null, chapterCount: null,
     probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
     downloadStartedAtUtc: null, downloadedAtUtc: date, name: null, renamedAtUtc: null,
-    archivedAtUtc: null, boxId: null, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+    addedIndex: 0, shelved: true, boxId: null, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
 }
 function gate(fail: boolean) {
@@ -112,20 +111,21 @@ async function reorder(label: string) {
   expect(list).not.toBeNull()
   await act(async () => list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', ctrlKey: true, shiftKey: true, bubbles: true })))
 }
+const byId = <T extends { id: string }>(items: T[]) => [...items].sort((a, b) => a.id.localeCompare(b.id))
 const identityOrder = (items: { id: string; order: number }[]) => [...items].sort((a, b) => a.order - b.order).map(({ id }) => id)
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'tapebox-reorder-boundary-'))
-  bridge.catalog = join(directory, 'catalog.json')
+  bridge.dir = directory
   bridge.handlers.clear(); bridge.listeners.clear(); bridge.gates = []; bridge.calls = []; releases = []
   await session.loadSession()
   registerLibraryHandlers(); registerBoxHandlers()
-  useOrderFailuresStore.setState({ inbox: null, boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
+  useOrderFailuresStore.setState({ boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
   useTapesStore.setState({ tapes: [], progress: {}, stalled: {} })
   useBoxesStore.setState({ boxes: [], editingId: null, draftName: '', pendingRenames: 0 })
   useSelectionStore.setState({ selectedId: ids[0] })
-  useArchiveStore.setState({ selectedBoxId: ids[0], query: '', pendingSearchFocus: false })
-  useFilterStore.setState({ filter: 'inbox' })
+  useArchiveStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
+  useFilterStore.setState({ filter: 'archived' })
   useLayoutStore.getState().setHydratedLayout(defaultLayout)
   HTMLElement.prototype.scrollIntoView = vi.fn()
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
@@ -144,7 +144,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC, sync and catalog', (kind) => {
+describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC, sync and shelf.json', (kind) => {
   it.each([false, true])('keeps the latest order when saves fail, as any library edit (earlier failure: %s)', async (firstFails) => {
     if (kind === 'tapes') {
       ids.forEach((id, order) => session.upsertTape(tape(id, order)))
@@ -152,10 +152,12 @@ describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC,
     } else {
       ids.forEach((id, order) => session.upsertBox({ id, name: id, order }))
       useBoxesStore.getState().setBoxes(session.getBoxes())
+      // The box list moves the selected box.
+      useArchiveStore.getState().selectBox(ids[0])
     }
     await session.persistNow()
-    await act(async () => root.render(createElement(kind === 'tapes' ? TapeList : ArchiveOrganizer)))
-    const label = kind === 'tapes' ? 'Tapes' : 'Boxes'
+    await act(async () => root.render(createElement(ArchiveOrganizer)))
+    const label = kind === 'tapes' ? 'Box tapes' : 'Boxes'
     const first = gate(firstFails)
     await reorder(label)
     await first.held
@@ -172,9 +174,11 @@ describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC,
     expect(identityOrder(main)).toEqual([ids[1], ids[2], ids[0]])
     expect(renderer).toEqual(main)
     expect(useOrderFailuresStore.getState().pending).toEqual({})
-    expect(kind === 'tapes' ? useOrderFailuresStore.getState().inbox : useOrderFailuresStore.getState().boxes).toBeNull()
+    expect(kind === 'tapes' ? useOrderFailuresStore.getState().archiveTapes.unboxed ?? null : useOrderFailuresStore.getState().boxes).toBeNull()
     await session.persistNow()
-    const saved = SessionSchema.parse(JSON.parse(await readFile(bridge.catalog, 'utf8')))
-    expect(kind === 'tapes' ? saved.tapes : saved.boxes).toEqual(main)
+    const saved = await readCollection(directory)
+    if (saved.kind !== 'current') throw new Error('expected the current collection layout')
+    if (kind === 'tapes') expect(byId(saved.session.tapes)).toEqual(byId(session.getTapes().map(session.durableTape)))
+    else expect(byId(saved.session.boxes)).toEqual(byId(session.getBoxes()))
   })
 })

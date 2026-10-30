@@ -86,7 +86,7 @@ export function BoxList({
   const counts = useMemo(() => {
     const result = new Map<string | null, number>()
     for (const tape of tapes) {
-      if (tape.archivedAtUtc) result.set(tape.boxId, (result.get(tape.boxId) ?? 0) + 1)
+      if (tape.shelved) result.set(tape.boxId, (result.get(tape.boxId) ?? 0) + 1)
     }
     return result
   }, [tapes])

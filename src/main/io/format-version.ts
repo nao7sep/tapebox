@@ -7,8 +7,10 @@ import type { DatabaseSync } from 'node:sqlite'
  * can run it as it is.
  */
 export const FORMAT_VERSIONS = {
-  /** catalog.json */
-  catalog: 1,
+  /** shelf.json */
+  shelf: 1,
+  /** A tape's own `<inbox|shelf>/<id>/tape.json`. */
+  tape: 1,
   /** config.json */
   config: 1,
   /** layout.json */

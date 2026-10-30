@@ -46,7 +46,11 @@ vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 function queued(id: string): Tape {
-  return { id, state: 'queued', sourceUrl: `https://example.com/${id}` } as Tape
+  // Added together, so the Inbox (and the queue) takes them by id.
+  return {
+    id, state: 'queued', sourceUrl: `https://example.com/${id}`,
+    addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, shelved: false,
+  } as Tape
 }
 
 describe('queue and library moves', () => {

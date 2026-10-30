@@ -12,11 +12,11 @@ export type OrderedItem = { id: string; order: number }
 
 /** A tape's order belongs to its current Inbox, Unboxed, or box tape list. */
 export function isInSameTapeList(
-  current: Pick<Tape, 'archivedAtUtc' | 'boxId'>,
-  submitted: Pick<Tape, 'archivedAtUtc' | 'boxId'>,
+  current: Pick<Tape, 'shelved' | 'boxId'>,
+  submitted: Pick<Tape, 'shelved' | 'boxId'>,
 ): boolean {
-  const archived = !!submitted.archivedAtUtc
-  return !!current.archivedAtUtc === archived && (!archived || current.boxId === submitted.boxId)
+  const archived = submitted.shelved
+  return current.shelved === archived && (!archived || current.boxId === submitted.boxId)
 }
 
 /** Roll back order on current members, preserving additions, removals and metadata. */

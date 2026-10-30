@@ -5,10 +5,10 @@ import { librarySourceIndex } from '@shared/source-identity'
 function tape(overrides: Partial<Tape>): Tape {
   return TapeSchema.parse({
     id: 'Tape000001', sourceUrl: 'https://www.youtube.com/watch?v=X', state: 'downloaded',
-    addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: null, extractor: null, title: null,
+    addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, sourceId: null, extractor: null, title: null,
     uploader: null, durationSeconds: null, chapterCount: null, probedAtUtc: null,
     filename: null, sidecarFilename: null, thumbnailFilename: null, downloadStartedAtUtc: null,
-    downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: null, boxId: null,
+    downloadedAtUtc: null, name: null, renamedAtUtc: null, shelved: false, boxId: null,
     order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...overrides,
   })

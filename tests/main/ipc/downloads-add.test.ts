@@ -57,10 +57,11 @@ describe('adding URLs', () => {
     expect(tick).not.toHaveBeenCalled()
   })
 
-  it('tries another stem when a sidecar already occupies the first name', async () => {
+  it('tries another id when a folder already holds the first one', async () => {
     stat.mockResolvedValueOnce({})
     await handlers.get('downloads:add')!({ url: 'https://example.test/watch' })
-    expect(stat).toHaveBeenCalledTimes(2)
+    // The first id's Inbox folder is taken; the second is free in the Inbox and on the Shelf.
+    expect(stat).toHaveBeenCalledTimes(3)
     expect(tapes).toHaveLength(1)
   })
 
@@ -84,6 +85,26 @@ describe('adding URLs', () => {
     ])
     expect(tapes.map((t) => t.sourceUrl).sort()).toEqual([
       'https://example.test/a', 'https://example.test/b', 'https://example.test/c',
+    ])
+  })
+})
+
+describe('Inbox order of added tapes', () => {
+  it('gives a single add the time it was added and a batch one time with its pasted positions', async () => {
+    tapes.length = 0
+    const [single] = (await handlers.get('downloads:add')!({ url: 'https://example.test/one' })) as Tape[]
+    const batch = (await handlers.get('downloads:addBulk')!({
+      urls: ['https://example.test/first', 'https://example.test/second', 'https://example.test/third'],
+    })) as Tape[]
+
+    expect(single).toMatchObject({ addedIndex: 0, shelved: false, boxId: null })
+    expect(batch.map((tape) => tape.addedIndex)).toEqual([0, 1, 2])
+    expect(new Set(batch.map((tape) => tape.addedAtUtc)).size).toBe(1)
+    expect(batch[0]!.addedAtUtc >= single!.addedAtUtc).toBe(true)
+    const { compareInbox } = await import('@shared/order')
+    // The batch tops the Inbox in its pasted order, first URL topmost.
+    expect([...tapes].sort(compareInbox).slice(0, 3).map((tape) => tape.sourceUrl)).toEqual([
+      'https://example.test/first', 'https://example.test/second', 'https://example.test/third',
     ])
   })
 })

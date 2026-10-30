@@ -27,12 +27,12 @@ const tape: Tape = {
   probedAtUtc: '2026-01-01T00:00:00.000Z', filename: 'Take.mp4',
   sidecarFilename: 'Take.json', thumbnailFilename: null,
   downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
-  name: 'Take', renamedAtUtc: RENAMED_AT, archivedAtUtc: null, boxId: null, order: 0,
+  name: 'Take', renamedAtUtc: RENAMED_AT, addedIndex: 0, shelved: false, boxId: null, order: 0,
   pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
 const libraryState = vi.hoisted(() => ({ dir: '' }))
 const MEDIA = { width: 640, height: 360, fps: 30, vcodec: 'h264', acodec: 'aac', durationSeconds: 1, bitrateKbps: 900 }
-const tapeFolder = () => join(libraryState.dir, tape.id)
+const tapeFolder = () => join(libraryState.dir, 'inbox', tape.id)
 vi.mock('@main/store/session', () => ({ getTape: () => tape }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => libraryState.dir }))
 vi.mock('@main/ipc/library', () => ({
@@ -92,7 +92,7 @@ describe('export:files sidecar', () => {
     expect(classifyImport(exported)).toEqual({ status: 'accept', sourceUrl: tape.sourceUrl, mediaFilename: 'Take.mp4', thumbnailFilename: null })
     expect(tapeFromSidecar(exported, {
       id: 'Reimport01', sourceUrl: tape.sourceUrl, mediaFilename: 'Take.mp4', sidecarFilename: 'Take.json',
-      thumbnailFilename: null, order: 0, nowUtc: '2026-03-01T00:00:00.000Z',
+      thumbnailFilename: null, addedIndex: 0, nowUtc: '2026-03-01T00:00:00.000Z',
     })).toMatchObject({ name: 'Take', addedAtUtc: tape.addedAtUtc, downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: RENAMED_AT })
   })
 

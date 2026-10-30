@@ -16,11 +16,11 @@ import { useBoxesStore } from '@renderer/store/boxes'
 
 const tape: Tape = {
   id: 'Selected01', sourceUrl: 'https://example.test/watch', state: 'downloaded',
-  addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
+  addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, sourceId: 'source', extractor: 'test',
   title: 'Selected tape', uploader: null, durationSeconds: 61, chapterCount: 0,
   probedAtUtc: null, filename: 'Selected01.mp4', sidecarFilename: 'Selected01.json', thumbnailFilename: null,
   downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z', name: null, renamedAtUtc: null,
-  archivedAtUtc: '2026-01-01T00:00:01.000Z', boxId: 'Selected02', order: 0,
+  shelved: true, boxId: 'Selected02', order: 0,
   pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
 let root: Root | null = null

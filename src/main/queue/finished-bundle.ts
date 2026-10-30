@@ -66,7 +66,7 @@ export async function findFinishedBundle(dir: string, tape: Tape): Promise<Finis
       mediaFilename: media[0]!,
       sidecarFilename,
       thumbnailFilename,
-      order: tape.order,
+      addedIndex: tape.addedIndex,
       nowUtc: downloadedAtUtc,
     })
   } catch {

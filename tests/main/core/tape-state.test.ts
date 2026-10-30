@@ -9,10 +9,10 @@ const NOW = '2026-02-02T00:00:00.000Z'
 function tape(over: Partial<Tape>): Tape {
   return {
     id: 'Tapestate1', sourceUrl: 'https://example.test/watch', state: 'queued',
-    addedAtUtc: EARLIER, sourceId: null, extractor: null, title: null, uploader: null,
+    addedAtUtc: EARLIER, addedIndex: 0, sourceId: null, extractor: null, title: null, uploader: null,
     durationSeconds: null, chapterCount: 0, probedAtUtc: null, filename: null,
     sidecarFilename: null, thumbnailFilename: null, downloadStartedAtUtc: null,
-    downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: null,
+    downloadedAtUtc: null, name: null, renamedAtUtc: null, shelved: false,
     boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...over,
   }

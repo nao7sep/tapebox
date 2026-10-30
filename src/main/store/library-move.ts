@@ -90,12 +90,27 @@ async function fileSize(path: string): Promise<number | null> {
 
 async function rollbackPublishedFiles(files: readonly RelocatedFile[]): Promise<void> {
   await unlinkFiles([...files].reverse().map((file) => file.destination))
-  await removeEmptiedFolders(files.map((file) => file.destination))
+  await removeEmptiedFolders(files, 'destination')
 }
 
-/** Remove the folders `paths` sat in once they hold nothing else. */
-async function removeEmptiedFolders(paths: readonly string[]): Promise<void> {
-  for (const folder of new Set(paths.map((path) => dirname(path)))) {
+/**
+ * Remove the folders the files sat in — a tape's folder, then the inbox/ or
+ * shelf/ folder holding it — once they hold nothing else. The collection
+ * folder itself stays.
+ */
+async function removeEmptiedFolders(files: readonly RelocatedFile[], side: 'source' | 'destination'): Promise<void> {
+  const folders = new Set<string>()
+  for (const file of files) {
+    let name = dirname(file.name)
+    let folder = dirname(file[side])
+    while (name !== '.' && name !== '') {
+      folders.add(folder)
+      name = dirname(name)
+      folder = dirname(folder)
+    }
+  }
+  // Deepest first, so a tape's folder goes before the one holding it.
+  for (const folder of [...folders].sort((a, b) => b.length - a.length)) {
     await rmdir(folder).catch((error: unknown) => {
       const code = (error as NodeJS.ErrnoException).code
       if (code !== 'ENOENT' && code !== 'ENOTEMPTY' && code !== 'EEXIST') throw error
@@ -117,13 +132,12 @@ export async function rollbackLibraryRelocation(
 export async function completeLibraryRelocation(files: readonly RelocatedFile[]): Promise<void> {
   const sources = files.map((file) => file.source)
   await unlinkFiles(sources)
-  // The catalog sits in the library folder itself, which stays.
-  await removeEmptiedFolders(files.filter((file) => dirname(file.name) !== '.').map((file) => file.source))
+  await removeEmptiedFolders(files, 'source')
 }
 
 /**
- * Publish `entries` (managed relative paths: the catalog, and `<tapeId>/<name>`
- * for each tape file) from `fromDir` to `toDir`. See the module doc for the full
+ * Publish `entries` (managed relative paths: shelf.json, and
+ * `<inbox|shelf>/<tapeId>/<name>` for each tape file) from `fromDir` to `toDir`. See the module doc for the full
  * contract. `entries` are supplied internally and should be deduplicated by the
  * caller; portable aliases are rejected by preflight before any destination
  * publication.
@@ -140,9 +154,9 @@ export async function relocateLibrary(
   await mkdir(toDir, { recursive: true })
 
   // Collision guard up front: bail before moving anything if the destination
-  // already holds the catalog or a tape folder of the same portable name, which
-  // the move would overwrite or merge into. Each tape's files share its folder,
-  // so the guard compares top-level names.
+  // already holds shelf.json, an inbox/ or a shelf/ folder of the same portable
+  // name, which the move would overwrite or merge into. The guard compares
+  // top-level names.
   const collisions: string[] = []
   const existing = new Set((await readdir(toDir)).map(portableFilenameIdentity))
   for (const top of new Set(entries.map((name) => name.split(/[\\/]/)[0]!))) {

@@ -27,7 +27,7 @@ vi.mock('@dnd-kit/dom', () => ({
 
 import { TapeList } from '@renderer/components/TapeList'
 import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
-import { archiveTape, moveTapeToBox } from '@renderer/lib/tapeActions'
+import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
@@ -44,7 +44,7 @@ import { inEnglish } from '../../helpers/i18n'
 
 let root: Root
 
-function tape(id: string, order: number, archived: boolean): Tape {
+function tape(id: string, order: number): Tape {
   return TapeSchema.parse({
     id,
     sourceUrl: 'https://example.com/video',
@@ -64,7 +64,8 @@ function tape(id: string, order: number, archived: boolean): Tape {
     downloadedAtUtc: null,
     name: null,
     renamedAtUtc: null,
-    archivedAtUtc: archived ? '2026-10-01T00:00:00.000Z' : null,
+    addedIndex: 0,
+    shelved: true,
     boxId: null,
     order,
     pausedAtUtc: null,
@@ -86,12 +87,12 @@ function currentTape(id: string): Tape {
   return useTapesStore.getState().tapes.find((candidate) => candidate.id === id)!
 }
 
-async function mountTapes(archived: boolean, boxId: string | null = null) {
-  useFilterStore.setState({ filter: archived ? 'archived' : 'inbox' })
-  useTapesStore.setState({ tapes: [tape('TapeFirst1', 10, archived), tape('TapeSecond', 20, archived), tape('TapeThird1', 30, archived)].map((item) => ({ ...item, boxId })) })
+async function mountTapes(boxId: string | null = null) {
+  useFilterStore.setState({ filter: 'archived' })
+  useTapesStore.setState({ tapes: [tape('TapeFirst1', 10), tape('TapeSecond', 20), tape('TapeThird1', 30)].map((item) => ({ ...item, boxId })) })
   useArchiveStore.getState().selectBox(boxId)
   useSelectionStore.setState({ selectedId: 'TapeFirst1' })
-  await act(async () => root.render(createElement(archived ? ArchiveOrganizer : TapeList)))
+  await act(async () => root.render(createElement(ArchiveOrganizer)))
 }
 
 async function reorder(label: string, key = 'ArrowDown') {
@@ -110,7 +111,7 @@ beforeEach(() => {
   useSelectionStore.setState({ selectedId: null })
   useArchiveStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
   useLayoutStore.getState().setHydratedLayout(defaultLayout)
-  useOrderFailuresStore.setState({ inbox: null, boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
+  useOrderFailuresStore.setState({ boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
   useTapeActionResultsStore.setState({ byTape: {} })
   useBoxActionResultsStore.setState({ results: {} })
   const host = document.createElement('div')
@@ -125,12 +126,26 @@ afterEach(async () => {
   document.body.innerHTML = ''
 })
 
-describe.each([
-  { view: 'Inbox', archived: false, label: 'Tapes' },
-  { view: 'Archive', archived: true, label: 'Box tapes' },
-])('$view reorder settlement through its list', ({ archived, label }) => {
+// The Inbox has no chosen order, so only a Shelf list settles a tape reorder.
+describe('Inbox tape list', () => {
+  it('offers no keyboard reorder', async () => {
+    useFilterStore.setState({ filter: 'inbox' })
+    useTapesStore.setState({ tapes: [tape('TapeFirst1', 0), tape('TapeSecond', 0)].map((item) => ({ ...item, shelved: false })) })
+    useSelectionStore.setState({ selectedId: 'TapeFirst1' })
+    await act(async () => root.render(createElement(TapeList)))
+    const before = useTapesStore.getState().tapes
+    await reorder('Tapes')
+
+    expect(ipcInvoke).not.toHaveBeenCalled()
+    expect(useTapesStore.getState().tapes).toBe(before)
+    expect(useOrderFailuresStore.getState().pending).toEqual({})
+  })
+})
+
+describe('Shelf tape reorder settlement through its list', () => {
+  const label = 'Box tapes'
   it('restores only order after download and metadata updates arrive during the rejected save', async () => {
-    await mountTapes(archived)
+    await mountTapes()
     const pending = pendingWrite()
     await reorder(label)
     expect(ipcInvoke).toHaveBeenCalledWith('tapes:reorder', { orderedIds: ['TapeSecond', 'TapeFirst1', 'TapeThird1'] })
@@ -152,7 +167,7 @@ describe.each([
 
     expect(currentTape('TapeFirst1')).toEqual({ ...downloaded, order: 10 })
     expect(currentTape('TapeSecond').order).toBe(20)
-    const result = archived ? useOrderFailuresStore.getState().archiveTapes.unboxed : useOrderFailuresStore.getState().inbox
+    const result = useOrderFailuresStore.getState().archiveTapes.unboxed
     expect(inEnglish(result)).toContain('order')
     expect(inEnglish(result)).not.toMatch(/EACCES|private\/tmp|ORDER_SENTINEL/)
     expect(JSON.stringify(logError.mock.calls)).toContain('ORDER_SENTINEL')
@@ -160,10 +175,10 @@ describe.each([
   })
 
   it('restores surviving orders without resurrecting a deleted tape or dropping an added tape', async () => {
-    await mountTapes(archived)
+    await mountTapes()
     const pending = pendingWrite()
     await reorder(label)
-    const added = tape('TapeAdded1', -1, archived)
+    const added = tape('TapeAdded1', -1)
     await act(async () => {
       useTapesStore.getState().removeMany(['TapeThird1'])
       useTapesStore.getState().upsert(added)
@@ -179,7 +194,7 @@ describe.each([
   })
 
   it('settles rejected order after a whole downloaded main row restores one old order', async () => {
-    await mountTapes(archived)
+    await mountTapes()
     const before = currentTape('TapeFirst1')
     const pending = pendingWrite()
     await reorder(label)
@@ -201,38 +216,32 @@ describe.each([
     expect(currentTape('TapeFirst1')).toEqual(downloaded)
     expect(currentTape('TapeSecond').order).toBe(20)
     expect(currentTape('TapeThird1').order).toBe(30)
-    const result = archived ? useOrderFailuresStore.getState().archiveTapes.unboxed : useOrderFailuresStore.getState().inbox
+    const result = useOrderFailuresStore.getState().archiveTapes.unboxed
     expect(inEnglish(result)).toContain('order')
     expect(inEnglish(result)).not.toContain('WHOLE_ROW_SENTINEL')
     expect(JSON.stringify(logError.mock.calls)).toContain('WHOLE_ROW_SENTINEL')
   })
 
   it('preserves a moved main row whose destination order equals its rejected source order', async () => {
-    const sourceBoxId = archived ? 'BoxSource1' : null
-    const destinationBoxId = archived ? 'BoxTarget1' : null
+    const sourceBoxId = 'BoxSource1'
+    const destinationBoxId = 'BoxTarget1'
     useBoxesStore.getState().setBoxes([
       { id: 'BoxSource1', name: 'Source box', order: 0 },
       { id: 'BoxTarget1', name: 'Target box', order: 1 },
     ])
-    await mountTapes(archived, sourceBoxId)
+    await mountTapes(sourceBoxId)
     const moving = { ...currentTape('TapeSecond'), state: 'downloaded' as const, filename: 'moving.mp4', sidecarFilename: 'moving.json' }
-    const destinationMember = { ...tape('TapeTarget', 1, true), boxId: destinationBoxId }
+    const destinationMember = { ...tape('TapeTarget', 1), boxId: destinationBoxId }
     await act(async () => useTapesStore.getState().upsertMany([moving, destinationMember]))
     const pending = pendingWrite()
     await reorder(label)
     expect(currentTape(moving.id).order).toBe(0)
 
-    await act(async () => {
-      if (archived) moveTapeToBox(currentTape(moving.id), destinationBoxId, 'list')
-      else archiveTape(currentTape(moving.id), 'list')
-    })
-    expect(ipcInvoke).toHaveBeenCalledWith(
-      archived ? 'boxes:place' : 'library:archive',
-      archived ? { tapeIds: [moving.id], boxId: destinationBoxId } : { tapeIds: [moving.id] },
-    )
-    // Main's placement/archive event carries its full row in the new list. The
+    await act(async () => moveTapeToBox(currentTape(moving.id), destinationBoxId, 'list'))
+    expect(ipcInvoke).toHaveBeenCalledWith('boxes:place', { tapeIds: [moving.id], boxId: destinationBoxId })
+    // Main's placement event carries its full row in the new list. The
     // new list's front order happens to equal the source reorder's submitted 0.
-    const moved = { ...moving, archivedAtUtc: '2026-10-01T00:00:04.000Z', boxId: destinationBoxId, order: 0, title: 'Moved main title' }
+    const moved = { ...moving, boxId: destinationBoxId, order: 0, title: 'Moved main title' }
     await act(async () => useTapesStore.getState().upsert(moved))
     await act(async () => pending.reject(new Error('source order rejected after move')))
 
@@ -240,58 +249,54 @@ describe.each([
     expect(currentTape('TapeFirst1').order).toBe(10)
     expect(currentTape('TapeThird1').order).toBe(30)
     expect(currentTape(destinationMember.id)).toEqual(destinationMember)
-    const result = archived ? useOrderFailuresStore.getState().archiveTapes[`box:${sourceBoxId}`] : useOrderFailuresStore.getState().inbox
+    const result = useOrderFailuresStore.getState().archiveTapes[`box:${sourceBoxId}`]
     expect(inEnglish(result)).toContain('order')
   })
 
   it('ignores an older rejection after a remounted list submits the same numeric order', async () => {
-    await mountTapes(archived)
+    await mountTapes()
     const before = useTapesStore.getState().tapes
     const older = pendingWrite()
     await reorder(label)
     await act(async () => root.render(null))
     // An authoritative refresh restores the saved values while the view is away.
     useTapesStore.getState().setAll(before)
-    await act(async () => root.render(createElement(archived ? ArchiveOrganizer : TapeList)))
+    await act(async () => root.render(createElement(ArchiveOrganizer)))
     const newer = pendingWrite()
     await reorder(label)
     const latest = useTapesStore.getState().tapes
     await act(async () => older.reject(new Error('superseded remount order rejected')))
 
-    const list = archived ? 'archive:unboxed' : 'inbox'
-    expect(useOrderFailuresStore.getState().pending[list]?.active.size).toBe(1)
+    expect(useOrderFailuresStore.getState().pending['archive:unboxed']?.active.size).toBe(1)
 
     expect(useTapesStore.getState().tapes).toBe(latest)
-    const result = archived ? useOrderFailuresStore.getState().archiveTapes.unboxed : useOrderFailuresStore.getState().inbox
+    const result = useOrderFailuresStore.getState().archiveTapes.unboxed
     expect(result ?? null).toBeNull()
     await act(async () => newer.resolve())
     expect(useOrderFailuresStore.getState().pending).toEqual({})
   })
 
   it('keeps a newer reorder and its retained result when the older request rejects', async () => {
-    await mountTapes(archived)
+    await mountTapes()
     const older = pendingWrite()
     await reorder(label)
     const newer = pendingWrite()
     await reorder(label)
     const latest = useTapesStore.getState().tapes
     const retained = message('tapes.orderSaveFailed')
-    await act(async () => {
-      useOrderFailuresStore.getState().setInbox(retained)
-      useOrderFailuresStore.getState().setArchiveTapes('unboxed', retained)
-    })
+    await act(async () => useOrderFailuresStore.getState().setArchiveTapes('unboxed', retained))
     await act(async () => older.reject(new Error('older reorder rejected')))
 
     expect(useTapesStore.getState().tapes).toEqual(latest)
-    const result = archived ? useOrderFailuresStore.getState().archiveTapes.unboxed : useOrderFailuresStore.getState().inbox
+    const result = useOrderFailuresStore.getState().archiveTapes.unboxed
     expect(result).toEqual(retained)
     await act(async () => newer.resolve())
-    const cleared = archived ? useOrderFailuresStore.getState().archiveTapes.unboxed : useOrderFailuresStore.getState().inbox
+    const cleared = useOrderFailuresStore.getState().archiveTapes.unboxed
     expect(cleared ?? null).toBeNull()
   })
 
   it('keeps the authoritative tape objects received before successful settlement', async () => {
-    await mountTapes(archived)
+    await mountTapes()
     const pending = pendingWrite()
     await reorder(label)
     const confirmed = useTapesStore.getState().tapes.map((item) => ({ ...item, title: 'Main title', order: item.order - 10 }))
@@ -306,7 +311,7 @@ describe.each([
 // search box takes.
 describe('the archive search box', () => {
   it('takes the height the boxes clamp reserves for it', async () => {
-    await mountTapes(true)
+    await mountTapes()
     const search = document.querySelector<HTMLInputElement>('input')!
     expect(search.parentElement!.style.height).toBe(`${ARCHIVE_SEARCH_BOX_HEIGHT}px`)
   })

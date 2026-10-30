@@ -36,7 +36,8 @@ function tape(overrides: Partial<Tape> = {}): Tape {
     downloadedAtUtc: '2026-09-03T00:00:00.000Z',
     name: null,
     renamedAtUtc: null,
-    archivedAtUtc: null,
+    addedIndex: 0,
+    shelved: false,
     boxId: null,
     order: 0,
     pausedAtUtc: null,
@@ -80,7 +81,7 @@ describe('archive and placement settlement', () => {
     ipcInvoke.mockRejectedValueOnce(new Error('EACCES /private/tmp/TAPEBOX_ARCHIVE_SENTINEL'))
 
     archiveTape(original, 'tape')
-    expect(useTapesStore.getState().tapes[0]?.archivedAtUtc).not.toBeNull()
+    expect(useTapesStore.getState().tapes[0]?.shelved).toBe(true)
 
     await until(() => expect(useTapesStore.getState().tapes[0]).toEqual(original))
     expect(useFilterStore.getState().filter).toBe('inbox')
@@ -91,7 +92,7 @@ describe('archive and placement settlement', () => {
   })
 
   it('rolls a rejected box placement back without clearing another tape action result', async () => {
-    const original = tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z', boxId: null })
+    const original = tape({ shelved: true, boxId: null })
     useTapesStore.setState({ tapes: [original] })
     useTapeActionResultsStore.getState().setResult(original.id, 'reveal', message('detail.revealFailed'))
     ipcInvoke.mockRejectedValueOnce(new Error('hostile placement diagnostic'))
@@ -108,8 +109,8 @@ describe('archive and placement settlement', () => {
 
 describe.each([
   { action: 'archive' as const, original: () => tape({ order: 10 }), invoke: (original: Tape) => archiveTape(original, 'tape') },
-  { action: 'unarchive' as const, original: () => tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z', boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => unarchiveTape(original, 'tape') },
-  { action: 'placement' as const, original: () => tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z', boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => moveTapeToBox(original, 'BoxTarget1', 'tape') },
+  { action: 'unarchive' as const, original: () => tape({ shelved: true, boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => unarchiveTape(original, 'tape') },
+  { action: 'placement' as const, original: () => tape({ shelved: true, boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => moveTapeToBox(original, 'BoxTarget1', 'tape') },
 ])('$action rollback owns only its organization fields', ({ action, original: makeOriginal, invoke }) => {
   it('preserves metadata and renamed files received while persistence was pending', async () => {
     const original = makeOriginal()
@@ -133,14 +134,14 @@ describe.each([
 
     await until(() => expect(useTapesStore.getState().tapes[0]).toEqual({
       ...updated,
-      archivedAtUtc: original.archivedAtUtc,
+      shelved: original.shelved,
       boxId: original.boxId,
       order: original.order,
     }))
     expect(useTapeActionResultsStore.getState().byTape[original.id]?.[action]).toBeDefined()
     expect(useSelectionStore.getState().selectedId).toBe(original.id)
-    expect(useFilterStore.getState().filter).toBe(original.archivedAtUtc ? 'archived' : 'inbox')
-    if (original.archivedAtUtc) expect(useArchiveStore.getState().selectedBoxId).toBe(original.boxId)
+    expect(useFilterStore.getState().filter).toBe(original.shelved ? 'archived' : 'inbox')
+    if (original.shelved) expect(useArchiveStore.getState().selectedBoxId).toBe(original.boxId)
   })
 
   it('preserves a newer order while restoring the failed location', async () => {
@@ -175,7 +176,7 @@ describe('relocation supersession and authoritative updates', () => {
   })
 
   it('does not resurrect a tape removed while its placement was pending', async () => {
-    const original = tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z' })
+    const original = tape({ shelved: true })
     useTapesStore.getState().setAll([original])
     let reject!: (reason: Error) => void
     ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
@@ -188,7 +189,7 @@ describe('relocation supersession and authoritative updates', () => {
   })
 
   it('leaves the main update in place after placement succeeds', async () => {
-    const original = tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z' })
+    const original = tape({ shelved: true })
     useTapesStore.getState().setAll([original])
     let resolve!: () => void
     ipcInvoke.mockImplementationOnce(() => new Promise<void>((succeed) => { resolve = succeed }))
@@ -204,7 +205,7 @@ describe('relocation supersession and authoritative updates', () => {
   })
 
   it('ignores an older rejected placement after a newer placement was submitted', async () => {
-    const original = tape({ archivedAtUtc: '2026-09-03T00:00:00.000Z' })
+    const original = tape({ shelved: true })
     useTapesStore.getState().setAll([original])
     let rejectOlder!: (reason: Error) => void
     let resolveNewer!: () => void
@@ -226,9 +227,9 @@ describe('relocation supersession and authoritative updates', () => {
 
 describe('selection after an action settles', () => {
   it('moves to the neighbour only while the leaving tape is still the one selected', () => {
-    const leaving = tape({ id: 'Leaving001', order: 0 })
-    const next = tape({ id: 'Neighbour1', order: 1 })
-    const other = tape({ id: 'Elsewhere1', order: 2 })
+    const leaving = tape({ id: 'Leaving001', addedIndex: 0 })
+    const next = tape({ id: 'Neighbour1', addedIndex: 1 })
+    const other = tape({ id: 'Elsewhere1', addedIndex: 2 })
     useTapesStore.setState({ tapes: [leaving, next, other] })
     useSelectionStore.setState({ selectedId: leaving.id })
 
@@ -245,7 +246,7 @@ describe('selection after an action settles', () => {
 
   it('returns a tape whose archive failed to view only while it is still selected', async () => {
     const archived = tape({ id: 'Archived01' })
-    const other = tape({ id: 'Elsewhere2', order: 1 })
+    const other = tape({ id: 'Elsewhere2', addedIndex: 1 })
     useTapesStore.setState({ tapes: [archived, other] })
     useSelectionStore.setState({ selectedId: archived.id })
     let reject!: (error: Error) => void
@@ -254,7 +255,7 @@ describe('selection after an action settles', () => {
     archiveTape(archived, 'tape')
     useSelectionStore.getState().select(other.id)
     reject(new Error('archive failed'))
-    await until(() => expect(useTapesStore.getState().tapes.find((t) => t.id === archived.id)?.archivedAtUtc).toBeNull())
+    await until(() => expect(useTapesStore.getState().tapes.find((t) => t.id === archived.id)?.shelved).toBe(false))
     expect(useSelectionStore.getState().selectedId).toBe(other.id)
   })
 })

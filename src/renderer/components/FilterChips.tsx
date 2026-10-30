@@ -17,8 +17,8 @@ export function FilterChips() {
   const t = useI18n()
 
   const counts: Record<Filter, number> = {
-    inbox: tapes.filter((i) => !i.archivedAtUtc).length,
-    archived: tapes.filter((i) => !!i.archivedAtUtc).length,
+    inbox: tapes.filter((i) => !i.shelved).length,
+    archived: tapes.filter((i) => i.shelved).length,
   }
 
   // A single-choice filter selector, so a native radio group: one tab stop, the

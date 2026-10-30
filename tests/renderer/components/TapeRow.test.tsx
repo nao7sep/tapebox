@@ -24,11 +24,11 @@ afterEach(() => {
 
 const tape: Tape = {
   id: 'Literal001', sourceUrl: 'https://example.test/watch', state: 'downloaded',
-  addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
+  addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, sourceId: 'source', extractor: 'test',
   title: 'settings.title', uploader: null, durationSeconds: 61, chapterCount: 0,
   probedAtUtc: null, filename: 'Literal001.mp4', sidecarFilename: 'Literal001.json', thumbnailFilename: null,
   downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z', name: null, renamedAtUtc: null,
-  archivedAtUtc: null, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+  shelved: false, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
 
 describe('TapeRow', () => {

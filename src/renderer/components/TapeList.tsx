@@ -1,39 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DragEndEvent } from '@dnd-kit/react'
-import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
-import { useTapesStore } from '@renderer/store/tapes'
+import { ipcOn } from '@renderer/ipc/client'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
-import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
-import { ListboxDragProvider, planTapeListDrop } from '@renderer/lib/dnd'
-import { isInSameTapeList, moveArrayItem, rollbackOptimisticOrder, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
 import { useTapeListboxKeyboard } from '@renderer/lib/useTapeListboxKeyboard'
 import { TapeRow } from './TapeRow'
-import { SortableTape } from './SortableTape'
-import { presentFailure } from '@renderer/lib/presentFailure'
-import { InlineError } from './ui'
 import { useI18n } from '@renderer/i18n/I18nContext'
-import { message } from '@shared/i18n/translate'
 
 /**
- * The inbox: one continuous list in manual order. New tapes arrive at the top
- * and the list scrolls up to reveal them; any tape can be dragged before or after
- * any other. The order that backs the view, drag-reordering, keyboard navigation,
- * and removal all lives in lib/tapeOrder so they agree on which tape is next.
+ * The Inbox: one continuous list, newest added first, with no chosen order to
+ * drag. New tapes arrive at the top and the list scrolls up to reveal them. The
+ * order that backs the view, keyboard navigation and removal lives in
+ * lib/tapeOrder so they agree on which tape is next.
  */
 export function TapeList() {
   const selectedId = useSelectionStore((s) => s.selectedId)
   const filter = useFilterStore((s) => s.filter)
   const visible = useVisibleTapes()
-  const orderError = useOrderFailuresStore((s) => s.inbox)
-  const setOrderError = useOrderFailuresStore((s) => s.setInbox)
   const t = useI18n()
 
-  const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId, (id, offset) => {
-    const from = visible.findIndex((t) => t.id === id)
-    reorderTape(from, from + offset)
-  })
+  const kb = useTapeListboxKeyboard<HTMLUListElement>(visible, selectedId)
 
   // Scroll the newly-added tape into view. New tapes land at the top, so a top
   // sentinel + scrollIntoView('nearest') reveals them when the list is scrolled
@@ -44,7 +30,7 @@ export function TapeList() {
   useEffect(
     () =>
       ipcOn('tapes:added', (added) => {
-        if (added.some((t) => !t.archivedAtUtc)) setAddTick((n) => n + 1)
+        if (added.some((t) => !t.shelved)) setAddTick((n) => n + 1)
       }),
     [],
   )
@@ -52,46 +38,13 @@ export function TapeList() {
     if (addTick > 0) topRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [addTick])
 
-  function onDragEnd(event: DragEndEvent) {
-    const plan = planTapeListDrop(event)
-    if (plan) {
-      // Resolve the source by stable identity at commit time in case an IPC
-      // update changed the visible collection during the pointer session.
-      reorderTape(visible.findIndex((tape) => tape.id === plan.tapeId), plan.toIndex)
-    }
-  }
-
-  function reorderTape(from: number, to: number) {
-    if (from < 0 || to < 0 || to >= visible.length || from === to) return
-    const reordered = moveArrayItem(visible, from, to)
-    // Pointer and keyboard reorder share this one optimistic + durable operation.
-    const optimistic = reordered.map((t, i) => ({ ...t, order: i }))
-    const attempt = useOrderFailuresStore.getState().beginAttempt('inbox', visible)
-    useTapesStore.getState().upsertMany(optimistic)
-    settleOptimisticOrder(
-      ipcInvoke('tapes:reorder', { orderedIds: reordered.map((t) => t.id) }),
-      () => useOrderFailuresStore.getState().isCurrentAttempt('inbox', attempt),
-      () => useTapesStore.setState((state) => ({
-        tapes: rollbackOptimisticOrder(state.tapes, useOrderFailuresStore.getState().confirmedOrder('inbox'), optimistic, isInSameTapeList),
-      })),
-      () => setOrderError(null),
-      (error) => setOrderError(presentFailure(error, message('tapes.orderSaveFailed'), 'tape order save failed')),
-      (saved) => useOrderFailuresStore.getState().finishAttempt('inbox', attempt, saved ? optimistic : null),
-    )
-  }
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {orderError && (
-        <InlineError className="m-3 mb-0 shrink-0" onDismiss={() => setOrderError(null)} closeLabel={t.t('tapes.closeOrderResult')}>
-          {t.text(orderError)}
-        </InlineError>
-      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {visible.length === 0 ? (
           <div className="p-6 text-sm text-fg">{t.t(filter === 'archived' ? 'tapes.emptyArchived' : 'tapes.emptyInbox')}</div>
         ) : (
-          <ListboxDragProvider onDragEnd={onDragEnd}>
+          <>
             <div ref={topRef} />
             <ul
               ref={kb.ref}
@@ -100,17 +53,17 @@ export function TapeList() {
               aria-label={t.t('tapes.label')}
               className="space-y-1.5 p-3 outline-none"
             >
-              {visible.map((tape, index) => (
-                <SortableTape key={tape.id} id={tape.id} index={index}>
+              {visible.map((tape) => (
+                <li key={tape.id} role="presentation">
                   <TapeRow
                     tape={tape}
                     selected={tape.id === selectedId}
                     id={kb.optionId(tape.id)}
                   />
-                </SortableTape>
+                </li>
               ))}
             </ul>
-          </ListboxDragProvider>
+          </>
         )}
       </div>
     </div>

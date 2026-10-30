@@ -18,11 +18,11 @@ let host: HTMLDivElement
 
 const tape: Tape = {
   id: 'Refresh001', sourceUrl: 'https://example.test/watch', state: 'downloaded',
-  addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
+  addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, sourceId: 'source', extractor: 'test',
   title: 'Saved title', uploader: 'Uploader', durationSeconds: 61, chapterCount: 0,
   probedAtUtc: null, filename: 'Refresh001.mp4', sidecarFilename: 'Refresh001.json', thumbnailFilename: null,
   downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z', name: null, renamedAtUtc: null,
-  archivedAtUtc: null, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+  shelved: false, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
 
 const candidate: RefreshedMetadata = {

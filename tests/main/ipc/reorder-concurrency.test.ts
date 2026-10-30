@@ -1,13 +1,13 @@
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionSchema, type Tape } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 
 const state = vi.hoisted(() => ({
-  catalog: '', holdNext: false,
+  root: '', holdNext: false,
   started: () => {}, release: null as Promise<void> | null,
 }))
 const emit = vi.hoisted(() => vi.fn())
@@ -18,8 +18,7 @@ vi.mock('electron', () => ({
   } },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/paths', () => ({ paths: { get legacyCatalog() { return state.catalog + '.legacy' } }, collectionCatalog: () => state.catalog }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => join(state.catalog, '..'), getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
+vi.mock('@main/store/config', () => ({ getLibraryDir: () => state.root, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/ipc/events', () => ({ emit }))
@@ -46,7 +45,7 @@ import { registerLibraryHandlers } from '@main/ipc/library'
 import { registerBoxHandlers } from '@main/ipc/boxes'
 import * as session from '@main/store/session'
 
-const ARCHIVED = '2026-10-11T00:00:00.000Z'
+const SHELVED = '2026-10-11T00:00:00.000Z'
 const SOURCE = 'SourceBox1'
 const DEST = 'DestBox001'
 let root = ''
@@ -54,11 +53,11 @@ let releaseHeld: (() => void) | null = null
 
 function tape(id: string, order: number, boxId: string | null = SOURCE): Tape {
   return {
-    id, order, sourceUrl: `https://example.test/${id}`, state: 'downloaded', addedAtUtc: ARCHIVED,
+    id, order, sourceUrl: `https://example.test/${id}`, state: 'downloaded', addedAtUtc: SHELVED, addedIndex: 0,
     sourceId: null, extractor: null, title: id, uploader: null, durationSeconds: null, chapterCount: null,
     probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
-    downloadStartedAtUtc: null, downloadedAtUtc: ARCHIVED, name: null, renamedAtUtc: null,
-    archivedAtUtc: ARCHIVED, boxId, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+    downloadStartedAtUtc: null, downloadedAtUtc: SHELVED, name: null, renamedAtUtc: null,
+    shelved: true, boxId, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
 }
 
@@ -81,19 +80,21 @@ function holdNextWrite() {
 const invoke = (channel: string, req: unknown) => handlers.get(channel)!(req)
 const reorder = (ids: string[]) => invoke('tapes:reorder', { orderedIds: ids })
 const place = (id: string, boxId: string | null) => invoke('boxes:place', { tapeIds: [id], boxId })
-const listing = (boxId: string | null) => session.getTapes().filter((item) => item.archivedAtUtc && item.boxId === boxId).sort((a, b) => a.order - b.order).map(({ id, order }) => [id, order])
+const listing = (boxId: string | null) => session.getTapes().filter((item) => item.shelved && item.boxId === boxId).sort((a, b) => a.order - b.order).map(({ id, order }) => [id, order])
 const lastReorderRows = () => emit.mock.calls.filter(([channel]) => channel === 'tapes:updatedMany').at(-1)![1] as Tape[]
 
 async function expectCurrentSaved() {
   await expect(session.persistNow()).resolves.toBe(true)
-  const saved = SessionSchema.parse(JSON.parse(await readFile(state.catalog, 'utf8')))
-  expect(saved.tapes).toEqual(session.getTapes().map(session.durableTape))
-  expect(saved.boxes).toEqual(session.getBoxes())
+  const read = await session.readCollection(state.root)
+  if (read.kind !== 'current') throw new Error('expected the current layout')
+  const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id)
+  expect([...read.session.tapes].sort(byId)).toEqual(session.getTapes().map(session.durableTape).sort(byId))
+  expect(read.session.boxes).toEqual([...session.getBoxes()].sort((a, b) => a.order - b.order))
 }
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-reorder-concurrency-'))
-  state.catalog = join(root, 'catalog.json')
+  state.root = root
   state.holdNext = false
   state.release = null
   handlers.clear()
@@ -159,12 +160,12 @@ describe('reorders beside other library edits', () => {
     const pending = reorder([b.id, a.id])
     await gate.held
     try {
-      session.upsertTape({ ...session.getTape(a.id)!, title: 'new metadata', state: 'downloading', downloadStartedAtUtc: ARCHIVED })
+      session.upsertTape({ ...session.getTape(a.id)!, title: 'new metadata', state: 'downloading', downloadStartedAtUtc: SHELVED })
     } finally { gate.release() }
     await pending
 
     expect(listing(SOURCE)).toEqual([[b.id, 0], [a.id, 1]])
-    expect(session.getTape(a.id)).toMatchObject({ title: 'new metadata', state: 'downloading', downloadStartedAtUtc: ARCHIVED })
+    expect(session.getTape(a.id)).toMatchObject({ title: 'new metadata', state: 'downloading', downloadStartedAtUtc: SHELVED })
     await expectCurrentSaved()
   })
 

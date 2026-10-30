@@ -1,14 +1,15 @@
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionSchema, type Tape } from '@shared/domain'
+import { TAPE_FILE, type Tape } from '@shared/domain'
+import { compareInbox } from '@shared/order'
 import type { ImportResult } from '@shared/ipc-contract'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 
 const state = vi.hoisted(() => ({
-  libraryDir: '', catalog: '', heldCopy: '', heldCatalog: '',
+  libraryDir: '', heldCopy: '', heldCatalog: '',
   held: () => {}, release: null as Promise<void> | null,
 }))
 const handlers = new Map<string, (req: unknown) => Promise<unknown>>()
@@ -20,11 +21,6 @@ vi.mock('electron', () => ({
     },
   },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
-}))
-vi.mock('@main/paths', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@main/paths')>(),
-  paths: { get legacyCatalog() { return state.catalog + '.legacy' } },
-  collectionCatalog: () => state.catalog,
 }))
 vi.mock('@main/store/config', () => ({
   getLibraryDir: () => state.libraryDir,
@@ -52,7 +48,8 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
   return {
     ...actual,
     writeManagedJsonBytes: async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
-      if (args[0] === state.heldCatalog) {
+      // A tape's own file sits in a folder named by an id the test cannot know, so it is held by its file name.
+      if (state.heldCatalog !== '' && basename(args[0]) === state.heldCatalog) {
         state.heldCatalog = ''
         state.held()
         await state.release
@@ -98,9 +95,18 @@ async function importBundle(path: string): Promise<ImportResult> {
   return await handlers.get('library:import')!({ paths: [path] }) as ImportResult
 }
 
+const byId = (a: Tape, b: Tape) => a.id.localeCompare(b.id)
+
+/** The tapes as the collection on disk holds them, by id. */
 async function savedTapes(): Promise<Tape[]> {
-  const saved = JSON.parse(await readFile(state.catalog, 'utf8')) as unknown
-  return SessionSchema.parse(saved).tapes
+  const read = await session.readCollection(state.libraryDir)
+  if (read.kind !== 'current') throw new Error('expected a current collection')
+  return [...read.session.tapes].sort(byId)
+}
+
+/** The live tapes as they should be saved, by id. */
+function durableTapes(): Tape[] {
+  return session.getTapes().map(session.durableTape).sort(byId)
 }
 
 beforeEach(async () => {
@@ -108,13 +114,13 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-import-concurrency-'))
   sourceDir = join(root, 'source')
   state.libraryDir = join(root, 'library')
-  state.catalog = join(state.libraryDir, 'catalog.json')
   state.heldCopy = ''
   state.heldCatalog = ''
   state.release = null
   emit.mockClear()
   await mkdir(sourceDir)
-  await mkdir(state.libraryDir)
+  // A collection that already holds Inbox tapes has its inbox/ folder.
+  await mkdir(join(state.libraryDir, 'inbox'), { recursive: true })
   await session.loadSession()
   registerLibraryHandlers()
 })
@@ -125,7 +131,7 @@ afterEach(async () => {
 })
 
 describe('bundle import beside catalog changes', () => {
-  it('publishes a batch in selection order ahead of URLs added during its copy waits', async () => {
+  it('keeps a batch in selection order while a URL added during its copy waits sorts by its own time', async () => {
     const firstPath = await stageBundle(sourceDir, 'first', 'https://example.test/first')
     const secondPath = await stageBundle(sourceDir, 'second', 'https://example.test/second')
     const gate = hold('heldCopy', 'second.mp4')
@@ -136,37 +142,38 @@ describe('bundle import beside catalog changes', () => {
       // The first batch row has been admitted while the second is still copying.
       const [first] = session.getTapes()
       expect(first?.name).toBe('first')
-      // A URL added meanwhile goes on top of the inbox.
+      // A URL added meanwhile is added now, after the bundles' own times.
       session.upsertTape({ ...first!, id: added, sourceUrl: 'https://example.test/added', state: 'queued', name: 'concurrent',
-        filename: null, sidecarFilename: null, thumbnailFilename: null, order: first!.order - 1 })
+        filename: null, sidecarFilename: null, thumbnailFilename: null, addedAtUtc: '2026-02-01T00:00:00.000Z', addedIndex: 0 })
     } finally { gate.release() }
     const result = await batch as ImportResult
     expect(result.imported.map((tape) => tape.name)).toEqual(['first', 'second'])
-    const inbox = session.getTapes().filter((tape) => !tape.archivedAtUtc).sort((a, b) => a.order - b.order)
-    expect(inbox.map((tape) => tape.name)).toEqual(['first', 'second', 'concurrent'])
-    expect(new Set(inbox.map((tape) => tape.order)).size).toBe(inbox.length)
-    expect(inbox.at(-1)?.id).toBe(added)
+    expect(result.imported.map((tape) => tape.addedIndex)).toEqual([0, 1])
+    const inbox = session.getTapes().filter((tape) => !tape.shelved).sort(compareInbox)
+    expect(inbox.map((tape) => tape.name)).toEqual(['concurrent', 'first', 'second'])
+    expect(inbox[0]?.id).toBe(added)
     const batchAnnouncement = emit.mock.calls.filter(([channel]) => channel === 'tapes:added').at(-1)![1] as Tape[]
-    expect(batchAnnouncement).toEqual(inbox.slice(0, 2))
-    expect(await savedTapes()).toEqual(session.getTapes())
+    expect(batchAnnouncement).toEqual(inbox.slice(1))
+    await session.persistNow()
+    expect(await savedTapes()).toEqual(durableTapes())
   })
 
-  it('announces the current rows after organization changes during the catalog save', async () => {
+  it('announces the current rows after changes made during the collection save', async () => {
     const path = await stageBundle(sourceDir, 'pending', 'https://example.test/pending')
-    const gate = hold('heldCatalog', state.catalog)
+    const gate = hold('heldCatalog', TAPE_FILE)
     const importing = importBundle(path)
     try {
       await gate.started
       const listed = session.getTapes()
       expect(listed).toHaveLength(1)
-      session.upsertTape({ ...listed[0]!, archivedAtUtc: '2026-01-02T00:00:00.000Z', order: -12 })
+      session.upsertTape({ ...listed[0]!, title: 'Retitled' })
     } finally { gate.release() }
     const result = await importing
 
     expect(result.imported).toHaveLength(1)
     expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:added', session.getTapes())
-    expect(session.getTapes()[0]).toMatchObject({ archivedAtUtc: '2026-01-02T00:00:00.000Z', order: -12 })
+    expect(session.getTapes()[0]).toMatchObject({ title: 'Retitled' })
     await session.persistNow()
-    expect(await savedTapes()).toEqual(session.getTapes())
+    expect(await savedTapes()).toEqual(durableTapes())
   })
 })

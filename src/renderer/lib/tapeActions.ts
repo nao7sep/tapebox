@@ -1,5 +1,4 @@
 import type { Tape } from '@shared/domain'
-import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { visibleTapes } from '@renderer/lib/tapeOrder'
@@ -90,9 +89,10 @@ export function revealTape(tapeId: string, dest: { archived: boolean; boxId: str
  *  tape at the top at once — matching where the IPC re-emit will file it — instead of
  *  briefly showing it at its old position before the authoritative order arrives. */
 function frontOrderFor(dest: { archived: boolean; boxId: string | null }, excludeId: string): number {
+  // The Inbox has no chosen order; it shows the tape by when it was added.
+  if (!dest.archived) return 0
   const members = useTapesStore.getState().tapes.filter((t) =>
-    t.id !== excludeId &&
-    (dest.archived ? !!t.archivedAtUtc && t.boxId === dest.boxId : !t.archivedAtUtc),
+    t.id !== excludeId && t.shelved && t.boxId === dest.boxId,
   )
   return frontOrders(members.map((t) => t.order), 1)[0]
 }
@@ -101,7 +101,7 @@ function frontOrderFor(dest: { archived: boolean; boxId: string | null }, exclud
  *  then apply the chosen selection policy. */
 function relocate(
   tape: Tape,
-  patch: Partial<Pick<Tape, 'archivedAtUtc' | 'boxId'>>,
+  patch: Partial<Pick<Tape, 'shelved' | 'boxId'>>,
   dest: { archived: boolean; boxId: string | null },
   keep: Keep,
   action: TapeAction,
@@ -122,24 +122,24 @@ function relocate(
     if (outcome !== 'failed') return
     const current = useTapesStore.getState().tapes.find((candidate) => candidate.id === tape.id)
     if (!current) return
-    if (current.archivedAtUtc !== optimistic.archivedAtUtc || current.boxId !== optimistic.boxId) return
+    if (current.shelved !== optimistic.shelved || current.boxId !== optimistic.boxId) return
     // Membership is one destination invariant. Once it has changed, a newer
     // relocation owns it; otherwise restore only this submitted patch, keeping
     // live metadata and an order changed after this move.
     useTapesStore.getState().upsert(rollbackOptimisticFields(current, tape, optimisticPatch))
     // Back where it was, but only while it is still the tape the user is on.
     if (keep === 'tape' && useSelectionStore.getState().selectedId === tape.id) {
-      revealTape(tape.id, { archived: !!tape.archivedAtUtc, boxId: tape.boxId })
+      revealTape(tape.id, { archived: tape.shelved, boxId: tape.boxId })
     }
   })
 }
 
 /** Archive a downloaded tape — it goes to the top of Unboxed. No-op otherwise. */
 export function archiveTape(tape: Tape, keep: Keep): void {
-  if (tape.state !== 'downloaded' || tape.archivedAtUtc) return
+  if (tape.state !== 'downloaded' || tape.shelved) return
   relocate(
     tape,
-    { archivedAtUtc: nowUtcIso(), boxId: null },
+    { shelved: true, boxId: null },
     { archived: true, boxId: null },
     keep,
     'archive',
@@ -151,10 +151,10 @@ export function archiveTape(tape: Tape, keep: Keep): void {
 
 /** Unarchive a tape — it returns to the top of the inbox. No-op if not archived. */
 export function unarchiveTape(tape: Tape, keep: Keep): void {
-  if (!tape.archivedAtUtc) return
+  if (!tape.shelved) return
   relocate(
     tape,
-    { archivedAtUtc: null, boxId: null },
+    { shelved: false, boxId: null },
     { archived: false, boxId: null },
     keep,
     'unarchive',
@@ -167,7 +167,7 @@ export function unarchiveTape(tape: Tape, keep: Keep): void {
 /** File an archived tape into a box (null = Unboxed). No-op if not archived or
  *  already there. */
 export function moveTapeToBox(tape: Tape, boxId: string | null, keep: Keep): void {
-  if (!tape.archivedAtUtc || boxId === tape.boxId) return
+  if (!tape.shelved || boxId === tape.boxId) return
   relocate(
     tape,
     { boxId },

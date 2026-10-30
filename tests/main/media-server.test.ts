@@ -25,6 +25,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => mocks.libraryDir }))
+// The server finds a tape's folder from the tape itself; this one is on the Shelf.
+vi.mock('@main/store/session', () => ({
+  getTape: (id: string) => id === 'Tape000001' ? { id, shelved: true } : undefined,
+}))
 vi.mock('@main/io/logger', () => ({ log: mocks.log }))
 vi.mock('node:http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:http')>()
@@ -64,18 +68,20 @@ const BODY = 'abcdefghij'
 let base: string
 // Every file sits in one tape's folder; a request names the tape and the file.
 const TAPE = 'Tape000001'
+let folder: string
 
 beforeAll(async () => {
   mocks.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-media-server-'))
-  await mkdir(join(mocks.libraryDir, TAPE))
-  await writeFile(join(mocks.libraryDir, TAPE, 'tape.mp4'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, TAPE, 'poster.jpg'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, TAPE, 'notes.txt'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, TAPE, 'audio.wav'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, TAPE, 'audio.flac'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, TAPE, 'active.html'), '<script>1</script>', 'utf8')
-  await writeFile(join(mocks.libraryDir, TAPE, 'empty.mp4'), '', 'utf8')
-  await mkdir(join(mocks.libraryDir, TAPE, 'folder.mp4'), { recursive: true })
+  folder = join(mocks.libraryDir, 'shelf', TAPE)
+  await mkdir(folder, { recursive: true })
+  await writeFile(join(folder, 'tape.mp4'), BODY, 'utf8')
+  await writeFile(join(folder, 'poster.jpg'), BODY, 'utf8')
+  await writeFile(join(folder, 'notes.txt'), BODY, 'utf8')
+  await writeFile(join(folder, 'audio.wav'), BODY, 'utf8')
+  await writeFile(join(folder, 'audio.flac'), BODY, 'utf8')
+  await writeFile(join(folder, 'active.html'), '<script>1</script>', 'utf8')
+  await writeFile(join(folder, 'empty.mp4'), '', 'utf8')
+  await mkdir(join(folder, 'folder.mp4'), { recursive: true })
 })
 
 afterEach(() => {
@@ -177,7 +183,7 @@ describe('serving a library file', () => {
   it('answers a HEAD from the file facts alone, without opening it', async () => {
     // Marked unreadable: if the handler opened the file for a HEAD, the read
     // error would be logged even though Node discards the body either way.
-    mocks.unreadable.add(join(mocks.libraryDir, TAPE, 'tape.mp4'))
+    mocks.unreadable.add(join(folder, 'tape.mp4'))
 
     const response = await get('tape.mp4', { method: 'HEAD' })
 
@@ -197,7 +203,7 @@ describe('serving a library file', () => {
   })
 
   it('finds a file whose name needed encoding', async () => {
-    await writeFile(join(mocks.libraryDir, TAPE, 'holiday #2 (best).mp4'), BODY, 'utf8')
+    await writeFile(join(folder, 'holiday #2 (best).mp4'), BODY, 'utf8')
 
     const response = await get(encodeURIComponent('holiday #2 (best).mp4'))
 
@@ -288,6 +294,14 @@ describe('what the server refuses', () => {
     expect((await get(name)).status).toBe(status)
   })
 
+  it('refuses a tape the collection does not hold, even with a folder of its own', async () => {
+    await mkdir(join(mocks.libraryDir, 'inbox', 'Unknown001'), { recursive: true })
+    await writeFile(join(mocks.libraryDir, 'inbox', 'Unknown001', 'tape.mp4'), BODY, 'utf8')
+
+    // Refused as any request that names no file of the collection is.
+    expect((await fetch(`${base}/Unknown001/tape.mp4`)).status).toBe(403)
+  })
+
   it('answers 500 for a URL it cannot decode', async () => {
     const response = await get('%E0%A4%A')
 
@@ -296,7 +310,7 @@ describe('what the server refuses', () => {
   })
 
   it('tears the response down and logs when the file cannot be read', async () => {
-    mocks.unreadable.add(join(mocks.libraryDir, TAPE, 'tape.mp4'))
+    mocks.unreadable.add(join(folder, 'tape.mp4'))
 
     await expect(get('tape.mp4').then((response) => response.text())).rejects.toThrow()
     expect(mocks.log.error).toHaveBeenCalledWith(

@@ -110,22 +110,33 @@ export const paths = {
   get records()       { return join(storageRoot(), 'records.sqlite3') },
 }
 
-// The library holds its catalog beside one folder per tape. Tape ids use
-// nanoid's alphabet, which has no dot, so no tape folder can take this name.
-export const COLLECTION_CATALOG = 'catalog.json'
-export function collectionCatalog(libraryDir: string): string {
-  return join(libraryDir, COLLECTION_CATALOG)
+// The collection holds an Inbox and a Shelf, each a folder of tape folders,
+// and shelf.json beside them. Tape ids use nanoid's alphabet, which has no dot,
+// and are ten characters long, so no tape folder can take these names.
+export const INBOX_FOLDER = 'inbox'
+export const SHELF_FOLDER = 'shelf'
+export const SHELF_FILE = 'shelf.json'
+/** The catalog of the layout before Inbox and Shelf, converted when found
+ *  (store/collection-convert.ts). */
+export const LEGACY_CATALOG = 'catalog.json'
+export function shelfFile(collectionDir: string): string {
+  return join(collectionDir, SHELF_FILE)
 }
 
-/** A tape's own folder: its media, sidecar and poster, and the download's and
- *  poster fetch's scratch while they exist. */
-export function tapeDir(libraryDir: string, tapeId: string): string {
-  return join(libraryDir, tapeId)
+/** The folder of tape folders a tape sits in. */
+export function areaDir(collectionDir: string, shelved: boolean): string {
+  return join(collectionDir, shelved ? SHELF_FOLDER : INBOX_FOLDER)
 }
 
-/** One of a tape's files, by the name the catalog gives it. */
-export function tapeFile(libraryDir: string, tapeId: string, name: string): string {
-  return join(libraryDir, tapeId, name)
+/** A tape's own folder: its tape.json, media, sidecar and poster, and the
+ *  download's and poster fetch's scratch while they exist. */
+export function tapeDir(collectionDir: string, tape: { id: string; shelved: boolean }): string {
+  return join(areaDir(collectionDir, tape.shelved), tape.id)
+}
+
+/** One of a tape's files, by the name its tape.json gives it. */
+export function tapeFile(collectionDir: string, tape: { id: string; shelved: boolean }, name: string): string {
+  return join(tapeDir(collectionDir, tape), name)
 }
 
 export function binaryPath(name: BinaryName, platform: NodeJS.Platform = process.platform): string {

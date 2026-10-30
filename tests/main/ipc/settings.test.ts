@@ -63,7 +63,11 @@ vi.mock('@main/store/library-move', () => ({
   rollbackLibraryRelocation,
 }))
 
-vi.mock('@main/store/session', () => ({ getTapes: vi.fn(() => []), prepareCollection: vi.fn(async () => {}), bindMovedSession: vi.fn(async () => true), persistNow: vi.fn(async () => true), bindSession: vi.fn(), loadSessionFile: vi.fn() }))
+vi.mock('@main/store/session', () => ({
+  getTapes: vi.fn(() => []), collectionStoreFiles: vi.fn(() => ['shelf.json']), copyStoreFileTo: vi.fn(),
+  prepareCollection: vi.fn(async () => {}), bindMovedSession: vi.fn(async () => true), persistNow: vi.fn(async () => true),
+  bindSession: vi.fn(), openCollection: vi.fn(),
+}))
 vi.mock('@main/services/api-keys', () => ({
   writeApiKey: vi.fn(),
   clearApiKey: vi.fn(),
@@ -257,7 +261,7 @@ describe('settings:update — relocation at its library turn', () => {
 
     await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('The operation could not be completed.')
 
-    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', ['catalog.json'], expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', ['shelf.json'], expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(rollbackLibraryRelocation).toHaveBeenCalledWith(files)
     expect(completeLibraryRelocation).not.toHaveBeenCalled()
   })

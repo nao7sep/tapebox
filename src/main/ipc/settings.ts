@@ -5,7 +5,8 @@ import { normalizeUserDir } from '@main/core/user-directory'
 import * as apiKeys from '@main/services/api-keys'
 import * as queue from '@main/queue/manager'
 import * as session from '@main/store/session'
-import { paths, collectionCatalog, COLLECTION_CATALOG } from '@main/paths'
+import { INBOX_FOLDER, paths, SHELF_FOLDER } from '@main/paths'
+import { notifyDamagedTapes } from '@main/startup-dialog'
 import { reconcileWakeLock } from '@main/power-blocker'
 import { applyThemePreference, systemAppearance } from '@main/theme'
 import { applyLanguagePreference } from '@main/i18n'
@@ -27,15 +28,16 @@ import type { IpcCalls } from '@shared/ipc-contract'
 import { message } from '@shared/i18n/translate'
 
 /**
- * The library-relative files the app tracks: the catalog, and each tape's
- * media, sidecar and optional thumbnail in its own folder. Relocation never
- * adopts unrelated files the user dropped in the folder.
+ * The collection-relative files the app tracks: shelf.json, and each tape's
+ * tape.json, media, sidecar and optional thumbnail in its own folder under
+ * inbox/ or shelf/. Relocation never adopts unrelated files the user dropped in
+ * the folder.
  */
 function trackedLibraryFiles(): string[] {
-  const names = [COLLECTION_CATALOG]
+  const names = session.collectionStoreFiles()
   for (const tape of session.getTapes()) {
     for (const name of [tape.filename, tape.sidecarFilename, tape.thumbnailFilename]) {
-      if (name) names.push(join(tape.id, name))
+      if (name) names.push(join(tape.shelved ? SHELF_FOLDER : INBOX_FOLDER, tape.id, name))
     }
   }
   return names
@@ -87,13 +89,14 @@ async function relocateIfLibraryDirChanged(
   await session.prepareCollection()
   signal.throwIfAborted()
   const entries = trackedLibraryFiles()
+  const storeFiles = new Set(session.collectionStoreFiles())
   log.info('relocating library', { from: fromDir, to: toDir, files: entries.length })
   const result = await relocateLibrary(fromDir, toDir, entries, {
     signal,
     onProgress: (progress) => emit('settings:libraryMoveProgress', progress),
-    // The catalog's owner copies it, so no catalog save can land mid-copy.
-    publish: (name, source, destination, signal) => name === COLLECTION_CATALOG
-      ? session.copyCatalogTo(destination, signal)
+    // The library store copies its own files, so no save can land mid-copy.
+    publish: (name, source, destination, signal) => storeFiles.has(name)
+      ? session.copyStoreFileTo(name, destination, signal)
       : linkOrCopyNoOverwrite(source, destination, signal),
   })
   if (result.moved) {
@@ -184,10 +187,12 @@ async function applySettingsPatch(
   const switching = movesLibrary(normalized)
   const toDir = effectiveLibraryDir(normalized.libraryDir ?? config.getSettings().libraryDir)
   const opening = switching && libraryAction === 'open'
-  // Inspect an explicitly opened collection without quarantine or writes. It is
-  // never a destination for the current collection's media or organization.
+  // Inspect an explicitly opened collection without quarantine. It is never a
+  // destination for the current collection's media or organization. One in the
+  // layout before Inbox and Shelf is converted now, before anything commits; a
+  // conversion stopped partway runs again the next time it is opened.
   const opened = opening
-    ? await session.loadSessionFile(collectionCatalog(toDir), { requireExisting: true }).catch((cause: unknown) => {
+    ? await session.openCollection(toDir, { requireExisting: true }).catch((cause: unknown) => {
       throw new UserFacingError('refused', message('errors.libraryOpenFailed', { path: toDir }), { cause })
     })
     : null
@@ -219,8 +224,9 @@ async function applySettingsPatch(
     // Changes made to the current collection while it was being opened reach
     // its own catalog before the opened one replaces it.
     await session.persistNow()
-    session.bindSession(collectionCatalog(toDir), opened.session)
+    session.bindSession(toDir, opened)
     emit('library:opened', opened.session)
+    if (opened.damaged.length > 0) void notifyDamagedTapes(opened.damaged.map((tape) => tape.path))
   } else if (relocation) {
     await session.bindMovedSession(toDir)
   }

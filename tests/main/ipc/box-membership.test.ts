@@ -42,12 +42,12 @@ const { registerBoxHandlers } = await import('@main/ipc/boxes')
 function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
   return {
     sourceUrl: 'https://example.test/watch', state: 'downloaded',
-    addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
+    addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, sourceId: 'source', extractor: 'test',
     title: 'Title', uploader: 'Uploader', durationSeconds: 1, chapterCount: 0,
     probedAtUtc: '2026-01-01T00:00:00.000Z', filename: 'Take.mp4',
     sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg',
     downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
-    name: 'Take', renamedAtUtc: null, archivedAtUtc: '2026-01-02T00:00:00.000Z',
+    name: 'Take', renamedAtUtc: null, shelved: true,
     boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...overrides,
   }
@@ -62,7 +62,7 @@ function invoke<T>(channel: string, req?: unknown): Promise<T> {
 /** The tapes the session holds, top of the list first, as `id@order`. */
 function listing(boxId: string | null): string[] {
   return state.tapes
-    .filter((tape) => tape.archivedAtUtc !== null && tape.boxId === boxId)
+    .filter((tape) => tape.shelved && tape.boxId === boxId)
     .sort((a, b) => a.order - b.order)
     .map((tape) => `${tape.id}@${tape.order}`)
 }
@@ -106,7 +106,7 @@ describe('deleting a box', () => {
 
   it('leaves inbox tapes out of the reshuffle, though they too have no box', async () => {
     state.tapes = [
-      makeTape({ id: 'in-the-inbox', archivedAtUtc: null, boxId: null, order: 0 }),
+      makeTape({ id: 'in-the-inbox', shelved: false, boxId: null, order: 0 }),
       makeTape({ id: 'summer-only', boxId: 'box-summer', order: 3 }),
     ]
 
@@ -114,7 +114,7 @@ describe('deleting a box', () => {
 
     // The inbox tape's order is not consulted, so the orphan block starts at 0.
     expect(listing(null)).toEqual(['summer-only@0'])
-    expect(state.tapes.find((tape) => tape.id === 'in-the-inbox')).toMatchObject({ order: 0, archivedAtUtc: null })
+    expect(state.tapes.find((tape) => tape.id === 'in-the-inbox')).toMatchObject({ order: 0, shelved: false })
   })
 
   it('announces the box is gone but touches no tape when the box held none', async () => {
@@ -164,7 +164,7 @@ describe('filing tapes into a box', () => {
 
   it('files tapes back into Unboxed without disturbing the inbox', async () => {
     state.tapes = [
-      makeTape({ id: 'in-the-inbox', archivedAtUtc: null, boxId: null, order: 0 }),
+      makeTape({ id: 'in-the-inbox', shelved: false, boxId: null, order: 0 }),
       makeTape({ id: 'unboxed-old', boxId: null, order: 0 }),
       makeTape({ id: 'summer-tape', boxId: 'box-summer', order: 0 }),
     ]
@@ -197,9 +197,9 @@ describe('filing tapes into a box', () => {
     expect(emitted('tapes:updatedMany')).toEqual([])
   })
 
-  it('ignores tapes restored to the inbox after the caller selected archived tapes', async () => {
+  it('ignores tapes restored to the inbox after the caller selected shelved tapes', async () => {
     state.tapes = [
-      makeTape({ id: 'restored', archivedAtUtc: null, boxId: null, order: -4 }),
+      makeTape({ id: 'restored', shelved: false, boxId: null, order: -4 }),
       makeTape({ id: 'still-archived', boxId: null, order: 2 }),
       makeTape({ id: 'summer-member', boxId: 'box-summer', order: 0 }),
     ]

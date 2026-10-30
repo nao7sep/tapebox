@@ -106,7 +106,7 @@ describe('record: BLOB fidelity, hash, size, path, and timestamp shape', () => {
     // A UTF-8 BOM, a CR/LF pair, and a lone 0xFF (invalid UTF-8) — reading this as a string then storing
     // it would normalize the CR/LF, alter the BOM, or corrupt the 0xFF. The BLOB must be verbatim.
     const bytes = Buffer.from([0xef, 0xbb, 0xbf, 0x61, 0x0d, 0x0a, 0x62, 0xff, 0x00, 0x63])
-    const file = path.join(root, 'catalog.json')
+    const file = path.join(root, 'shelf.json')
 
     record(file, bytes)
     await flushBackupStore()
@@ -137,7 +137,7 @@ describe('record: BLOB fidelity, hash, size, path, and timestamp shape', () => {
 describe('one row per file per launch', () => {
   it('keeps the newest save of a launch in that launch\'s one row', async () => {
     const { record, flushBackupStore } = await import('@main/store/backupStore')
-    const file = path.join(root, 'catalog.json')
+    const file = path.join(root, 'shelf.json')
     record(file, Buffer.from('alpha', 'utf8'))
     record(file, Buffer.from('alpha', 'utf8'))
     record(file, Buffer.from('beta', 'utf8'))
@@ -149,7 +149,7 @@ describe('one row per file per launch', () => {
   })
 
   it('adds a row in a later launch unless its first save repeats the newest one kept', async () => {
-    const file = path.join(root, 'catalog.json')
+    const file = path.join(root, 'shelf.json')
     const first = await import('@main/store/backupStore')
     first.record(file, Buffer.from('A', 'utf8'))
     await first.flushBackupStore()
@@ -173,7 +173,7 @@ describe('one row per file per launch', () => {
     const { record, flushBackupStore } = await import('@main/store/backupStore')
     const same = Buffer.from('shared', 'utf8')
     const p1 = path.join(root, 'config.json')
-    const p2 = path.join(root, 'catalog.json')
+    const p2 = path.join(root, 'shelf.json')
     record(p1, same)
     record(p2, same)
     record(p1, same)
@@ -189,7 +189,7 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
     // First record a good row through the real binding so there is prior history to prove is untouched.
     {
       const { record, closeBackupStore } = await import('@main/store/backupStore')
-      record(path.join(root, 'catalog.json'), Buffer.from('good', 'utf8'))
+      record(path.join(root, 'shelf.json'), Buffer.from('good', 'utf8'))
       await closeBackupStore()
     }
     expect(readRows(root)).toHaveLength(1)
@@ -205,13 +205,13 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
 
     const { record, flushBackupStore } = await import('@main/store/backupStore')
     // A later launch and DIFFERENT content, so the save needs a new row and the insert is attempted.
-    expect(() => record(path.join(root, 'catalog.json'), Buffer.from('changed', 'utf8'))).not.toThrow()
+    expect(() => record(path.join(root, 'shelf.json'), Buffer.from('changed', 'utf8'))).not.toThrow()
     await flushBackupStore()
 
     // Exactly one warn, naming the file and carrying a reason; no error line.
     expect(logCalls.warn).toHaveLength(1)
     expect(logCalls.warn[0]!.message).toMatch(/failed to record/i)
-    expect(logCalls.warn[0]!.fields?.file).toBe(path.join(root, 'catalog.json'))
+    expect(logCalls.warn[0]!.fields?.file).toBe(path.join(root, 'shelf.json'))
     expect(logCalls.warn[0]!.fields?.error).toBeDefined()
     expect(logCalls.error).toHaveLength(0)
 
@@ -231,8 +231,8 @@ describe('best-effort: a record failure never throws, logs one warn, and does no
     process.env.TAPEBOX_DATA_DIR = path.join(blocker, 'nested') // parent is a file -> mkdir/open fails
 
     const { record, flushBackupStore } = await import('@main/store/backupStore')
-    expect(() => record('/whatever/catalog.json', Buffer.from('a', 'utf8'))).not.toThrow()
-    expect(() => record('/whatever/catalog.json', Buffer.from('b', 'utf8'))).not.toThrow()
+    expect(() => record('/whatever/shelf.json', Buffer.from('a', 'utf8'))).not.toThrow()
+    expect(() => record('/whatever/shelf.json', Buffer.from('b', 'utf8'))).not.toThrow()
     await flushBackupStore()
 
     // Exactly one warn total (the open failure), not one per record — disabled for the session.
@@ -373,10 +373,10 @@ describe('format version (store-recovery-conventions)', () => {
 
 
 describe('manual recovery from captured managed bytes', () => {
-  it('restores saved config and catalog rows into a clean root through the production readers', async () => {
+  it('restores saved config and collection rows into a clean root through the production readers', async () => {
     const config = await import('@main/store/config')
     const session = await import('@main/store/session')
-    const { paths, collectionCatalog } = await import('@main/paths')
+    const { paths, shelfFile, tapeFile } = await import('@main/paths')
     const backup = await import('@main/store/backupStore')
     await mkdir(paths.library, { recursive: true })
     await config.loadSettings()
@@ -386,7 +386,7 @@ describe('manual recovery from captured managed bytes', () => {
     }
     await config.updateSettings({ keepAwakeWhilePlaying: false, maxConcurrentDownloads: 4, siteProfiles: [profile] })
     await session.loadSession()
-    const box = { id: 'restorebox', name: 'Saved collection', order: 2 }
+    const box = { id: 'restorebox', name: 'Saved collection', order: 0 }
     const { tapeFromSidecar } = await import('@main/core/import-classify')
     const tape = {
       ...tapeFromSidecar({
@@ -394,22 +394,24 @@ describe('manual recovery from captured managed bytes', () => {
         tapebox: { downloadedAtUtc: '2026-10-22T12:00:00.000Z', name: 'recovered-tape' },
       }, {
         id: 'Recover001', sourceUrl: 'https://example.test/imported', mediaFilename: 'recovered-tape.mp4',
-        sidecarFilename: 'recovered-tape.json', thumbnailFilename: null, order: 7, nowUtc: '2026-10-23T00:00:00.000Z',
+        sidecarFilename: 'recovered-tape.json', thumbnailFilename: null, addedIndex: 0, nowUtc: '2026-10-23T00:00:00.000Z',
       }),
-      archivedAtUtc: '2026-10-23T00:00:00.000Z', boxId: box.id,
+      shelved: true, boxId: box.id, order: 0,
     }
     session.upsertBox(box)
     session.upsertTape(tape)
     expect(await session.persistNow()).toBe(true)
     await backup.flushBackupStore()
     const rows = readRows(root)
-    // The launch's initial empty catalog has been replaced by its final snapshot.
-    expect(rows).toHaveLength(2)
+    // The launch's initial empty shelf.json has been replaced by its final snapshot.
+    expect(rows).toHaveLength(3)
     const configRow = rows.find((row) => row.path === paths.config)!
-    const catalogRow = rows.find((row) => row.path === collectionCatalog(paths.library))!
+    const shelfRow = rows.find((row) => row.path === shelfFile(paths.library))!
+    const tapeRow = rows.find((row) => row.path === tapeFile(paths.library, tape, 'tape.json'))!
     expect(Buffer.from(configRow.content)).toEqual(readFileSync(paths.config))
     expect(Buffer.from(configRow.content).toString('utf8')).toContain('synthetic-recovery-secret')
-    expect(Buffer.from(catalogRow.content)).toEqual(readFileSync(collectionCatalog(paths.library)))
+    expect(Buffer.from(shelfRow.content)).toEqual(readFileSync(shelfFile(paths.library)))
+    expect(Buffer.from(tapeRow.content)).toEqual(readFileSync(tapeFile(paths.library, tape, 'tape.json')))
     await backup.closeBackupStore()
 
     const recoveredRoot = mkdtempSync(path.join(tmpdir(), 'tapebox-recovered-'))
@@ -417,9 +419,12 @@ describe('manual recovery from captured managed bytes', () => {
       process.env.TAPEBOX_DATA_DIR = recoveredRoot
       vi.resetModules()
       const recoveredPaths = await import('@main/paths')
-      await mkdir(path.dirname(recoveredPaths.collectionCatalog(recoveredPaths.paths.library)), { recursive: true })
+      const recoveredShelf = recoveredPaths.shelfFile(recoveredPaths.paths.library)
+      const recoveredTape = recoveredPaths.tapeFile(recoveredPaths.paths.library, tape, 'tape.json')
+      await mkdir(path.dirname(recoveredTape), { recursive: true })
       await writeFile(recoveredPaths.paths.config, configRow.content)
-      await writeFile(recoveredPaths.collectionCatalog(recoveredPaths.paths.library), catalogRow.content)
+      await writeFile(recoveredShelf, shelfRow.content)
+      await writeFile(recoveredTape, tapeRow.content)
       const recoveredConfig = await import('@main/store/config')
       const recoveredSession = await import('@main/store/session')
       await expect(recoveredConfig.loadSettings()).resolves.toEqual({ status: 'loaded', settingsKept: false })
@@ -429,10 +434,11 @@ describe('manual recovery from captured managed bytes', () => {
       expect(recoveredSession.getBoxes()).toEqual([box])
       expect(recoveredSession.getTape(tape.id)).toEqual(tape)
       expect(recoveredSession.getTapes().map(({ id, boxId, order }) => ({ id, boxId, order }))).toEqual([
-        { id: tape.id, boxId: box.id, order: 7 },
+        { id: tape.id, boxId: box.id, order: 0 },
       ])
       expect(readFileSync(recoveredPaths.paths.config)).toEqual(Buffer.from(configRow.content))
-      expect(readFileSync(recoveredPaths.collectionCatalog(recoveredPaths.paths.library))).toEqual(Buffer.from(catalogRow.content))
+      expect(readFileSync(recoveredShelf)).toEqual(Buffer.from(shelfRow.content))
+      expect(readFileSync(recoveredTape)).toEqual(Buffer.from(tapeRow.content))
     } finally {
       await (await import('@main/store/backupStore')).closeBackupStore()
       process.env.TAPEBOX_DATA_DIR = root

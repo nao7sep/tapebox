@@ -3,15 +3,15 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionSchema, type Tape } from '@shared/domain'
+import { type Tape } from '@shared/domain'
 import type { ImportResult } from '@shared/ipc-contract'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 
 // Each tape's files live in its own folder, so producers, cleanup and imports
-// meet only in the folders they own. The catalog owner, the library handlers,
+// meet only in the folders they own. The collection owner, the library handlers,
 // export and the download job are the real ones; providers are substituted.
 const state = vi.hoisted(() => ({
-  libraryDir: '', catalog: '', events: [] as string[],
+  libraryDir: '', events: [] as string[],
   started: () => {}, release: null as Promise<void> | null,
 }))
 const emit = vi.hoisted(() => vi.fn())
@@ -24,7 +24,6 @@ vi.mock('electron', () => ({
   } },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/paths', async (importOriginal) => ({ ...await importOriginal<typeof import('@main/paths')>(), collectionCatalog: () => state.catalog }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => state.libraryDir, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
@@ -36,6 +35,7 @@ import { registerLibraryHandlers } from '@main/ipc/library'
 import { registerExportHandlers } from '@main/ipc/export'
 import { defaultJobDeps, Job } from '@main/queue/job'
 import * as session from '@main/store/session'
+import { tapeDir } from '@main/paths'
 
 let root: string
 let original: Tape
@@ -71,14 +71,22 @@ function hold(): { started: Promise<void>; release: () => void } {
   return { started: ready, release }
 }
 
-/** The saved catalog matches the live one, and every name it gives is in its tape's folder. */
+/** An Inbox tape's own folder in the collection. */
+function inboxFolder(id: string): string {
+  return tapeDir(state.libraryDir, { id, shelved: false })
+}
+
+/** The saved collection matches the live one, and every name it gives is in its tape's folder. */
 async function assertCompleteCatalog(): Promise<Tape[]> {
   await session.persistNow()
-  const saved = SessionSchema.parse(JSON.parse(await readFile(state.catalog, 'utf8'))).tapes
-  expect(saved).toEqual(session.getTapes())
+  const read = await session.readCollection(state.libraryDir)
+  if (read.kind !== 'current') throw new Error('expected the current layout')
+  const byId = (a: Tape, b: Tape) => a.id.localeCompare(b.id)
+  const saved = [...read.session.tapes].sort(byId)
+  expect(saved).toEqual(session.getTapes().map(session.durableTape).sort(byId))
   for (const tape of saved) {
     for (const name of [tape.filename, tape.sidecarFilename, tape.thumbnailFilename]) {
-      if (name) expect(await readdir(join(state.libraryDir, tape.id))).toContain(name)
+      if (name) expect(await readdir(tapeDir(state.libraryDir, tape))).toContain(name)
     }
   }
   return saved
@@ -87,7 +95,6 @@ async function assertCompleteCatalog(): Promise<Tape[]> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-tape-folders-'))
   state.libraryDir = join(root, 'library')
-  state.catalog = join(root, 'catalog.json')
   state.release = null
   state.events = []
   queue.isActive.mockReset().mockReturnValue(false)
@@ -103,11 +110,11 @@ beforeEach(async () => {
     sourceId: null, extractor: null, title: 'Clip', uploader: null, durationSeconds: null, chapterCount: 0,
     probedAtUtc: null, filename: 'Original.mp4', sidecarFilename: 'Original.json', thumbnailFilename: null,
     downloadStartedAtUtc: null, downloadedAtUtc: AT, name: 'Original', renamedAtUtc: null,
-    archivedAtUtc: null, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+    addedIndex: 0, shelved: false, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
-  await mkdir(join(state.libraryDir, original.id))
-  await writeFile(join(state.libraryDir, original.id, 'Original.mp4'), 'video')
-  await writeFile(join(state.libraryDir, original.id, 'Original.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
+  await mkdir(inboxFolder(original.id), { recursive: true })
+  await writeFile(join(inboxFolder(original.id), 'Original.mp4'), 'video')
+  await writeFile(join(inboxFolder(original.id), 'Original.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   session.upsertTape(original)
   await session.persistNow()
   registerLibraryHandlers()
@@ -121,33 +128,33 @@ afterEach(async () => {
 
 describe('tape folders across producers and cleanup', () => {
   it('removes each tape\'s folder, late fragments included, after every selected producer settles', async () => {
-    const other: Tape = { ...original, id: 'other12345', sourceUrl: 'https://example.test/other', order: -1 }
-    await mkdir(join(state.libraryDir, other.id))
-    await writeFile(join(state.libraryDir, other.id, 'Original.mp4'), 'other video')
+    const other: Tape = { ...original, id: 'other12345', sourceUrl: 'https://example.test/other' }
+    await mkdir(inboxFolder(other.id), { recursive: true })
+    await writeFile(join(inboxFolder(other.id), 'Original.mp4'), 'other video')
     session.upsertTape(other)
     const gate = hold()
     queue.isActive.mockReturnValue(true)
     queue.cancel.mockImplementation(async (id) => {
       if (id === other.id) { state.started(); await state.release }
       // A producer may leave a last fragment while its cancellation settles.
-      await writeFile(join(state.libraryDir, id, `${id}.mp4.part`), 'late fragment')
+      await writeFile(join(inboxFolder(id), `${id}.mp4.part`), 'late fragment')
       state.events.push(`settled:${id}`)
     })
     const removing = handlers.get('library:remove')!({ tapeIds: [original.id, other.id], deleteFiles: true })
     try {
       await gate.started
-      expect(await readFile(join(state.libraryDir, original.id, 'Original.mp4'), 'utf8')).toBe('video')
-      expect(await readFile(join(state.libraryDir, other.id, 'Original.mp4'), 'utf8')).toBe('other video')
+      expect(await readFile(join(inboxFolder(original.id), 'Original.mp4'), 'utf8')).toBe('video')
+      expect(await readFile(join(inboxFolder(other.id), 'Original.mp4'), 'utf8')).toBe('other video')
     } finally { gate.release() }
     await removing
     expect(queue.cancel.mock.calls).toEqual([[original.id], [other.id]])
     expect(state.events).toEqual([`settled:${original.id}`, `settled:${other.id}`])
     expect(session.getTapes()).toEqual([])
-    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(await readdir(join(state.libraryDir, 'inbox'))).toEqual([])
   })
 
   it('removes a tape whose folder is already gone', async () => {
-    await rm(join(state.libraryDir, original.id), { recursive: true })
+    await rm(inboxFolder(original.id), { recursive: true })
     await handlers.get('library:remove')!({ tapeIds: [original.id], deleteFiles: true })
     expect(session.getTapes()).toEqual([])
   })
@@ -160,17 +167,17 @@ describe('tape folders across producers and cleanup', () => {
     expect(result.imported.map((tape) => tape.filename)).toEqual(['Original.mp4', 'Original.mp4'])
     const [a, b] = result.imported
     expect(new Set([original.id, a!.id, b!.id]).size).toBe(3)
-    expect(await readFile(join(state.libraryDir, a!.id, 'Original.mp4'), 'utf8')).toBe('media:first')
-    expect(await readFile(join(state.libraryDir, b!.id, 'Original.mp4'), 'utf8')).toBe('media:second')
-    const kept = JSON.parse(await readFile(join(state.libraryDir, a!.id, 'Original.json'), 'utf8'))
+    expect(await readFile(join(inboxFolder(a!.id), 'Original.mp4'), 'utf8')).toBe('media:first')
+    expect(await readFile(join(inboxFolder(b!.id), 'Original.mp4'), 'utf8')).toBe('media:second')
+    const kept = JSON.parse(await readFile(join(inboxFolder(a!.id), 'Original.json'), 'utf8'))
     expect(kept.tapebox).toEqual({ media: null })
     expect(kept.id).toBe('https://example.test/first/Original')
-    expect(await readFile(join(state.libraryDir, original.id, 'Original.mp4'), 'utf8')).toBe('video')
+    expect(await readFile(join(inboxFolder(original.id), 'Original.mp4'), 'utf8')).toBe('video')
     await assertCompleteCatalog()
   })
 
   it('removes only Apply scratch after the raw provider settles and conversion fails', async () => {
-    const folder = join(state.libraryDir, original.id)
+    const folder = inboxFolder(original.id)
     const scratch = join(folder, `${original.id}.poster-raw.webp`)
     await writeFile(join(folder, 'Original.jpg'), 'existing literal poster')
     const gate = hold()
@@ -203,13 +210,13 @@ describe('tape folders across producers and cleanup', () => {
     const imported = await importPath(join(state.libraryDir, 'Exported.json'))
     expect(imported.issues).toEqual([])
     expect(imported.imported).toMatchObject([{ filename: 'Exported.mp4', sidecarFilename: 'Exported.json', name: 'Exported' }])
-    expect(await readFile(join(state.libraryDir, original.id, 'Original.mp4'), 'utf8')).toBe('video')
+    expect(await readFile(join(inboxFolder(original.id), 'Original.mp4'), 'utf8')).toBe('video')
     await assertCompleteCatalog()
   })
 
   it('allows an import while a download writes into its own folder through postprocessing and commit', async () => {
     const queued: Tape = { ...original, state: 'queued', filename: null, sidecarFilename: null, thumbnailFilename: null, downloadedAtUtc: null }
-    await rm(join(state.libraryDir, original.id), { recursive: true })
+    await rm(inboxFolder(original.id), { recursive: true })
     session.upsertTape(queued)
     const unrelatedPath = await stage('unrelated', `${original.id}`)
     const gate = hold()
@@ -240,7 +247,7 @@ describe('tape folders across producers and cleanup', () => {
     expect(unrelated.issues).toEqual([])
     expect(unrelated.imported).toMatchObject([{ filename: `${original.id}.mp4` }])
     expect(session.getTape(original.id)).toMatchObject({ state: 'downloaded', filename: `${original.id}.mp4`, sidecarFilename: `${original.id}.json` })
-    expect(await readFile(join(state.libraryDir, original.id, `${original.id}.mp4`), 'utf8')).toBe('own media')
+    expect(await readFile(join(inboxFolder(original.id), `${original.id}.mp4`), 'utf8')).toBe('own media')
     await assertCompleteCatalog()
   })
 })

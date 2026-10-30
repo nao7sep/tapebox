@@ -58,7 +58,7 @@ function tape(overrides: Partial<Tape> = {}): Tape {
     addedAtUtc: '2026-10-11T00:00:00.000Z', sourceId: null, extractor: null, title: 'Before download', uploader: null,
     durationSeconds: null, chapterCount: null, probedAtUtc: null, filename: null, sidecarFilename: null,
     thumbnailFilename: null, downloadStartedAtUtc: null, downloadedAtUtc: null, name: null, renamedAtUtc: null,
-    archivedAtUtc: null, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+    addedIndex: 0, shelved: false, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...overrides,
   })
 }

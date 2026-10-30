@@ -174,7 +174,7 @@ export class Job {
   private async adoptFinishedDownload(): Promise<boolean> {
     const cur = this.current()
     if (!cur) return false
-    const found = await this.d.findFinishedBundle(tapeDir(this.d.getLibraryDir(), cur.id), cur)
+    const found = await this.d.findFinishedBundle(tapeDir(this.d.getLibraryDir(), cur), cur)
     if (found.status === 'none') return false
     if (found.status === 'unusable') {
       // Clearing the stem for a new attempt could delete a finished download, so
@@ -249,7 +249,7 @@ export class Job {
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
     // The tape's own folder holds the download, its partial files and its poster.
-    const dir = tapeDir(this.d.getLibraryDir(), cur.id)
+    const dir = tapeDir(this.d.getLibraryDir(), cur)
     await mkdir(dir, { recursive: true })
 
     this.update({ state: 'downloading', downloadStartedAtUtc: this.d.now() })

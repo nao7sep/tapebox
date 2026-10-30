@@ -83,7 +83,7 @@ async function exportTape(
   // Read the sidecar and write its tapebox section UP FRONT — before any file is
   // copied out — so a corrupt source sidecar fails the export before it leaves
   // partial files in the user's folder.
-  const original = await readSidecarFile(tapeFile(libDir, tape.id, tape.sidecarFilename))
+  const original = await readSidecarFile(tapeFile(libDir, tape, tape.sidecarFilename))
   const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
   const tb = exportNamespace(sidecar, tape)
   // The catalog's source URL leaves under the same masking as the sidecar.
@@ -101,10 +101,10 @@ async function exportTape(
   const committed: string[] = []
   try {
     const hardLinks = await directorySupportsHardLinks(destinationDir)
-    await copyFileNoOverwrite(tapeFile(libDir, tape.id, tape.filename), mediaDst, { hardLinks, signal })
+    await copyFileNoOverwrite(tapeFile(libDir, tape, tape.filename), mediaDst, { hardLinks, signal })
     committed.push(mediaDst)
     if (thumbDst && tape.thumbnailFilename) {
-      await copyFileNoOverwrite(tapeFile(libDir, tape.id, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
+      await copyFileNoOverwrite(tapeFile(libDir, tape, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
       committed.push(thumbDst)
     }
     signal.throwIfAborted()

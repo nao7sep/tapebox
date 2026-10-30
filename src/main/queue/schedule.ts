@@ -1,3 +1,4 @@
+import { compareInbox } from '@shared/order'
 import type { Tape } from '@shared/domain'
 
 // The pure scheduling decision behind the queue manager, lifted out so the
@@ -16,5 +17,9 @@ export function selectTapesToStart(
 ): Tape[] {
   const remaining = Math.max(0, max - activeIds.size)
   if (remaining === 0) return []
-  return tapes.filter((tape) => tape.state === 'queued' && !activeIds.has(tape.id)).slice(0, remaining)
+  // Downloads take the topmost waiting tapes in the Inbox, which is newest first.
+  return tapes
+    .filter((tape) => tape.state === 'queued' && !tape.shelved && !activeIds.has(tape.id))
+    .sort(compareInbox)
+    .slice(0, remaining)
 }

@@ -274,7 +274,7 @@ export function DetailPane({
         return
       }
       if (matchShortcut(SHORTCUTS.archiveToggle, e) >= 0) {
-        if (tape.archivedAtUtc) { e.preventDefault(); unarchiveTape(tape, 'list') }
+        if (tape.shelved) { e.preventDefault(); unarchiveTape(tape, 'list') }
         else if (tape.state === 'downloaded') { e.preventDefault(); archiveTape(tape, 'list') }
         return
       }
@@ -542,7 +542,7 @@ export function DetailPane({
               <ActionButton onClick={() => setRenameFor(tape.id)}>{t.t('detail.rename')}</ActionButton>
               <ActionButton onClick={() => setExportFor(tape.id)}>{t.t('detail.export')}</ActionButton>
               {/* Organize, once the work is done. */}
-              {tape.archivedAtUtc ? (
+              {tape.shelved ? (
                 <>
                   <MoveToBoxButton tape={tape} />
                   <ActionButton onClick={unarchive}>{t.t('detail.moveToInbox')}</ActionButton>
@@ -630,7 +630,7 @@ function headerStatus(tape: Tape, progress: ProgressEntry | undefined, stalled: 
   if (progress?.phase === 'downloading' && progress.speedBps) {
     base = joinMessages(base, t.bytesPerSecond(progress.speedBps))
   }
-  return tape.archivedAtUtc ? joinMessages(base, message('filter.archived')) : base
+  return tape.shelved ? joinMessages(base, message('filter.archived')) : base
 }
 
 /** A label/value row in the disclosed detail list. */

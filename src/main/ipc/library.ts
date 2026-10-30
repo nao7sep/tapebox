@@ -19,7 +19,7 @@ import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
 import { librarySidecar, readSidecarFile, writeSidecar } from '@main/core/sidecar'
 import { reserveTapeId } from '@main/core/stem'
-import { tapeDir, tapeFile } from '@main/paths'
+import { areaDir, tapeDir, tapeFile } from '@main/paths'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
@@ -30,14 +30,20 @@ import { type SourceRef } from '@shared/source-identity'
 import { downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
-import { frontOrders } from '@shared/order'
-import type { Tape } from '@shared/domain'
+import { TAPE_FILE, type Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, RefreshedMetadata, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
 import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
 
 const PASSIVE_MEDIA_EXTENSIONS = new Set(['.mp4', '.m4v', '.mkv', '.webm', '.mov', '.avi', '.mpg', '.mpeg', '.ogv', '.flv', '.wmv', '.3gp', '.mp3', '.m4a', '.aac', '.flac', '.wav', '.ogg', '.opus', '.aiff'])
+
+/** Tell the window where these tapes are now, after a move that may have
+ *  stopped partway. */
+function emitCurrent(tapeIds: readonly string[]): void {
+  const current = tapeIds.map((id) => session.getTape(id)).filter((tape): tape is Tape => !!tape)
+  if (current.length > 0) emit('tapes:updatedMany', current)
+}
 
 export function registerLibraryHandlers(): void {
   session.onCatalogSaveFailure(() => emit('library:saveFailed', null))
@@ -48,38 +54,30 @@ export function registerLibraryHandlers(): void {
     sendTo(event.sender, 'library:current', { tapes: session.getTapes(), boxes: session.getBoxes() })
   })
 
-  handle('library:archive', async ({ tapeIds }) => {
-    const at = nowUtcIso()
-    const archivable = tapeIds
-      .map((id) => session.getTape(id))
-      .filter((t): t is Tape => !!t && !t.archivedAtUtc)
-    if (archivable.length === 0) return
-    // Archived tapes start in Unboxed, on top — the newly-archived block lands above
-    // whatever's already there, in the order it was selected.
-    const unboxed = session.getTapes().filter((t) => t.archivedAtUtc && t.boxId === null)
-    const orders = frontOrders(unboxed.map((t) => t.order), archivable.length)
-    archivable.forEach((tape, i) => {
-      const updated = { ...tape, archivedAtUtc: at, boxId: null, order: orders[i] }
-      session.upsertTape(updated)
-    })
-    emit('tapes:updatedMany', archivable.map((tape) => session.getTape(tape.id)!))
-  })
+  // Shelving and taking back move tape folders, so they take a collection turn:
+  // no rename, export or poster refresh is working in a folder as it moves. A
+  // tape still downloading writes into its Inbox folder, so only a downloaded
+  // tape with no job shelves; shelved tapes start on top of Loose tapes, in the
+  // order they were selected.
+  handle('library:archive', ({ tapeIds }) => withLibraryTurn(async () => {
+    const shelvable = tapeIds.filter((id) => session.getTape(id)?.state === 'downloaded' && !queue.isActive(id))
+    if (shelvable.length === 0) return
+    try {
+      await session.shelveTapes(shelvable)
+    } finally {
+      emitCurrent(shelvable)
+    }
+  }))
 
-  handle('library:unarchive', async ({ tapeIds }) => {
-    const restorable = tapeIds
-      .map((id) => session.getTape(id))
-      .filter((t): t is Tape => !!t && !!t.archivedAtUtc)
-    if (restorable.length === 0) return
-    // Leaving the archive drops all archive organization (box membership) and
-    // returns the tape to the top of the inbox, like a fresh add.
-    const inbox = session.getTapes().filter((t) => !t.archivedAtUtc)
-    const orders = frontOrders(inbox.map((t) => t.order), restorable.length)
-    restorable.forEach((tape, i) => {
-      const updated = { ...tape, archivedAtUtc: null, boxId: null, order: orders[i] }
-      session.upsertTape(updated)
-    })
-    emit('tapes:updatedMany', restorable.map((tape) => session.getTape(tape.id)!))
-  })
+  // Back to Inbox drops the tape's Shelf organization (its box and place); the
+  // Inbox shows it by when it was added.
+  handle('library:unarchive', ({ tapeIds }) => withLibraryTurn(async () => {
+    try {
+      await session.unshelveTapes(tapeIds)
+    } finally {
+      emitCurrent(tapeIds)
+    }
+  }))
 
   // Reindex one list (the inbox, a box, or Unboxed) to the caller's sequence after
   // a drag — order = position, top first. Membership (archived / box) is left
@@ -111,19 +109,19 @@ export function registerLibraryHandlers(): void {
     if (!tape || !tape.sidecarFilename) {
       throw new Error(`Sidecar not available for tape ${tapeId}`)
     }
-    return await readSidecarFile(tapeFile(getLibraryDir(), tape.id, tape.sidecarFilename)) as SidecarRaw
+    return await readSidecarFile(tapeFile(getLibraryDir(), tape, tape.sidecarFilename)) as SidecarRaw
   })
 
   handle('library:reveal', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape?.filename) throw new Error('No file to reveal for this tape')
-    shell.showItemInFolder(tapeFile(getLibraryDir(), tape.id, tape.filename))
+    shell.showItemInFolder(tapeFile(getLibraryDir(), tape, tape.filename))
   })
 
   handle('library:playExternal', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape?.filename) throw new Error('No file to play for this tape')
-    const full = tapeFile(getLibraryDir(), tape.id, tape.filename)
+    const full = tapeFile(getLibraryDir(), tape, tape.filename)
     const player = getSettings().externalPlayer.trim()
 
     if (!player) {
@@ -181,7 +179,7 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, librar
   if (!existing) throw new Error(`Tape not found: ${tapeId}`)
   if (queue.isActive(tapeId)) throw new UserFacingError('refused', message('errors.tapeBusy'))
   const tape = structuredClone(existing)
-  const dir = tapeDir(libraryDir, tape.id)
+  const dir = tapeDir(libraryDir, tape)
   // Refuse a protected sidecar before attempting its optional poster backfill.
   const sidecar = tape.sidecarFilename ? await readSidecarFile(join(dir, tape.sidecarFilename)) : null
 
@@ -369,17 +367,21 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     }
 
     // Library names follow the media file's stem so the bundle stays internally
-    // consistent regardless of the sidecar's own name.
-    const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
-    const sidecarFilename = `${mediaStem}.json`
+    // consistent regardless of the sidecar's own name. A stem whose sidecar would
+    // be the tape's own tape.json takes the tape's id instead, as a download does.
     const id = await reserveTapeId(libraryDir, [...session.getTapes(), ...imported].map((tape) => tape.id))
-    const folder = tapeDir(libraryDir, id)
+    const bundleStem = mediaFilename.slice(0, -extname(mediaFilename).length)
+    const mediaStem = portableFilenameIdentity(`${bundleStem}.json`) === portableFilenameIdentity(TAPE_FILE) ? id : bundleStem
+    const libraryMedia = `${mediaStem}${extname(mediaFilename)}`
+    const sidecarFilename = `${mediaStem}.json`
+    const folder = tapeDir(libraryDir, { id, shelved: false })
     try {
       // not recorded: import copies a bundle into the library, transient app-owned
       // content until exported (developer classification). The new catalog row,
       // the user's library membership, is what is backed up.
+      await mkdir(areaDir(libraryDir, false), { recursive: true })
       await mkdir(folder)
-      await copyFileNoOverwrite(srcMedia, join(folder, mediaFilename), { hardLinks, signal })
+      await copyFileNoOverwrite(srcMedia, join(folder, libraryMedia), { hardLinks, signal })
       await writeSidecar(join(folder, sidecarFilename), librarySidecar(sidecar))
     } catch (err) {
       try {
@@ -415,7 +417,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // it. Best-effort: a missing or unreadable thumbnail just imports the tape
     // without a poster — it never rejects the import.
     let thumbnailFilename: string | null = null
-    if (tbThumb) {
+    if (tbThumb && portableFilenameIdentity(tbThumb) !== portableFilenameIdentity(TAPE_FILE)) {
       const srcThumb = join(dir, tbThumb)
       try {
         // not recorded: the imported poster is library content, like its media.
@@ -435,14 +437,15 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     }
 
     // No other file action runs during this turn, so the admission above still
-    // holds; the batch's inbox order is allocated at publication below.
+    // holds. The Inbox sorts the tape by its own times, the selection's order
+    // breaking ties.
     const tape = tapeFromSidecar(sidecar, {
       id,
       sourceUrl,
-      mediaFilename,
+      mediaFilename: libraryMedia,
       sidecarFilename,
       thumbnailFilename,
-      order: frontOrders(session.getTapes().filter((t) => !t.archivedAtUtc).map((t) => t.order), 1)[0]!,
+      addedIndex: imported.length,
       nowUtc: nowUtcIso(),
     })
     session.upsertTape(tape)
@@ -450,15 +453,8 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
   }
 
   if (imported.length > 0) {
-    // Allocate the final block at publication, after all copy waits. URL
-    // additions may have joined the inbox while these files were copied.
-    const importedIds = new Set(imported.map((tape) => tape.id))
-    const currentInbox = session.getTapes().filter((tape) => !tape.archivedAtUtc)
-    const members = imported.map((tape) => session.getTape(tape.id)).filter((tape): tape is Tape => !!tape && !tape.archivedAtUtc)
-    const orders = frontOrders(currentInbox.filter((tape) => !importedIds.has(tape.id)).map((tape) => tape.order), members.length)
-    members.forEach((tape, index) => session.upsertTape({ ...tape, order: orders[index]! }))
     // The receipt describes what this import accepted; later removal must not
-    // erase that outcome, while its assigned order reflects publication time.
+    // erase that outcome.
     imported.splice(0, imported.length, ...imported.map((tape) => session.getTape(tape.id) ?? tape))
     // The copied files are in the library; commit their rows before reporting,
     // so a crash now cannot leave them unlisted and blocking a re-import. The rows
@@ -510,7 +506,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   if (plan.status === 'noop') return tape
 
   const { cleanName } = plan
-  const p = (rel: string) => tapeFile(libraryDir, tape.id, rel)
+  const p = (rel: string) => tapeFile(libraryDir, tape, rel)
   const nowUtc = nowUtcIso()
 
   // Resolve the plan while keeping every old file until the durable catalog
@@ -636,17 +632,23 @@ export async function removeTapesFrom(
   const removed: string[] = []
   const failed: string[] = []
   const selected = tapeIds.map((id) => session.getTape(id)).filter((tape): tape is Tape => !!tape)
+  // No save writes a tape file into a folder while it is discarded.
+  await session.releaseTapeFolders(selected.map((tape) => tape.id))
   for (const tape of selected) {
-    if (deleteFiles) {
-      const dir = tapeDir(libraryDir, tape.id)
-      try {
+    const dir = tapeDir(libraryDir, tape)
+    try {
+      if (deleteFiles) {
         if (tape.sidecarFilename) await refuseNewerSidecar(join(dir, tape.sidecarFilename))
         await discardTapeFolder(dir, settings.trashOnRemove)
-      } catch (err) {
-        log.error('library removal failed', { tapeId: tape.id, error: describeError(err) })
-        failed.push(tape.id)
-        continue
+      } else {
+        // The files stay; without its tape.json the folder no longer holds a tape.
+        await rm(join(dir, TAPE_FILE), { force: true })
       }
+    } catch (err) {
+      log.error('library removal failed', { tapeId: tape.id, error: describeError(err) })
+      session.keepTapeFolders([tape.id])
+      failed.push(tape.id)
+      continue
     }
     removed.push(tape.id)
   }

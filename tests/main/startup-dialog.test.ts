@@ -11,7 +11,7 @@ vi.mock('@main/i18n.js', async () => {
   return { mainTranslator: () => createTranslator(language.current) }
 })
 
-import { notifyCorruptConfig, notifyCorruptSession, notifyStartupFailure } from '@main/startup-dialog'
+import { notifyCorruptConfig, notifyCorruptSession, notifyDamagedTapes, notifyStartupFailure } from '@main/startup-dialog'
 import { loadCatalogue } from '@shared/i18n/catalogues'
 import { NewerFormatError } from '@main/io/format-version'
 
@@ -36,12 +36,24 @@ describe('startup recovery dialogs', () => {
   })
 
   it('names where an unreadable library file was set aside and what TapeBox started with', async () => {
-    await notifyCorruptSession('/data/catalog-20260101-000000-000-utc.invalid')
+    await notifyCorruptSession('/data/shelf-20260101-000000-000-utc.invalid')
 
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Library could not be opened',
-      message: expect.stringContaining('/data/catalog-20260101-000000-000-utc.invalid'),
-      detail: expect.stringContaining('empty library'),
+      message: expect.stringContaining('/data/shelf-20260101-000000-000-utc.invalid'),
+      detail: expect.stringContaining('tapes are all there'),
+    }))
+  })
+
+  it('names each tape file that could not be read and says it was left as it is', async () => {
+    const owner = {} as BrowserWindow
+    await notifyDamagedTapes(['/data/inbox/Tape000001/tape.json', '/data/shelf/Tape000002/tape.json'], owner)
+
+    expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
+      owner,
+      title: 'Some tapes could not be read',
+      message: expect.stringContaining('/data/inbox/Tape000001/tape.json\n/data/shelf/Tape000002/tape.json'),
+      detail: expect.stringContaining('left exactly as they are'),
     }))
   })
 
@@ -57,11 +69,11 @@ describe('startup recovery dialogs', () => {
   })
 
   it('names a store in a newer format and says it was left as it is', async () => {
-    await notifyStartupFailure(new NewerFormatError('/data/catalog.json', 2, 1))
+    await notifyStartupFailure(new NewerFormatError('/data/shelf.json', 2, 1))
 
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
       title: 'File from a newer version of TapeBox',
-      message: expect.stringContaining('/data/catalog.json'),
+      message: expect.stringContaining('/data/shelf.json'),
       detail: expect.stringContaining('left exactly as it is'),
     }))
   })

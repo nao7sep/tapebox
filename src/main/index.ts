@@ -3,7 +3,7 @@ import { trustApplicationDocument } from './ipc/trust'
 import { app, BrowserWindow, powerMonitor, shell } from 'electron'
 import { join } from 'node:path'
 import { ensureDirs, paths, sweepAbandonedStaging } from './paths.js'
-import { notifyCorruptConfig, notifyCorruptSession, notifySettingsKept, notifyStartupFailure } from './startup-dialog.js'
+import { notifyCorruptConfig, notifyCorruptSession, notifyDamagedTapes, notifySettingsKept, notifyStartupFailure } from './startup-dialog.js'
 import { initLogger, isDebugEnabled, log } from './io/logger.js'
 import { closeRecords, flushRecords, flushRecordsBeforeExit, onRecordStored, openRecords } from './io/records.js'
 import { notifyRecordsChanged } from './records-window.js'
@@ -221,11 +221,15 @@ async function startup(): Promise<void> {
   // ~/.tapebox/backups.sqlite3 through a FIFO queue after its atomic rename lands (see
   // store/backupStore.ts and io/atomic-json.ts). There is nothing to kick off here.
 
-  // If the library file was unreadable, it was set aside (never wiped); tell the
-  // user at the app edge — the session store stays UI-free.
+  // If the catalog was unreadable, it was set aside (never wiped), and a tape
+  // file that could not be read was left as it is; tell the user at the app edge — the session store stays UI-free.
   await afterQuit()
   if (sessionResult.status === 'recovered') {
     await notifyCorruptSession(sessionResult.quarantinePath, initialWindow)
+  }
+  await afterQuit()
+  if (sessionResult.damaged.length > 0) {
+    await notifyDamagedTapes(sessionResult.damaged.map((tape) => tape.path), initialWindow)
   }
   await afterQuit()
   if (configResult.status === 'recovered') {

@@ -49,7 +49,8 @@ vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 const { registerLibraryHandlers } = await import('@main/ipc/library')
 
-const FULL_PATH = join('/library', 'Hasafile12', 'Take.mp4')
+// A shelved tape's file sits in its folder under shelf/.
+const FULL_PATH = join('/library', 'shelf', 'Hasafile12', 'Take.mp4')
 function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
   return {
     sourceUrl: 'https://example.test/watch', state: 'downloaded',
@@ -58,7 +59,7 @@ function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
     probedAtUtc: '2026-01-01T00:00:00.000Z', filename: 'Take.mp4',
     sidecarFilename: null, thumbnailFilename: null,
     downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
-    name: 'Take', renamedAtUtc: null, archivedAtUtc: null,
+    name: 'Take', renamedAtUtc: null, addedIndex: 0, shelved: false,
     boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...overrides,
   }
@@ -76,7 +77,7 @@ beforeEach(() => {
   shell.openPath.mockResolvedValue('')
   openExternalPlayer.mockResolvedValue()
   state.externalPlayer = ''
-  state.tapes = [makeTape({ id: 'Hasafile12' }), makeTape({ id: 'Nofileyet1', filename: null })]
+  state.tapes = [makeTape({ id: 'Hasafile12', shelved: true }), makeTape({ id: 'Nofileyet1', filename: null })]
   registerLibraryHandlers()
 })
 
@@ -103,7 +104,7 @@ describe('playing a tape outside the app', () => {
     expect(shell.openPath).not.toHaveBeenCalled()
     state.externalPlayer = 'player'
     await invoke('library:playExternal', { tapeId: 'Hasafile12' })
-    expect(openExternalPlayer).toHaveBeenCalledWith('player', join('/library', 'Hasafile12', filename))
+    expect(openExternalPlayer).toHaveBeenCalledWith('player', join('/library', 'shelf', 'Hasafile12', filename))
   })
 
   it('lets the OS choose the player when none is configured', async () => {

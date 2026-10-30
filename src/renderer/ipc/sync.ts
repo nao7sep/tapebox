@@ -85,7 +85,7 @@ export function startIpcSync(): IpcSync {
       // reuse the same IDs. Advancing counters avoids a new attempt's ABA match.
       const attempts = useOrderFailuresStore.getState().attempts
       useOrderFailuresStore.setState({
-        inbox: null, boxes: null, archiveTapes: {}, pending: {},
+        boxes: null, archiveTapes: {}, pending: {},
         attempts: Object.fromEntries(Object.entries(attempts).map(([key, value]) => [key, value! + 1])),
       })
       useTapesStore.setState({ tapes, progress: {}, stalled: {} })

@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { binaryPath, collectionCatalog, paths, resolveStorageRoot, secureRoot } from '@main/paths'
+import { areaDir, binaryPath, paths, resolveStorageRoot, secureRoot, shelfFile, tapeDir, tapeFile } from '@main/paths'
 
 // The TAPEBOX_DATA_DIR storage-root resolution (storage-path-conventions). The home
 // directory is injected so these are pure, working-directory-independent
@@ -80,21 +80,29 @@ describe('resolveStorageRoot', () => {
   })
 })
 
-// The durable tape-library catalog is catalog.json, not session.json — the name
-// must not imply throwaway state. It is a distinct file from the user-editable
-// config and the window layout; the catalog travels with the library.
-describe('paths catalog file', () => {
-  it('resolves the catalog to catalog.json inside the library', () => {
-    expect(basename(collectionCatalog(paths.library))).toBe('catalog.json')
-    expect(dirname(collectionCatalog(paths.library))).toBe(paths.library)
+// The collection's durable organization is shelf.json, beside the inbox/ and
+// shelf/ folders of tape folders. It is a distinct file from the user-editable
+// config and the window layout; it travels with the collection.
+describe('paths collection files', () => {
+  it('resolves shelf.json inside the collection', () => {
+    expect(basename(shelfFile(paths.library))).toBe('shelf.json')
+    expect(dirname(shelfFile(paths.library))).toBe(paths.library)
   })
 
-  it('keeps the catalog separate from config and layout', () => {
+  it('puts each tape folder in the area where the tape sits', () => {
+    expect(areaDir(paths.library, false)).toBe(join(paths.library, 'inbox'))
+    expect(areaDir(paths.library, true)).toBe(join(paths.library, 'shelf'))
+    expect(tapeDir(paths.library, { id: 'Tape000001', shelved: false })).toBe(join(paths.library, 'inbox', 'Tape000001'))
+    expect(tapeFile(paths.library, { id: 'Tape000001', shelved: true }, 'tape.json'))
+      .toBe(join(paths.library, 'shelf', 'Tape000001', 'tape.json'))
+  })
+
+  it('keeps shelf.json separate from config and layout', () => {
     expect(basename(paths.config)).toBe('config.json')
     expect(basename(paths.layout)).toBe('layout.json')
-    expect(collectionCatalog(paths.library)).not.toBe(paths.config)
-    expect(collectionCatalog(paths.library)).not.toBe(paths.layout)
-    expect(collectionCatalog(paths.library)).not.toBe(paths.apiKeys)
+    expect(shelfFile(paths.library)).not.toBe(paths.config)
+    expect(shelfFile(paths.library)).not.toBe(paths.layout)
+    expect(shelfFile(paths.library)).not.toBe(paths.apiKeys)
   })
 })
 

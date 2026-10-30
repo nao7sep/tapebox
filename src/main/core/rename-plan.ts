@@ -1,6 +1,7 @@
 import { extname } from 'node:path'
 
 import { collidingPortableFilename } from '@shared/filename'
+import { TAPE_FILE } from '@shared/domain'
 import { sanitizeFilename } from '@main/core/filename'
 import { message, type Message } from '@shared/i18n/translate'
 
@@ -68,7 +69,8 @@ export function planRename(
   // "<name>.<ext>"). The handler's per-file existence checks cannot catch this —
   // neither target exists on disk yet — so without this guard the staging build
   // and atomic swap would clobber one file with the other.
-  const fresh = items.map((it) => it.fresh)
+  // The tape's own tape.json shares the folder, so no file may take its name.
+  const fresh = [TAPE_FILE, ...items.map((it) => it.fresh)]
   const collided = collidingPortableFilename(fresh)
   if (collided) {
     return {

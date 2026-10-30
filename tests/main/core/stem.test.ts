@@ -13,9 +13,10 @@ beforeEach(async () => { library = await mkdtemp(join(tmpdir(), 'tapebox-stem-')
 afterEach(async () => { await rm(library, { recursive: true, force: true }) })
 
 describe('reserveTapeId', () => {
-  it('passes over an id another row holds in any case, and one whose folder is already there', async () => {
-    await mkdir(join(library, 'Leftover01'))
-    ids.push('TAKEN00001', 'Leftover01', 'Fresh00001')
+  it('passes over an id another tape holds in any case, and one whose folder is already in the Inbox or on the Shelf', async () => {
+    await mkdir(join(library, 'inbox', 'Leftover01'), { recursive: true })
+    await mkdir(join(library, 'shelf', 'Leftover02'), { recursive: true })
+    ids.push('TAKEN00001', 'Leftover01', 'Leftover02', 'Fresh00001')
     expect(await reserveTapeId(library, ['taken00001'])).toBe('Fresh00001')
     expect(ids).toEqual([])
   })

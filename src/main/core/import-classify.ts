@@ -102,7 +102,8 @@ export function tapeFromSidecar(
     mediaFilename: string
     sidecarFilename: string
     thumbnailFilename: string | null
-    order: number
+    /** The tape's position in the import's selection. */
+    addedIndex: number
     nowUtc: string
   },
 ): Tape {
@@ -129,9 +130,10 @@ export function tapeFromSidecar(
     downloadedAtUtc,
     name: typeof tb['name'] === 'string' ? tb['name'] : null,
     renamedAtUtc: recordedTime('renamedAtUtc'),
-    archivedAtUtc: null,
+    addedIndex: params.addedIndex,
+    shelved: false,
     boxId: null,
-    order: params.order,
+    order: 0,
     pausedAtUtc: null,
     failedAtUtc: null,
     failureCode: null,

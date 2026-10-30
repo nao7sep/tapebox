@@ -57,7 +57,7 @@ export function registerBoxHandlers(): void {
       .getTapes()
       .filter((t) => t.boxId === boxId)
       .sort((a, b) => a.order - b.order)
-    const unboxed = session.getTapes().filter((t) => t.archivedAtUtc && t.boxId === null)
+    const unboxed = session.getTapes().filter((t) => t.shelved && t.boxId === null)
     const orders = frontOrders(unboxed.map((t) => t.order), orphans.length)
     const changed: Tape[] = []
     orphans.forEach((tape, i) => {
@@ -92,14 +92,14 @@ export function registerBoxHandlers(): void {
     // anything being moved. Unboxed is boxId === null, so the archived guard keeps
     // inbox tapes — which also have boxId null — out of it.
     const members = all
-      .filter((i) => i.archivedAtUtc && i.boxId === boxId && !moving.has(i.id))
+      .filter((i) => i.shelved && i.boxId === boxId && !moving.has(i.id))
       .sort((a, b) => a.order - b.order)
 
     // The moved tapes, kept in the caller's requested order, placed on top — newly
     // filed tapes land at the front of their new box.
     const movingTapes = [...moving]
       .map((id) => all.find((i) => i.id === id))
-      .filter((i): i is Tape => i !== undefined && i.archivedAtUtc !== null)
+      .filter((i): i is Tape => i !== undefined && i.shelved)
 
     const ordered = [...movingTapes, ...members]
     const changed: Tape[] = []

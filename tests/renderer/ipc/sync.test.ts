@@ -25,7 +25,7 @@ import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 
 function tape(id: string, order: number, boxId: string | null = null, archived = false): Tape {
   return {
-    id, order, boxId, archivedAtUtc: archived ? '2026-10-11T00:00:00.000Z' : null,
+    id, order, boxId, shelved: archived, addedIndex: 0,
     sourceUrl: `https://example.test/${id}`, state: 'downloaded', addedAtUtc: '2026-10-11T00:00:00.000Z',
     sourceId: null, extractor: null, title: id, uploader: null, durationSeconds: null, chapterCount: null,
     probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
@@ -37,7 +37,7 @@ function tape(id: string, order: number, boxId: string | null = null, archived =
 beforeEach(() => {
   ipcInvoke.mockReset()
   ipcOn.mockReset()
-  useOrderFailuresStore.setState({ inbox: null, boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
+  useOrderFailuresStore.setState({ boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
   useTapesStore.setState({ tapes: [], progress: {} })
   useBoxesStore.setState({ boxes: [] })
   useBinariesStore.setState({ statuses: [] })
@@ -130,8 +130,8 @@ describe('live sync', () => {
     useSelectionStore.getState().select(old.id)
     useArchiveStore.getState().selectBox('OldBoxId')
     useArchiveStore.getState().setQuery('old search')
-    const attempt = useOrderFailuresStore.getState().beginAttempt('inbox', [old])
-    useOrderFailuresStore.getState().setInbox({ key: 'app.librarySaveFailed' })
+    const attempt = useOrderFailuresStore.getState().beginAttempt('archive:unboxed', [old])
+    useOrderFailuresStore.getState().setArchiveTapes('unboxed', { key: 'app.librarySaveFailed' })
     let fail!: (reason: Error) => void
     const oldAction = runTapeAction(old.id, 'archive', 'archive failed', { key: 'app.librarySaveFailed' }, () => new Promise((_resolve, reject) => { fail = reject }))
     useBoxActionResultsStore.getState().setResult('create', { key: 'app.librarySaveFailed' })
@@ -145,9 +145,9 @@ describe('live sync', () => {
     expect(useSelectionStore.getState().selectedId).toBeNull()
     expect(useArchiveStore.getState()).toMatchObject({ selectedBoxId: null, query: '' })
     expect(useTapesStore.getState()).toMatchObject({ tapes: [fresh], progress: {}, stalled: {} })
-    expect(useOrderFailuresStore.getState()).toMatchObject({ inbox: null, pending: {} })
-    expect(useOrderFailuresStore.getState().isCurrentAttempt('inbox', attempt)).toBe(false)
-    const nextAttempt = useOrderFailuresStore.getState().beginAttempt('inbox', [fresh])
+    expect(useOrderFailuresStore.getState()).toMatchObject({ archiveTapes: {}, pending: {} })
+    expect(useOrderFailuresStore.getState().isCurrentAttempt('archive:unboxed', attempt)).toBe(false)
+    const nextAttempt = useOrderFailuresStore.getState().beginAttempt('archive:unboxed', [fresh])
     expect(nextAttempt).not.toBe(attempt)
     expect(useBoxesStore.getState().boxes).toEqual(boxes)
     sync.stop()

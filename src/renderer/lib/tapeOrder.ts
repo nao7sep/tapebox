@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { Box, Tape } from '@shared/domain'
+import { compareInbox } from '@shared/order'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
@@ -10,16 +11,14 @@ import { useArchiveStore } from '@renderer/store/archive'
  * the list view, drag-reordering, keyboard navigation, and removal, so they all
  * agree on which tape is next and previous.
  *
- * Order is explicit and manual: every tape carries an `order` (lower = nearer the
- * top) within its current list — the inbox, a box, or Unboxed. New tapes are
- * inserted at the top and the user can drag any tape anywhere. A tape's state
- * (downloading, failed, a page-of-videos dead-end) no longer moves it: that
- * information lives in the status bar and on the row itself, so a failed download
- * stays exactly where it was instead of jumping the list.
+ * The Inbox has no chosen order: newest added first, tapes added together in
+ * their pasted order (@shared/order). On the Shelf, order is explicit and manual:
+ * every shelved tape carries an `order` (lower = nearer the top) within its box
+ * or Loose tapes, newcomers go on top, and the user can drag any tape anywhere.
+ * A tape's state (downloading, failed, a page-of-videos dead-end) never moves it:
+ * that information lives in the status bar and on the row itself.
  *
- * Order ties — a fresh library where nothing's been hand-ordered yet, so every
- * tape sits at the default 0 — break by recency, newest first. That gives the
- * new-on-top feel before anyone has dragged a thing.
+ * Shelf order ties break by recency, newest first.
  */
 
 /** Newest-first key: when the tape landed, falling back to when it was added. */
@@ -33,8 +32,8 @@ function byOrder(a: Tape, b: Tape): number {
 }
 
 /**
- * Pure: the on-screen tape order. The inbox is every non-archived tape in manual
- * order. The archived view shows one box at a time (selectedBoxId, null = Unboxed)
+ * Pure: the on-screen tape order. The Inbox is every tape not on the Shelf,
+ * newest added first. The archived view shows one box at a time (selectedBoxId, null = Unboxed)
  * in manual order — unless a search query is active, in which case it spans ALL
  * boxes, ordered the same way the box list reads (Unboxed first, then boxes by their
  * order) and within each box by that box's manual order. Search is read-only (not
@@ -49,10 +48,10 @@ export function visibleTapes(
   boxes: Box[] = [],
 ): Tape[] {
   if (filter !== 'archived') {
-    return tapes.filter((t) => !t.archivedAtUtc).sort(byOrder)
+    return tapes.filter((t) => !t.shelved).sort(compareInbox)
   }
 
-  const archived = tapes.filter((t) => !!t.archivedAtUtc)
+  const archived = tapes.filter((t) => t.shelved)
   const q = query.trim().toLowerCase()
   if (q) {
     // Unboxed (no box) leads, mirroring the box list where Unboxed sits on top; then

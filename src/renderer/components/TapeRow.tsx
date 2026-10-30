@@ -89,7 +89,7 @@ export const TapeRow = memo(function TapeRow({ tape, progress: explicitProgress,
 
 function paletteFor(tape: Tape, selected: boolean): string {
   const state = tape.state
-  const archived = !!tape.archivedAtUtc
+  const archived = tape.shelved
 
   // Selection overlays a bright border on top of the state palette so the
   // selected row — the listbox's active descendant — is always obvious without

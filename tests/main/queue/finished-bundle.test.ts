@@ -9,7 +9,7 @@ import { finalize } from '@main/core/sidecar'
 import { clearStem } from '@main/services/ytdlp'
 import type { Tape } from '@shared/domain'
 
-// A download that finished on disk while its catalog commit failed must survive
+// A download that finished on disk while its tape.json commit failed must survive
 // the next attempt: the files are real, the queued row is what a relaunch reads.
 // The sidecar, the bundle finder and the stem sweep are the real ones.
 
@@ -29,11 +29,11 @@ afterEach(async () => {
 
 function queued(id: string): Tape {
   return {
-    id, sourceUrl: 'https://example.test/watch', state: 'queued', addedAtUtc: ADDED,
+    id, sourceUrl: 'https://example.test/watch', state: 'queued', addedAtUtc: ADDED, addedIndex: 3,
     sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: 0,
     probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
     downloadStartedAtUtc: null, downloadedAtUtc: null, name: null, renamedAtUtc: null,
-    archivedAtUtc: null, boxId: null, order: 3, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
+    shelved: false, boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
 }
 
@@ -70,7 +70,7 @@ const video = {
   description: null, duration: 12, chapters: null,
 }
 
-describe('a download finished before its catalog commit', () => {
+describe('a download finished before its tape file commit', () => {
   it('survives the next attempt and reads as downloaded', async () => {
     const id = 'Crashed001'
     const first = new Map([[id, queued(id)]])
@@ -102,12 +102,12 @@ describe('a download finished before its catalog commit', () => {
     })).run()
 
     expect(attempted).toBe(false)
-    expect((await readdir(join(dir, id))).sort()).toEqual([`${id}.jpg`, `${id}.json`, `${id}.mp4`])
-    expect(await readFile(join(dir, id, `${id}.mp4`), 'utf8')).toBe('finished media')
+    expect((await readdir(join(dir, 'inbox', id))).sort()).toEqual([`${id}.jpg`, `${id}.json`, `${id}.mp4`])
+    expect(await readFile(join(dir, 'inbox', id, `${id}.mp4`), 'utf8')).toBe('finished media')
     expect(relaunched.get(id)).toMatchObject({
       state: 'downloaded', filename: `${id}.mp4`, sidecarFilename: `${id}.json`, thumbnailFilename: `${id}.jpg`,
       sourceId: 'vid1', extractor: 'youtube', title: 'A Video', durationSeconds: 12,
-      order: 3, addedAtUtc: ADDED, failureCode: null,
+      addedIndex: 3, addedAtUtc: ADDED, failureCode: null,
     })
   })
 })

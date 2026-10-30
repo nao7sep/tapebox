@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
+import { tapeDir } from '@main/paths'
 
 const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
@@ -107,18 +108,19 @@ beforeEach(async () => {
   rollbackMutation.order = []
   rollbackMutation.sourcesVisibleAtCommit = false
   rollbackMutation.destinationsVisibleAtCommit = false
-  state.tape = {
+  const tape: Tape = {
     id: 'Abc123_-xy', sourceUrl: 'https://example.test/watch', state: 'downloaded',
-    addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
+    addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, sourceId: 'source', extractor: 'test',
     title: 'Title', uploader: 'Uploader', durationSeconds: 1, chapterCount: 0,
     probedAtUtc: '2026-01-01T00:00:00.000Z', filename: 'Take.mp4',
     sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg',
     downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
-    name: 'Take', renamedAtUtc: null, archivedAtUtc: null, boxId: null, order: 0,
+    name: 'Take', renamedAtUtc: null, shelved: false, boxId: null, order: 0,
     pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
-  dir = join(lib, state.tape.id)
-  await mkdir(dir)
+  state.tape = tape
+  dir = tapeDir(lib, tape)
+  await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'Take.mp4'), 'video')
   await writeFile(join(dir, 'Take.jpg'), 'poster')
   await writeFile(join(dir, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))

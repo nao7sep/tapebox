@@ -1,17 +1,17 @@
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionSchema, type Tape } from '@shared/domain'
+import { ShelfSchema, type Session, type Tape } from '@shared/domain'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 
 const state = vi.hoisted(() => ({
   handlers: new Map<string, (req: unknown) => Promise<unknown>>(),
   failConfig: false,
-  cancelOnCatalog: false,
-  beforeCatalog: null as null | (() => Promise<void>),
+  cancelOnShelf: false,
+  beforeShelf: null as null | (() => Promise<void>),
   progress: null as null | ((progress: { filesDone: number; filesTotal: number }) => void),
   tick: vi.fn(),
   emit: vi.fn(),
@@ -31,10 +31,12 @@ vi.mock('@main/ipc/events', () => ({ emit: (channel: string, payload: unknown) =
 } }))
 vi.mock('@main/io/atomic-json', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
+  // A collection's own shelf.json, not a sidecar of that name in a tape's folder.
+  const isShelf = (file: string): boolean => /[\\/]shelf\.json$/.test(file) && !/[\\/](inbox|shelf)[\\/][^\\/]+[\\/]shelf\.json$/.test(file)
   const beforeWrite = async (file: string): Promise<void> => {
-    if (file.endsWith('catalog.json')) await state.beforeCatalog?.()
-    if (state.cancelOnCatalog && file.endsWith('catalog.json')) {
-      state.cancelOnCatalog = false
+    if (isShelf(file)) await state.beforeShelf?.()
+    if (state.cancelOnShelf && isShelf(file)) {
+      state.cancelOnShelf = false
       await state.handlers.get('settings:cancelLibraryMove')!(undefined)
     }
     if (state.failConfig && file.endsWith('config.json')) throw new Error('config storage unavailable')
@@ -59,8 +61,8 @@ beforeEach(async () => {
   process.env.TAPEBOX_DATA_DIR = join(root, 'machine-a')
   state.handlers.clear()
   state.failConfig = false
-  state.cancelOnCatalog = false
-  state.beforeCatalog = null
+  state.cancelOnShelf = false
+  state.beforeShelf = null
   state.progress = null
   state.emit.mockClear()
   state.tick.mockClear()
@@ -75,14 +77,14 @@ afterEach(async () => {
 })
 
 async function start() {
-  const { ensureDirs, paths, collectionCatalog } = await import('@main/paths')
+  const { ensureDirs, paths, shelfFile } = await import('@main/paths')
   await ensureDirs()
   const config = await import('@main/store/config')
   await config.loadSettings()
   const session = await import('@main/store/session')
   await session.loadSession()
   ;(await import('@main/ipc/settings')).registerSettingsHandlers()
-  return { config, session, paths, collectionCatalog }
+  return { config, session, paths, shelfFile }
 }
 function update(patch: IpcCalls['settings:update']['req']) {
   return state.handlers.get('settings:update')!(patch) as Promise<IpcCalls['settings:update']['res']>
@@ -90,35 +92,52 @@ function update(patch: IpcCalls['settings:update']['req']) {
 function tape(overrides: Partial<Tape> = {}): Tape {
   return {
     id: 'Tape123456', sourceUrl: 'https://example.test/watch', state: 'downloaded',
-    addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
+    addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, sourceId: 'source', extractor: 'test',
     title: 'Title', uploader: null, durationSeconds: 1, chapterCount: 0,
-    probedAtUtc: null, filename: 'catalog.mp4', sidecarFilename: 'catalog.json', thumbnailFilename: null,
-    downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:01:00.000Z', name: 'catalog', renamedAtUtc: null,
-    archivedAtUtc: '2026-01-02T00:00:00.000Z', boxId: 'Box1234567', order: 3,
+    probedAtUtc: null, filename: 'shelf.mp4', sidecarFilename: 'shelf.json', thumbnailFilename: null,
+    downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:01:00.000Z', name: 'shelf', renamedAtUtc: null,
+    shelved: true, boxId: 'Box1234567', order: 0,
     pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...overrides,
   }
 }
 async function seed() {
   const app = await start()
-  app.session.upsertBox({ id: 'Box1234567', name: 'Kept box', order: 7 })
-  app.session.upsertBox({ id: 'Box7654321', name: 'First box', order: 1 })
+  app.session.upsertBox({ id: 'Box1234567', name: 'Kept box', order: 0 })
+  app.session.upsertBox({ id: 'Box7654321', name: 'Second box', order: 1 })
   app.session.upsertTape(tape())
-  app.session.upsertTape(tape({ id: 'Tape654321', sourceUrl: 'https://example.test/queued', state: 'paused', filename: null, sidecarFilename: null, name: null, archivedAtUtc: null, boxId: null, order: -2 }))
-  // A sidecar may share the catalog's name: it sits in its tape's folder.
-  await mkdir(join(app.config.getLibraryDir(), 'Tape123456'))
-  await writeFile(join(app.config.getLibraryDir(), 'Tape123456', 'catalog.mp4'), 'media bytes')
-  await writeFile(join(app.config.getLibraryDir(), 'Tape123456', 'catalog.json'), 'ordinary sidecar bytes')
+  app.session.upsertTape(tape({ id: 'Tape654321', sourceUrl: 'https://example.test/queued', state: 'paused', filename: null, sidecarFilename: null, name: null, shelved: false, boxId: null, order: 0 }))
+  // A sidecar may share shelf.json's name: it sits in its tape's folder.
+  const folder = join(app.config.getLibraryDir(), 'shelf', 'Tape123456')
+  await mkdir(folder, { recursive: true })
+  await writeFile(join(folder, 'shelf.mp4'), 'media bytes')
+  await writeFile(join(folder, 'shelf.json'), 'ordinary sidecar bytes')
   await app.session.persistNow()
   return app
 }
+/** A session with its tapes by id, so the Inbox's and the cache's orders compare alike. */
+function byId(session: Session): Session {
+  return { tapes: [...session.tapes].sort((a, b) => a.id.localeCompare(b.id)), boxes: session.boxes }
+}
+/** The collection at `dir` as its files hold it. */
+async function readAt(dir: string): Promise<Session> {
+  const { readCollection } = await import('@main/store/session')
+  const read = await readCollection(dir)
+  if (read.kind !== 'current') throw new Error('expected the current layout')
+  return read.session
+}
+/** What the store holds, in its durable form. */
+function held(app: Awaited<ReturnType<typeof start>>): Session {
+  return byId({ tapes: app.session.getTapes().map(app.session.durableTape), boxes: app.session.getBoxes() })
+}
 
-describe('portable collection through settings and the actual catalog owner', () => {
+describe('portable collection through settings and the actual collection owner', () => {
   it('opens a closed copied library under fresh machine settings with all organization and queued work', async () => {
     const original = await seed()
-    const expected = { tapes: original.session.getTapes(), boxes: original.session.getBoxes() }
     const copied = join(root, 'copied-library')
     await cp(original.config.getLibraryDir(), copied, { recursive: true })
+    const expected = await readAt(copied)
+    expect(byId(expected)).toEqual(held(original))
     await rm(original.paths.root, { recursive: true })
     process.env.TAPEBOX_DATA_DIR = join(root, 'fresh-machine')
     vi.resetModules()
@@ -126,19 +145,38 @@ describe('portable collection through settings and the actual catalog owner', ()
     await update({ libraryDir: copied, libraryAction: 'open' })
     expect(fresh.config.getLibraryDir()).toBe(copied)
     expect({ tapes: fresh.session.getTapes(), boxes: fresh.session.getBoxes() }).toEqual(expected)
-    expect(await readFile(join(copied, 'Tape123456', 'catalog.json'), 'utf8')).toBe('ordinary sidecar bytes')
-    expect(await readFile(join(copied, 'Tape123456', 'catalog.mp4'), 'utf8')).toBe('media bytes')
+    expect(await readFile(join(copied, 'shelf', 'Tape123456', 'shelf.json'), 'utf8')).toBe('ordinary sidecar bytes')
+    expect(await readFile(join(copied, 'shelf', 'Tape123456', 'shelf.mp4'), 'utf8')).toBe('media bytes')
     expect(state.emit).toHaveBeenCalledWith('library:opened', expected)
     fresh.session.upsertBox({ ...expected.boxes[0]!, name: 'Saved on new machine' })
     await fresh.session.persistNow()
-    const stored = SessionSchema.parse(JSON.parse(await readFile(fresh.collectionCatalog(copied), 'utf8')))
+    const stored = ShelfSchema.parse(JSON.parse(await readFile(fresh.shelfFile(copied), 'utf8')))
     expect(stored.boxes[0]!.name).toBe('Saved on new machine')
     const { record } = await import('@main/store/backupStore')
-    expect(record).toHaveBeenLastCalledWith(fresh.collectionCatalog(copied), Buffer.from(await readFile(fresh.collectionCatalog(copied))))
+    expect(record).toHaveBeenLastCalledWith(fresh.shelfFile(copied), Buffer.from(await readFile(fresh.shelfFile(copied))))
     vi.resetModules()
     const reopened = await start()
     expect(reopened.config.getLibraryDir()).toBe(copied)
     expect(reopened.session.getBoxes()[0]!.name).toBe('Saved on new machine')
+  })
+
+  it('converts an opened collection in the layout before Inbox and Shelf before it commits', async () => {
+    const app = await start()
+    const target = join(root, 'legacy')
+    await mkdir(join(target, 'Tape123456'), { recursive: true })
+    await writeFile(join(target, 'Tape123456', 'shelf.mp4'), 'media bytes')
+    const { shelved: _shelved, addedIndex: _addedIndex, ...legacy } = tape()
+    await writeFile(join(target, 'catalog.json'), JSON.stringify({
+      formatVersion: 1,
+      tapes: [{ ...legacy, archivedAtUtc: '2026-01-02T00:00:00.000Z' }],
+      boxes: [{ id: 'Box1234567', name: 'Kept box', order: 0 }],
+    }))
+    await update({ libraryDir: target, libraryAction: 'open' })
+    expect(app.config.getLibraryDir()).toBe(target)
+    expect(app.session.getTapes()).toEqual([tape()])
+    expect(app.session.getBoxes()).toEqual([{ id: 'Box1234567', name: 'Kept box', order: 0 }])
+    expect((await readdir(target)).sort()).toEqual(['inbox', 'shelf', 'shelf.json'])
+    expect(await readFile(join(target, 'shelf', 'Tape123456', 'shelf.mp4'), 'utf8')).toBe('media bytes')
   })
 
   it('moves metadata and media together, preserving the source until config commits', async () => {
@@ -148,39 +186,40 @@ describe('portable collection through settings and the actual catalog owner', ()
     await update({ libraryDir: target })
     expect(app.config.getLibraryDir()).toBe(target)
     expect(state.emit.mock.calls.some(([channel]) => channel === 'library:opened')).toBe(false)
-    expect(JSON.parse(await readFile(app.collectionCatalog(target), 'utf8')).boxes).toEqual(app.session.getBoxes())
-    await expect(readFile(app.collectionCatalog(from))).rejects.toMatchObject({ code: 'ENOENT' })
-    expect((await readdir(join(target, 'Tape123456'))).sort()).toEqual(['catalog.json', 'catalog.mp4'])
-    expect(await readdir(from), 'the moved tape folder goes with its files').toEqual([])
-    app.session.upsertBox({ id: 'Box1234567', name: 'After move', order: 7 })
+    expect(byId(await readAt(target))).toEqual(held(app))
+    await expect(readFile(app.shelfFile(from))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await readdir(join(target, 'shelf', 'Tape123456'))).sort()).toEqual(['shelf.json', 'shelf.mp4', 'tape.json'])
+    expect(await readdir(join(target, 'inbox', 'Tape654321'))).toEqual(['tape.json'])
+    expect(await readdir(from), 'the moved tape folders, and the Inbox and Shelf holding them, go with their files').toEqual([])
+    app.session.upsertBox({ id: 'Box1234567', name: 'After move', order: 0 })
     await app.session.persistNow()
-    expect(await readFile(app.collectionCatalog(target), 'utf8')).toContain('After move')
+    expect(await readFile(app.shelfFile(target), 'utf8')).toContain('After move')
   })
 
-  it('carries a catalog change saved in the old folder during the move to the new one', async () => {
+  it('carries a shelf change saved in the old folder during the move to the new one', async () => {
     const app = await seed()
     const target = join(root, 'moved')
     state.progress = ({ filesDone, filesTotal }) => {
-      // After every file, the catalog included, has been copied.
+      // After every file, the store's own included, has been copied.
       if (filesDone < filesTotal) return
-      app.session.upsertBox({ id: 'Box1234567', name: 'During move', order: 7 })
+      app.session.upsertBox({ id: 'Box1234567', name: 'During move', order: 0 })
       void app.session.persistNow()
     }
     await update({ libraryDir: target })
     expect(app.config.getLibraryDir()).toBe(target)
-    expect(await readFile(app.collectionCatalog(target), 'utf8')).toContain('During move')
+    expect(await readFile(app.shelfFile(target), 'utf8')).toContain('During move')
   })
 
   it('refuses to move over another collection even when media names do not collide', async () => {
     const app = await seed()
     const target = join(root, 'other')
-    await mkdir(dirname(app.collectionCatalog(target)), { recursive: true })
-    const bytes = JSON.stringify({ formatVersion: 1, tapes: [], boxes: [] })
-    await writeFile(app.collectionCatalog(target), bytes)
+    await mkdir(target, { recursive: true })
+    const bytes = JSON.stringify({ formatVersion: 1, boxes: [], loose: [] })
+    await writeFile(app.shelfFile(target), bytes)
     await expect(update({ libraryDir: target })).rejects.toThrow()
-    expect(await readFile(app.collectionCatalog(target), 'utf8')).toBe(bytes)
+    expect(await readFile(app.shelfFile(target), 'utf8')).toBe(bytes)
     expect(app.config.getLibraryDir()).toBe(app.paths.library)
-    expect(await readdir(target)).toEqual(['catalog.json'])
+    expect(await readdir(target)).toEqual(['shelf.json'])
   })
 
   it('keeps another settings save made while a collection switch runs', async () => {
@@ -208,49 +247,50 @@ describe('portable collection through settings and the actual catalog owner', ()
     }
     await expect(update({ libraryDir: target })).rejects.toThrow()
     expect(app.config.getLibraryDir()).toBe(app.paths.library)
-    expect(await readFile(app.collectionCatalog(app.paths.library), 'utf8')).toContain('Kept box')
-    await expect(readFile(app.collectionCatalog(target))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(app.shelfFile(app.paths.library), 'utf8')).toContain('Kept box')
+    await expect(readFile(app.shelfFile(target))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readdir(target), 'the rolled-back copies leave no folders behind').toEqual([])
   })
 
   it.each(['move', 'open'] as const)('keeps the original collection and config if the %s location save fails', async (action) => {
     const app = await seed()
     const target = join(root, 'destination')
     if (action === 'open') await cp(app.config.getLibraryDir(), target, { recursive: true })
-    const original = await readFile(app.collectionCatalog(app.paths.library), 'utf8')
-    const destination = action === 'open' ? await readFile(app.collectionCatalog(target), 'utf8') : null
+    const original = await readFile(app.shelfFile(app.paths.library), 'utf8')
+    const destination = action === 'open' ? await readFile(app.shelfFile(target), 'utf8') : null
     state.failConfig = true
     await expect(update({ libraryDir: target, ...(action === 'open' ? { libraryAction: 'open' as const } : {}) })).rejects.toThrow()
     expect(app.config.getLibraryDir()).toBe(app.paths.library)
     expect(app.session.getBoxes()[0]!.name).toBe('Kept box')
-    expect(await readFile(app.collectionCatalog(app.paths.library), 'utf8')).toBe(original)
-    if (destination) expect(await readFile(app.collectionCatalog(target), 'utf8')).toBe(destination)
-    else await expect(readFile(app.collectionCatalog(target))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(app.shelfFile(app.paths.library), 'utf8')).toBe(original)
+    if (destination) expect(await readFile(app.shelfFile(target), 'utf8')).toBe(destination)
+    else await expect(readFile(app.shelfFile(target))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it.each(['absent', 'invalid', 'newer'])('refuses an %s opened catalog without quarantine or writes', async (kind) => {
+  it.each(['absent', 'invalid', 'newer'])('refuses an %s opened shelf file without quarantine or writes', async (kind) => {
     const app = await seed()
     const target = join(root, kind)
-    await mkdir(dirname(app.collectionCatalog(target)), { recursive: true })
-    const bytes = kind === 'invalid' ? '{broken' : JSON.stringify({ formatVersion: 999, tapes: [], boxes: [] })
-    if (kind !== 'absent') await writeFile(app.collectionCatalog(target), bytes)
+    await mkdir(target, { recursive: true })
+    const bytes = kind === 'invalid' ? '{broken' : JSON.stringify({ formatVersion: 999, boxes: [], loose: [] })
+    if (kind !== 'absent') await writeFile(app.shelfFile(target), bytes)
     await expect(update({ libraryDir: target, libraryAction: 'open' })).rejects.toThrow('Could not open the library at')
     expect(app.config.getLibraryDir()).toBe(app.paths.library)
-    expect(await readdir(dirname(app.collectionCatalog(target)))).toEqual(kind === 'absent' ? [] : ['catalog.json'])
-    if (kind !== 'absent') expect(await readFile(app.collectionCatalog(target), 'utf8')).toBe(bytes)
+    expect(await readdir(target)).toEqual(kind === 'absent' ? [] : ['shelf.json'])
+    if (kind !== 'absent') expect(await readFile(app.shelfFile(target), 'utf8')).toBe(bytes)
   })
 
   it('cancels opening after the outgoing flush without changing either collection', async () => {
     const app = await seed()
     const target = join(root, 'opened')
     await cp(app.config.getLibraryDir(), target, { recursive: true })
-    const destination = await readFile(app.collectionCatalog(target), 'utf8')
-    app.session.upsertBox({ id: 'Box1234567', name: 'Unsaved edit', order: 7 })
-    state.cancelOnCatalog = true
+    const destination = await readFile(app.shelfFile(target), 'utf8')
+    app.session.upsertBox({ id: 'Box1234567', name: 'Unsaved edit', order: 0 })
+    state.cancelOnShelf = true
     await expect(update({ libraryDir: target, libraryAction: 'open' })).rejects.toThrow()
     expect(app.config.getLibraryDir()).toBe(app.paths.library)
     expect(app.session.getBoxes()[0]!.name).toBe('Unsaved edit')
-    expect(await readFile(app.collectionCatalog(app.paths.library), 'utf8')).toContain('Unsaved edit')
-    expect(await readFile(app.collectionCatalog(target), 'utf8')).toBe(destination)
+    expect(await readFile(app.shelfFile(app.paths.library), 'utf8')).toContain('Unsaved edit')
+    expect(await readFile(app.shelfFile(target), 'utf8')).toBe(destination)
     expect(state.emit.mock.calls.some(([channel]) => channel === 'library:opened')).toBe(false)
   })
 
@@ -263,30 +303,31 @@ describe('portable collection through settings and the actual catalog owner', ()
     let began!: () => void
     const started = new Promise<void>((resolve) => { began = resolve })
     const hold = new Promise<void>((resolve) => { finish = resolve })
-    state.beforeCatalog = async () => { state.beforeCatalog = null; began(); await hold }
-    const edit = state.handlers.get('boxes:reorder')!({ orderedIds: ['Box1234567', 'Box7654321'] })
+    state.beforeShelf = async () => { state.beforeShelf = null; began(); await hold }
+    const edit = state.handlers.get('boxes:reorder')!({ orderedIds: ['Box7654321', 'Box1234567'] })
     await started
     const opening = update({ libraryDir: target, libraryAction: 'open' })
     finish()
     await edit
     await opening
-    expect(app.session.getBoxes()[0]!.order).toBe(7)
-    expect(JSON.parse(await readFile(app.collectionCatalog(app.paths.library), 'utf8')).boxes[0].order).toBe(0)
+    expect(app.session.getBoxes().map((box) => box.id), 'the opened copy keeps its own order').toEqual(['Box1234567', 'Box7654321'])
+    const saved = ShelfSchema.parse(JSON.parse(await readFile(app.shelfFile(app.paths.library), 'utf8')))
+    expect(saved.boxes.map((box) => box.id)).toEqual(['Box7654321', 'Box1234567'])
   })
 })
 
 describe('obsolete machine-root catalogs', () => {
-  it('uses the collection catalog and leaves unrelated old catalog bytes in place', async () => {
-    const { paths, collectionCatalog } = await import('@main/paths')
-    await mkdir(dirname(collectionCatalog(paths.library)), { recursive: true })
+  it('uses the collection\'s shelf file and leaves unrelated old catalog bytes in place', async () => {
+    const { paths, shelfFile } = await import('@main/paths')
+    await mkdir(paths.library, { recursive: true })
     const obsolete = join(paths.root, 'catalog.json')
     const oldBytes = JSON.stringify({ tapes: [], boxes: [{ id: 'Box1234567', name: 'Old', order: 0 }] })
     await writeFile(obsolete, oldBytes)
-    const current = JSON.stringify({ formatVersion: 1, tapes: [], boxes: [{ id: 'Box7654321', name: 'Current', order: 1 }] })
-    await writeFile(collectionCatalog(paths.library), current)
+    const current = JSON.stringify({ formatVersion: 1, boxes: [{ id: 'Box7654321', name: 'Current', tapeIds: [] }], loose: [] })
+    await writeFile(shelfFile(paths.library), current)
     const app = await start()
     expect(app.session.getBoxes()[0]!.name).toBe('Current')
-    expect(await readFile(collectionCatalog(paths.library), 'utf8')).toBe(current)
+    expect(await readFile(shelfFile(paths.library), 'utf8')).toBe(current)
     expect(await readFile(obsolete, 'utf8')).toBe(oldBytes)
   })
 

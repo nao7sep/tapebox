@@ -23,7 +23,8 @@ function tape(overrides: Partial<Tape> & { id: string }): Tape {
     downloadedAtUtc: null,
     name: null,
     renamedAtUtc: null,
-    archivedAtUtc: null,
+    addedIndex: 0,
+    shelved: false,
     boxId: null,
     order: 0,
     pausedAtUtc: null,
@@ -37,37 +38,49 @@ function tape(overrides: Partial<Tape> & { id: string }): Tape {
 const ids = (tapes: Tape[]) => tapes.map((t) => t.id)
 
 describe('visibleTapes — inbox', () => {
-  it('orders by manual order ascending (top first)', () => {
-    const tapes = [tape({ id: 'bbbbbbbbbb', order: 1 }), tape({ id: 'cccccccccc', order: 2 }), tape({ id: 'aaaaaaaaaa', order: 0 })]
-    expect(ids(visibleTapes(tapes, 'inbox'))).toEqual(['aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc'])
-  })
-
-  it('breaks order ties by recency, newest first', () => {
+  it('puts the newest added tape first', () => {
     const tapes = [
-      tape({ id: 'old_______', order: 0, addedAtUtc: '2024-01-01T00:00:00.000Z' }),
-      tape({ id: 'new_______', order: 0, addedAtUtc: '2024-06-01T00:00:00.000Z' }),
+      tape({ id: 'old_______', addedAtUtc: '2024-01-01T00:00:00.000Z' }),
+      tape({ id: 'new_______', addedAtUtc: '2024-06-01T00:00:00.000Z' }),
+      tape({ id: 'mid_______', addedAtUtc: '2024-03-01T00:00:00.000Z' }),
     ]
-    expect(ids(visibleTapes(tapes, 'inbox'))).toEqual(['new_______', 'old_______'])
+    expect(ids(visibleTapes(tapes, 'inbox'))).toEqual(['new_______', 'mid_______', 'old_______'])
   })
 
-  it('keeps a failed tape in its manual position instead of surfacing it', () => {
+  it('keeps a batch added together in its pasted order, first URL on top', () => {
+    const batch = '2024-06-01T00:00:00.000Z'
     const tapes = [
-      tape({ id: 'top_______', order: 0 }),
-      tape({ id: 'boom______', order: 1, state: 'failed', failedAtUtc: '2024-09-09T00:00:00.000Z' }),
-      tape({ id: 'bottom____', order: 2 }),
+      tape({ id: 'cccccccccc', addedAtUtc: batch, addedIndex: 2 }),
+      tape({ id: 'earlier___', addedAtUtc: '2024-01-01T00:00:00.000Z' }),
+      tape({ id: 'aaaaaaaaaa', addedAtUtc: batch, addedIndex: 1 }),
+      tape({ id: 'bbbbbbbbbb', addedAtUtc: batch, addedIndex: 0 }),
     ]
-    expect(ids(visibleTapes(tapes, 'inbox'))).toEqual(['top_______', 'boom______', 'bottom____'])
+    expect(ids(visibleTapes(tapes, 'inbox'))).toEqual(['bbbbbbbbbb', 'aaaaaaaaaa', 'cccccccccc', 'earlier___'])
   })
 
-  it('excludes archived tapes', () => {
-    const tapes = [tape({ id: 'aaaaaaaaaa', order: 0 }), tape({ id: 'zzzzzzzzzz', order: 1, archivedAtUtc: '2024-01-01T00:00:00.000Z' })]
+  it('breaks remaining ties by id', () => {
+    const tapes = [tape({ id: 'bbbbbbbbbb' }), tape({ id: 'aaaaaaaaaa' })]
+    expect(ids(visibleTapes(tapes, 'inbox'))).toEqual(['aaaaaaaaaa', 'bbbbbbbbbb'])
+  })
+
+  it('ignores order, download time and state', () => {
+    const tapes = [
+      tape({ id: 'first_____', addedAtUtc: '2024-06-01T00:00:00.000Z', order: 5 }),
+      tape({ id: 'boom______', addedAtUtc: '2024-03-01T00:00:00.000Z', order: -3, state: 'failed', failedAtUtc: '2024-09-09T00:00:00.000Z' }),
+      tape({ id: 'last______', addedAtUtc: '2024-01-01T00:00:00.000Z', order: 0, downloadedAtUtc: '2024-12-01T00:00:00.000Z' }),
+    ]
+    expect(ids(visibleTapes(tapes, 'inbox'))).toEqual(['first_____', 'boom______', 'last______'])
+  })
+
+  it('excludes shelved tapes', () => {
+    const tapes = [tape({ id: 'aaaaaaaaaa' }), tape({ id: 'zzzzzzzzzz', order: 1, shelved: true })]
     expect(ids(visibleTapes(tapes, 'inbox'))).toEqual(['aaaaaaaaaa'])
   })
 })
 
 describe('visibleTapes — archived', () => {
   const archived = (over: Partial<Tape> & { id: string }) =>
-    tape({ archivedAtUtc: '2024-01-01T00:00:00.000Z', ...over })
+    tape({ shelved: true, ...over })
 
   it('shows one box at a time in manual order', () => {
     const tapes = [

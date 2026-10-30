@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
+import { tapeDir } from '@main/paths'
 import { cancelAllWork, hasRunningWork, resumeWork } from '@main/work-registry'
 import { until } from '../../helpers/until'
 
@@ -64,21 +65,26 @@ const { registerLibraryHandlers } = await import('@main/ipc/library')
 
 /** A file in a tape's folder, which this creates. */
 function at(id: string, name: string): string {
-  mkdirSync(join(state.libraryDir, id), { recursive: true })
-  return join(state.libraryDir, id, name)
+  mkdirSync(folder(id), { recursive: true })
+  return join(folder(id), name)
+}
+
+/** An Inbox tape's own folder. */
+function folder(id: string): string {
+  return tapeDir(state.libraryDir, { id, shelved: false })
 }
 
 // Each tape has its folder in the library, as a downloaded tape does.
 function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
-  mkdirSync(join(state.libraryDir, overrides.id), { recursive: true })
+  mkdirSync(folder(overrides.id), { recursive: true })
   return {
     sourceUrl: 'https://example.test/watch', state: 'downloaded',
-    addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
+    addedAtUtc: '2026-01-01T00:00:00.000Z', addedIndex: 0, sourceId: 'source', extractor: 'test',
     title: 'Old title', uploader: 'Old uploader', durationSeconds: 61, chapterCount: 3,
     probedAtUtc: '2026-01-01T00:00:00.000Z', filename: 'Take.mp4',
     sidecarFilename: null, thumbnailFilename: null,
     downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
-    name: 'Take', renamedAtUtc: null, archivedAtUtc: null,
+    name: 'Take', renamedAtUtc: null, shelved: false,
     boxId: null, order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
     ...overrides,
   }
@@ -196,7 +202,7 @@ describe('accepting refreshed metadata', () => {
     expect(emit).toHaveBeenCalledWith('tapes:updated', expect.objectContaining({ title: 'New title' }))
   })
 
-  it('preserves unrelated archive and order changes made during Apply', async () => {
+  it('preserves unrelated box and order changes made during Apply', async () => {
     const tape = makeTape({ id: 'Busy001aaa' })
     state.tapes = [tape]
     let release!: (value: string | null) => void
@@ -204,9 +210,9 @@ describe('accepting refreshed metadata', () => {
     const apply = invoke<Tape>('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })
     try {
       await until(() => expect(downloadThumbnail).toHaveBeenCalledOnce())
-      state.tapes = [{ ...tape, archivedAtUtc: PROBED_AT, order: 7 }]
+      state.tapes = [{ ...tape, boxId: 'box-summer', order: 7 }]
     } finally { release(null); await apply }
-    expect(state.tapes[0]).toMatchObject({ title: 'New title', archivedAtUtc: PROBED_AT, order: 7 })
+    expect(state.tapes[0]).toMatchObject({ title: 'New title', boxId: 'box-summer', order: 7 })
     await expect(invoke('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })).resolves.toMatchObject({ title: 'New title' })
   })
 
@@ -284,13 +290,13 @@ describe('accepting refreshed metadata', () => {
     expect(downloadThumbnail).toHaveBeenCalledExactlyOnceWith(
       'Noposteryt',
       'https://example.test/watch',
-      join(state.libraryDir, 'Noposteryt'),
+      folder('Noposteryt'),
       expect.anything(),
     )
     expect(saveThumbnailJpeg).toHaveBeenCalledExactlyOnceWith(
       'Noposteryt',
       raw,
-      join(state.libraryDir, 'Noposteryt'),
+      folder('Noposteryt'),
       'Holiday',
       expect.any(AbortSignal),
     )

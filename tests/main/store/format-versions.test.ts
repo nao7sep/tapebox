@@ -51,35 +51,35 @@ async function writeNewer(path: string, body: Record<string, unknown>, mode?: nu
 
 const NEWER = { name: 'NewerFormatError', version: 2 }
 const BOX = { id: 'box1234567', name: 'Box', order: 0 }
+const TAPE = {
+  id: 'Tape123456', sourceUrl: 'https://example.test/watch', state: 'failed', addedAtUtc: '2026-07-08T00:00:00.000Z',
+  addedIndex: 0, sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: 0,
+  probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
+  downloadStartedAtUtc: null, downloadedAtUtc: null, name: null, renamedAtUtc: null,
+  failureCode: null, pausedAtUtc: null, failedAtUtc: '2026-07-08T00:00:01.000Z', lastError: 'gone',
+}
 
-describe('catalog.json', () => {
+describe('shelf.json', () => {
   beforeEach(async () => {
     await mkdir(join(root, 'library'), { recursive: true })
     await (await import('@main/store/config')).loadSettings()
   })
   const session = () => import('@main/store/session')
-  const path = () => join(root, 'library', 'catalog.json')
+  const path = () => join(root, 'library', 'shelf.json')
+  const SHELF_BOX = { id: BOX.id, name: BOX.name, tapeIds: [] }
 
   it('reads an unmarked current-shape file and marks it at the next save', async () => {
-    const tape = {
-      id: 'Tape123456', sourceUrl: 'https://example.test/watch', state: 'failed', addedAtUtc: '2026-07-08T00:00:00.000Z',
-      sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: 0,
-      probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
-      downloadStartedAtUtc: null, downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: null,
-      boxId: null, order: 0, failureCode: null, pausedAtUtc: null, failedAtUtc: '2026-07-08T00:00:01.000Z', lastError: 'gone',
-    }
-    await writeFile(path(), JSON.stringify({ tapes: [tape], boxes: [BOX] }))
+    await writeFile(path(), JSON.stringify({ boxes: [SHELF_BOX], loose: [] }))
     const store = await session()
-    expect(await store.loadSession()).toMatchObject({ status: 'loaded', tapeCount: 1 })
-    expect(store.getTapes()[0]).toMatchObject({ id: 'Tape123456', failureCode: null })
+    expect(await store.loadSession()).toMatchObject({ status: 'loaded', tapeCount: 0 })
     expect(store.getBoxes()).toEqual([BOX])
     store.upsertBox({ ...BOX, name: 'Renamed' })
     expect(await store.persistNow()).toBe(true)
-    expect(await stored(path())).toMatchObject({ formatVersion: 1, tapes: [{ failureCode: null }] })
+    expect(await stored(path())).toMatchObject({ formatVersion: 1, boxes: [{ name: 'Renamed' }] })
   })
 
   it('reads an unrecognized marker through current-shape validation without rewriting it', async () => {
-    const text = JSON.stringify({ formatVersion: 'one', tapes: [], boxes: [BOX] })
+    const text = JSON.stringify({ formatVersion: 'one', boxes: [SHELF_BOX], loose: [] })
     await writeFile(path(), text)
     const store = await session()
     expect(await store.loadSession()).toMatchObject({ status: 'loaded' })
@@ -104,12 +104,66 @@ describe('catalog.json', () => {
   })
 
   it('refuses a newer file, naming it, and leaves it byte-identical', async () => {
-    const text = await writeNewer(path(), { tapes: [], boxes: [] })
+    const text = await writeNewer(path(), { boxes: [], loose: [] })
     const store = await session()
     await expect(store.loadSession()).rejects.toMatchObject({ ...NEWER, path: path() })
     expect(await store.persistNow()).toBe(true)
     expect(await readFile(path(), 'utf8')).toBe(text)
-    expect(await readdir(dirname(path()))).toEqual(['catalog.json'])
+    expect(await readdir(dirname(path()))).toEqual(['shelf.json'])
+  })
+})
+
+describe('tape.json', () => {
+  beforeEach(async () => {
+    await mkdir(join(root, 'library', 'inbox', TAPE.id), { recursive: true })
+    await writeFile(join(root, 'library', 'shelf.json'), JSON.stringify({ formatVersion: 1, boxes: [], loose: [] }))
+    await (await import('@main/store/config')).loadSettings()
+  })
+  const session = () => import('@main/store/session')
+  const path = () => join(root, 'library', 'inbox', TAPE.id, 'tape.json')
+
+  it('reads an unmarked current-shape file and marks it at the next save', async () => {
+    await writeFile(path(), JSON.stringify(TAPE))
+    const store = await session()
+    expect(await store.loadSession()).toMatchObject({ status: 'loaded', tapeCount: 1, damaged: [] })
+    expect(store.getTapes()[0]).toMatchObject({ id: TAPE.id, failureCode: null, shelved: false })
+    store.upsertTape({ ...store.getTapes()[0]!, name: 'Renamed' })
+    expect(await store.persistNow()).toBe(true)
+    expect(Object.keys(await stored(path()))[0]).toBe('formatVersion')
+    expect(await stored(path())).toMatchObject({ formatVersion: 1, name: 'Renamed', failureCode: null })
+  })
+
+  it('writes format 1 first and reads it back', async () => {
+    await writeFile(path(), JSON.stringify({ formatVersion: 1, ...TAPE }))
+    const store = await session()
+    await store.loadSession()
+    store.upsertTape({ ...store.getTapes()[0]!, title: 'Titled' })
+    expect(await store.persistNow()).toBe(true)
+    expect(Object.keys(await stored(path()))[0]).toBe('formatVersion')
+
+    const relaunched = await relaunch(async () => {
+      await (await import('@main/store/config')).loadSettings()
+      return session()
+    })
+    expect(await relaunched.loadSession()).toMatchObject({ status: 'loaded', tapeCount: 1 })
+    expect(relaunched.getTapes()[0]).toMatchObject({ id: TAPE.id, title: 'Titled' })
+  })
+
+  // One tape's newer file does not stop the collection: that tape is reported as
+  // damaged and its folder is left exactly as it is.
+  it('reports a newer file as damaged and leaves it byte-identical', async () => {
+    const text = await writeNewer(path(), TAPE)
+    const store = await session()
+    expect(await store.loadSession()).toMatchObject({
+      status: 'loaded',
+      tapeCount: 0,
+      damaged: [{ id: TAPE.id, path: path(), reason: expect.stringMatching(/format 2/) }],
+    })
+    expect(store.getTapes()).toEqual([])
+    store.upsertBox(BOX)
+    expect(await store.persistNow()).toBe(true)
+    expect(await readFile(path(), 'utf8')).toBe(text)
+    expect(await readdir(dirname(path()))).toEqual(['tape.json'])
   })
 })
 

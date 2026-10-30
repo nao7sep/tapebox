@@ -29,7 +29,8 @@ export const ImportableUrlSchema = z.string().trim().url().refine(isImportableUr
  *   listing    -> probe found a page that lists videos, not a single video; a
  *                 resting dead-end the user resolves by scanning it (Copy URL / Scan page)
  *
- * 'archivedAtUtc' is orthogonal to state — any state can be archived.
+ * Where a tape sits — the Inbox or the Shelf, its box and its place there — is
+ * not part of its state; see {@link TapeSchema}.
  */
 export const tapeStates = [
   'queued',
@@ -51,12 +52,17 @@ export const DOWNLOAD_STALL_AFTER_MS = 2 * 60_000
 export const tapeFailureCodes = ['download', 'duplicate'] as const
 export type TapeFailureCode = (typeof tapeFailureCodes)[number]
 
-export const TapeSchema = z.object({
+/** The facts a tape's own tape.json holds: everything about the tape, nothing
+ * about where the user put it. */
+const TapeFactsSchema = z.object({
   // Required at insertion.
   id: EntityIdSchema,              // internal nanoid; stable for the Tape's lifetime
   sourceUrl: ImportableUrlSchema,
   state: z.enum(tapeStates),
   addedAtUtc: z.string(),
+  // Position within the add that brought the tape in, first URL 0, so tapes
+  // added together keep their pasted order in the Inbox.
+  addedIndex: z.number().int().nonnegative(),
 
   // Filled by probe.
   sourceId: z.string().nullable(),       // yt-dlp's id (unique only within an extractor)
@@ -80,34 +86,38 @@ export const TapeSchema = z.object({
   name: z.string().nullable(),
   renamedAtUtc: z.string().nullable(),
 
-  // Archive marker (orthogonal to state).
-  archivedAtUtc: z.string().nullable(),
-
-  // Which box an archived tape is filed in (null = Unboxed, and always null while
-  // in the inbox).
-  boxId: z.string().nullable(),
-
-  // Manual position within the tape's CURRENT list — the inbox, a box, or Unboxed.
-  // Lower = nearer the top; new tapes get an order below everything else so they
-  // land on top (see @shared/order).
-  order: z.number().int(),
-
   // State-transition markers.
   pausedAtUtc: z.string().nullable(),          // when state → 'paused'
   failedAtUtc: z.string().nullable(),          // when state → 'failed'
   failureCode: z.enum(tapeFailureCodes).nullable(),  // why state → 'failed'; null otherwise
   lastError: z.string().nullable(),
 })
+
+/**
+ * A tape as the app holds it: its facts, and where it sits, which the
+ * collection's folders and shelf.json say (store/collection-files.ts).
+ */
+export const TapeSchema = TapeFactsSchema.extend({
+  // True when the tape's folder is in shelf/; false while it is in inbox/.
+  shelved: z.boolean(),
+
+  // Which box a shelved tape is in (null = Loose tapes, and always null in the Inbox).
+  boxId: z.string().nullable(),
+
+  // Position within a shelved tape's list — a box or Loose tapes. Lower = nearer
+  // the top. The Inbox has no chosen order (see @shared/order), so it is 0 there.
+  order: z.number().int(),
+})
 export type Tape = z.infer<typeof TapeSchema>
 
 /**
  * Sidecar JSON layout:
- *   { ...ytDlpInfoJson, tapebox: { media } }                in the library
+ *   { ...ytDlpInfoJson, tapebox: { media } }                in the collection
  *   { ...ytDlpInfoJson, tapebox: SidecarTapeBox }           in an exported bundle
  *
- * In the library the catalog is the only record of a tape's source URL, name,
- * times and file names, so the sidecar keeps yt-dlp's info and the media facts
- * alone. An export writes the whole section from the catalog, so the bundle
+ * In the collection the tape's tape.json is the only record of its source URL,
+ * name, times and file names, so the sidecar keeps yt-dlp's info and the media
+ * facts alone. An export writes the whole section from tape.json, so the bundle
  * can be imported from its sidecar alone.
  *
  * Path-containing yt-dlp fields (filename, _filename, filepath, etc.) are
@@ -165,17 +175,69 @@ export type Box = z.infer<typeof BoxSchema>
 /** The tape fields that name a file in the tape's folder. */
 export const TRACKED_FILENAME_FIELDS = ['filename', 'sidecarFilename', 'thumbnailFilename'] as const
 
+/** The file in each tape's folder that holds the tape itself. */
+export const TAPE_FILE = 'tape.json'
+
+/** A tape as its own `<collection>/<inbox|shelf>/<id>/tape.json` holds it. */
+export const TapeFileSchema = TapeFactsSchema.superRefine((tape, ctx) => {
+  // A tape's own files share its folder with tape.json.
+  const filenames = new Map<string, string>([[portableFilenameIdentity(TAPE_FILE), 'tape.json']])
+  for (const field of TRACKED_FILENAME_FIELDS) {
+    const filename = tape[field]
+    if (filename === null) continue
+    const identity = portableFilenameIdentity(filename)
+    const previous = filenames.get(identity)
+    if (previous !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [field],
+        message: `a tape's files must be unique by portable identity; conflicts with ${previous}`,
+      })
+    } else {
+      filenames.set(identity, field)
+    }
+  }
+})
+export type TapeFile = z.infer<typeof TapeFileSchema>
+
+/** Every box id and name is distinct, and no name is empty. */
+function checkBoxes(boxes: readonly { id: string; name: string }[], ctx: z.RefinementCtx, path: string): void {
+  const boxIds = new Set<string>()
+  const boxNames = new Set<string>()
+  boxes.forEach((box, i) => {
+    if (boxIds.has(box.id)) ctx.addIssue({ code: 'custom', path: [path, i, 'id'], message: `duplicate box id: ${box.id}` })
+    boxIds.add(box.id)
+    const foldedName = boxNameIdentity(box.name)
+    if (foldedName.length === 0 || boxNames.has(foldedName)) {
+      ctx.addIssue({ code: 'custom', path: [path, i, 'name'], message: 'box names must be non-empty and unique' })
+    }
+    boxNames.add(foldedName)
+  })
+}
+
 /**
- * Session file shape — persisted in <library>/catalog.json, beside the tape folders.
- * Live progress data (percent, speed, ETA) is intentionally absent;
- * it's rebuilt by the queue at runtime.
+ * shelf.json: only what the user decided about the Shelf — the boxes in their
+ * order, the tapes each box holds in order, and the order of the loose tapes.
+ * Which tapes are on the Shelf at all is which folders shelf/ holds.
+ */
+export const ShelfSchema = z.object({
+  boxes: z.array(z.object({ id: EntityIdSchema, name: z.string(), tapeIds: z.array(EntityIdSchema) })),
+  loose: z.array(EntityIdSchema),
+}).superRefine((shelf, ctx) => checkBoxes(shelf.boxes, ctx, 'boxes'))
+export type Shelf = z.infer<typeof ShelfSchema>
+
+/**
+ * The collection as the app holds it: every tape with where it sits, and the
+ * boxes with their positions. On disk it is each tape's {@link TapeFileSchema}
+ * in its folder and the {@link ShelfSchema}. Live progress data (percent, speed,
+ * ETA) is intentionally absent; it's rebuilt by the queue at runtime.
  */
 export const SessionSchema = z.object({
   tapes: z.array(TapeSchema),
   boxes: z.array(BoxSchema),
 }).superRefine((session, ctx) => {
   // Each id names the tape's folder, so ids differing only in case would share
-  // one on a case-insensitive drive; a tape's own files share that folder.
+  // one on a case-insensitive drive.
   const tapeIds = new Set<string>()
   for (let i = 0; i < session.tapes.length; i++) {
     const tape = session.tapes[i]!
@@ -184,44 +246,13 @@ export const SessionSchema = z.object({
       ctx.addIssue({ code: 'custom', path: ['tapes', i, 'id'], message: `duplicate tape id: ${tape.id}` })
     }
     tapeIds.add(id)
-
-    const filenames = new Map<string, string>()
-    for (const field of TRACKED_FILENAME_FIELDS) {
-      const filename = tape[field]
-      if (filename === null) continue
-      const identity = portableFilenameIdentity(filename)
-      const previous = filenames.get(identity)
-      if (previous !== undefined) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['tapes', i, field],
-          message: `a tape's files must be unique by portable identity; conflicts with ${previous}`,
-        })
-      } else {
-        filenames.set(identity, field)
-      }
-    }
   }
-
-  const boxIds = new Set<string>()
-  const boxNames = new Set<string>()
-  for (let i = 0; i < session.boxes.length; i++) {
-    const box = session.boxes[i]!
-    const id = box.id
-    if (boxIds.has(id)) {
-      ctx.addIssue({ code: 'custom', path: ['boxes', i, 'id'], message: `duplicate box id: ${id}` })
-    }
-    boxIds.add(id)
-    const foldedName = boxNameIdentity(box.name)
-    if (foldedName.length === 0 || boxNames.has(foldedName)) {
-      ctx.addIssue({ code: 'custom', path: ['boxes', i, 'name'], message: 'box names must be non-empty and unique' })
-    }
-    boxNames.add(foldedName)
-  }
+  checkBoxes(session.boxes, ctx, 'boxes')
+  const boxIds = new Set(session.boxes.map((box) => box.id))
   for (let i = 0; i < session.tapes.length; i++) {
-    const boxId = session.tapes[i]!.boxId
-    if (boxId !== null && !boxIds.has(boxId)) {
-      ctx.addIssue({ code: 'custom', path: ['tapes', i, 'boxId'], message: `unknown box id: ${boxId}` })
+    const tape = session.tapes[i]!
+    if (tape.boxId !== null && (!tape.shelved || !boxIds.has(tape.boxId))) {
+      ctx.addIssue({ code: 'custom', path: ['tapes', i, 'boxId'], message: `unknown box id: ${tape.boxId}` })
     }
   }
 })

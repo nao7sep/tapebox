@@ -41,7 +41,7 @@ const tape: Tape = {
   probedAtUtc: '2026-01-01T00:00:00.000Z', filename: 'Take.mp4',
   sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg',
   downloadStartedAtUtc: null, downloadedAtUtc: '2026-01-01T00:00:00.000Z',
-  name: 'Take', renamedAtUtc: null, archivedAtUtc: null, boxId: null, order: 0,
+  name: 'Take', renamedAtUtc: null, addedIndex: 0, shelved: false, boxId: null, order: 0,
   pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
 const libraryState = vi.hoisted(() => ({ dir: '' }))
@@ -63,11 +63,11 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-rollback-'))
   libraryState.dir = join(root, 'library')
   state.destinationDir = join(root, 'destination')
-  await mkdir(join(libraryState.dir, tape.id), { recursive: true })
+  await mkdir(join(libraryState.dir, 'inbox', tape.id), { recursive: true })
   await mkdir(state.destinationDir)
-  await writeFile(join(libraryState.dir, tape.id, 'Take.mp4'), 'source video')
-  await writeFile(join(libraryState.dir, tape.id, 'Take.jpg'), 'source poster')
-  await writeFile(join(libraryState.dir, tape.id, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
+  await writeFile(join(libraryState.dir, 'inbox', tape.id, 'Take.mp4'), 'source video')
+  await writeFile(join(libraryState.dir, 'inbox', tape.id, 'Take.jpg'), 'source poster')
+  await writeFile(join(libraryState.dir, 'inbox', tape.id, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   registerExportHandlers()
 })
 
@@ -82,7 +82,7 @@ describe('export:files rollback ownership', () => {
     })
     await expect(failure).rejects.toThrow('The operation could not be completed.')
     expect(await readdir(state.destinationDir)).toEqual([])
-    expect(await readFile(join(libraryState.dir, tape.id, 'Take.mp4'), 'utf8')).toBe('source video')
+    expect(await readFile(join(libraryState.dir, 'inbox', tape.id, 'Take.mp4'), 'utf8')).toBe('source video')
   })
 
   it('keeps rollback cleanup details in diagnostics while the rejection stays authored', async () => {

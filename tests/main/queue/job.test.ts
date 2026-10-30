@@ -12,6 +12,8 @@ import type { Tape } from '@shared/domain'
 const T0 = '2026-01-01T00:00:00.000Z'
 const T1 = '2026-06-26T00:00:00.000Z'
 const LIBRARY_DIR = join(tmpdir(), 'tapebox-job-library')
+/** A queued tape's folder is in the Inbox. */
+const TAPE_DIR = join(LIBRARY_DIR, 'inbox', 't1')
 
 function tape(over: Partial<Tape>): Tape {
   return {
@@ -19,6 +21,7 @@ function tape(over: Partial<Tape>): Tape {
     sourceUrl: 'http://example.com/v',
     state: 'queued',
     addedAtUtc: T0,
+    addedIndex: 0,
     sourceId: null,
     extractor: null,
     title: null,
@@ -33,7 +36,7 @@ function tape(over: Partial<Tape>): Tape {
     downloadedAtUtc: null,
     name: null,
     renamedAtUtc: null,
-    archivedAtUtc: null,
+    shelved: false,
     boxId: null,
     order: 0,
     pausedAtUtc: null,
@@ -72,8 +75,8 @@ function makeDeps(opts: {
     ytdlp: {
       probe: opts.probe ?? (async () => ({ kind: 'page' })),
       download:
-        opts.download ?? (async () => ({ mediaPath: join(LIBRARY_DIR, 't1', 't1.mp4'), infoJsonPath: join(LIBRARY_DIR, 't1', 't1.info.json') })),
-      findThumbnail: async () => join(LIBRARY_DIR, 't1', 't1.webp'),
+        opts.download ?? (async () => ({ mediaPath: join(TAPE_DIR, 't1.mp4'), infoJsonPath: join(TAPE_DIR, 't1.info.json') })),
+      findThumbnail: async () => join(TAPE_DIR, 't1.webp'),
     },
     ffmpeg: {
       probeMedia: async () => ({
@@ -141,7 +144,7 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(emits.indexOf('persist:downloaded')).toBeLessThan(emits.indexOf('tapes:completed'))
   })
 
-  it('keeps a finished download as downloaded when the catalog write fails', async () => {
+  it('keeps a finished download as downloaded when the tape file write fails', async () => {
     const t = tape({ id: 't1' })
     const { deps, tapes, emits } = makeDeps({ initial: [t], probe: async () => video, persistSucceeds: false })
     await new Job(t, deps).run()
@@ -169,7 +172,7 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(errors).toEqual([expect.objectContaining({ tapeId: 't1', error: expect.objectContaining({ message: 'window gone' }) })])
   })
 
-  it('adopts a download that finished before its catalog commit, without probing or downloading', async () => {
+  it('adopts a download that finished before its tape file commit, without probing or downloading', async () => {
     const t = tape({ id: 't1', sourceId: 'vid1', extractor: 'youtube', title: 'A Video' })
     let probed = false
     let downloaded = false
@@ -213,13 +216,13 @@ describe('Job lifecycle (driven with fakes)', () => {
     try {
       await started
       const current = tapes.get(t.id)!
-      tapes.set(t.id, { ...current, archivedAtUtc: T1, boxId: 'keepers123', order: -12 })
+      tapes.set(t.id, { ...current, shelved: true, boxId: 'keepers123', order: -12 })
       expect(emits).not.toContain('tapes:completed')
     } finally { releaseCommit() }
     await run
 
     const latest = tapes.get(t.id)!
-    expect(latest).toMatchObject({ state: 'downloaded', archivedAtUtc: T1, boxId: 'keepers123', order: -12 })
+    expect(latest).toMatchObject({ state: 'downloaded', shelved: true, boxId: 'keepers123', order: -12 })
     expect(payloads[emits.lastIndexOf('tapes:updated')]).toEqual(latest)
     expect(emits.indexOf('persist:downloaded')).toBeLessThan(emits.indexOf('tapes:completed'))
   })
@@ -272,8 +275,8 @@ describe('Job lifecycle (driven with fakes)', () => {
     deps.sidecar.finalize = async (opts) => { finalized = opts; finalizedAt = deps.now() }
     await new Job(t, deps).run()
     expect(finalized).toEqual({
-      infoJsonPath: join(LIBRARY_DIR, 't1', 't1.info.json'),
-      sidecarPath: join(LIBRARY_DIR, 't1', 't1.json'),
+      infoJsonPath: join(TAPE_DIR, 't1.info.json'),
+      sidecarPath: join(TAPE_DIR, 't1.json'),
       media: expect.objectContaining({ width: null }),
     })
     expect(tapes.get('t1')!.downloadedAtUtc! > finalizedAt).toBe(true)

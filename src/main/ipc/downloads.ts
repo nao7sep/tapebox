@@ -5,7 +5,6 @@ import { getLibraryDir, getSettings } from '@main/store/config'
 import { reserveTapeId } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
-import { frontOrders } from '@shared/order'
 import { isImportableUrl } from '@shared/url'
 import { librarySourceIndex } from '@shared/source-identity'
 import type { Tape } from '@shared/domain'
@@ -13,10 +12,13 @@ import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
 
-/** Orders that drop a block of `count` new tapes onto the top of the inbox. */
-function inboxFrontOrders(count: number): number[] {
-  const inbox = session.getTapes().filter((i) => !i.archivedAtUtc)
-  return frontOrders(inbox.map((i) => i.order), count)
+/** The last added time given out, so a later add always sorts above an earlier
+ *  one in the Inbox even within one millisecond. */
+let lastAddedAt = 0
+
+function nextAddedAtUtc(): string {
+  lastAddedAt = Math.max(Date.parse(nowUtcIso()), lastAddedAt + 1)
+  return new Date(lastAddedAt).toISOString()
 }
 
 export function registerDownloadHandlers(): void {
@@ -38,8 +40,7 @@ export function registerDownloadHandlers(): void {
     if (session.sourceOwner({ url: trimmed })) {
       throw new UserFacingError('refused', message('errors.urlInLibrary'))
     }
-    const [order] = inboxFrontOrders(1)
-    const tape = queuedTape(id, trimmed, order)
+    const tape = queuedTape(id, trimmed, nextAddedAtUtc(), 0)
     session.upsertTape(tape)
     emit('tapes:added', [tape])
     queue.tick()
@@ -58,10 +59,10 @@ export function registerDownloadHandlers(): void {
     }
     const accepted = newUrls(session.getTapes(), candidates)
     if (accepted.length === 0) return []
-    // One front-of-inbox window for the whole batch, so the paste lands as a block
-    // on top in its original order (first URL topmost).
-    const orders = inboxFrontOrders(accepted.length)
-    const tapes = accepted.map((url, i) => queuedTape(ids[i]!, url, orders[i]!))
+    // One added time for the whole batch, so the paste lands on top of the Inbox
+    // as a block in its original order (first URL topmost).
+    const now = nextAddedAtUtc()
+    const tapes = accepted.map((url, i) => queuedTape(ids[i]!, url, now, i))
     for (const tape of tapes) session.upsertTape(tape)
     emit('tapes:added', tapes)
     queue.tick()
@@ -119,14 +120,14 @@ export function newUrls(tapes: readonly Tape[], urls: readonly string[]): string
 
 /** A new tape for `url`. Its id doubles as the on-disk filename stem once the
  * download lands, so the caller reserves it against the library first. */
-function queuedTape(id: string, url: string, order: number): Tape {
+function queuedTape(id: string, url: string, now: string, addedIndex: number): Tape {
   const autostart = getSettings().autoStartDownloads
-  const now = nowUtcIso()
   return {
     id,
     sourceUrl: url,
     state: autostart ? 'queued' : 'paused',
     addedAtUtc: now,
+    addedIndex,
     sourceId: null,
     extractor: null,
     title: null,
@@ -141,9 +142,9 @@ function queuedTape(id: string, url: string, order: number): Tape {
     downloadedAtUtc: null,
     name: null,
     renamedAtUtc: null,
-    archivedAtUtc: null,
+    shelved: false,
     boxId: null,
-    order,
+    order: 0,
     pausedAtUtc: autostart ? null : now,
     failedAtUtc: null,
     failureCode: null,

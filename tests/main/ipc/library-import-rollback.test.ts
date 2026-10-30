@@ -97,7 +97,8 @@ beforeEach(async () => {
   sourceDir = join(root, 'source')
   state.libraryDir = join(root, 'library')
   await mkdir(sourceDir)
-  await mkdir(state.libraryDir)
+  // A collection that already holds Inbox tapes has its inbox/ folder.
+  await mkdir(join(state.libraryDir, 'inbox'), { recursive: true })
   await writeFile(join(sourceDir, 'clip.mp4'), 'source video')
   await writeFile(join(sourceDir, 'clip.json'), JSON.stringify({
     formatVersion: 1,
@@ -129,7 +130,7 @@ describe('library:import rollback ownership', () => {
     expect(inEnglish(result.issues[0]?.reason)).toBe(
       'The tape files could not be copied into the library. Check that the library folder is available and try again.',
     )
-    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(await readdir(join(state.libraryDir, 'inbox'))).toEqual([])
     expect(upsertTape).not.toHaveBeenCalled()
     expect(mainLog.error).toHaveBeenCalledWith(
       'import bundle copy failed',

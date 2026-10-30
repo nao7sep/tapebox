@@ -2,8 +2,8 @@ import { create } from 'zustand'
 import type { Message } from '@shared/i18n/translate'
 import type { OrderedItem } from '@renderer/lib/optimisticOrder'
 
-/** The Inbox, box list, and one archived tape list settle independently. */
-export type OrderList = 'inbox' | 'boxes' | `archive:${string}`
+/** The box list and each Shelf tape list settle independently. */
+export type OrderList = 'boxes' | `archive:${string}`
 type PendingOrder = { active: Set<number>; confirmed: Map<string, number> }
 
 function orders(items: readonly OrderedItem[]): Map<string, number> {
@@ -11,7 +11,6 @@ function orders(items: readonly OrderedItem[]): Map<string, number> {
 }
 
 type OrderFailuresState = {
-  inbox: Message | null
   boxes: Message | null
   archiveTapes: Record<string, Message | undefined>
   attempts: Partial<Record<OrderList, number>>
@@ -21,7 +20,6 @@ type OrderFailuresState = {
   finishAttempt: (list: OrderList, attempt: number, saved: readonly OrderedItem[] | null) => void
   confirmedOrder: (list: OrderList) => OrderedItem[]
   isCurrentAttempt: (list: OrderList, attempt: number) => boolean
-  setInbox: (message: Message | null) => void
   setBoxes: (message: Message | null) => void
   setArchiveTapes: (boxKey: string, message: Message | null) => void
 }
@@ -35,7 +33,6 @@ type OrderFailuresState = {
  * every settlement retires its attempt.
  */
 export const useOrderFailuresStore = create<OrderFailuresState>((set, get) => ({
-  inbox: null,
   boxes: null,
   archiveTapes: {},
   attempts: {},
@@ -67,7 +64,6 @@ export const useOrderFailuresStore = create<OrderFailuresState>((set, get) => ({
   }),
   confirmedOrder: (list) => [...(get().pending[list]?.confirmed ?? [])].map(([id, order]) => ({ id, order })),
   isCurrentAttempt: (list, attempt) => get().attempts[list] === attempt,
-  setInbox: (inbox) => set({ inbox }),
   setBoxes: (boxes) => set({ boxes }),
   setArchiveTapes: (boxKey, message) => set((state) => {
     const archiveTapes = { ...state.archiveTapes }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SessionSchema, TapeSchema } from '@shared/domain'
+import { SessionSchema, TapeFileSchema, TapeSchema } from '@shared/domain'
 
 /** A complete current Tape — every field present, as the app always writes it. */
 function completeTape(): Record<string, unknown> {
@@ -8,6 +8,7 @@ function completeTape(): Record<string, unknown> {
     sourceUrl: 'https://example.com/watch?v=x',
     state: 'downloaded',
     addedAtUtc: '2024-01-01T00:00:00.000Z',
+    addedIndex: 0,
     sourceId: 'x',
     extractor: 'example',
     title: 'A video',
@@ -22,7 +23,7 @@ function completeTape(): Record<string, unknown> {
     downloadedAtUtc: '2024-01-01T00:00:00.000Z',
     name: null,
     renamedAtUtc: null,
-    archivedAtUtc: null,
+    shelved: false,
     boxId: null,
     order: 0,
     pausedAtUtc: null,
@@ -64,7 +65,10 @@ describe('SessionSchema identities', () => {
     const box = { id: 'box1234567', name: 'Box', order: 0 }
     expect(() => SessionSchema.parse({ tapes: [tape, { ...tape }], boxes: [] })).toThrow(/duplicate tape id/)
     expect(() => SessionSchema.parse({ tapes: [], boxes: [box, { ...box }] })).toThrow(/duplicate box id/)
-    expect(() => SessionSchema.parse({ tapes: [{ ...tape, boxId: 'missing123' }], boxes: [] })).toThrow(/unknown box id/)
+    expect(() => SessionSchema.parse({ tapes: [{ ...tape, shelved: true, boxId: 'missing123' }], boxes: [] })).toThrow(/unknown box id/)
+    // The Inbox has no boxes, so an Inbox tape naming even a real box is dangling.
+    expect(() => SessionSchema.parse({ tapes: [{ ...tape, boxId: box.id }], boxes: [box] })).toThrow(/unknown box id/)
+    expect(() => SessionSchema.parse({ tapes: [{ ...tape, shelved: true, boxId: box.id }], boxes: [box] })).not.toThrow()
     expect(() => SessionSchema.parse({ tapes: [], boxes: [box, { ...box, id: 'box7654321', name: ' box ' }] })).toThrow(/box names/)
   })
 
@@ -76,17 +80,6 @@ describe('SessionSchema identities', () => {
         { id: 'box7654321', name: 'Cafe\u0301', order: 1 },
       ],
     })).toThrow(/box names/)
-  })
-
-  it('rejects portable filename aliases within one persisted tape bundle', () => {
-    expect(() => SessionSchema.parse({
-      tapes: [{
-        ...completeTape(),
-        filename: 'Caf\u00e9.MP4',
-        thumbnailFilename: 'Cafe\u0301.mp4',
-      }],
-      boxes: [],
-    })).toThrow(/a tape's files must be unique by portable identity/)
   })
 
   it('lets two tapes, each in its own folder, use the same file names', () => {
@@ -107,5 +100,30 @@ describe('SessionSchema identities', () => {
       ],
       boxes: [],
     })).toThrow(/duplicate tape id/)
+  })
+})
+
+describe('TapeFileSchema', () => {
+  /** A tape's own file holds its facts, not where it sits. */
+  function tapeFile(): Record<string, unknown> {
+    const { shelved: _shelved, boxId: _boxId, order: _order, ...facts } = completeTape()
+    return facts
+  }
+
+  it('parses a tape file holding only facts', () => {
+    expect(TapeFileSchema.parse(tapeFile()).id).toBe('abc1234567')
+  })
+
+  it('rejects portable filename aliases within one persisted tape bundle', () => {
+    expect(() => TapeFileSchema.parse({
+      ...tapeFile(),
+      filename: 'Caf\u00e9.MP4',
+      thumbnailFilename: 'Cafe\u0301.mp4',
+    })).toThrow(/a tape's files must be unique by portable identity/)
+  })
+
+  it('rejects a tracked file that would be the tape file itself', () => {
+    expect(() => TapeFileSchema.parse({ ...tapeFile(), sidecarFilename: 'Tape.JSON' }))
+      .toThrow(/conflicts with tape.json/)
   })
 })

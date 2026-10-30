@@ -263,17 +263,17 @@ it('derives archived counts after moves and unarchiving, including Unboxed', asy
     id: 'TapeID0001', sourceUrl: 'https://example.test', state: 'downloaded', addedAtUtc: '2026-01-01T00:00:00Z',
     sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: null,
     probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null, downloadStartedAtUtc: null,
-    downloadedAtUtc: null, name: null, renamedAtUtc: null, archivedAtUtc: '2026-01-01T00:00:00Z',
+    downloadedAtUtc: null, name: null, renamedAtUtc: null, addedIndex: 0, shelved: true,
     boxId: 'box1', order: 0, pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
   const counts = () => [...document.querySelectorAll('.tabular-nums')].map((node) => node.textContent)
   await act(async () => {
     useBoxesStore.setState({ editingId: null })
-    useTapesStore.setState({ tapes: [tape, { ...tape, id: 'TapeID0002', boxId: null }, { ...tape, id: 'TapeID0003', archivedAtUtc: null, boxId: null }] })
+    useTapesStore.setState({ tapes: [tape, { ...tape, id: 'TapeID0002', boxId: null }, { ...tape, id: 'TapeID0003', shelved: false, boxId: null }] })
   })
   expect(counts()).toEqual(['1', '1'])
   await act(async () => useTapesStore.getState().upsert({ ...tape, boxId: null }))
   expect(counts()).toEqual(['2', '0'])
-  await act(async () => useTapesStore.getState().upsert({ ...tape, boxId: null, archivedAtUtc: null }))
+  await act(async () => useTapesStore.getState().upsert({ ...tape, boxId: null, shelved: false }))
   expect(counts()).toEqual(['1', '0'])
 })

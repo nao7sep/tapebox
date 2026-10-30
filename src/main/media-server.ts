@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises'
 import { extname, normalize, sep } from 'node:path'
 import { nanoid } from 'nanoid'
 import { getLibraryDir } from '@main/store/config'
+import * as session from '@main/store/session'
 import { tapeFile } from '@main/paths'
 import { EntityIdSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
@@ -220,8 +221,10 @@ function resolveLibraryFile(tapeId: string, filename: string): string | null {
   if (!EntityIdSchema.safeParse(tapeId).success) return null
   if (!filename) return null
   if (filename.includes('/') || filename.includes('\\') || filename.includes('\0')) return null
+  const tape = session.getTape(tapeId)
+  if (!tape) return null
   const libDir = normalize(getLibraryDir())
-  const full = normalize(tapeFile(libDir, tapeId, filename))
+  const full = normalize(tapeFile(libDir, tape, filename))
   const within = full === libDir || full.startsWith(libDir + sep)
   return within ? full : null
 }
