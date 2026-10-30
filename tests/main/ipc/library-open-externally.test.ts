@@ -49,7 +49,7 @@ vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
 const { registerLibraryHandlers } = await import('@main/ipc/library')
 
-const FULL_PATH = join('/library', 'Take.mp4')
+const FULL_PATH = join('/library', 'Hasafile12', 'Take.mp4')
 function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
   return {
     sourceUrl: 'https://example.test/watch', state: 'downloaded',
@@ -103,7 +103,7 @@ describe('playing a tape outside the app', () => {
     expect(shell.openPath).not.toHaveBeenCalled()
     state.externalPlayer = 'player'
     await invoke('library:playExternal', { tapeId: 'Hasafile12' })
-    expect(openExternalPlayer).toHaveBeenCalledWith('player', join('/library', filename))
+    expect(openExternalPlayer).toHaveBeenCalledWith('player', join('/library', 'Hasafile12', filename))
   })
 
   it('lets the OS choose the player when none is configured', async () => {

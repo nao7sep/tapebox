@@ -63,18 +63,11 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-rollback-'))
   libraryState.dir = join(root, 'library')
   state.destinationDir = join(root, 'destination')
-  await mkdir(libraryState.dir)
+  await mkdir(join(libraryState.dir, tape.id), { recursive: true })
   await mkdir(state.destinationDir)
-  await writeFile(join(libraryState.dir, 'Take.mp4'), 'source video')
-  await writeFile(join(libraryState.dir, 'Take.jpg'), 'source poster')
-  await writeFile(join(libraryState.dir, 'Take.json'), JSON.stringify({
-    formatVersion: 1,
-    tapebox: {
-      sourceUrl: tape.sourceUrl, name: 'Take', addedAtUtc: tape.addedAtUtc,
-      downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: null, media: null,
-      mediaFilename: tape.filename, thumbnailFilename: tape.thumbnailFilename,
-    },
-  }))
+  await writeFile(join(libraryState.dir, tape.id, 'Take.mp4'), 'source video')
+  await writeFile(join(libraryState.dir, tape.id, 'Take.jpg'), 'source poster')
+  await writeFile(join(libraryState.dir, tape.id, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   registerExportHandlers()
 })
 
@@ -89,7 +82,7 @@ describe('export:files rollback ownership', () => {
     })
     await expect(failure).rejects.toThrow('The operation could not be completed.')
     expect(await readdir(state.destinationDir)).toEqual([])
-    expect(await readFile(join(libraryState.dir, 'Take.mp4'), 'utf8')).toBe('source video')
+    expect(await readFile(join(libraryState.dir, tape.id, 'Take.mp4'), 'utf8')).toBe('source video')
   })
 
   it('keeps rollback cleanup details in diagnostics while the rejection stays authored', async () => {

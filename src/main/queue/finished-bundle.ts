@@ -1,10 +1,9 @@
-import { stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readdir, stat } from 'node:fs/promises'
+import { extname, join } from 'node:path'
 import type { Tape } from '@shared/domain'
-import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
+import { tapeFromSidecar } from '@main/core/import-classify'
 import { readSidecarFile } from '@main/core/sidecar'
 import type { TapeMove } from '@main/core/tape-state'
-import { nameInStem } from '@main/core/managed-files'
 import { SourceIndex, tapeSourceRef } from '@shared/source-identity'
 
 /**
@@ -12,60 +11,67 @@ import { SourceIndex, tapeSourceRef } from '@shared/source-identity'
  * forced exit or Quit anyway after a failed save leaves the tape stored as
  * queued (store/session.ts) beside its finished files. A new attempt clears the
  * tape's whole stem before downloading (services/ytdlp.ts), which would delete
- * what may be the only copy once the source is gone. So a job first looks for
- * the finished bundle and adopts it.
+ * what may be the only copy once the source is gone. So a job first looks in
+ * the tape's folder for the finished bundle and adopts it.
  *
  * The sidecar is written last, after the media and poster, so a sidecar under
- * the tape's own stem marks a finished download. One that names no media on disk
- * leaves nothing to protect, and the attempt starts over; one that cannot be
- * read or does not name this tape's own files is kept as it is, and the job
- * fails rather than clear it.
+ * the tape's own stem marks a finished download, and its time is the
+ * download's. The media is the one other file under the stem that is neither
+ * an image nor a partial download; with none on disk there is nothing to
+ * protect, and the attempt starts over. A sidecar that cannot be read, that
+ * yt-dlp wrote for another source, or a folder that leaves the media in doubt
+ * is kept as it is, and the job fails rather than clear it.
  */
 export type FinishedBundle =
   | { status: 'none' }
   | { status: 'found'; move: TapeMove }
   | { status: 'unusable'; reason: string }
 
-export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc: string, filenameOwner: (name: string, exceptId?: string) => string | undefined): Promise<FinishedBundle> {
+// What yt-dlp and the image gate leave under the stem besides the media.
+const NOT_MEDIA = new Set(['.json', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.part', '.ytdl'])
+
+export async function findFinishedBundle(dir: string, tape: Tape): Promise<FinishedBundle> {
   const stem = tape.id
   const sidecarFilename = `${stem}.json`
   let sidecar: Record<string, unknown>
+  let downloadedAtUtc: string
   try {
-    sidecar = await readSidecarFile(join(libraryDir, sidecarFilename))
+    sidecar = await readSidecarFile(join(dir, sidecarFilename))
+    downloadedAtUtc = (await stat(join(dir, sidecarFilename))).mtime.toISOString()
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'none' }
     return { status: 'unusable', reason: 'the sidecar could not be read' }
   }
 
-  const bundle = classifyImport(sidecar)
-  if (bundle.status === 'reject') return { status: 'unusable', reason: bundle.reason.key }
+  const text = (key: string) => typeof sidecar[key] === 'string' ? sidecar[key] : null
   const source = new SourceIndex()
   source.add(tapeSourceRef(tape), tape.id)
-  if (!source.has({
-    url: bundle.sourceUrl,
-    extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
-    sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
-  })) return { status: 'unusable', reason: 'the sidecar belongs to another source' }
-  if (!nameInStem(bundle.mediaFilename, stem)) return { status: 'unusable', reason: 'the sidecar names another stem' }
-  const names = [sidecarFilename, bundle.mediaFilename, ...(bundle.thumbnailFilename ? [bundle.thumbnailFilename] : [])]
-  if (names.some((name) => filenameOwner(name, tape.id))) {
-    return { status: 'unusable', reason: 'another tape owns a finished filename' }
+  if (!source.has({ url: text('original_url') ?? text('webpage_url') ?? '', extractor: text('extractor'), sourceId: text('id') })) {
+    return { status: 'unusable', reason: 'the sidecar belongs to another source' }
   }
-  if (!(await isFile(join(libraryDir, bundle.mediaFilename)))) return { status: 'none' }
-  const thumbnailFilename = bundle.thumbnailFilename !== null && await isFile(join(libraryDir, bundle.thumbnailFilename))
-    ? bundle.thumbnailFilename
-    : null
 
-  const found = tapeFromSidecar(sidecar, {
-    id: tape.id,
-    sourceUrl: tape.sourceUrl,
-    mediaFilename: bundle.mediaFilename,
-    sidecarFilename,
-    thumbnailFilename,
-    order: tape.order,
-    nowUtc,
-  })
-  if (!found.downloadedAtUtc) return { status: 'unusable', reason: 'the sidecar records no download time' }
+  const names = await readdir(dir)
+  const underStem = (name: string) => name.slice(0, name.length - extname(name).length) === stem
+  const media = names.filter((name) => underStem(name) && !NOT_MEDIA.has(extname(name).toLowerCase()))
+  if (media.length === 0) return { status: 'none' }
+  if (media.length > 1) return { status: 'unusable', reason: 'more than one file could be the media' }
+  const poster = `${stem}.jpg`
+  const thumbnailFilename = names.includes(poster) && (await stat(join(dir, poster))).isFile() ? poster : null
+
+  let found: Tape
+  try {
+    found = tapeFromSidecar(sidecar, {
+      id: tape.id,
+      sourceUrl: tape.sourceUrl,
+      mediaFilename: media[0]!,
+      sidecarFilename,
+      thumbnailFilename,
+      order: tape.order,
+      nowUtc: downloadedAtUtc,
+    })
+  } catch {
+    return { status: 'unusable', reason: 'the sidecar has invalid fields' }
+  }
   return {
     status: 'found',
     move: {
@@ -83,16 +89,7 @@ export async function findFinishedBundle(libraryDir: string, tape: Tape, nowUtc:
       sidecarFilename,
       thumbnailFilename,
       downloadStartedAtUtc: null,
-      downloadedAtUtc: found.downloadedAtUtc,
+      downloadedAtUtc,
     },
-  }
-}
-
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile()
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw error
   }
 }

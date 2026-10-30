@@ -1,4 +1,3 @@
-import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
 import { librarySourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
@@ -15,7 +14,8 @@ import { inEnglish } from '../../helpers/i18n'
 // and this boundary decides what comes into the library, what is refused and
 // what the user is told about the rest of their selection. Real files and real
 // copies throughout; only the catalogue, the log and the event bus are stood in
-// for, so an import that reports success has really landed on disk.
+// for, so an import that reports success has really landed on disk. Each
+// imported tape gets its own folder, named by its id, under the library.
 type ImportResult = { imported: Tape[]; issues: Array<{ path: string; reason: string; severity: string }> }
 
 const handlers = new Map<string, (req: unknown) => unknown>()
@@ -34,8 +34,6 @@ const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), de
 
 const persistNow = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@main/store/session', () => ({
-  filenameOwner: (name: string, exceptId?: string) => catalogFilenameOwner(state.tapes, name, exceptId),
-  stemOwner: (stem: string, exceptId?: string) => catalogStemOwner(state.tapes, stem, exceptId),
   sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(state.tapes, exceptId).find(ref),
   onCatalogSaveFailure: () => {},
   persistNow,
@@ -160,8 +158,12 @@ describe('importing a bundle', () => {
       archivedAtUtc: null,
     })
     expect(tape.order, 'it lands above what was already in the inbox').toBeLessThan(0)
-    expect((await readdir(state.libraryDir)).sort()).toEqual(['holiday.jpg', 'holiday.json', 'holiday.mp4'])
-    expect(await readFile(join(state.libraryDir, 'holiday.mp4'), 'utf8')).toBe('video for holiday')
+    expect(await readdir(state.libraryDir), 'the bundle lands in its own folder').toEqual([tape.id])
+    expect((await readdir(join(state.libraryDir, tape.id))).sort()).toEqual(['holiday.jpg', 'holiday.json', 'holiday.mp4'])
+    expect(await readFile(join(state.libraryDir, tape.id, 'holiday.mp4'), 'utf8')).toBe('video for holiday')
+    // The catalog now holds the bundle's catalog fields; the library sidecar keeps only the media facts.
+    const kept = JSON.parse(await readFile(join(state.libraryDir, tape.id, 'holiday.json'), 'utf8'))
+    expect(kept.tapebox).toEqual({ media: null })
     expect(state.tapes.map((entry) => entry.id)).toContain(tape.id)
     expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:added', result.imported)
     // The imported rows are durable before they are announced.
@@ -169,44 +171,19 @@ describe('importing a bundle', () => {
     expect(persistNow.mock.invocationCallOrder.at(-1)!).toBeLessThan(emit.mock.invocationCallOrder[0]!)
   })
 
-  it('refuses a bundle whose file name another tape tracks, even when that file is gone from disk', async () => {
-    // The existing tape's trip.mp4 was deleted outside the app, so only the catalog knows the name.
-    state.tapes = [makeTape({ id: 'has-trip', filename: 'trip.mp4', sidecarFilename: 'has-trip.json' })]
-    const sidecar = await stageBundle({ stem: 'trip', sourceUrl: 'https://example.test/other-trip' })
+  it('imports a bundle whose file names another tape also uses, into its own folder', async () => {
+    state.tapes = [makeTape({ id: 'has-trip', filename: 'trip.mp4', sidecarFilename: 'trip.json', thumbnailFilename: 'poster.jpg' })]
+    await mkdir(join(state.libraryDir, 'has-trip'))
+    await writeFile(join(state.libraryDir, 'has-trip', 'trip.mp4'), 'the other tape')
+    const sidecar = await stageBundle({ stem: 'trip', sourceUrl: 'https://example.test/other-trip', thumbnailFilename: 'poster.jpg' })
 
-    const result = await importPaths(sidecar)
+    const result = await importPaths(sidecar, join(sourceDir, 'trip.mp4'), join(sourceDir, 'poster.jpg'))
 
-    expect(result.imported).toEqual([])
-    expect(result.issues).toEqual([
-      expect.objectContaining({ path: sidecar, severity: 'warning', reason: expect.stringContaining('trip.mp4') }),
-    ])
-    expect(await readdir(state.libraryDir)).toEqual([])
-    expect(state.tapes.map((tape) => tape.id)).toEqual(['has-trip'])
-  })
-
-  it('refuses a tracked bundle name before checking whether its source media is readable', async () => {
-    state.tapes = [makeTape({ id: 'has-trip', filename: 'trip.mp4', sidecarFilename: 'has-trip.json' })]
-    const sidecar = await stageBundle({ stem: 'trip', sourceUrl: 'https://example.test/other-trip', withMedia: false })
-
-    const result = await importPaths(sidecar)
-
-    expect(result.imported).toEqual([])
-    expect(result.issues).toEqual([
-      expect.objectContaining({ path: sidecar, severity: 'warning', reason: expect.stringContaining('already uses the file name trip.mp4') }),
-    ])
-    expect(await readdir(state.libraryDir)).toEqual([])
-  })
-
-  it('imports without a thumbnail whose file name another tape tracks', async () => {
-    state.tapes = [makeTape({ id: 'has-poster', thumbnailFilename: 'poster.jpg' })]
-    const sidecar = await stageBundle({ stem: 'holiday', thumbnailFilename: 'poster.jpg' })
-
-    const result = await importPaths(sidecar, join(sourceDir, 'holiday.mp4'), join(sourceDir, 'poster.jpg'))
-
-    expect(result.imported).toHaveLength(1)
-    expect(result.imported[0]!.thumbnailFilename).toBeNull()
-    expect(result.issues).toEqual([expect.objectContaining({ path: join(sourceDir, 'poster.jpg'), severity: 'warning' })])
-    expect((await readdir(state.libraryDir)).sort()).toEqual(['holiday.json', 'holiday.mp4'])
+    expect(result.issues).toEqual([])
+    const [tape] = result.imported
+    expect(tape).toMatchObject({ filename: 'trip.mp4', sidecarFilename: 'trip.json', thumbnailFilename: 'poster.jpg' })
+    expect((await readdir(join(state.libraryDir, tape.id))).sort()).toEqual(['poster.jpg', 'trip.json', 'trip.mp4'])
+    expect(await readFile(join(state.libraryDir, 'has-trip', 'trip.mp4'), 'utf8'), 'the other tape is untouched').toBe('the other tape')
   })
 
   it('waits for a library move to end before copying anything', async () => {
@@ -222,7 +199,7 @@ describe('importing a bundle', () => {
     await moving
     const result = await importing
     expect(result.imported).toHaveLength(1)
-    expect((await readdir(state.libraryDir)).sort()).toEqual(['late.json', 'late.mp4'])
+    expect((await readdir(join(state.libraryDir, result.imported[0].id))).sort()).toEqual(['late.json', 'late.mp4'])
   })
 
   it('reports a bundle of a video already in the library under a URL with tracking parameters', async () => {
@@ -242,7 +219,7 @@ describe('importing a bundle', () => {
     const result = await importPaths(sidecar)
 
     expect(result.imported[0]).toMatchObject({ filename: 'holiday.mp4', sidecarFilename: 'holiday.json' })
-    expect((await readdir(state.libraryDir)).sort()).toEqual(['holiday.json', 'holiday.mp4'])
+    expect((await readdir(join(state.libraryDir, result.imported[0].id))).sort()).toEqual(['holiday.json', 'holiday.mp4'])
   })
 
   it('keeps a batch in the order it was chosen, even when one of them is refused', async () => {
@@ -275,6 +252,7 @@ describe('importing a bundle', () => {
 
     expect(result.imported).toHaveLength(1)
     expect(await readFile(join(state.libraryDir, 'inplace.mp4'), 'utf8')).toBe('video for inplace')
+    expect(await readFile(join(state.libraryDir, result.imported[0].id, 'inplace.mp4'), 'utf8')).toBe('video for inplace')
   })
 })
 
@@ -335,19 +313,6 @@ describe('what the import refuses, and what it says', () => {
       expect.objectContaining({ severity: 'warning', reason: 'The media file holiday.mp4 is missing beside the sidecar.' }),
     ])
     expect(await readdir(state.libraryDir)).toEqual([])
-  })
-
-  it('refuses a bundle whose media name is already taken in the library', async () => {
-    const sidecar = await stageBundle({ stem: 'holiday' })
-    await writeFile(join(state.libraryDir, 'Holiday.mp4'), 'a different tape')
-
-    const result = await importPaths(sidecar)
-
-    expect(result.imported).toEqual([])
-    expect(result.issues[0]).toMatchObject({ severity: 'error' })
-    expect(await readFile(join(state.libraryDir, 'Holiday.mp4'), 'utf8'), 'the file there is untouched').toBe(
-      'a different tape',
-    )
   })
 
   it('explains the files in the selection that no sidecar accounted for', async () => {

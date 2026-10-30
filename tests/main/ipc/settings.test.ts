@@ -257,7 +257,7 @@ describe('settings:update — relocation at its library turn', () => {
 
     await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('The operation could not be completed.')
 
-    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', [join('.tapebox', 'catalog.json')], expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', ['catalog.json'], expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(rollbackLibraryRelocation).toHaveBeenCalledWith(files)
     expect(completeLibraryRelocation).not.toHaveBeenCalled()
   })

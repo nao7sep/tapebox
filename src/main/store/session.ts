@@ -8,7 +8,6 @@ import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
-import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
 import { librarySourceIndex, type SourceRef } from '@shared/source-identity'
 import { durableTape } from '@shared/durable-tape'
 export { durableTape } from '@shared/durable-tape'
@@ -223,16 +222,6 @@ function assertLoaded(): void {
 export function getTapes(): Tape[] {
   assertLoaded()
   return cache.tapes
-}
-
-export function filenameOwner(name: string, exceptId?: string): string | undefined {
-  assertLoaded()
-  return catalogFilenameOwner(cache.tapes, name, exceptId)
-}
-
-export function stemOwner(stem: string, exceptId?: string): string | undefined {
-  assertLoaded()
-  return catalogStemOwner(cache.tapes, stem, exceptId)
 }
 
 export function sourceOwner(ref: SourceRef, exceptId?: string): string | undefined {

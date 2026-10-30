@@ -7,7 +7,7 @@ import { portableFilenameIdentity } from './filename.ts'
  * keeps DOM ids, list keys, and action lookup identities unambiguous. */
 export const EntityIdSchema = z.string().regex(/^[A-Za-z0-9_-]{10}$/)
 
-/** A tracked bundle member is always one flat filename inside the library. */
+/** A tracked bundle member is always one flat filename inside its tape's folder. */
 export const FlatFilenameSchema = z.string().min(1).refine(
   (name) => name !== '.' && name !== '..' && !name.includes('/') && !name.includes('\\') && !name.includes('\0'),
   { message: 'must be a flat filename without path separators' },
@@ -102,7 +102,13 @@ export type Tape = z.infer<typeof TapeSchema>
 
 /**
  * Sidecar JSON layout:
- *   { ...ytDlpInfoJson, tapebox: SidecarTapeBox }
+ *   { ...ytDlpInfoJson, tapebox: { media } }                in the library
+ *   { ...ytDlpInfoJson, tapebox: SidecarTapeBox }           in an exported bundle
+ *
+ * In the library the catalog is the only record of a tape's source URL, name,
+ * times and file names, so the sidecar keeps yt-dlp's info and the media facts
+ * alone. An export writes the whole section from the catalog, so the bundle
+ * can be imported from its sidecar alone.
  *
  * Path-containing yt-dlp fields (filename, _filename, filepath, etc.) are
  * stripped before write — sidecars must be portable when files move.
@@ -134,7 +140,7 @@ export const SidecarTapeBoxSchema = z.object({
   renamedAtUtc: z.string().nullable(),
   // Null when probing failed.
   media: SidecarMediaSchema.nullable(),
-  // The bundle's own file names (basenames, no path), stored so an exported tape
+  // The bundle's own file names (basenames, no path), written so an exported tape
   // can be re-imported from its sidecar ALONE: the sidecar names which sibling file
   // is the video and which is the poster, so import never guesses by stem or
   // mistakes the thumbnail for the media. mediaFilename is the video; thumbnailFilename
@@ -156,27 +162,11 @@ export const BoxSchema = z.object({
 })
 export type Box = z.infer<typeof BoxSchema>
 
-/** The tape fields that name a file in the library folder. */
+/** The tape fields that name a file in the tape's folder. */
 export const TRACKED_FILENAME_FIELDS = ['filename', 'sidecarFilename', 'thumbnailFilename'] as const
 
 /**
- * The portable identities of every library file the catalog tracks. The catalog
- * requires these to be unique (SessionSchema below), so a new row is checked
- * against this set before it joins the catalog.
- */
-export function trackedFilenameIdentities(tapes: readonly Tape[]): Set<string> {
-  const identities = new Set<string>()
-  for (const tape of tapes) {
-    for (const field of TRACKED_FILENAME_FIELDS) {
-      const filename = tape[field]
-      if (filename !== null) identities.add(portableFilenameIdentity(filename))
-    }
-  }
-  return identities
-}
-
-/**
- * Session file shape — persisted in <library>/.tapebox/catalog.json.
+ * Session file shape — persisted in <library>/catalog.json, beside the tape folders.
  * Live progress data (percent, speed, ETA) is intentionally absent;
  * it's rebuilt by the queue at runtime.
  */
@@ -184,18 +174,19 @@ export const SessionSchema = z.object({
   tapes: z.array(TapeSchema),
   boxes: z.array(BoxSchema),
 }).superRefine((session, ctx) => {
+  // Each id names the tape's folder, so ids differing only in case would share
+  // one on a case-insensitive drive; a tape's own files share that folder.
   const tapeIds = new Set<string>()
-  const filenames = new Map<string, string>()
-  const filenameFields = TRACKED_FILENAME_FIELDS
   for (let i = 0; i < session.tapes.length; i++) {
     const tape = session.tapes[i]!
-    const id = tape.id
+    const id = portableFilenameIdentity(tape.id)
     if (tapeIds.has(id)) {
-      ctx.addIssue({ code: 'custom', path: ['tapes', i, 'id'], message: `duplicate tape id: ${id}` })
+      ctx.addIssue({ code: 'custom', path: ['tapes', i, 'id'], message: `duplicate tape id: ${tape.id}` })
     }
     tapeIds.add(id)
 
-    for (const field of filenameFields) {
+    const filenames = new Map<string, string>()
+    for (const field of TRACKED_FILENAME_FIELDS) {
       const filename = tape[field]
       if (filename === null) continue
       const identity = portableFilenameIdentity(filename)
@@ -204,10 +195,10 @@ export const SessionSchema = z.object({
         ctx.addIssue({
           code: 'custom',
           path: ['tapes', i, field],
-          message: `tracked filenames must be unique by portable identity; conflicts with ${previous}`,
+          message: `a tape's files must be unique by portable identity; conflicts with ${previous}`,
         })
       } else {
-        filenames.set(identity, `tapes.${i}.${field}`)
+        filenames.set(identity, field)
       }
     }
   }

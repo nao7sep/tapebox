@@ -1,4 +1,3 @@
-import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
 import { librarySourceIndex } from '@shared/source-identity'
 import { describe, it, expect } from 'vitest'
 import { tmpdir } from 'node:os'
@@ -73,8 +72,8 @@ function makeDeps(opts: {
     ytdlp: {
       probe: opts.probe ?? (async () => ({ kind: 'page' })),
       download:
-        opts.download ?? (async () => ({ mediaPath: join(LIBRARY_DIR, 't1.mp4'), infoJsonPath: join(LIBRARY_DIR, 't1.info.json') })),
-      findThumbnail: async () => join(LIBRARY_DIR, 't1.webp'),
+        opts.download ?? (async () => ({ mediaPath: join(LIBRARY_DIR, 't1', 't1.mp4'), infoJsonPath: join(LIBRARY_DIR, 't1', 't1.info.json') })),
+      findThumbnail: async () => join(LIBRARY_DIR, 't1', 't1.webp'),
     },
     ffmpeg: {
       probeMedia: async () => ({
@@ -92,8 +91,6 @@ function makeDeps(opts: {
     findFinishedBundle: opts.finished ?? (async () => ({ status: 'none' })),
     session: {
       getTape: (id) => tapes.get(id),
-      filenameOwner: (name, exceptId) => catalogFilenameOwner([...tapes.values()], name, exceptId),
-      stemOwner: (stem, exceptId) => catalogStemOwner([...tapes.values()], stem, exceptId),
       sourceOwner: (ref, exceptId) => librarySourceIndex([...tapes.values()], exceptId).find(ref),
       upsertTape: (t) => {
         tapes.set(t.id, t)
@@ -265,16 +262,21 @@ describe('Job lifecycle (driven with fakes)', () => {
     expect(failed.failedAtUtc).toBe(failed.probedAtUtc)
   })
 
-  it('writes the same download time to the sidecar and the catalog', async () => {
+  it('gives the sidecar the media facts alone and records the download time once it is written', async () => {
     const t = tape({ id: 't1' })
     const { deps, tapes } = makeDeps({ initial: [t], probe: async () => video })
     let tick = 0
     deps.now = () => `2026-06-26T00:00:0${tick++}.000Z`
-    let sidecarDownloadedAt: string | null = null
-    deps.sidecar.finalize = async (opts) => { sidecarDownloadedAt = opts.tapeboxAdditions.downloadedAtUtc }
+    let finalized: Parameters<JobDeps['sidecar']['finalize']>[0] | null = null
+    let finalizedAt = ''
+    deps.sidecar.finalize = async (opts) => { finalized = opts; finalizedAt = deps.now() }
     await new Job(t, deps).run()
-    expect(sidecarDownloadedAt).not.toBeNull()
-    expect(tapes.get('t1')!.downloadedAtUtc).toBe(sidecarDownloadedAt)
+    expect(finalized).toEqual({
+      infoJsonPath: join(LIBRARY_DIR, 't1', 't1.info.json'),
+      sidecarPath: join(LIBRARY_DIR, 't1', 't1.json'),
+      media: expect.objectContaining({ width: null }),
+    })
+    expect(tapes.get('t1')!.downloadedAtUtc! > finalizedAt).toBe(true)
   })
 
   it('clears an earlier pause or failure time once the tape moves on', async () => {

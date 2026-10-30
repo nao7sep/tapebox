@@ -15,7 +15,7 @@ export async function withReleasedTapeVideo<T>(
   work: () => Promise<T>,
 ): Promise<T> {
   const video = videoRef.current
-  const source = mediaFileUrl(useMediaStore.getState(), tape.filename)
+  const source = mediaFileUrl(useMediaStore.getState(), tape.id, tape.filename)
   if (!video || !source || video.getAttribute('src') !== source) return work()
   const playback = { at: video.currentTime, play: !video.paused && !video.ended }
   releaseVideo(video)
@@ -25,7 +25,7 @@ export async function withReleasedTapeVideo<T>(
     const stillOwnsPlayer = () => {
       const current = useTapesStore.getState().tapes.find(item => item.id === tape.id)
       return videoRef.current === video && video.isConnected && useSelectionStore.getState().selectedId === tape.id &&
-        current?.state === 'downloaded' && mediaFileUrl(useMediaStore.getState(), current.filename) === source
+        current?.state === 'downloaded' && mediaFileUrl(useMediaStore.getState(), current.id, current.filename) === source
     }
     if (stillOwnsPlayer() && !video.hasAttribute('src')) {
       video.autoplay = playback.play

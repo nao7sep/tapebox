@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { handle } from './handle'
 import * as config from '@main/store/config'
 import { normalizeUserDir } from '@main/core/user-directory'
@@ -27,20 +27,18 @@ import type { IpcCalls } from '@shared/ipc-contract'
 import { message } from '@shared/i18n/translate'
 
 /**
- * The library-relative files the app tracks: each tape's flat media, sidecar and
- * optional thumbnail, plus its own metadata directory's catalog. Relocation never
- * adopts unrelated files the user dropped in the folder. Deduplicated because the
- * same basename can't legitimately repeat, but a
- * corrupt session could, and a duplicate would make the move's second pass fail.
+ * The library-relative files the app tracks: the catalog, and each tape's
+ * media, sidecar and optional thumbnail in its own folder. Relocation never
+ * adopts unrelated files the user dropped in the folder.
  */
 function trackedLibraryFiles(): string[] {
-  const names = new Set<string>([COLLECTION_CATALOG])
+  const names = [COLLECTION_CATALOG]
   for (const tape of session.getTapes()) {
-    if (tape.filename) names.add(tape.filename)
-    if (tape.sidecarFilename) names.add(tape.sidecarFilename)
-    if (tape.thumbnailFilename) names.add(tape.thumbnailFilename)
+    for (const name of [tape.filename, tape.sidecarFilename, tape.thumbnailFilename]) {
+      if (name) names.push(join(tape.id, name))
+    }
   }
-  return [...names]
+  return names
 }
 
 /**

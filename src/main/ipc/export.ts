@@ -1,10 +1,11 @@
-import { realpath, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { handle } from './handle'
 import { removeTapesFrom } from './library'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
-import { readSidecarFile, sidecarNamespace, SIDECAR_JSON } from '@main/core/sidecar'
+import { exportNamespace, readSidecarFile, SIDECAR_JSON } from '@main/core/sidecar'
+import { tapeFile } from '@main/paths'
 import { serializeStoreJson } from '@main/io/atomic-json'
 import { maskYtdlpOutput, maskUrlCredentials } from '@main/io/mask'
 import { log } from '@main/io/logger'
@@ -25,9 +26,10 @@ import { nowUtcIso } from '@shared/utc'
 /**
  * export:files — copy a tape out of the library, verbatim. No transcoding:
  * TapeBox is a thin wrapper, not a converter. The media and its thumbnail (if any)
- * are byte-for-byte copies; the sidecar is copied with its tapebox.name /
- * thumbnailFilename rewritten to the exported names so the bundle stays
- * re-importable, and with renamedAtUtc set when the name changes. All three land in destinationDir under `name`.
+ * are byte-for-byte copies; the sidecar is copied with a tapebox section written
+ * from the catalog under the exported names, so the bundle stays re-importable,
+ * and with renamedAtUtc set when the name changes. All three land in
+ * destinationDir under `name`.
  *
  * Pre-flight refuses if any destination file already exists, so a partial export
  * can't half-overwrite something in the user's folder. When deleteFromApp is set,
@@ -65,14 +67,6 @@ async function exportTape(
   if (plan.status === 'error') throw new UserFacingError('invalid', plan.message)
   const { cleanName, mediaName, sidecarName, thumbName: newThumbName } = plan
 
-  // A selected folder may spell the live library through a literal/symlink
-  // alias. Only that managed destination participates in catalog admission;
-  // external paths and names remain the user's literal output choices.
-  const managedDestination = resolve(destinationDir) === resolve(libDir) ||
-    await realpath(destinationDir) === await realpath(libDir)
-  const names = [mediaName, sidecarName, ...(newThumbName ? [newThumbName] : [])]
-  const owned = managedDestination && names.find((file) => session.filenameOwner(file))
-  if (owned) throw new UserFacingError('conflict', message('errors.exportDestinationExists', { path: join(destinationDir, owned) }))
   const mediaDst = join(destinationDir, mediaName)
   const sidecarDst = join(destinationDir, sidecarName)
   const thumbDst = newThumbName ? join(destinationDir, newThumbName) : null
@@ -86,13 +80,12 @@ async function exportTape(
     }
   }
 
-  // Read + rewrite + validate the sidecar's tapebox namespace UP FRONT — before any
-  // file is copied out — so a corrupt source sidecar (or a rewrite that would
-  // downgrade it below what import accepts) fails the export before it leaves
+  // Read the sidecar and write its tapebox section UP FRONT — before any file is
+  // copied out — so a corrupt source sidecar fails the export before it leaves
   // partial files in the user's folder.
-  const original = await readSidecarFile(join(libDir, tape.sidecarFilename))
+  const original = await readSidecarFile(tapeFile(libDir, tape.id, tape.sidecarFilename))
   const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
-  const tb = sidecarNamespace(sidecar, tape)
+  const tb = exportNamespace(sidecar, tape)
   // Exporting under another name renames the bundle, so the sidecar records when.
   if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
   tb['name'] = cleanName
@@ -106,10 +99,10 @@ async function exportTape(
   const committed: string[] = []
   try {
     const hardLinks = await directorySupportsHardLinks(destinationDir)
-    await copyFileNoOverwrite(join(libDir, tape.filename), mediaDst, { hardLinks, signal })
+    await copyFileNoOverwrite(tapeFile(libDir, tape.id, tape.filename), mediaDst, { hardLinks, signal })
     committed.push(mediaDst)
     if (thumbDst && tape.thumbnailFilename) {
-      await copyFileNoOverwrite(join(libDir, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
+      await copyFileNoOverwrite(tapeFile(libDir, tape.id, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
       committed.push(thumbDst)
     }
     signal.throwIfAborted()

@@ -110,10 +110,22 @@ export const paths = {
   get records()       { return join(storageRoot(), 'records.sqlite3') },
 }
 
-// Separate metadata from flat media bundles, whose sidecars may have any name.
-export const COLLECTION_CATALOG = join('.tapebox', 'catalog.json')
+// The library holds its catalog beside one folder per tape. Tape ids use
+// nanoid's alphabet, which has no dot, so no tape folder can take this name.
+export const COLLECTION_CATALOG = 'catalog.json'
 export function collectionCatalog(libraryDir: string): string {
   return join(libraryDir, COLLECTION_CATALOG)
+}
+
+/** A tape's own folder: its media, sidecar and poster, and the download's and
+ *  poster fetch's scratch while they exist. */
+export function tapeDir(libraryDir: string, tapeId: string): string {
+  return join(libraryDir, tapeId)
+}
+
+/** One of a tape's files, by the name the catalog gives it. */
+export function tapeFile(libraryDir: string, tapeId: string, name: string): string {
+  return join(libraryDir, tapeId, name)
 }
 
 export function binaryPath(name: BinaryName, platform: NodeJS.Platform = process.platform): string {

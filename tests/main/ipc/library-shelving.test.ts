@@ -1,9 +1,8 @@
-import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
 import { librarySourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
-import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,17 +29,17 @@ vi.mock('electron', () => ({
   shell,
 }))
 
-const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[], trashOnRemove: false, statFailurePath: '', statFailureCode: '' }))
+const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[], trashOnRemove: false, readdirFailurePath: '', readdirFailureCode: '' }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
-    stat: (...args: Parameters<typeof actual.stat>) => {
-      if (args[0] === state.statFailurePath) {
-        return Promise.reject(Object.assign(new Error(`${state.statFailureCode}: stat failed`), { code: state.statFailureCode }))
+    readdir: ((...args: Parameters<typeof actual.readdir>) => {
+      if (args[0] === state.readdirFailurePath) {
+        return Promise.reject(Object.assign(new Error(`${state.readdirFailureCode}: scandir failed`), { code: state.readdirFailureCode }))
       }
-      return actual.stat(...args)
-    },
+      return actual.readdir(...args)
+    }) as typeof actual.readdir,
   }
 })
 const emit = vi.hoisted(() => vi.fn())
@@ -51,8 +50,6 @@ const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), de
 
 const persistNow = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@main/store/session', () => ({
-  filenameOwner: (name: string, exceptId?: string) => catalogFilenameOwner(state.tapes, name, exceptId),
-  stemOwner: (stem: string, exceptId?: string) => catalogStemOwner(state.tapes, stem, exceptId),
   sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(state.tapes, exceptId).find(ref),
   onCatalogSaveFailure: () => {},
   persistNow,
@@ -119,8 +116,8 @@ beforeEach(async () => {
   persistNow.mockImplementation(async () => {})
   state.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-library-shelving-'))
   state.trashOnRemove = false
-  state.statFailurePath = ''
-  state.statFailureCode = ''
+  state.readdirFailurePath = ''
+  state.readdirFailureCode = ''
   state.tapes = []
   registerLibraryHandlers()
 })
@@ -204,12 +201,18 @@ describe('reordering one list by hand', () => {
   })
 })
 
+/** A tape's own folder inside the library. */
+function folder(id: string): string {
+  return join(state.libraryDir, id)
+}
+
 describe('removing tapes from the library', () => {
-  async function stageFiles(id: string): Promise<Tape> {
-    for (const name of [`${id}.mp4`, `${id}.json`, `${id}.jpg`]) {
-      await writeFile(join(state.libraryDir, name), name.endsWith('.json') ? '{"formatVersion":1}' : 'content', 'utf8')
+  async function stageFiles(id: string, stem = id): Promise<Tape> {
+    await mkdir(folder(id), { recursive: true })
+    for (const name of [`${stem}.mp4`, `${stem}.json`, `${stem}.jpg`]) {
+      await writeFile(join(folder(id), name), name.endsWith('.json') ? '{"formatVersion":1}' : 'content', 'utf8')
     }
-    return makeTape({ id, filename: `${id}.mp4`, sidecarFilename: `${id}.json`, thumbnailFilename: `${id}.jpg` })
+    return makeTape({ id, filename: `${stem}.mp4`, sidecarFilename: `${stem}.json`, thumbnailFilename: `${stem}.jpg` })
   }
 
   it('takes the entries out and leaves the files when the user keeps them', async () => {
@@ -223,93 +226,104 @@ describe('removing tapes from the library', () => {
     expect(persistNow.mock.invocationCallOrder[0]!).toBeLessThan(
       emit.mock.invocationCallOrder[emit.mock.calls.findIndex((call) => call[0] === 'tapes:removed')]!,
     )
-    expect((await readdir(state.libraryDir)).sort()).toEqual(['Keepfiles1.jpg', 'Keepfiles1.json', 'Keepfiles1.mp4'])
+    expect((await readdir(folder('Keepfiles1'))).sort()).toEqual(['Keepfiles1.jpg', 'Keepfiles1.json', 'Keepfiles1.mp4'])
   })
 
-  it('deletes the media, sidecar, poster and everything a download left under the tape\'s stem', async () => {
+  it('deletes the tape\'s folder with its media, sidecar, poster and everything a download left there', async () => {
     state.tapes = [await stageFiles('Deletethem')]
     for (const name of ['Deletethem.f137.mp4.part', 'Deletethem.mp4.ytdl', 'Deletethem.f140.m4a.frag3', 'Deletethem.info.json', 'Deletethem.webp']) {
-      await writeFile(join(state.libraryDir, name), 'leftover', 'utf8')
+      await writeFile(join(folder('Deletethem'), name), 'leftover', 'utf8')
     }
-    await writeFile(join(state.libraryDir, 'Other00001.mp4'), 'another tape', 'utf8')
+    await mkdir(folder('Other00001'))
+    await writeFile(join(folder('Other00001'), 'Other00001.mp4'), 'another tape', 'utf8')
 
     await invoke('library:remove', { tapeIds: ['Deletethem'], deleteFiles: true })
 
-    expect(await readdir(state.libraryDir)).toEqual(['Other00001.mp4'])
+    expect(await readdir(state.libraryDir)).toEqual(['Other00001'])
     expect(shell.trashItem).not.toHaveBeenCalled()
   })
 
-  it('never touches a stem file another tape tracks', async () => {
-    state.tapes = [await stageFiles('Removeme01'), makeTape({ id: 'Renamed001', filename: 'Removeme01.mkv' })]
-    await writeFile(join(state.libraryDir, 'Removeme01.mkv'), 'another tape\'s renamed media', 'utf8')
+  it('leaves another tape\'s folder alone even when its files have the same names', async () => {
+    state.tapes = [await stageFiles('Removeme01', 'Take'), await stageFiles('Sametake01', 'Take')]
 
     await invoke('library:remove', { tapeIds: ['Removeme01'], deleteFiles: true })
 
-    expect(await readdir(state.libraryDir)).toEqual(['Removeme01.mkv'])
+    expect(await readdir(state.libraryDir)).toEqual(['Sametake01'])
+    expect((await readdir(folder('Sametake01'))).sort()).toEqual(['Take.jpg', 'Take.json', 'Take.mp4'])
   })
 
   it('trashes a finished bundle the catalog never named, and deletes fragments outright', async () => {
     state.trashOnRemove = true
     state.tapes = [makeTape({ id: 'Uncommit01', state: 'queued', filename: null, downloadedAtUtc: null })]
+    await mkdir(folder('Uncommit01'))
     for (const name of ['Uncommit01.mp4', 'Uncommit01.json', 'Uncommit01.jpg', 'Uncommit01.f137.mp4.part']) {
-      await writeFile(join(state.libraryDir, name), 'content', 'utf8')
+      await writeFile(join(folder('Uncommit01'), name), 'content', 'utf8')
     }
 
     await invoke('library:remove', { tapeIds: ['Uncommit01'], deleteFiles: true })
 
-    expect(shell.trashItem.mock.calls.map((call) => call[0]).sort()).toEqual(
-      ['Uncommit01.jpg', 'Uncommit01.json', 'Uncommit01.mp4'].map((name) => join(state.libraryDir, name)),
+    expect(shell.trashItem.mock.calls.map((call) => call[0])).toEqual([folder('Uncommit01')])
+    expect((await readdir(folder('Uncommit01'))).sort(), 'the fragment is gone; the trashed folder is the fake Trash\'s').toEqual(
+      ['Uncommit01.jpg', 'Uncommit01.json', 'Uncommit01.mp4'],
     )
-    expect(await readdir(state.libraryDir), 'the fragment is gone; the trashed files are the fake Trash\'s').not.toContain('Uncommit01.f137.mp4.part')
     expect(state.tapes).toEqual([])
   })
 
   it('keeps every bundle file when its sidecar is from a newer TapeBox', async () => {
     const tape = await stageFiles('Protected1')
     state.tapes = [tape]
-    await writeFile(join(state.libraryDir, 'Protected1.json'), '{"formatVersion":2}')
+    await writeFile(join(folder('Protected1'), 'Protected1.json'), '{"formatVersion":2}')
     await expect(invoke('library:remove', { tapeIds: ['Protected1'], deleteFiles: true })).rejects.toThrow('could not be removed')
     expect(state.tapes).toEqual([tape])
-    expect((await readdir(state.libraryDir)).sort()).toEqual(['Protected1.jpg', 'Protected1.json', 'Protected1.mp4'])
+    expect((await readdir(folder('Protected1'))).sort()).toEqual(['Protected1.jpg', 'Protected1.json', 'Protected1.mp4'])
     expect(shell.trashItem).not.toHaveBeenCalled()
     expect(emitted('tapes:removed')).toEqual([])
   })
 
   it('removes a tape and its files when its sidecar is damaged', async () => {
     state.tapes = [await stageFiles('Damaged001')]
-    await writeFile(join(state.libraryDir, 'Damaged001.json'), 'unreadable')
+    await writeFile(join(folder('Damaged001'), 'Damaged001.json'), 'unreadable')
     await invoke('library:remove', { tapeIds: ['Damaged001'], deleteFiles: true })
     expect(state.tapes).toEqual([])
     expect(await readdir(state.libraryDir)).toEqual([])
   })
 
-  it('sends the files to the Trash instead when the user asked for that, and skips ones already gone', async () => {
+  it('sends the folder to the Trash instead when the user asked for that, and skips one already gone', async () => {
     state.trashOnRemove = true
-    const tape = await stageFiles('Trashthese')
-    state.tapes = [tape]
-    await rm(join(state.libraryDir, 'Trashthese.jpg'))
+    state.tapes = [await stageFiles('Trashthese'), makeTape({ id: 'Nofolder01', filename: 'Nofolder01.mp4' })]
 
-    await invoke('library:remove', { tapeIds: ['Trashthese'], deleteFiles: true })
+    await invoke('library:remove', { tapeIds: ['Trashthese', 'Nofolder01'], deleteFiles: true })
 
-    expect(shell.trashItem.mock.calls.map((call) => call[0]).sort()).toEqual([
-      join(state.libraryDir, 'Trashthese.json'),
-      join(state.libraryDir, 'Trashthese.mp4'),
-    ])
+    expect(shell.trashItem.mock.calls.map((call) => call[0])).toEqual([folder('Trashthese')])
     expect(state.tapes).toEqual([])
   })
 
-  it.each(['EACCES', 'EIO'])('keeps the catalog row and files when Trash preflight stat fails with %s', async (code) => {
+  it('removes a folder that held only download fragments instead of trashing it', async () => {
     state.trashOnRemove = true
-    const tape = await stageFiles('Statfailed')
+    state.tapes = [makeTape({ id: 'Fragsonly1', state: 'queued', filename: null, downloadedAtUtc: null })]
+    await mkdir(folder('Fragsonly1'))
+    await writeFile(join(folder('Fragsonly1'), 'Fragsonly1.f137.mp4.part'), 'partial', 'utf8')
+
+    await invoke('library:remove', { tapeIds: ['Fragsonly1'], deleteFiles: true })
+
+    expect(shell.trashItem).not.toHaveBeenCalled()
+    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(state.tapes).toEqual([])
+  })
+
+  it.each(['EACCES', 'EIO'])('keeps the catalog row and files when the tape folder cannot be read (%s)', async (code) => {
+    state.trashOnRemove = true
+    const tape = await stageFiles('Readfailed')
     state.tapes = [tape]
-    state.statFailurePath = join(state.libraryDir, 'Statfailed.mp4')
-    state.statFailureCode = code
+    state.readdirFailurePath = folder('Readfailed')
+    state.readdirFailureCode = code
 
     await expect(invoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })).rejects.toMatchObject({
       userMessage: { key: 'errors.removeFilesKept' },
     })
+    state.readdirFailurePath = ''
     expect(state.tapes).toEqual([tape])
-    expect((await readdir(state.libraryDir)).sort()).toEqual(['Statfailed.jpg', 'Statfailed.json', 'Statfailed.mp4'])
+    expect((await readdir(folder('Readfailed'))).sort()).toEqual(['Readfailed.jpg', 'Readfailed.json', 'Readfailed.mp4'])
     expect(shell.trashItem).not.toHaveBeenCalled()
     expect(emitted('tapes:removed')).toEqual([])
     expect(log.error).toHaveBeenCalledWith('library removal failed', expect.objectContaining({
@@ -336,7 +350,8 @@ describe('removing tapes from the library', () => {
     state.tapes = [makeTape({ id: 'Latefinish', state: 'downloading', filename: null, downloadedAtUtc: null })]
     queueManager.isActive.mockReturnValue(true)
     queueManager.cancel.mockImplementation(async (id: string) => {
-      for (const name of [`${id}.mp4`, `${id}.json`, `${id}.jpg`]) await writeFile(join(state.libraryDir, name), name.endsWith('.json') ? '{"formatVersion":1}' : 'finished', 'utf8')
+      await mkdir(folder(id))
+      for (const name of [`${id}.mp4`, `${id}.json`, `${id}.jpg`]) await writeFile(join(folder(id), name), name.endsWith('.json') ? '{"formatVersion":1}' : 'finished', 'utf8')
       state.tapes = state.tapes.map((tape) => tape.id === id
         ? { ...tape, state: 'downloaded', filename: `${id}.mp4`, sidecarFilename: `${id}.json`, thumbnailFilename: `${id}.jpg` }
         : tape)
@@ -395,7 +410,8 @@ describe('removing tapes from the library', () => {
 
 describe('reading a tape sidecar', () => {
   it('hands back the parsed sidecar', async () => {
-    await writeFile(join(state.libraryDir, 'Take.json'), JSON.stringify({ formatVersion: 1, title: 'Take', description: 'note' }), 'utf8')
+    await mkdir(folder('Hassidecar'))
+    await writeFile(join(folder('Hassidecar'), 'Take.json'), JSON.stringify({ formatVersion: 1, title: 'Take', description: 'note' }), 'utf8')
     state.tapes = [makeTape({ id: 'Hassidecar', sidecarFilename: 'Take.json' })]
 
     await expect(invoke('library:getSidecar', { tapeId: 'Hassidecar' })).resolves.toEqual({
@@ -416,6 +432,6 @@ describe('reading a tape sidecar', () => {
     state.tapes = [makeTape({ id: 'Brokenside', sidecarFilename: 'missing.json' })]
 
     await expect(invoke('library:getSidecar', { tapeId: 'Brokenside' })).rejects.toThrow()
-    await expect(access(join(state.libraryDir, 'missing.json'))).rejects.toThrow()
+    await expect(access(join(folder('Brokenside'), 'missing.json'))).rejects.toThrow()
   })
 })

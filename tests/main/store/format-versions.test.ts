@@ -54,11 +54,11 @@ const BOX = { id: 'box1234567', name: 'Box', order: 0 }
 
 describe('catalog.json', () => {
   beforeEach(async () => {
-    await mkdir(join(root, 'library', '.tapebox'), { recursive: true })
+    await mkdir(join(root, 'library'), { recursive: true })
     await (await import('@main/store/config')).loadSettings()
   })
   const session = () => import('@main/store/session')
-  const path = () => join(root, 'library', '.tapebox', 'catalog.json')
+  const path = () => join(root, 'library', 'catalog.json')
 
   it('reads an unmarked current-shape file and marks it at the next save', async () => {
     const tape = {

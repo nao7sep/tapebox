@@ -86,16 +86,26 @@ describe('SessionSchema identities', () => {
         thumbnailFilename: 'Cafe\u0301.mp4',
       }],
       boxes: [],
-    })).toThrow(/tracked filenames must be unique by portable identity/)
+    })).toThrow(/a tape's files must be unique by portable identity/)
   })
 
-  it('rejects portable filename aliases across legacy persisted tape bundles', () => {
+  it('lets two tapes, each in its own folder, use the same file names', () => {
     expect(() => SessionSchema.parse({
       tapes: [
         { ...completeTape(), filename: 'Archive.MP4' },
         { ...completeTape(), id: 'def7654321', sourceUrl: 'https://example.com/watch?v=y', filename: 'archive.mp4' },
       ],
       boxes: [],
-    })).toThrow(/tracked filenames must be unique by portable identity/)
+    })).not.toThrow()
+  })
+
+  it('rejects tape ids that would share a folder on a case-insensitive drive', () => {
+    expect(() => SessionSchema.parse({
+      tapes: [
+        { ...completeTape(), id: 'abcdefghij' },
+        { ...completeTape(), id: 'ABCDEFGHIJ', sourceUrl: 'https://example.com/watch?v=y' },
+      ],
+      boxes: [],
+    })).toThrow(/duplicate tape id/)
   })
 })

@@ -101,7 +101,7 @@ describe('live sync', () => {
     })
     const sync = startIpcSync()
     useMediaStore.setState({ baseUrl: 'http://127.0.0.1:1234/token' })
-    const urls = () => ['same name.mp4', 'same name.jpg'].map((name) => mediaFileUrl(useMediaStore.getState(), name))
+    const urls = () => ['same name.mp4', 'same name.jpg'].map((name) => mediaFileUrl(useMediaStore.getState(), 'Tape000001', name))
     const before = urls()
     listeners.get('library:opened')!({ tapes: [], boxes: [] })
     const other = urls()
@@ -114,7 +114,7 @@ describe('live sync', () => {
     const current = urls()
     listeners.get('boxes:changed')!([])
     expect(urls()).toEqual(current)
-    expect(new URL(urls()[0]!).pathname).toBe('/token/same%20name.mp4')
+    expect(new URL(urls()[0]!).pathname).toBe('/token/Tape000001/same%20name.mp4')
     sync.stop()
   })
 

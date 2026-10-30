@@ -1,26 +1,25 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { nanoid } from 'nanoid'
+import { portableFilenameIdentity } from '@shared/filename'
 
 /**
- * Reserve an unused on-disk stem for a new tape's files.
- *
- * A downloaded tape's media, sidecar, and thumbnail all share one stem — the
- * tape's own nanoid id — so the on-disk name is opaque, stable, and (unlike the
- * source's video id) globally unique by construction rather than by assumption.
- * The sidecar is the one file whose extension is fixed (`.json`), so a free
- * `{stem}.json` means the whole `{stem}.*` namespace is ours. A nanoid collision
- * is astronomically unlikely, but checking makes reuse impossible rather than
- * merely improbable — and guards against a leftover file from a tape removed
- * with "keep files".
+ * Reserve an unused id for a new tape. The id names the tape's folder in the
+ * library and the stem of its downloaded files, so the on-disk names are opaque,
+ * stable and unique by construction. A nanoid collision is astronomically
+ * unlikely, but checking makes reuse impossible rather than merely improbable:
+ * an id another catalog row holds in any case, or whose folder is already there
+ * (a tape removed with "keep files"), is passed over.
  */
 
-const STEM_LENGTH = 10
+const ID_LENGTH = 10
 
-export async function reserveStem(libraryDir: string): Promise<string> {
+export async function reserveTapeId(libraryDir: string, taken: Iterable<string>): Promise<string> {
+  const held = new Set([...taken].map(portableFilenameIdentity))
   for (;;) {
-    const stem = nanoid(STEM_LENGTH)
-    if (!(await exists(join(libraryDir, `${stem}.json`)))) return stem
+    const id = nanoid(ID_LENGTH)
+    if (held.has(portableFilenameIdentity(id))) continue
+    if (!(await exists(join(libraryDir, id)))) return id
   }
 }
 

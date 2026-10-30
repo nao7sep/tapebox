@@ -188,13 +188,22 @@ describe('relocateLibrary', () => {
     expect(error.message).toContain('and 2 more')
   })
 
-  it('rejects portable aliases in the incoming catalog before moving either entry', async () => {
-    await seed(fromDir, 'Take.mp4', 'video-a')
+  it('moves tape folders whole and refuses a destination holding a folder of the same portable name', async () => {
+    await mkdir(join(fromDir, 'Tape000001'))
+    await seed(fromDir, join('Tape000001', 'a.mp4'), 'video')
+    await seed(fromDir, join('Tape000001', 'a.json'), 'sidecar')
+    await seed(fromDir, 'catalog.json', 'catalog')
+    await mkdir(join(toDir, 'tape000001'), { recursive: true })
 
-    await expect(relocateLibrary(fromDir, toDir, ['Take.mp4', 'take.MP4'])).rejects.toThrow(/already contains/)
+    await expect(relocateLibrary(fromDir, toDir, ['catalog.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')]))
+      .rejects.toThrow(/already contains/)
+    expect(await names(join(toDir, 'tape000001'))).toEqual([])
 
-    expect(await readFile(join(fromDir, 'Take.mp4'), 'utf8')).toBe('video-a')
-    expect(await names(toDir)).toEqual([])
+    await rm(join(toDir, 'tape000001'), { recursive: true })
+    const result = await relocateLibrary(fromDir, toDir, ['catalog.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')])
+    expect(await names(join(toDir, 'Tape000001'))).toEqual(['a.json', 'a.mp4'])
+    await completeLibraryRelocation(result.moved ? result.files : [])
+    expect(await names(fromDir), 'the emptied tape folder goes with its files').toEqual([])
   })
 
   it('rolls back exact claims when a late destination winner appears partway', async () => {

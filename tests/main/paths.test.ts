@@ -86,7 +86,7 @@ describe('resolveStorageRoot', () => {
 describe('paths catalog file', () => {
   it('resolves the catalog to catalog.json inside the library', () => {
     expect(basename(collectionCatalog(paths.library))).toBe('catalog.json')
-    expect(dirname(collectionCatalog(paths.library))).toBe(join(paths.library, '.tapebox'))
+    expect(dirname(collectionCatalog(paths.library))).toBe(paths.library)
   })
 
   it('keeps the catalog separate from config and layout', () => {

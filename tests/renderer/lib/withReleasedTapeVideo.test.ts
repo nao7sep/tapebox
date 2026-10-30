@@ -17,7 +17,7 @@ beforeEach(() => {
   useSelectionStore.setState({ selectedId: tape.id })
   useTapesStore.setState({ tapes: [tape] })
   video = document.createElement('video')
-  source = mediaFileUrl(useMediaStore.getState(), tape.filename)!
+  source = mediaFileUrl(useMediaStore.getState(), tape.id, tape.filename)!
   video.src = source
   video.currentTime = 37
   document.body.append(video)

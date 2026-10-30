@@ -1,5 +1,6 @@
 import { basename, join } from 'node:path'
-import { rename } from 'node:fs/promises'
+import { mkdir, rename } from 'node:fs/promises'
+import { tapeDir } from '@main/paths'
 import * as ytdlp from '@main/services/ytdlp'
 import * as ffmpeg from '@main/services/ffmpeg'
 import * as sidecar from '@main/core/sidecar'
@@ -38,8 +39,6 @@ export interface JobDeps {
   sidecar: { finalize: typeof sidecar.finalize }
   findFinishedBundle: typeof findFinishedBundle
   session: {
-    filenameOwner: typeof session.filenameOwner
-    stemOwner: typeof session.stemOwner
     sourceOwner: typeof session.sourceOwner
     getTape: typeof session.getTape
     upsertTape: typeof session.upsertTape
@@ -58,8 +57,6 @@ export const defaultJobDeps: JobDeps = {
   sidecar: { finalize: sidecar.finalize },
   findFinishedBundle,
   session: {
-    filenameOwner: session.filenameOwner,
-    stemOwner: session.stemOwner,
     sourceOwner: session.sourceOwner,
     getTape: session.getTape,
     upsertTape: session.upsertTape,
@@ -126,10 +123,8 @@ export class Job {
     // Fresh attempt: clear any log buffered from a prior (failed) run.
     this.d.emit('tapes:logReset', { tapeId: this.tapeId })
     try {
-      // Recovery and a new attempt both own <id>.*, including provider cleanup
-      // and raw/JPEG postprocessing. Legacy foreign owners stop the attempt
-      // before it can adopt their files or clear the namespace.
-      if (this.d.session.stemOwner(this.tapeId, this.tapeId)) throw new Error('Another tape owns this download namespace')
+      // Recovery and a new attempt both work in the tape's own folder, whose
+      // files no other tape can name.
       if (await this.d.withLibraryTurn(() => this.adoptFinishedDownload())) return
       const isVideo = await this.probe()
       if (!isVideo || this.controller.signal.aborted) return
@@ -179,7 +174,7 @@ export class Job {
   private async adoptFinishedDownload(): Promise<boolean> {
     const cur = this.current()
     if (!cur) return false
-    const found = await this.d.findFinishedBundle(this.d.getLibraryDir(), cur, this.d.now(), this.d.session.filenameOwner)
+    const found = await this.d.findFinishedBundle(tapeDir(this.d.getLibraryDir(), cur.id), cur)
     if (found.status === 'none') return false
     if (found.status === 'unusable') {
       // Clearing the stem for a new attempt could delete a finished download, so
@@ -253,8 +248,9 @@ export class Job {
     const cur = this.current()
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
-    const libraryDir = this.d.getLibraryDir()
-    if (this.d.session.stemOwner(cur.id, cur.id)) throw new Error('Another tape owns this download namespace')
+    // The tape's own folder holds the download, its partial files and its poster.
+    const dir = tapeDir(this.d.getLibraryDir(), cur.id)
+    await mkdir(dir, { recursive: true })
 
     this.update({ state: 'downloading', downloadStartedAtUtc: this.d.now() })
 
@@ -265,7 +261,7 @@ export class Job {
     const result = await this.d.ytdlp.download({
       tapeId: this.tapeId,
       url: cur.sourceUrl,
-      libraryDir,
+      dir,
       outputId: stem,
       signal: this.controller.signal,
       onProgress: (progress) => {
@@ -279,15 +275,15 @@ export class Job {
       },
     })
 
-    // yt-dlp should write straight into the library root via --paths, but if it
-    // ever lands the media in a subdirectory, flatten it to {libraryDir}/{stem}.{ext}
+    // yt-dlp should write straight into the tape's folder via --paths, but if it
+    // ever lands the media in a subdirectory, flatten it to {dir}/{stem}.{ext}
     // so it sits beside its siblings. This is unexpected, so record it — and let a
     // failed move surface as a failed job (the runInner catch) rather than leaving a
     // tape whose filename points at a file that isn't there.
     const mediaBasename = basename(result.mediaPath)
-    const expectedMediaPath = join(libraryDir, mediaBasename)
+    const expectedMediaPath = join(dir, mediaBasename)
     if (result.mediaPath !== expectedMediaPath) {
-      this.d.log.warn('yt-dlp wrote media outside the library root; relocating', {
+      this.d.log.warn('yt-dlp wrote media outside the tape folder; relocating', {
         tapeId: this.tapeId,
         from: result.mediaPath,
         to: expectedMediaPath,
@@ -306,33 +302,18 @@ export class Job {
     // whose media is already on disk — degrade to no poster and record why.
     let thumbnailFilename: string | null = null
     try {
-      const rawThumb = await this.d.ytdlp.findThumbnail(libraryDir, stem)
+      const rawThumb = await this.d.ytdlp.findThumbnail(dir, stem)
       if (rawThumb) {
-        thumbnailFilename = await this.d.ffmpeg.saveThumbnailJpeg(this.tapeId, rawThumb, libraryDir, stem, this.controller.signal)
+        thumbnailFilename = await this.d.ffmpeg.saveThumbnailJpeg(this.tapeId, rawThumb, dir, stem, this.controller.signal)
       }
     } catch (err) {
       this.d.log.warn('thumbnail skipped', { tapeId: this.tapeId, error: describeError(err) })
     }
 
     const sidecarFilename = `${stem}.json`
-    const sidecarPath = join(libraryDir, sidecarFilename)
-    // The sidecar and the catalog row record the same moment.
+    const sidecarPath = join(dir, sidecarFilename)
+    await this.d.sidecar.finalize({ infoJsonPath: result.infoJsonPath, sidecarPath, media })
     const downloadedAtUtc = this.d.now()
-
-    await this.d.sidecar.finalize({
-      infoJsonPath: result.infoJsonPath,
-      sidecarPath,
-      tapeboxAdditions: {
-        sourceUrl: cur.sourceUrl,
-        name: null,
-        addedAtUtc: cur.addedAtUtc,
-        downloadedAtUtc,
-        renamedAtUtc: null,
-        media,
-        mediaFilename: mediaBasename,
-        thumbnailFilename,
-      },
-    })
 
     // The finished files are on disk; adding them to the library is this job's
     // one library turn. Commit the row that names them before reporting success,

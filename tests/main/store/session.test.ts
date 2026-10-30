@@ -75,13 +75,13 @@ describe('loadSessionFile', () => {
     expect(files.some((f) => f.startsWith('catalog-') && f.endsWith('.invalid'))).toBe(true)
   })
 
-  it('sets aside a catalog whose tape bundles contain portable filename aliases', async () => {
+  it('sets aside a catalog whose tape ids would share a folder', async () => {
     const path = join(dir, 'catalog.json')
     const legacy = JSON.stringify({
       formatVersion: 1,
       tapes: [
-        catalogTape('abc1234567', 'https://example.test/a', 'Caf\u00e9.MP4'),
-        catalogTape('def1234567', 'https://example.test/b', 'Cafe\u0301.mp4'),
+        catalogTape('abc1234567', 'https://example.test/a', 'First.mp4'),
+        catalogTape('ABC1234567', 'https://example.test/b', 'Second.mp4'),
       ],
       boxes: [],
     })

@@ -55,7 +55,7 @@ for (const flavour of ['posix', 'windows']) {
       await writeFile(anotherFile, 'regular file')
       await writeFile(join(dir, `${tapeId}.part`), 'old retry')
 
-      const result = await download({ tapeId, url: sourceUrl, libraryDir: dir, outputId: tapeId, signal: new AbortController().signal })
+      const result = await download({ tapeId, url: sourceUrl, dir, outputId: tapeId, signal: new AbortController().signal })
 
       expect(result).toEqual({ mediaPath: join(dir, `${tapeId}.mp4`), infoJsonPath: join(dir, `${tapeId}.info.json`) })
       expect(await readFile(result.mediaPath, 'utf8')).toBe('fixture media')

@@ -2,7 +2,7 @@ import { handle } from './handle'
 import { emit } from './events'
 import * as session from '@main/store/session'
 import { getLibraryDir, getSettings } from '@main/store/config'
-import { reserveStem } from '@main/core/stem'
+import { reserveTapeId } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
@@ -27,10 +27,10 @@ export function registerDownloadHandlers(): void {
     if (!isImportableUrl(trimmed)) {
       throw new UserFacingError('invalid', message('errors.urlInvalid'))
     }
-    // Reserve the on-disk stem first: it is the only await. The dedup check, the
+    // Reserve the tape's id first: it is the only await. The dedup check, the
     // order and the insert then happen in one synchronous turn, so two quick Adds
     // of the same URL cannot both pass the check.
-    const id = await reserveStem(getLibraryDir())
+    const id = await reserveTapeId(getLibraryDir(), session.getTapes().map((tape) => tape.id))
     // Dedup by URL for the single-add path (no id yet — it's unprobed), with the
     // library's one identity rule, so the same video pasted with tracking junk or a
     // fragment isn't added twice. Any existing tape blocks the add, in any state; a
@@ -50,10 +50,12 @@ export function registerDownloadHandlers(): void {
     // Skip blanks and any non-http(s) scheme (the trust-boundary gate).
     const candidates = newUrls([], urls.map((url) => url.trim()).filter((url) => url && isImportableUrl(url)))
     if (candidates.length === 0) return []
-    // Reserve stems first (the only awaits), then dedup and insert in one
+    // Reserve ids first (the only awaits), then dedup and insert in one
     // synchronous turn so a concurrent add cannot slip a duplicate in between.
     const ids: string[] = []
-    for (let i = 0; i < candidates.length; i++) ids.push(await reserveStem(getLibraryDir()))
+    for (let i = 0; i < candidates.length; i++) {
+      ids.push(await reserveTapeId(getLibraryDir(), [...session.getTapes().map((tape) => tape.id), ...ids]))
+    }
     const accepted = newUrls(session.getTapes(), candidates)
     if (accepted.length === 0) return []
     // One front-of-inbox window for the whole batch, so the paste lands as a block

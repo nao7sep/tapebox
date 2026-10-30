@@ -1,7 +1,7 @@
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionSchema, type Tape } from '@shared/domain'
 import type { ImportResult } from '@shared/ipc-contract'
@@ -21,7 +21,11 @@ vi.mock('electron', () => ({
   },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/paths', () => ({ paths: { get legacyCatalog() { return state.catalog + '.legacy' } }, collectionCatalog: () => state.catalog }))
+vi.mock('@main/paths', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@main/paths')>(),
+  paths: { get legacyCatalog() { return state.catalog + '.legacy' } },
+  collectionCatalog: () => state.catalog,
+}))
 vi.mock('@main/store/config', () => ({
   getLibraryDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
@@ -38,7 +42,8 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
     ...actual,
     copyFileNoOverwrite: async (...args: Parameters<typeof actual.copyFileNoOverwrite>) => {
       await actual.copyFileNoOverwrite(...args)
-      if (args[1] === state.heldCopy) { state.held(); await state.release }
+      // The copy lands in a tape folder named by an id the test cannot know, so it is held by its file name.
+      if (args[1].startsWith(state.libraryDir) && basename(args[1]) === state.heldCopy) { state.held(); await state.release }
     },
   }
 })
@@ -103,7 +108,7 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-import-concurrency-'))
   sourceDir = join(root, 'source')
   state.libraryDir = join(root, 'library')
-  state.catalog = join(root, 'catalog.json')
+  state.catalog = join(state.libraryDir, 'catalog.json')
   state.heldCopy = ''
   state.heldCatalog = ''
   state.release = null
@@ -123,7 +128,7 @@ describe('bundle import beside catalog changes', () => {
   it('publishes a batch in selection order ahead of URLs added during its copy waits', async () => {
     const firstPath = await stageBundle(sourceDir, 'first', 'https://example.test/first')
     const secondPath = await stageBundle(sourceDir, 'second', 'https://example.test/second')
-    const gate = hold('heldCopy', join(state.libraryDir, 'second.mp4'))
+    const gate = hold('heldCopy', 'second.mp4')
     const batch = handlers.get('library:import')!({ paths: [firstPath, secondPath] })
     const added = 'url0000001'
     try {

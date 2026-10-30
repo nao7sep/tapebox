@@ -20,7 +20,6 @@ vi.mock('electron', () => ({
   },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/paths', () => ({ paths: { get legacyCatalog() { return state.catalog + '.legacy' } }, collectionCatalog: () => state.catalog }))
 vi.mock('@main/store/config', () => ({
   getLibraryDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
@@ -51,7 +50,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
   return {
     ...actual,
     unlinkFiles: async (...args: Parameters<typeof actual.unlinkFiles>) => {
-      if (state.holdCleanup && args[0].includes(join(state.libraryDir, 'Original.mp4'))) {
+      if (state.holdCleanup && args[0].includes(join(state.libraryDir, 'abc1234567', 'Original.mp4'))) {
         state.holdCleanup = false
         state.started()
         await state.release
@@ -66,13 +65,15 @@ import * as session from '@main/store/session'
 
 let root: string
 let original: Tape
+// The tape's own folder inside the library, where its files live.
+let tapeFolder: string
 
 beforeEach(async () => {
   handlers.clear()
   emit.mockClear()
   root = await mkdtemp(join(tmpdir(), 'tapebox-rename-concurrency-'))
   state.libraryDir = join(root, 'library')
-  state.catalog = join(root, 'catalog.json')
+  state.catalog = join(state.libraryDir, 'catalog.json')
   state.holdRename = false
   state.holdCleanup = false
   state.release = null
@@ -87,15 +88,10 @@ beforeEach(async () => {
     name: 'Original', renamedAtUtc: null, archivedAtUtc: null, boxId: null, order: 0,
     pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
-  await writeFile(join(state.libraryDir, original.filename!), 'video')
-  await writeFile(join(state.libraryDir, original.sidecarFilename!), JSON.stringify({
-    formatVersion: 1,
-    tapebox: {
-      sourceUrl: original.sourceUrl, name: original.name, addedAtUtc: original.addedAtUtc,
-      downloadedAtUtc: original.downloadedAtUtc, renamedAtUtc: null, media: null,
-      mediaFilename: original.filename, thumbnailFilename: null,
-    },
-  }))
+  tapeFolder = join(state.libraryDir, original.id)
+  await mkdir(tapeFolder)
+  await writeFile(join(tapeFolder, original.filename!), 'video')
+  await writeFile(join(tapeFolder, original.sidecarFilename!), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   session.upsertTape(original)
   await session.persistNow()
   registerLibraryHandlers()
@@ -130,7 +126,7 @@ describe('rename publication across the real session commit', () => {
     expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:updated', current)
     await session.persistNow()
     expect(SessionSchema.parse(JSON.parse(await readFile(state.catalog, 'utf8'))).tapes).toEqual([current])
-    expect((await readdir(state.libraryDir)).sort()).toEqual(['Renamed.json', 'Renamed.mp4'])
+    expect((await readdir(tapeFolder)).sort()).toEqual(['Renamed.json', 'Renamed.mp4'])
   })
 
   it('returns the current row when newer organization changes arrive during post-commit source cleanup', async () => {

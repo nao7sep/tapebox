@@ -1,4 +1,4 @@
-import { mkdir, readdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, rmdir, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { linkOrCopyNoOverwrite, unlinkFiles } from '@main/io/atomic-file'
 import { log } from '@main/io/logger'
@@ -30,23 +30,26 @@ function shortName(name: string): string {
  *   1. Same effective dir → no-op (custom→default that resolves equal, a re-pick of
  *      the same folder, whitespace differences). Compared by resolved path.
  *   2. Create the destination dir first (recursive, idempotent).
- *   3. Collision guard, up front: if ANY entry already exists at the destination we
- *      abort before moving a single file — a relocation must never overwrite a file
- *      already in the new folder, and aborting early means nothing has moved yet.
+ *   3. Collision guard, up front: if the catalog or ANY tape folder already exists at
+ *      the destination we abort before moving a single file — a relocation must never
+ *      overwrite or merge into what is already in the new folder, and aborting early
+ *      means nothing has moved yet.
  *   4. Per file: publish to the destination without overwrite, keeping the source:
  *      a hard link on one volume; across volumes a copy into a destination temp
  *      that is linked into place (or, where the destination has no hard links,
  *      into an exclusive file that any failure removes).
  *   5. If publication fails, the caller's signal aborts it (checked between files
  *      and copy chunks), or the later config save fails, remove every published
- *      destination. Only after config commits may the caller remove the sources;
+ *      destination and the tape folders it emptied. Only after config commits may
+ *      the caller remove the sources, and the source tape folders left empty;
  *      a crash at any earlier phase therefore leaves the old config fully readable.
  *      A crash leaves the copies already made, so a retry reports them as
  *      collisions for the user to clear (accepted: rare).
  *
  * Only the named entries are touched — files the app created and tracks (media,
- * sidecars, thumbnails) and the collection catalog. Unrelated files the user dropped in the folder are left
- * alone.
+ * sidecars, thumbnails, each in its tape's folder) and the collection catalog.
+ * Unrelated files the user dropped in the folder are left alone, and a tape
+ * folder holding anything else stays where it is.
  */
 
 export type RelocateResult =
@@ -87,6 +90,17 @@ async function fileSize(path: string): Promise<number | null> {
 
 async function rollbackPublishedFiles(files: readonly RelocatedFile[]): Promise<void> {
   await unlinkFiles([...files].reverse().map((file) => file.destination))
+  await removeEmptiedFolders(files.map((file) => file.destination))
+}
+
+/** Remove the folders `paths` sat in once they hold nothing else. */
+async function removeEmptiedFolders(paths: readonly string[]): Promise<void> {
+  for (const folder of new Set(paths.map((path) => dirname(path)))) {
+    await rmdir(folder).catch((error: unknown) => {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT' && code !== 'ENOTEMPTY' && code !== 'EEXIST') throw error
+    })
+  }
 }
 
 /** Roll back pre-config publication. The catalog-visible sources were never
@@ -101,13 +115,18 @@ export async function rollbackLibraryRelocation(
  * A source that cannot be removed is reported as an explicit partial success;
  * the authoritative destination bundle remains complete. */
 export async function completeLibraryRelocation(files: readonly RelocatedFile[]): Promise<void> {
-  await unlinkFiles(files.map((file) => file.source))
+  const sources = files.map((file) => file.source)
+  await unlinkFiles(sources)
+  // The catalog sits in the library folder itself, which stays.
+  await removeEmptiedFolders(files.filter((file) => dirname(file.name) !== '.').map((file) => file.source))
 }
 
 /**
- * Publish `entries` (managed relative paths) from `fromDir` to `toDir`. See the module doc for
- * the full contract. `entries` are supplied internally and should be deduplicated by the caller; portable
- * aliases are rejected by preflight before any destination publication.
+ * Publish `entries` (managed relative paths: the catalog, and `<tapeId>/<name>`
+ * for each tape file) from `fromDir` to `toDir`. See the module doc for the full
+ * contract. `entries` are supplied internally and should be deduplicated by the
+ * caller; portable aliases are rejected by preflight before any destination
+ * publication.
  */
 export async function relocateLibrary(
   fromDir: string,
@@ -120,17 +139,14 @@ export async function relocateLibrary(
 
   await mkdir(toDir, { recursive: true })
 
-  // Collision guard up front: bail before moving anything if any destination
-  // already holds a file we'd otherwise overwrite. The destination must not contain
-  // conflicting portable aliases. The incoming catalog itself must also be unique
-  // by the same casefold/NFC identity.
+  // Collision guard up front: bail before moving anything if the destination
+  // already holds the catalog or a tape folder of the same portable name, which
+  // the move would overwrite or merge into. Each tape's files share its folder,
+  // so the guard compares top-level names.
   const collisions: string[] = []
-  const incoming = new Set<string>()
   const existing = new Set((await readdir(toDir)).map(portableFilenameIdentity))
-  for (const name of entries) {
-    const identity = portableFilenameIdentity(name)
-    if (incoming.has(identity) || existing.has(identity)) collisions.push(name)
-    incoming.add(identity)
+  for (const top of new Set(entries.map((name) => name.split(/[\\/]/)[0]!))) {
+    if (existing.has(portableFilenameIdentity(top))) collisions.push(top)
   }
   if (collisions.length > 0) {
     // The notice names the first five, each shortened as identifying text, and

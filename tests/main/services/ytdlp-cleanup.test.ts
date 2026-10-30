@@ -21,14 +21,14 @@ beforeEach(() => {
 it.each(['EACCES', 'EBUSY'])('does not launch a download when required cleanup fails with %s', async (code) => {
   const failure = Object.assign(new Error('held fragment'), { code })
   unlink.mockRejectedValueOnce(failure)
-  await expect(download({ tapeId: 'tape', outputId: 'tape', libraryDir: '/library', url: 'https://example.test', signal: new AbortController().signal })).rejects.toBe(failure)
+  await expect(download({ tapeId: 'tape', outputId: 'tape', dir: '/library', url: 'https://example.test', signal: new AbortController().signal })).rejects.toBe(failure)
   expect(spawnStreaming).not.toHaveBeenCalled()
 })
 
 it('propagates a directory read failure before starting the downloader', async () => {
   const failure = Object.assign(new Error('unreadable directory'), { code: 'EIO' })
   readdir.mockRejectedValueOnce(failure)
-  await expect(download({ tapeId: 'tape', outputId: 'tape', libraryDir: '/library', url: 'https://example.test', signal: new AbortController().signal })).rejects.toBe(failure)
+  await expect(download({ tapeId: 'tape', outputId: 'tape', dir: '/library', url: 'https://example.test', signal: new AbortController().signal })).rejects.toBe(failure)
   expect(unlink).not.toHaveBeenCalled()
   expect(spawnStreaming).not.toHaveBeenCalled()
 })

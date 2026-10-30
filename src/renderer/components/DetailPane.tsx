@@ -137,10 +137,10 @@ export function DetailPane({
   // title with a stretch of empty space above it.
   const twoColumnHeader = infoOpen && downloaded && !!description
 
-  const mediaUrl = useMediaStore((media) => mediaFileUrl(media, tape.filename))
+  const mediaUrl = useMediaStore((media) => mediaFileUrl(media, tape.id, tape.filename))
 
   // Local poster, served from the same loopback media server as the video.
-  const posterSrc = useMediaStore((media) => mediaFileUrl(media, tape.thumbnailFilename)) ?? undefined
+  const posterSrc = useMediaStore((media) => mediaFileUrl(media, tape.id, tape.thumbnailFilename)) ?? undefined
 
   // A new source clears any prior playback error (and a fresh load may succeed).
   useEffect(() => { setPlaybackError(null) }, [mediaUrl])

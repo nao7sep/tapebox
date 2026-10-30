@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { tapeFile } from '@main/paths'
 import { handle } from './handle'
 import * as session from '@main/store/session'
 import * as ai from '@main/services/ai-client'
@@ -42,7 +42,7 @@ function aiRequestKey(requestId: string): string {
  */
 async function readDescription(tape: Tape): Promise<string | null> {
   if (!tape.sidecarFilename) return null
-  const data = await readSidecarFile(join(getLibraryDir(), tape.sidecarFilename))
+  const data = await readSidecarFile(tapeFile(getLibraryDir(), tape.id, tape.sidecarFilename))
   const description = data['description']
   return typeof description === 'string' ? description : null
 }

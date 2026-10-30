@@ -1,11 +1,10 @@
-import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
 import { librarySourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 import type { Message } from '@shared/i18n/translate'
@@ -23,38 +22,46 @@ vi.mock('electron', () => ({
 
 const state = vi.hoisted(() => ({
   libraryDir: '',
-  calls: 0,
-  failCall: 2 as number | null,
-  failureMode: 'publication' as 'publication' | 'plain',
+  failSidecar: true,
+  failCopyOf: null as string | null,
   cleanupThrows: false,
 }))
+// The bundle's media is copied before its sidecar is written into the new tape
+// folder, so a failing sidecar write finds a published media copy to roll back.
+vi.mock('@main/io/atomic-json', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/io/atomic-json')>()
+  return {
+    ...actual,
+    writeJsonAtomic: vi.fn(async (...args: Parameters<typeof actual.writeJsonAtomic>) => {
+      if (state.failSidecar && args[0].startsWith(state.libraryDir)) throw new Error('sidecar publication failed')
+      return actual.writeJsonAtomic(...args)
+    }),
+  }
+})
 vi.mock('@main/io/atomic-file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/io/atomic-file')>()
   return {
     ...actual,
     copyFileNoOverwrite: vi.fn(async (...args: Parameters<typeof actual.copyFileNoOverwrite>) => {
-      state.calls += 1
-      if (state.calls === state.failCall) {
-        throw new Error(state.failureMode === 'plain' ? 'thumbnail permission denied' : 'sidecar publication failed')
-      }
+      if (basename(args[1]) === state.failCopyOf) throw new Error('thumbnail permission denied')
       return actual.copyFileNoOverwrite(...args)
     }),
-    unlinkFiles: vi.fn(async (...args: Parameters<typeof actual.unlinkFiles>) => {
-      if (state.cleanupThrows) {
-        throw new AggregateError(
-          [new Error(`Could not remove ${join(state.libraryDir, 'clip.mp4')}`)],
-          'cleanup permission denied',
-        )
-      }
-      return actual.unlinkFiles(...args)
+  }
+})
+// The rollback removes the new tape folder whole.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    rm: vi.fn(async (...args: Parameters<typeof actual.rm>) => {
+      if (state.cleanupThrows) throw new Error(`Could not remove ${String(args[0])}: cleanup permission denied`)
+      return actual.rm(...args)
     }),
   }
 })
 
 const upsertTape = vi.hoisted(() => vi.fn((_tape: Tape) => {}))
 vi.mock('@main/store/session', () => ({
-  filenameOwner: (name: string, exceptId?: string) => catalogFilenameOwner([], name, exceptId),
-  stemOwner: (stem: string, exceptId?: string) => catalogStemOwner([], stem, exceptId),
   sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex([], exceptId).find(ref),
   onCatalogSaveFailure: () => {},
   persistNow: vi.fn(async () => {}),
@@ -82,9 +89,8 @@ let sourceDir: string
 
 beforeEach(async () => {
   handlers.clear()
-  state.calls = 0
-  state.failCall = 2
-  state.failureMode = 'publication'
+  state.failSidecar = true
+  state.failCopyOf = null
   state.cleanupThrows = false
   mainLog.error.mockReset()
   root = await mkdtemp(join(tmpdir(), 'tapebox-import-rollback-'))
@@ -105,6 +111,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  state.cleanupThrows = false
   await rm(root, { recursive: true, force: true })
 })
 
@@ -151,8 +158,8 @@ describe('library:import rollback ownership', () => {
   })
 
   it('imports the tape but accounts for and logs a referenced thumbnail copy failure', async () => {
-    state.failCall = 3
-    state.failureMode = 'plain'
+    state.failSidecar = false
+    state.failCopyOf = 'poster.jpg'
     await writeFile(join(sourceDir, 'poster.jpg'), 'source poster')
     await writeFile(join(sourceDir, 'clip.json'), JSON.stringify({
       formatVersion: 1,

@@ -1,9 +1,8 @@
-import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
 import { librarySourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
-import { chmod, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,8 +24,6 @@ const renameTapeDurably = vi.hoisted(() => vi.fn())
 const logError = vi.hoisted(() => vi.fn())
 const logWarn = vi.hoisted(() => vi.fn())
 vi.mock('@main/store/session', () => ({
-  filenameOwner: (name: string, exceptId?: string) => catalogFilenameOwner(state.tape ? [state.tape] : [], name, exceptId),
-  stemOwner: (stem: string, exceptId?: string) => catalogStemOwner(state.tape ? [state.tape] : [], stem, exceptId),
   sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(state.tape ? [state.tape] : [], exceptId).find(ref),
   onCatalogSaveFailure: () => {},
   getTape: (id: string) => state.tape?.id === id ? state.tape : undefined,
@@ -92,6 +89,8 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
 
 const { registerLibraryHandlers } = await import('@main/ipc/library')
 
+// The library root, and the tape's own folder inside it, where its files live.
+let lib: string
 let dir: string
 
 beforeEach(async () => {
@@ -99,8 +98,8 @@ beforeEach(async () => {
   logError.mockClear()
   upsertTape.mockClear()
   renameTapeDurably.mockReset()
-  dir = await mkdtemp(join(tmpdir(), 'tapebox-rename-'))
-  state.libraryDir = dir
+  lib = await mkdtemp(join(tmpdir(), 'tapebox-rename-'))
+  state.libraryDir = lib
   rollbackMutation.mode = null
   rollbackMutation.durableFails = false
   rollbackMutation.publishes = 0
@@ -118,16 +117,11 @@ beforeEach(async () => {
     name: 'Take', renamedAtUtc: null, archivedAtUtc: null, boxId: null, order: 0,
     pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
+  dir = join(lib, state.tape.id)
+  await mkdir(dir)
   await writeFile(join(dir, 'Take.mp4'), 'video')
   await writeFile(join(dir, 'Take.jpg'), 'poster')
-  await writeFile(join(dir, 'Take.json'), JSON.stringify({
-    formatVersion: 1,
-    tapebox: {
-      sourceUrl: state.tape.sourceUrl, name: 'Take', addedAtUtc: state.tape.addedAtUtc,
-      downloadedAtUtc: state.tape.downloadedAtUtc, renamedAtUtc: null, media: null,
-      mediaFilename: 'Take.mp4', thumbnailFilename: 'Take.jpg',
-    },
-  }))
+  await writeFile(join(dir, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   renameTapeDurably.mockImplementation(async (_id: string, fields: Partial<Tape>) => {
     rollbackMutation.order.push('catalog:start')
     rollbackMutation.sourcesVisibleAtCommit = await Promise.all(
@@ -145,7 +139,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await rm(dir, { recursive: true, force: true })
+  await rm(lib, { recursive: true, force: true })
 })
 
 describe('library:rename', () => {
@@ -159,8 +153,8 @@ describe('library:rename', () => {
     expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('video')
     expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
     expect(state.tape).toMatchObject({ name: 'take', filename: 'Take.mp4', sidecarFilename: 'Take.json' })
-    const sidecar = JSON.parse(await readFile(join(dir, 'Take.json'), 'utf8')) as { tapebox: Record<string, unknown> }
-    expect(sidecar.tapebox).toMatchObject({ name: 'take', mediaFilename: 'Take.mp4', thumbnailFilename: 'Take.jpg' })
+    // The catalog alone records the name; the sidecar is not rewritten.
+    expect(JSON.parse(await readFile(join(dir, 'Take.json'), 'utf8'))).toEqual({ formatVersion: 1, tapebox: { media: null } })
     expect(rollbackMutation.publishes).toBe(0)
   })
 
@@ -280,7 +274,7 @@ describe('library:rename', () => {
     const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'renamed' }))
     // The rename committed, so the user is told exactly that; the paths stay in the log.
     await expect(failure).rejects.toThrow('The tape was renamed, but some of its old files could not be removed')
-    await expect(failure).rejects.not.toThrow(dir)
+    await expect(failure).rejects.not.toThrow(lib)
     expect(rollbackMutation.cleanupPath).toBe(join(dir, 'Take.mp4'))
     expect(JSON.stringify(logWarn.mock.calls)).toContain(rollbackMutation.cleanupPath)
 

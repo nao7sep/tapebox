@@ -6,8 +6,10 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 
-// The exported bundle's sidecar records the name it leaves under, and when that
-// name differs from the one it had, the rename that export made.
+// The library sidecar holds yt-dlp's info and the media facts; the exported
+// bundle's sidecar carries the catalog's record of the tape under the name it
+// leaves under, and when that name differs from the one it had, the rename that
+// export made, so the bundle can be imported from its sidecar alone.
 const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
   ipcMain: {
@@ -29,6 +31,8 @@ const tape: Tape = {
   pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
 const libraryState = vi.hoisted(() => ({ dir: '' }))
+const MEDIA = { width: 640, height: 360, fps: 30, vcodec: 'h264', acodec: 'aac', durationSeconds: 1, bitrateKbps: 900 }
+const tapeFolder = () => join(libraryState.dir, tape.id)
 vi.mock('@main/store/session', () => ({ getTape: () => tape }))
 vi.mock('@main/store/config', () => ({ getLibraryDir: () => libraryState.dir }))
 vi.mock('@main/ipc/library', () => ({
@@ -39,6 +43,7 @@ vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: 
 
 const { removeTapesFrom } = await import('@main/ipc/library')
 const { registerExportHandlers } = await import('@main/ipc/export')
+const { classifyImport, tapeFromSidecar } = await import('@main/core/import-classify')
 
 let root: string
 let destinationDir: string
@@ -49,17 +54,10 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-sidecar-'))
   libraryState.dir = join(root, 'library')
   destinationDir = join(root, 'destination')
-  await mkdir(libraryState.dir)
+  await mkdir(tapeFolder(), { recursive: true })
   await mkdir(destinationDir)
-  await writeFile(join(libraryState.dir, 'Take.mp4'), 'video')
-  await writeFile(join(libraryState.dir, 'Take.json'), JSON.stringify({
-    formatVersion: 1,
-    tapebox: {
-      sourceUrl: tape.sourceUrl, name: 'Take', addedAtUtc: tape.addedAtUtc,
-      downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: RENAMED_AT, media: null,
-      mediaFilename: 'Take.mp4', thumbnailFilename: null,
-    },
-  }))
+  await writeFile(join(tapeFolder(), 'Take.mp4'), 'video')
+  await writeFile(join(tapeFolder(), 'Take.json'), JSON.stringify({ formatVersion: 1, id: 'source', tapebox: { media: MEDIA } }))
   registerExportHandlers()
 })
 
@@ -81,7 +79,21 @@ describe('export:files sidecar', () => {
       .rejects.toMatchObject({ code: 'conflict', userMessage: { key: 'errors.exportOriginalsKept' } })
     expect(await readFile(join(destinationDir, 'Holiday.mp4'), 'utf8')).toBe('video')
     expect(JSON.parse(await readFile(join(destinationDir, 'Holiday.json'), 'utf8')).tapebox.name).toBe('Holiday')
-    expect(await readFile(join(libraryState.dir, 'Take.mp4'), 'utf8')).toBe('video')
+    expect(await readFile(join(tapeFolder(), 'Take.mp4'), 'utf8')).toBe('video')
+  })
+
+  it('writes the catalog\'s record and the library\'s media facts, so the bundle imports again', async () => {
+    await handlers.get('export:files')!({ tapeId: tape.id, destinationDir, name: 'Take', deleteFromApp: false })
+    const exported = JSON.parse(await readFile(join(destinationDir, 'Take.json'), 'utf8')) as Record<string, unknown>
+    expect(exported['tapebox']).toEqual({
+      sourceUrl: tape.sourceUrl, name: 'Take', addedAtUtc: tape.addedAtUtc, downloadedAtUtc: tape.downloadedAtUtc,
+      renamedAtUtc: RENAMED_AT, media: MEDIA, mediaFilename: 'Take.mp4', thumbnailFilename: null,
+    })
+    expect(classifyImport(exported)).toEqual({ status: 'accept', sourceUrl: tape.sourceUrl, mediaFilename: 'Take.mp4', thumbnailFilename: null })
+    expect(tapeFromSidecar(exported, {
+      id: 'Reimport01', sourceUrl: tape.sourceUrl, mediaFilename: 'Take.mp4', sidecarFilename: 'Take.json',
+      thumbnailFilename: null, order: 0, nowUtc: '2026-03-01T00:00:00.000Z',
+    })).toMatchObject({ name: 'Take', addedAtUtc: tape.addedAtUtc, downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: RENAMED_AT })
   })
 
   it('records the rename when the bundle leaves under a new name', async () => {
@@ -103,7 +115,7 @@ describe('export:files sidecar', () => {
 
 
 it('masks known credentials in the export copy while preserving sparse and opaque sidecar metadata', async () => {
-  const sourcePath = join(libraryState.dir, 'Take.json')
+  const sourcePath = join(tapeFolder(), 'Take.json')
   const original = JSON.stringify({
     formatVersion: 1,
     title: 'Original title',
@@ -116,8 +128,6 @@ it('masks known credentials in the export copy while preserving sparse and opaqu
     }],
     opaque_root: { nested: ['untouched', { enabled: true }] },
     tapebox: {
-      sourceUrl: tape.sourceUrl,
-      mediaFilename: 'Take.mp4',
       opaque_namespace: { keep: ['opaque', 123] },
     },
   })

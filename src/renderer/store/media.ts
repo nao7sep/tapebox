@@ -18,8 +18,8 @@ export const useMediaStore = create<MediaState>((set) => ({
 
 /** Same-named files in another opened collection must have a new cache identity.
  * The server's process token already separates application launches. */
-export function mediaFileUrl(media: Pick<MediaState, 'baseUrl' | 'collectionRevision'>, filename: string | null): string | null {
+export function mediaFileUrl(media: Pick<MediaState, 'baseUrl' | 'collectionRevision'>, tapeId: string, filename: string | null): string | null {
   return media.baseUrl && filename
-    ? `${media.baseUrl}/${encodeURIComponent(filename)}?collection=${media.collectionRevision}`
+    ? `${media.baseUrl}/${tapeId}/${encodeURIComponent(filename)}?collection=${media.collectionRevision}`
     : null
 }

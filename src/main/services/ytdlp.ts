@@ -30,7 +30,8 @@ import {
 const MANAGED_LIBRARY_ENV = 'TAPEBOX_MANAGED_LIBRARY'
 const MANAGED_LIBRARY_ARG = 'home:${' + MANAGED_LIBRARY_ENV + '}'
 
-export function ytdlpEnv(libraryDir?: string): NodeJS.ProcessEnv {
+/** `dir` is the tape folder yt-dlp writes into, when it writes at all. */
+export function ytdlpEnv(dir?: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
     PATH: `${paths.bin}${delimiter}${process.env['PATH'] ?? ''}`,
@@ -38,7 +39,7 @@ export function ytdlpEnv(libraryDir?: string): NodeJS.ProcessEnv {
     // Insert the literal directory through that final expansion so its spaces,
     // dollars, percents and tildes never become another expression. Keep cwd and
     // the rest of the environment for intentionally authored user options.
-    ...(libraryDir === undefined ? {} : { [MANAGED_LIBRARY_ENV]: libraryDir }),
+    ...(dir === undefined ? {} : { [MANAGED_LIBRARY_ENV]: dir }),
   }
 }
 
@@ -161,9 +162,9 @@ async function runToEnd(
   url: string,
   args: readonly string[],
   signal: AbortSignal,
-  libraryDir?: string,
+  dir?: string,
 ): Promise<string> {
-  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(libraryDir), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS })
+  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(dir), signal, idleTimeoutMs: YTDLP_PROBE_IDLE_TIMEOUT_MS })
   const run = collectRun(child, { kind, tapeId, scanId: null, url, args })
   try {
     await waitForExit(child, { command: `yt-dlp ${kind}` })
@@ -187,7 +188,8 @@ export type DownloadProgress = {
 export type DownloadOptions = {
   tapeId: string
   url: string
-  libraryDir: string
+  /** The tape's own folder, which yt-dlp writes into. */
+  dir: string
   outputId: string
   onProgress?: (progress: DownloadProgress) => void
   /** Each meaningful yt-dlp output line (progress lines and our markers excluded). */
@@ -235,7 +237,7 @@ export async function download(opts: DownloadOptions): Promise<DownloadResult> {
   // within an attempt, and a user-triggered retry starting fresh is predictable.
   // A finished bundle — one whose sidecar was written — never reaches here: the
   // job adopts it first (queue/finished-bundle.ts).
-  await clearStem(opts.libraryDir, opts.outputId)
+  await clearStem(opts.dir, opts.outputId)
   // Never auto-retried: re-running hammers the site and risks a block. yt-dlp
   // runs its own internal --retries for transient blips within the attempt. No
   // idle kill: yt-dlp goes silent during the post-download ffmpeg merge of a
@@ -274,7 +276,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
   // not recorded: yt-dlp writes media, a raw thumbnail, and info JSON into the
   // library (including a user-selected external one): transient app-owned content
   // until exported (developer classification). Its catalog row is what is backed up.
-  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(opts.libraryDir), signal: opts.signal, idleTimeoutMs })
+  const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(opts.dir), signal: opts.signal, idleTimeoutMs })
   const run = collectRun(child, { kind: 'download', tapeId: opts.tapeId, scanId: null, url: opts.url, args })
 
   const stall = watchForStall((stalled) => opts.onStall?.(stalled))
@@ -343,14 +345,14 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
 }
 
 /**
- * Remove every file for a stem — the whole {stem}.* namespace. Used to give a
- * fresh download attempt a clean slate (see download()); the stem is the tape's
- * id, so this can only touch that one tape's files.
+ * Remove every file for a stem — the whole {stem}.* namespace — in a tape's
+ * folder. Used to give a fresh download attempt a clean slate (see download());
+ * the folder is the tape's own, so this can only touch that one tape's files.
  */
-export async function clearStem(libraryDir: string, stem: string): Promise<void> {
+export async function clearStem(dir: string, stem: string): Promise<void> {
   let entries: string[]
   try {
-    entries = await readdir(libraryDir)
+    entries = await readdir(dir)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
     throw error
@@ -359,7 +361,7 @@ export async function clearStem(libraryDir: string, stem: string): Promise<void>
   for (const name of entries) {
     if (name.startsWith(prefix)) {
       try {
-        await unlink(join(libraryDir, name))
+        await unlink(join(dir, name))
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
@@ -377,17 +379,17 @@ const THUMBNAIL_SOURCE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif'])
  * thumbnail). Every name with this stem is the caller's own tape's, so only its
  * own file can match.
  */
-export async function findThumbnail(libraryDir: string, stem: string): Promise<string | null> {
+export async function findThumbnail(dir: string, stem: string): Promise<string | null> {
   let entries: string[]
   try {
-    entries = await readdir(libraryDir)
+    entries = await readdir(dir)
   } catch {
     return null
   }
   for (const name of entries) {
     const ext = extname(name).slice(1).toLowerCase()
     if (name.slice(0, name.length - extname(name).length) === stem && THUMBNAIL_SOURCE_EXTS.has(ext)) {
-      return join(libraryDir, name)
+      return join(dir, name)
     }
   }
   return null
@@ -395,7 +397,7 @@ export async function findThumbnail(libraryDir: string, stem: string): Promise<s
 
 /**
  * Fetch an optional raw poster into a per-call scratch name in the tape's own
- * ID namespace. Media names may contain yt-dlp output-template syntax, so only
+ * folder. Media names may contain yt-dlp output-template syntax, so only
  * the caller's image gate uses the literal media stem for final publication.
  * On return the caller owns the raw path through conversion/cleanup settlement;
  * a failure or cancellation cleans only this call's scratch after the child ends.
@@ -403,12 +405,12 @@ export async function findThumbnail(libraryDir: string, stem: string): Promise<s
 export async function downloadThumbnail(
   tapeId: string,
   url: string,
-  libraryDir: string,
+  dir: string,
   signal: AbortSignal,
 ): Promise<string | null> {
-  // Tape IDs and nanoids use the catalog's controlled alphabet. The reserved
-  // `${tapeId}.*` namespace keeps this scratch away from ordinary user files;
-  // the random suffix separates repeated calls without borrowing the media name.
+  // Tape IDs and nanoids use the catalog's controlled alphabet, so the scratch
+  // name is never mistaken for the media's; the random suffix separates
+  // repeated calls.
   const scratchStem = `${tapeId}.poster-${nanoid(10)}`
   let raw: string | null = null
   try {
@@ -422,16 +424,16 @@ export async function downloadThumbnail(
       '--paths', MANAGED_LIBRARY_ARG,
       '--output', `${scratchStem}.%(ext)s`,
       url,
-    ], signal, libraryDir)
+    ], signal, dir)
     signal.throwIfAborted()
-    raw = await findThumbnail(libraryDir, scratchStem)
+    raw = await findThumbnail(dir, scratchStem)
     return raw
   } finally {
     // runToEnd owns the child through close, so cleanup cannot race its writer.
     // A returned raw image is now owned by the caller's image gate.
     if (raw === null) {
       // Optional scratch cleanup must not replace the provider's failure.
-      await clearStem(libraryDir, scratchStem).catch((error: unknown) => {
+      await clearStem(dir, scratchStem).catch((error: unknown) => {
         log.warn('thumbnail scratch cleanup failed', { tapeId, error: describeError(error) })
       })
     }

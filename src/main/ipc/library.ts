@@ -1,7 +1,6 @@
-import { access, constants, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, join } from 'node:path'
+import { access, constants, mkdir, readFile, readdir, rm, rmdir, unlink } from 'node:fs/promises'
+import { dirname, extname, join } from 'node:path'
 import { shell } from 'electron'
-import { nanoid } from 'nanoid'
 import { handle } from './handle'
 import { emit, sendTo } from './events'
 import * as session from '@main/store/session'
@@ -13,14 +12,14 @@ import {
   directorySupportsHardLinks,
   linkOrCopyNoOverwrite,
   unlinkFiles,
-  writeFileAtomicNoOverwriteVia,
 } from '@main/io/atomic-file'
-import { serializeStoreJson } from '@main/io/atomic-json'
 import { openExternalPlayer } from '@main/io/external-player'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
-import { readSidecarFile, sidecarNamespace, SIDECAR_JSON, writeSidecar } from '@main/core/sidecar'
+import { librarySidecar, readSidecarFile, writeSidecar } from '@main/core/sidecar'
+import { reserveTapeId } from '@main/core/stem'
+import { tapeDir, tapeFile } from '@main/paths'
 import { portableFilenameIdentity } from '@main/core/filename'
 import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
@@ -32,7 +31,7 @@ import { downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
 import { nowUtcIso } from '@shared/utc'
 import { frontOrders } from '@shared/order'
-import { TRACKED_FILENAME_FIELDS, type Tape } from '@shared/domain'
+import type { Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, RefreshedMetadata, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
@@ -112,19 +111,19 @@ export function registerLibraryHandlers(): void {
     if (!tape || !tape.sidecarFilename) {
       throw new Error(`Sidecar not available for tape ${tapeId}`)
     }
-    return await readSidecarFile(join(getLibraryDir(), tape.sidecarFilename)) as SidecarRaw
+    return await readSidecarFile(tapeFile(getLibraryDir(), tape.id, tape.sidecarFilename)) as SidecarRaw
   })
 
   handle('library:reveal', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape?.filename) throw new Error('No file to reveal for this tape')
-    shell.showItemInFolder(join(getLibraryDir(), tape.filename))
+    shell.showItemInFolder(tapeFile(getLibraryDir(), tape.id, tape.filename))
   })
 
   handle('library:playExternal', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape?.filename) throw new Error('No file to play for this tape')
-    const full = join(getLibraryDir(), tape.filename)
+    const full = tapeFile(getLibraryDir(), tape.id, tape.filename)
     const player = getSettings().externalPlayer.trim()
 
     if (!player) {
@@ -177,11 +176,12 @@ export function registerLibraryHandlers(): void {
     withLibraryTurn((libraryDir) => importBundles(paths, libraryDir, signal))))
 }
 
-async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: string, signal: AbortSignal): Promise<Tape> {
+async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, libraryDir: string, signal: AbortSignal): Promise<Tape> {
   const existing = session.getTape(tapeId)
   if (!existing) throw new Error(`Tape not found: ${tapeId}`)
   if (queue.isActive(tapeId)) throw new UserFacingError('refused', message('errors.tapeBusy'))
   const tape = structuredClone(existing)
+  const dir = tapeDir(libraryDir, tape.id)
   // Refuse a protected sidecar before attempting its optional poster backfill.
   const sidecar = tape.sidecarFilename ? await readSidecarFile(join(dir, tape.sidecarFilename)) : null
 
@@ -190,12 +190,12 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: s
   // metadata the user reviewed must still apply even if the fetch fails. Routed
   // through the same image gate as a fresh download.
   let thumbnailFilename = tape.thumbnailFilename
-  // The raw fetch uses a private name under the tape ID; conversion replaces
-  // the literal media-stem JPEG, so no other tape may own either stem.
-  if (thumbnailFilename === null && tape.filename && !session.stemOwner(tapeId, tapeId)) {
+  // The raw fetch uses a private scratch name in the tape's folder; conversion
+  // replaces the literal media-stem JPEG there.
+  if (thumbnailFilename === null && tape.filename) {
     const stem = tape.filename.slice(0, -extname(tape.filename).length)
     try {
-      if (await posterStemFree(tape, dir, stem)) {
+      if (await posterStemFree(dir, stem)) {
         const raw = await downloadThumbnail(tape.id, tape.sourceUrl, dir, signal)
         try {
           thumbnailFilename = raw ? await saveThumbnailJpeg(tape.id, raw, dir, stem, signal) : null
@@ -217,13 +217,13 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: s
   }
   signal.throwIfAborted()
 
-  // The sidecar is the bundle's own record: export carries it and import reads
-  // its title, uploader and poster back. So it takes everything the catalog is
-  // about to hold, and it is written before the catalog, so a failed write leaves
-  // the catalog as it was rather than the two disagreeing. A poster fetched for
-  // it stays in the library under the tape's own stem, for the next Apply.
+  // The sidecar keeps yt-dlp's info, so it takes the refreshed title, uploader
+  // and description in yt-dlp's own fields; the catalog alone records the
+  // poster. It is written before the catalog, so a failed write leaves the
+  // catalog as it was rather than the two disagreeing. A poster fetched for it
+  // stays in the tape's folder under its own stem, for the next Apply.
   if (tape.sidecarFilename) {
-    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, thumbnailFilename, tape, sidecar!)
+    await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, sidecar!)
   }
 
   // Once the sidecar has committed, Apply finishes with its catalog commit even if
@@ -254,32 +254,26 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, dir: s
 }
 
 /**
- * Whether a poster can be fetched under `stem` without touching a file that is not
- * the tape's own: the image gate replaces the literal `<stem>.jpg`; the raw
- * fetch uses an opaque scratch name under the tape ID. No other tape may own a
- * name with this poster stem, and no entry in the library may spell the stem
- * differently (storage-path-conventions);
- * an entry spelled exactly is the tape's own, such as a poster an earlier Apply
- * left for the next one.
+ * Whether a poster can be fetched under `stem` in the tape's folder: the image
+ * gate replaces the literal `<stem>.jpg`, so no entry there may spell the stem
+ * differently (storage-path-conventions); an entry spelled exactly is the
+ * tape's own, such as a poster an earlier Apply left for the next one.
  */
-async function posterStemFree(tape: Tape, dir: string, stem: string): Promise<boolean> {
+async function posterStemFree(dir: string, stem: string): Promise<boolean> {
   const identity = portableFilenameIdentity(stem)
   const stemOf = (name: string) => name.slice(0, name.length - extname(name).length)
-  if (session.stemOwner(stem, tape.id)) return false
   const entries = await readdir(dir)
   return entries.every((name) => stemOf(name) === stem || portableFilenameIdentity(stemOf(name)) !== identity)
 }
 
 /**
- * Put accepted metadata into a tape's sidecar: the title, uploader and description
- * in yt-dlp's own fields, and the poster in the tapebox section. A sidecar that
- * already holds every value is left as it is.
+ * Put accepted metadata into a tape's sidecar: the title, uploader and
+ * description in yt-dlp's own fields. A sidecar that already holds every value
+ * is left as it is.
  */
 async function writeRefreshedSidecar(
   path: string,
   metadata: RefreshedMetadata,
-  thumbnailFilename: string | null,
-  tape: Tape,
   sidecar: Record<string, unknown>,
 ): Promise<void> {
   let changed = false
@@ -287,11 +281,6 @@ async function writeRefreshedSidecar(
   for (const [key, value] of Object.entries(fields)) {
     if ((sidecar[key] ?? null) === value) continue
     sidecar[key] = value
-    changed = true
-  }
-  const tb = sidecar['tapebox']
-  if (tb && typeof tb === 'object' && (tb as Record<string, unknown>)['thumbnailFilename'] !== thumbnailFilename) {
-    sidecar['tapebox'] = { ...sidecarNamespace(sidecar, tape), thumbnailFilename }
     changed = true
   }
   if (!changed) return
@@ -302,13 +291,14 @@ async function writeRefreshedSidecar(
 }
 
 /**
- * Import sidecar-driven bundles into the library. Each file is copied once (into
- * a temp that is linked into place where the library supports hard links), and
- * quitting stops the import between chunks, rolling back the bundle in progress.
+ * Import sidecar-driven bundles into the library. Each bundle gets a new tape
+ * folder; its media and poster are each copied once (into a temp that is linked
+ * into place where the library supports hard links), and its sidecar is written
+ * there as the library keeps it, its catalog fields going to the catalog.
+ * Quitting stops the import between chunks, rolling back the bundle in progress.
  */
 async function importBundles(paths: string[], libraryDir: string, signal: AbortSignal): Promise<ImportResult> {
   const hardLinks = await directorySupportsHardLinks(libraryDir)
-  const destinationNames = new Set((await readdir(libraryDir)).map(portableFilenameIdentity))
   const imported: Tape[] = []
   const issues: ImportIssue[] = []
   const sidecarPaths = paths.filter((path) => extname(path).toLowerCase() === '.json')
@@ -359,17 +349,12 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
       sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
     }
-    // Library names follow the media file's stem so the bundle stays internally
-    // consistent regardless of the sidecar's own name. Admit its source and every
-    // tracked filename before awaiting any of the companion-file work.
-    const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
-    const bundleNames = [mediaFilename, `${mediaStem}.json`]
-    const conflict = importBundleConflict(source, bundleNames, sidecarPath)
-    if (conflict) {
-      issues.push(conflict)
+    // The catalog owns source admission, even for missing files. Admit the
+    // source before awaiting any of the companion-file work.
+    if (session.sourceOwner(source)) {
+      issues.push({ path: sidecarPath, reason: message(ALREADY_IN_LIBRARY), severity: 'information' })
       continue
     }
-    const thumbnailTaken = tbThumb !== null && !!session.filenameOwner(tbThumb)
 
     const srcMedia = join(dir, mediaFilename)
     try {
@@ -383,29 +368,22 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       continue
     }
 
-    const targetMedia = join(libraryDir, mediaFilename)
-    const targetSidecar = join(libraryDir, `${mediaStem}.json`)
-    const copied: string[] = []
+    // Library names follow the media file's stem so the bundle stays internally
+    // consistent regardless of the sidecar's own name.
+    const mediaStem = mediaFilename.slice(0, -extname(mediaFilename).length)
+    const sidecarFilename = `${mediaStem}.json`
+    const id = await reserveTapeId(libraryDir, [...session.getTapes(), ...imported].map((tape) => tape.id))
+    const folder = tapeDir(libraryDir, id)
     try {
       // not recorded: import copies a bundle into the library, transient app-owned
       // content until exported (developer classification). The new catalog row,
       // the user's library membership, is what is backed up.
-      if (srcMedia !== targetMedia) {
-        assertImportDestination(targetMedia, destinationNames)
-        await copyFileNoOverwrite(srcMedia, targetMedia, { hardLinks, signal })
-        copied.push(targetMedia)
-        destinationNames.add(portableFilenameIdentity(basename(targetMedia)))
-      }
-      if (sidecarPath !== targetSidecar) {
-        assertImportDestination(targetSidecar, destinationNames)
-        await copyFileNoOverwrite(sidecarPath, targetSidecar, { hardLinks, signal })
-        copied.push(targetSidecar)
-        destinationNames.add(portableFilenameIdentity(basename(targetSidecar)))
-      }
+      await mkdir(folder)
+      await copyFileNoOverwrite(srcMedia, join(folder, mediaFilename), { hardLinks, signal })
+      await writeSidecar(join(folder, sidecarFilename), librarySidecar(sidecar))
     } catch (err) {
       try {
-        await unlinkFiles(copied)
-        for (const path of copied) destinationNames.delete(portableFilenameIdentity(basename(path)))
+        await rm(folder, { recursive: true, force: true })
         log.error('import bundle copy failed', {
           path: sidecarPath,
           error: describeError(err),
@@ -437,23 +415,11 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // it. Best-effort: a missing or unreadable thumbnail just imports the tape
     // without a poster — it never rejects the import.
     let thumbnailFilename: string | null = null
-    if (tbThumb && thumbnailTaken) {
-      issues.push({
-        path: join(dir, tbThumb),
-        reason: message('import.thumbnailNameTaken'),
-        severity: 'warning',
-      })
-    } else if (tbThumb) {
+    if (tbThumb) {
       const srcThumb = join(dir, tbThumb)
-      const dstThumb = join(libraryDir, tbThumb)
       try {
         // not recorded: the imported poster is library content, like its media.
-        if (srcThumb !== dstThumb) {
-          assertImportDestination(dstThumb, destinationNames)
-          await copyFileNoOverwrite(srcThumb, dstThumb, { hardLinks, signal })
-          copied.push(dstThumb)
-          destinationNames.add(portableFilenameIdentity(basename(dstThumb)))
-        }
+        await copyFileNoOverwrite(srcThumb, join(folder, tbThumb), { hardLinks, signal })
         thumbnailFilename = tbThumb
       } catch (err) {
         log.error('import thumbnail copy failed', {
@@ -471,10 +437,10 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // No other file action runs during this turn, so the admission above still
     // holds; the batch's inbox order is allocated at publication below.
     const tape = tapeFromSidecar(sidecar, {
-      id: nanoid(10),
+      id,
       sourceUrl,
       mediaFilename,
-      sidecarFilename: `${mediaStem}.json`,
+      sidecarFilename,
       thumbnailFilename,
       order: frontOrders(session.getTapes().filter((t) => !t.archivedAtUtc).map((t) => t.order), 1)[0]!,
       nowUtc: nowUtcIso(),
@@ -518,21 +484,12 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
   return { imported, issues }
 }
 
-/** The catalog owns source and portable filename admission, even for missing files. */
-function importBundleConflict(source: SourceRef, names: readonly string[], path: string): ImportIssue | null {
-  if (session.sourceOwner(source)) {
-    return { path, reason: message(ALREADY_IN_LIBRARY), severity: 'information' }
-  }
-  const clash = names.find((name) => session.filenameOwner(name))
-  return clash ? { path, reason: message('import.nameTaken', { name: clash }), severity: 'warning' } : null
-}
-
 /**
- * Rename a downloaded tape's media, sidecar and thumbnail together. Media and
- * thumbnail names are published with hard links where supported, whose cost does
- * not grow with the video; the copy fallback scales with file size. The sidecar
- * is rewritten with the new names. Quitting aborts it before the catalog commit,
- * which rolls the new names back.
+ * Rename a downloaded tape's media, sidecar and thumbnail together, inside its
+ * folder. Each new name is published with a hard link where supported, whose
+ * cost does not grow with the video; the copy fallback scales with file size.
+ * The files' contents stay as they are: the catalog alone records names.
+ * Quitting aborts it before the catalog commit, which rolls the new names back.
  */
 async function renameTape(tapeId: string, name: string, libraryDir: string, signal: AbortSignal): Promise<Tape> {
   const tape = session.getTape(tapeId)
@@ -552,14 +509,8 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   if (plan.status === 'error') throw new UserFacingError('invalid', plan.message)
   if (plan.status === 'noop') return tape
 
-  for (const item of plan.items) {
-    const owner = session.filenameOwner(item.fresh, tape.id)
-    if (owner) throw new UserFacingError('conflict', message('rename.failed'), {
-      cause: new Error(`Rename destination ${item.fresh} belongs to catalog tape ${owner}.`),
-    })
-  }
   const { cleanName } = plan
-  const p = (rel: string) => join(libraryDir, rel)
+  const p = (rel: string) => tapeFile(libraryDir, tape.id, rel)
   const nowUtc = nowUtcIso()
 
   // Resolve the plan while keeping every old file until the durable catalog
@@ -586,14 +537,6 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   const mediaName = byArtifact('media')!.finalName
   const sidecarName = byArtifact('sidecar')!.finalName
   const thumbnailName = byArtifact('thumbnail')?.finalName ?? null
-  const sidecarItem = byArtifact('sidecar')!
-  const sidecar = await readSidecarFile(sidecarItem.old)
-  const tb = sidecarNamespace(sidecar, tape)
-  tb['name'] = cleanName
-  tb['renamedAtUtc'] = nowUtc
-  tb['mediaFilename'] = mediaName
-  tb['thumbnailFilename'] = thumbnailName
-  sidecar['tapebox'] = tb
 
   const renamed: session.RenameFields = {
     filename: mediaName,
@@ -622,19 +565,10 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
 
   try {
     for (const it of publishing) {
-      if (it.artifact === 'sidecar') {
-        // not recorded: the sidecar is library content, transient app-owned until
-        // exported (developer classification); the tape's catalog row records instead.
-        // The renamed sidecar replaces the old one, so it keeps what a replace keeps.
-        const bytes = serializeStoreJson(sidecar, SIDECAR_JSON)
-        await writeFileAtomicNoOverwriteVia(it.fresh, (temp) => writeFile(temp, bytes), (await stat(it.old)).mode & 0o777)
-        done.push(it.fresh)
-      } else {
-        // not recorded: the tape's media and poster gain a second name inside the
-        // library; nothing the user authored is created.
-        await linkOrCopyNoOverwrite(it.old, it.fresh, signal)
-        done.push(it.fresh)
-      }
+      // not recorded: the tape's files gain a second name inside its folder;
+      // nothing the user authored is created.
+      await linkOrCopyNoOverwrite(it.old, it.fresh, signal)
+      done.push(it.fresh)
       signal.throwIfAborted()
     }
   } catch (err) {
@@ -644,31 +578,17 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   const committed = await session.renameTapeDurably(tapeId, renamed).catch(rollbackBeforeCatalogCommit)
   emit('tapes:updated', committed)
 
-  // The durable catalog is the commit point. Equivalent-name sidecars retain
-  // their old physical path and are rewritten only now; genuinely renamed old
-  // files become obsolete only now. Any failure is an explicit partial success:
-  // catalog and renderer still name a complete, existing bundle.
-  const postCommitErrors: unknown[] = []
-  if (sidecarItem.equivalent) {
-    try {
-      await writeSidecar(sidecarItem.old, sidecar)
-    } catch (sidecarError) {
-      postCommitErrors.push(
-        new AggregateError([sidecarError], `Committed sidecar could not be updated at ${sidecarItem.old}.`),
-      )
-    }
-  }
+  // The durable catalog is the commit point; genuinely renamed old files
+  // become obsolete only now. A failure is an explicit partial success: catalog
+  // and renderer still name a complete, existing bundle.
   const obsolete = publishing.map((item) => item.old)
   try {
-    await unlinkFiles(obsolete.filter((path) => !session.filenameOwner(basename(path), tapeId)))
+    await unlinkFiles(obsolete)
   } catch (cleanupError) {
-    postCommitErrors.push(cleanupError)
-  }
-  if (postCommitErrors.length > 0) {
     const diagnostic = new AggregateError(
-      postCommitErrors,
-      `Rename committed and the catalog points to the new bundle, but post-commit sidecar/source cleanup was incomplete. ` +
-        `Old/sidecar paths: ${[...obsolete, sidecarItem.old].join(', ')}.`,
+      [cleanupError],
+      `Rename committed and the catalog points to the new bundle, but the old files could not all be removed. ` +
+        `Old paths: ${obsolete.join(', ')}.`,
     )
     throw new UserFacingError(
       'conflict',
@@ -716,32 +636,12 @@ export async function removeTapesFrom(
   const removed: string[] = []
   const failed: string[] = []
   const selected = tapeIds.map((id) => session.getTape(id)).filter((tape): tape is Tape => !!tape)
-  // Enumerate once, retaining only candidates for the selected namespaces.
-  const candidates = new Map<string, string[]>()
-  if (deleteFiles && selected.length) {
-    const stems = new Map(selected.map((tape) => [portableFilenameIdentity(tape.id), tape.id]))
-    try {
-      for (const name of await readdir(libraryDir)) {
-        const identity = portableFilenameIdentity(name)
-        for (let at = identity.indexOf('.'); at !== -1; at = identity.indexOf('.', at + 1)) {
-          const id = stems.get(identity.slice(0, at))
-          if (id === undefined) continue
-          let names = candidates.get(id)
-          if (!names) candidates.set(id, names = [])
-          names.push(name)
-        }
-      }
-    } catch (error) {
-      log.error('library removal listing failed', { error: describeError(error) })
-      failed.push(...selected.map((tape) => tape.id))
-      return { removed, failed }
-    }
-  }
   for (const tape of selected) {
     if (deleteFiles) {
+      const dir = tapeDir(libraryDir, tape.id)
       try {
-        if (tape.sidecarFilename) await refuseNewerSidecar(join(libraryDir, tape.sidecarFilename))
-        await discardTapeFiles(libraryDir, tape, settings.trashOnRemove, candidates.get(tape.id) ?? [])
+        if (tape.sidecarFilename) await refuseNewerSidecar(join(dir, tape.sidecarFilename))
+        await discardTapeFolder(dir, settings.trashOnRemove)
       } catch (err) {
         log.error('library removal failed', { tapeId: tape.id, error: describeError(err) })
         failed.push(tape.id)
@@ -775,63 +675,37 @@ async function refuseNewerSidecar(path: string): Promise<void> {
 }
 
 /**
- * Discard a tape's files: the ones its row names, then everything else under its
- * id stem — what a download left before its commit, including a finished bundle
- * the catalog never named. yt-dlp's in-progress fragments are incomplete junk and
- * are deleted outright; every other file follows the Trash setting. A name
- * another tape tracks is never touched.
+ * Discard a tape's folder: what its row names and everything a download left
+ * before its commit, including a finished bundle the catalog never named.
+ * yt-dlp's in-progress fragments are incomplete junk and are deleted outright;
+ * the folder with everything else follows the Trash setting. A missing folder
+ * is a no-op. A real failure THROWS (it is not swallowed) so the caller can
+ * keep the catalog entry rather than claim a removal that left the files behind.
  */
-async function discardTapeFiles(libraryDir: string, tape: Tape, toTrash: boolean, candidates: readonly string[]): Promise<void> {
-  const tracked = new Set<string>()
-  for (const field of TRACKED_FILENAME_FIELDS) {
-    const name = tape[field]
-    if (name === null) continue
-    tracked.add(portableFilenameIdentity(name))
-    if (!session.filenameOwner(name, tape.id)) await discardFile(join(libraryDir, name), toTrash)
+async function discardTapeFolder(dir: string, toTrash: boolean): Promise<void> {
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw err
   }
-  for (const name of candidates) {
-    if (tracked.has(portableFilenameIdentity(name)) || session.filenameOwner(name, tape.id)) continue
-    const unfinished = name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag\d*$/.test(name)
-    await discardFile(join(libraryDir, name), unfinished ? false : toTrash)
-  }
-}
-
-/**
- * Discard one file on removal: move it to the OS Trash (recoverable) when
- * trashing is on, else delete it permanently. A missing file is a no-op either way.
- * A real failure THROWS (it is not swallowed) so the caller can keep the catalog
- * entry rather than claim a removal that actually left the files behind.
- */
-async function discardFile(path: string, toTrash: boolean): Promise<void> {
+  const partial = (name: string) => name.endsWith('.part') || name.endsWith('.ytdl') || /\.frag\d*$/.test(name)
+  for (const name of names) if (partial(name)) await unlink(join(dir, name))
   if (!toTrash) {
-    try {
-      await unlink(path)
-    } catch (err) {
-      // Already gone is success; any other failure is real and propagates.
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
-    }
+    await rm(dir, { recursive: true, force: true })
     return
   }
-  if (!(await fileExists(path))) return
-  await shell.trashItem(path)
-}
-
-function assertImportDestination(path: string, names: ReadonlySet<string>): void {
-  if (names.has(portableFilenameIdentity(basename(path)))) throw new Error(`Target already exists (case-insensitive): ${path}`)
+  // An emptied folder has nothing to recover.
+  if (names.every(partial)) {
+    await rmdir(dir)
+    return
+  }
+  await shell.trashItem(dir)
 }
 
 async function assertMissing(path: string): Promise<void> {
   if (await portableSiblingExists(path)) {
     throw new Error(`Target already exists (case-insensitive): ${path}`)
-  }
-}
-
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await stat(p)
-    return true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    return false
   }
 }

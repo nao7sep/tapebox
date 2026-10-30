@@ -62,17 +62,20 @@ const { getMediaBaseUrl, startMediaServer, stopMediaServer } = await import('@ma
 const BODY = 'abcdefghij'
 
 let base: string
+// Every file sits in one tape's folder; a request names the tape and the file.
+const TAPE = 'Tape000001'
 
 beforeAll(async () => {
   mocks.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-media-server-'))
-  await writeFile(join(mocks.libraryDir, 'tape.mp4'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, 'poster.jpg'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, 'notes.txt'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, 'audio.wav'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, 'audio.flac'), BODY, 'utf8')
-  await writeFile(join(mocks.libraryDir, 'active.html'), '<script>1</script>', 'utf8')
-  await writeFile(join(mocks.libraryDir, 'empty.mp4'), '', 'utf8')
-  await mkdir(join(mocks.libraryDir, 'folder.mp4'), { recursive: true })
+  await mkdir(join(mocks.libraryDir, TAPE))
+  await writeFile(join(mocks.libraryDir, TAPE, 'tape.mp4'), BODY, 'utf8')
+  await writeFile(join(mocks.libraryDir, TAPE, 'poster.jpg'), BODY, 'utf8')
+  await writeFile(join(mocks.libraryDir, TAPE, 'notes.txt'), BODY, 'utf8')
+  await writeFile(join(mocks.libraryDir, TAPE, 'audio.wav'), BODY, 'utf8')
+  await writeFile(join(mocks.libraryDir, TAPE, 'audio.flac'), BODY, 'utf8')
+  await writeFile(join(mocks.libraryDir, TAPE, 'active.html'), '<script>1</script>', 'utf8')
+  await writeFile(join(mocks.libraryDir, TAPE, 'empty.mp4'), '', 'utf8')
+  await mkdir(join(mocks.libraryDir, TAPE, 'folder.mp4'), { recursive: true })
 })
 
 afterEach(() => {
@@ -89,7 +92,7 @@ afterAll(async () => {
 })
 
 function get(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${base}/${path}`, init)
+  return fetch(`${base}/${TAPE}/${path}`, init)
 }
 
 describe('the media server lifecycle', () => {
@@ -115,7 +118,7 @@ describe('serving a library file', () => {
     const started = new Promise<void>(resolve => { entered = resolve })
     mocks.statGate = async () => { entered(); await pending }
     const connection = once(mocks.server!, 'connection')
-    const client = httpGet(`${base}/tape.mp4`)
+    const client = httpGet(`${base}/${TAPE}/tape.mp4`)
     client.on('error', () => {})
     const [socket] = await connection
     await started
@@ -130,7 +133,7 @@ describe('serving a library file', () => {
   it('destroys an opened file stream when the client disconnects', async () => {
     mocks.holdStream = true
     const connection = once(mocks.server!, 'connection')
-    const client = httpGet(`${base}/tape.mp4`)
+    const client = httpGet(`${base}/${TAPE}/tape.mp4`)
     client.on('error', () => {})
     const [socket] = await connection
     await until(() => expect(mocks.streams).toHaveLength(1))
@@ -174,7 +177,7 @@ describe('serving a library file', () => {
   it('answers a HEAD from the file facts alone, without opening it', async () => {
     // Marked unreadable: if the handler opened the file for a HEAD, the read
     // error would be logged even though Node discards the body either way.
-    mocks.unreadable.add(join(mocks.libraryDir, 'tape.mp4'))
+    mocks.unreadable.add(join(mocks.libraryDir, TAPE, 'tape.mp4'))
 
     const response = await get('tape.mp4', { method: 'HEAD' })
 
@@ -194,7 +197,7 @@ describe('serving a library file', () => {
   })
 
   it('finds a file whose name needed encoding', async () => {
-    await writeFile(join(mocks.libraryDir, 'holiday #2 (best).mp4'), BODY, 'utf8')
+    await writeFile(join(mocks.libraryDir, TAPE, 'holiday #2 (best).mp4'), BODY, 'utf8')
 
     const response = await get(encodeURIComponent('holiday #2 (best).mp4'))
 
@@ -261,7 +264,7 @@ describe('seeking', () => {
 
 describe('what the server refuses', () => {
   it('turns away another local process that does not have the token', async () => {
-    const response = await fetch(`${base.replace(/\/[\w-]{24}$/, '/not-the-token')}/tape.mp4`)
+    const response = await fetch(`${base.replace(/\/[\w-]{24}$/, '/not-the-token')}/${TAPE}/tape.mp4`)
 
     expect(response.status).toBe(403)
   })
@@ -293,7 +296,7 @@ describe('what the server refuses', () => {
   })
 
   it('tears the response down and logs when the file cannot be read', async () => {
-    mocks.unreadable.add(join(mocks.libraryDir, 'tape.mp4'))
+    mocks.unreadable.add(join(mocks.libraryDir, TAPE, 'tape.mp4'))
 
     await expect(get('tape.mp4').then((response) => response.text())).rejects.toThrow()
     expect(mocks.log.error).toHaveBeenCalledWith(
@@ -305,8 +308,13 @@ describe('what the server refuses', () => {
     expect((await get('tape.mp4')).status, 'the server keeps serving afterwards').toBe(200)
   })
 
-  it('answers 404 for a URL shaped unlike <token>/<file>', async () => {
+  it('answers 404 for a URL shaped unlike <token>/<tape>/<file>', async () => {
     expect((await get('nested/tape.mp4')).status).toBe(404)
+    expect((await fetch(`${base}/tape.mp4`)).status).toBe(404)
+  })
+
+  it.each(['not-an-id', 'Tape00000%2F'])('refuses a tape segment that is not a tape id: %s', async (tape) => {
+    expect((await fetch(`${base}/${tape}/tape.mp4`)).status).toBe(403)
   })
 
   it('allows only reads', async () => {

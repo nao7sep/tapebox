@@ -1,9 +1,11 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createReadStream, type ReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { extname, join, normalize, sep } from 'node:path'
+import { extname, normalize, sep } from 'node:path'
 import { nanoid } from 'nanoid'
 import { getLibraryDir } from '@main/store/config'
+import { tapeFile } from '@main/paths'
+import { EntityIdSchema } from '@shared/domain'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 
@@ -22,10 +24,10 @@ import { describeError } from '@shared/error'
  *   - bound to 127.0.0.1 only, so it is never reachable off-machine;
  *   - every URL carries a random per-process token as its first path segment,
  *     so other local processes can't browse the library through the open port;
- *   - filenames are restricted to flat basenames inside libraryDir with a
- *     known media extension — no traversal, no arbitrary files.
+ *   - a request names a tape id and one flat file name in that tape's folder,
+ *     with a known media extension — no traversal, no arbitrary files.
  *
- * URL shape: http://127.0.0.1:<port>/<token>/<encodeURIComponent(filename)>
+ * URL shape: http://127.0.0.1:<port>/<token>/<tapeId>/<encodeURIComponent(filename)>
  */
 
 const TOKEN_LENGTH = 24
@@ -92,7 +94,7 @@ export async function stopMediaServer(): Promise<void> {
   await new Promise<void>((resolve) => s.close(() => resolve()))
 }
 
-/** Base URL the renderer appends '/<encoded filename>' to. Throws if not started. */
+/** Base URL the renderer appends '/<tape id>/<encoded filename>' to. Throws if not started. */
 export function getMediaBaseUrl(): string {
   if (!server || port === null || !token) {
     throw new Error('media-server: not started')
@@ -111,16 +113,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return
     }
 
-    // pathname is /<token>/<encodedFilename> — exactly three segments once split
-    // on '/', the first being the empty string before the leading slash.
+    // pathname is /<token>/<tapeId>/<encodedFilename> — exactly four segments
+    // once split on '/', the first being the empty string before the leading slash.
     const pathname = new URL(req.url ?? '', 'http://127.0.0.1').pathname
     const segments = pathname.split('/')
-    if (segments.length !== 3) {
+    if (segments.length !== 4) {
       res.writeHead(404)
       res.end()
       return
     }
-    const [, requestToken, encodedName] = segments
+    const [, requestToken, tapeId, encodedName] = segments
     if (!token || requestToken !== token) {
       res.writeHead(403)
       res.end()
@@ -128,7 +130,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
 
     const filename = decodeURIComponent(encodedName)
-    const full = resolveLibraryFile(filename)
+    const full = resolveLibraryFile(tapeId!, filename)
     if (!full) {
       res.writeHead(403)
       res.end()
@@ -208,16 +210,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 }
 
 /**
- * Resolve a requested filename to an absolute path inside libraryDir, or null
- * if it escapes. Library files are flat basenames, so any path separator is an
- * immediate reject; the containment check is belt-and-suspenders. libraryDir is
- * read per request so a changed setting is honored without a restart.
+ * Resolve a requested tape file to an absolute path inside libraryDir, or null
+ * if it escapes. The id must have a tape id's shape and the name must be a flat
+ * basename, so any path separator is an immediate reject; the containment check
+ * is belt-and-suspenders. libraryDir is read per request so a changed setting
+ * is honored without a restart.
  */
-function resolveLibraryFile(filename: string): string | null {
+function resolveLibraryFile(tapeId: string, filename: string): string | null {
+  if (!EntityIdSchema.safeParse(tapeId).success) return null
   if (!filename) return null
   if (filename.includes('/') || filename.includes('\\') || filename.includes('\0')) return null
   const libDir = normalize(getLibraryDir())
-  const full = normalize(join(libDir, filename))
+  const full = normalize(tapeFile(libDir, tapeId, filename))
   const within = full === libDir || full.startsWith(libDir + sep)
   return within ? full : null
 }

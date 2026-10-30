@@ -3,16 +3,17 @@ import { basename } from 'node:path'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
 import { UserFacingError } from '@main/user-facing-error'
-import { classifyImport } from './import-classify'
-import type { Tape } from '@shared/domain'
-import type { SidecarTapeBox } from '@shared/domain'
+import type { SidecarMedia, SidecarTapeBox, Tape } from '@shared/domain'
 import { message } from '@shared/i18n/translate'
 
 /**
  * Build the final sidecar JSON from yt-dlp's info.json output.
  *
- * Layout:
- *   { formatVersion, ...ytDlpInfoJson_with_paths_stripped, tapebox: SidecarTapeBox }
+ * Layout in the library:
+ *   { formatVersion, ...ytDlpInfoJson_with_paths_stripped, tapebox: { media } }
+ *
+ * The catalog holds everything else about the tape; an export adds it back
+ * ({@link exportNamespace}).
  *
  * The yt-dlp portion is intentionally NOT zod-validated (large, evolving
  * surface); only the 'tapebox' namespace is validated by callers.
@@ -34,7 +35,7 @@ const NESTED_PATH_KEYS = ['filepath'] as const
 export async function finalize(opts: {
   infoJsonPath: string
   sidecarPath: string
-  tapeboxAdditions: SidecarTapeBox
+  media: SidecarMedia | null
 }): Promise<void> {
   const text = await readFile(opts.infoJsonPath, 'utf8')
   const data = JSON.parse(text) as Record<string, unknown>
@@ -52,7 +53,7 @@ export async function finalize(opts: {
     }
   }
 
-  data.tapebox = opts.tapeboxAdditions
+  data.tapebox = { media: opts.media }
   // not recorded: a tape's sidecar (yt-dlp info.json + the tapebox namespace) is
   // library content, transient and app-owned until exported (developer
   // classification), so it takes the raw writeJsonAtomic, not the choke point. The
@@ -86,16 +87,34 @@ export async function readSidecarFile(sidecarPath: string): Promise<Record<strin
   return found.value
 }
 
-/** Preserve optional/opaque source metadata while filling managed fields from
- * the admitted catalog. Sparse external bundles remain editable and exportable. */
-export function sidecarNamespace(sidecar: Record<string, unknown>, tape: Tape): Record<string, unknown> {
-  const admission = classifyImport(sidecar)
-  if (admission.status === 'reject') throw new UserFacingError('invalid', admission.reason)
-  const fields = sidecar['tapebox'] as Record<string, unknown>
+/** The catalog fields an exported sidecar carries in its tapebox section. */
+const CATALOG_FIELDS = ['sourceUrl', 'name', 'addedAtUtc', 'downloadedAtUtc', 'renamedAtUtc', 'mediaFilename', 'thumbnailFilename'] as const
+
+/** A sidecar as the library keeps it: an imported bundle's catalog fields,
+ *  which the catalog now holds, leave its tapebox section; the media facts and
+ *  anything else in it stay. */
+export function librarySidecar(sidecar: Record<string, unknown>): Record<string, unknown> {
+  const section = sidecar['tapebox']
+  const kept = section && typeof section === 'object' && !Array.isArray(section)
+    ? Object.fromEntries(Object.entries(section).filter(([key]) => !(CATALOG_FIELDS as readonly string[]).includes(key)))
+    : {}
+  return { ...sidecar, tapebox: { media: null, ...kept } }
+}
+
+/** The tapebox section an exported sidecar carries: the catalog's record of the
+ *  tape beside what the library sidecar's own section holds, so the bundle can
+ *  be imported from its sidecar alone. */
+export function exportNamespace(sidecar: Record<string, unknown>, tape: Tape): SidecarTapeBox & Record<string, unknown> {
+  const kept = librarySidecar(sidecar)['tapebox'] as Record<string, unknown>
   return {
-    sourceUrl: tape.sourceUrl, name: tape.name, addedAtUtc: tape.addedAtUtc,
-    downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: tape.renamedAtUtc,
-    media: null, mediaFilename: tape.filename, thumbnailFilename: tape.thumbnailFilename,
-    ...fields,
+    ...kept,
+    media: (kept['media'] ?? null) as SidecarMedia | null,
+    sourceUrl: tape.sourceUrl,
+    name: tape.name,
+    addedAtUtc: tape.addedAtUtc,
+    downloadedAtUtc: tape.downloadedAtUtc,
+    renamedAtUtc: tape.renamedAtUtc,
+    mediaFilename: tape.filename,
+    thumbnailFilename: tape.thumbnailFilename,
   }
 }

@@ -1,10 +1,10 @@
-import { catalogFilenameOwner, catalogStemOwner } from '@main/core/managed-files'
 import { librarySourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import * as fileIo from 'node:fs/promises'
+import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -34,8 +34,6 @@ const persistNow = vi.hoisted(() => vi.fn())
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
 vi.mock('@main/store/session', () => ({
-  filenameOwner: (name: string, exceptId?: string) => catalogFilenameOwner(state.tapes, name, exceptId),
-  stemOwner: (stem: string, exceptId?: string) => catalogStemOwner(state.tapes, stem, exceptId),
   sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(state.tapes, exceptId).find(ref),
   persistNow,
   onCatalogSaveFailure: () => {},
@@ -64,7 +62,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 const { registerLibraryHandlers } = await import('@main/ipc/library')
 
+/** A file in a tape's folder, which this creates. */
+function at(id: string, name: string): string {
+  mkdirSync(join(state.libraryDir, id), { recursive: true })
+  return join(state.libraryDir, id, name)
+}
+
+// Each tape has its folder in the library, as a downloaded tape does.
 function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
+  mkdirSync(join(state.libraryDir, overrides.id), { recursive: true })
   return {
     sourceUrl: 'https://example.test/watch', state: 'downloaded',
     addedAtUtc: '2026-01-01T00:00:00.000Z', sourceId: 'source', extractor: 'test',
@@ -179,7 +185,7 @@ describe('accepting refreshed metadata', () => {
   })
 
   it.each(['false', 'rejected'])('reports a truthful partial result on a %s catalog save without rolling back saved sidecar or live metadata', async (kind) => {
-    const sidecar = join(state.libraryDir, 'Take.json')
+    const sidecar = at('Partial001', 'Take.json')
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, title: 'Old title' }))
     state.tapes = [makeTape({ id: 'Partial001', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
     if (kind === 'false') persistNow.mockResolvedValueOnce(false)
@@ -205,7 +211,7 @@ describe('accepting refreshed metadata', () => {
   })
 
   it('saves the catalog fields and puts the same values in the sidecar', async () => {
-    const sidecar = join(state.libraryDir, 'Take.json')
+    const sidecar = at('Acceptthis', 'Take.json')
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', description: 'Old description', extra: 'kept' }), 'utf8')
     state.tapes = [makeTape({ id: 'Acceptthis', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
 
@@ -228,7 +234,7 @@ describe('accepting refreshed metadata', () => {
   })
 
   it('leaves a sidecar that already holds the accepted values unwritten', async () => {
-    const sidecar = join(state.libraryDir, 'Take.json')
+    const sidecar = at('Unchanged1', 'Take.json')
     const text = JSON.stringify({ formatVersion: 1, title: 'New title', uploader: 'New uploader', description: 'New description' })
     await writeFile(sidecar, text, 'utf8')
     const before = (await stat(sidecar)).mtimeMs
@@ -251,7 +257,7 @@ describe('accepting refreshed metadata', () => {
   })
 
   it('refuses a sidecar in a newer format, naming it, and leaves it byte-identical', async () => {
-    const sidecar = join(state.libraryDir, 'Take.json')
+    const sidecar = at('Newersidec', 'Take.json')
     const text = JSON.stringify({ formatVersion: 2, title: 'Future', extra: 'kept' })
     await writeFile(sidecar, text, 'utf8')
     const tape = makeTape({ id: 'Newersidec', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })
@@ -269,7 +275,7 @@ describe('accepting refreshed metadata', () => {
 
   it('backfills a poster for a downloaded tape that has none', async () => {
     state.tapes = [makeTape({ id: 'Noposteryt', filename: 'Holiday.mp4' })]
-    const raw = join(state.libraryDir, 'Noposteryt.poster-raw.webp')
+    const raw = at('Noposteryt', 'Noposteryt.poster-raw.webp')
     downloadThumbnail.mockImplementation(async () => { await writeFile(raw, 'raw poster'); return raw })
     saveThumbnailJpeg.mockResolvedValue('Holiday.jpg')
 
@@ -278,13 +284,13 @@ describe('accepting refreshed metadata', () => {
     expect(downloadThumbnail).toHaveBeenCalledExactlyOnceWith(
       'Noposteryt',
       'https://example.test/watch',
-      state.libraryDir,
+      join(state.libraryDir, 'Noposteryt'),
       expect.anything(),
     )
     expect(saveThumbnailJpeg).toHaveBeenCalledExactlyOnceWith(
       'Noposteryt',
       raw,
-      state.libraryDir,
+      join(state.libraryDir, 'Noposteryt'),
       'Holiday',
       expect.any(AbortSignal),
     )
@@ -292,19 +298,12 @@ describe('accepting refreshed metadata', () => {
     await expect(readFile(raw)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('names a backfilled poster in the sidecar too, so sidecar and catalog agree', async () => {
-    const sidecar = join(state.libraryDir, 'Holiday.json')
-    await writeFile(sidecar, JSON.stringify({
-      formatVersion: 1,
-      id: 'source',
-      tapebox: {
-        sourceUrl: 'https://example.test/watch', name: 'Holiday', addedAtUtc: '2026-01-01T00:00:00.000Z',
-        downloadedAtUtc: '2026-01-01T00:00:00.000Z', renamedAtUtc: null, media: null,
-        mediaFilename: 'Holiday.mp4', thumbnailFilename: null,
-      },
-    }), 'utf8')
-    state.tapes = [makeTape({ id: 'Posterside', filename: 'Holiday.mp4', sidecarFilename: 'Holiday.json' })]
-    const raw = join(state.libraryDir, 'Posterside.poster-raw.webp')
+  it('records a backfilled poster in the catalog alone, leaving the sidecar\'s own section as it was', async () => {
+    const sidecar = at('Posterside', 'Holiday.json')
+    const tape = makeTape({ id: 'Posterside', filename: 'Holiday.mp4', sidecarFilename: 'Holiday.json' })
+    await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', tapebox: { media: null } }), 'utf8')
+    state.tapes = [tape]
+    const raw = at('Posterside', 'Posterside.poster-raw.webp')
     downloadThumbnail.mockImplementation(async () => { await writeFile(raw, 'raw poster'); return raw })
     saveThumbnailJpeg.mockResolvedValue('Holiday.jpg')
 
@@ -312,28 +311,12 @@ describe('accepting refreshed metadata', () => {
 
     const written = JSON.parse(await readFile(sidecar, 'utf8')) as { title: string; tapebox: Record<string, unknown> }
     expect(updated.thumbnailFilename).toBe('Holiday.jpg')
-    expect(written.tapebox['thumbnailFilename']).toBe('Holiday.jpg')
-    expect(written.tapebox['mediaFilename'], 'the rest of the tapebox section is kept').toBe('Holiday.mp4')
+    expect(written.tapebox).toEqual({ media: null })
     expect(written.title).toBe('New title')
   })
 
-  it("leaves another tape's poster alone when it has this tape's poster name", async () => {
-    const poster = join(state.libraryDir, 'Holiday.jpg')
-    await writeFile(poster, 'other poster')
-    state.tapes = [
-      makeTape({ id: 'Takenname', filename: 'Holiday.mp4' }),
-      makeTape({ id: 'Posterownr', filename: 'Other.mp4', thumbnailFilename: 'Holiday.jpg' }),
-    ]
-
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Takenname', metadata: ACCEPTED })
-
-    expect(downloadThumbnail).not.toHaveBeenCalled()
-    expect(updated).toMatchObject({ title: 'New title', thumbnailFilename: null })
-    expect(await readFile(poster, 'utf8')).toBe('other poster')
-  })
-
   it('fetches no poster beside a file that spells the stem differently', async () => {
-    await writeFile(join(state.libraryDir, 'holiday.webp'), 'untracked')
+    await writeFile(at('Casealias1', 'holiday.webp'), 'untracked')
     state.tapes = [makeTape({ id: 'Casealias1', filename: 'Holiday.mp4' })]
 
     const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Casealias1', metadata: ACCEPTED })
@@ -390,7 +373,7 @@ describe('accepting refreshed metadata', () => {
   })
 
   it('finishes its catalog commit when cancelled after the sidecar has committed', async () => {
-    const sidecar = join(state.libraryDir, 'Take.json')
+    const sidecar = at('Lateabort1', 'Take.json')
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source' }), 'utf8')
     state.tapes = [makeTape({ id: 'Lateabort1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
     const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')

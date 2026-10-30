@@ -36,7 +36,7 @@ describe('download output lines', () => {
     const onProgress = vi.fn()
     const onLog = vi.fn()
     const mediaPath = join(dir, 'output.mp4')
-    const result = download({ tapeId: 't1', url: 'https://example.test/v', libraryDir: dir, outputId: 'output', onProgress, onLog, signal: new AbortController().signal })
+    const result = download({ tapeId: 't1', url: 'https://example.test/v', dir, outputId: 'output', onProgress, onLog, signal: new AbortController().signal })
     await until(() => expect(spawnStreaming).toHaveBeenCalledOnce())
 
     child.stderr.write('tapebox-progress:50')
@@ -60,7 +60,7 @@ describe('download output lines', () => {
     const onProgress = vi.fn()
     const onLog = vi.fn()
     const mediaPath = join(dir, 'output.mp4')
-    const result = download({ tapeId: 't1', url: 'https://example.test/v', libraryDir: dir, outputId: 'output', onProgress, onLog, signal: new AbortController().signal })
+    const result = download({ tapeId: 't1', url: 'https://example.test/v', dir, outputId: 'output', onProgress, onLog, signal: new AbortController().signal })
     await until(() => expect(spawnStreaming).toHaveBeenCalledOnce())
 
     child.stdout.write(`tapebox-final-filepath:${dir}/`)
