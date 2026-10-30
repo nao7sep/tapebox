@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ipcInvoke } from '@renderer/ipc/client'
 import type { RecordsQuery, RecordSummary } from '@shared/records'
-import { cursorAfter, nearEnd } from './record-format'
+import { cursorAfter, mergeNewestPage, nearEnd } from './record-format'
 
 type Filters = Omit<RecordsQuery, 'after'>
 type State = {
@@ -43,14 +43,24 @@ export function useRecordPages(filters: Filters, viewportRef: RefObject<HTMLElem
     })
   }
 
-  /** Read the newest page. A live refresh keeps the shown rows until it arrives
-   * and then replaces them, since new records move every page boundary. */
-  function readNewest(keepShown: boolean): Promise<void> {
+  /** Read the newest page. A live refresh keeps the shown rows and merges the
+   * page into them, so older pages already loaded stay; `shown` is asked once
+   * the page arrives, and when it answers false the page is dropped, so a list
+   * scrolled away meanwhile does not move. */
+  function readNewest(keepShown: boolean, shown: () => boolean = () => true): Promise<void> {
     const epoch = ++generation.current
     publish(keepShown ? { ...current.current, loadingMore: false } : initial)
     return ipcInvoke('records:page', { ...query.current, after: null }).then((page) => {
       if (epoch !== generation.current) return
-      publish({ status: 'ready', records: page.records, more: page.more && page.records.length > 0, loadingMore: false, moreFailed: false, failed: false })
+      if (!shown()) {
+        publish({ ...current.current, failed: false })
+        return
+      }
+      const old = current.current
+      const merged = keepShown && old.status === 'ready'
+        ? mergeNewestPage(old.records, old.more, page)
+        : { records: page.records, more: page.more }
+      publish({ status: 'ready', records: merged.records, more: merged.more && merged.records.length > 0, loadingMore: false, moreFailed: false, failed: false })
     }, (error: unknown) => {
       if (epoch !== generation.current) return
       publish({ ...current.current, status: current.current.status === 'ready' ? 'ready' : 'failed', failed: true })
@@ -78,5 +88,5 @@ export function useRecordPages(filters: Filters, viewportRef: RefObject<HTMLElem
     if (scroll && nearEnd(scroll)) loadMore()
   }
 
-  return { ...state, onScroll, loadMore, refresh: () => readNewest(true) }
+  return { ...state, onScroll, loadMore, refresh: (shown?: () => boolean) => readNewest(true, shown) }
 }

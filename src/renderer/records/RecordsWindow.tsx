@@ -230,7 +230,14 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
       const scroll = scrollRef.current
       const refreshList = !initial && (scroll === null || atTop(scroll))
       if (!initial && !refreshList) newestPending.current = true
-      await Promise.all([readSources(), refreshList ? pageOwner.current.refresh() : undefined])
+      // A page that arrives after the list left the top waits too.
+      const shown = () => {
+        const current = scrollRef.current
+        if (current === null || atTop(current)) return true
+        newestPending.current = true
+        return false
+      }
+      await Promise.all([readSources(), refreshList ? pageOwner.current.refresh(shown) : undefined])
       running = false
       schedule()
     }

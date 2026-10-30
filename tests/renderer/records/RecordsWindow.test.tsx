@@ -652,6 +652,111 @@ describe('RecordsWindow', () => {
     expect(logError).toHaveBeenCalled()
   })
 
+  it('holds a newest page that arrives after the list left the top until it is back there', async () => {
+    await mount()
+    vi.useFakeTimers()
+    const late = deferred<RecordsPage>()
+    answer('records:page', () => late.promise, { records: [newer, call, line], more: false })
+
+    await signal()
+    await act(async () => vi.advanceTimersByTime(1000))
+    expect(pageCalls()).toHaveLength(2)
+    await scrollTo(300)
+    await act(async () => late.resolve({ records: [newer, call, line], more: false }))
+    expect(titles()).toEqual(['gpt-x', 'download stalled'])
+
+    await scrollTo(0)
+    expect(pageCalls()).toHaveLength(3)
+    expect(titles()).toEqual(['arrived while open', 'gpt-x', 'download stalled'])
+  })
+
+  it('keeps older pages already loaded when the newest page arrives', async () => {
+    answer('records:page', { records: [call], more: true }, { records: [line], more: false })
+    box.scrollHeight = 200
+    await mount()
+    expect(titles()).toEqual(['gpt-x', 'download stalled'])
+    box.scrollHeight = 1000
+    vi.useFakeTimers()
+    answer('records:page', { records: [newer, call], more: true })
+
+    await signal()
+    await act(async () => vi.advanceTimersByTime(1000))
+    expect(titles()).toEqual(['arrived while open', 'gpt-x', 'download stalled'])
+  })
+
+  it('pages through 10,000 records while new ones arrive, moving nothing while scrolled down', async () => {
+    const ROW = 40
+    let sequence = 0
+    const record = (): RecordSummary => {
+      sequence += 1
+      return {
+        kind: 'log', id: sequence, session: SESSION, time: new Date(Date.UTC(2026, 9, 4) + sequence * 1000).toISOString(),
+        level: 'info', title: `record ${sequence}`, text: null, tapeId: null,
+      }
+    }
+    // The store, newest first, as the records query orders it, 100 at a time.
+    const store: RecordSummary[] = []
+    const log = (count: number) => { for (let index = 0; index < count; index++) store.unshift(record()) }
+    log(10_000)
+    replies.set('records:page', async (req) => {
+      const { after } = req as RecordsQuery
+      const start = after === null ? 0 : store.findIndex((row) => row.kind === after.kind && row.id === after.id) + 1
+      return { records: store.slice(start, start + 100), more: start + 100 < store.length } satisfies RecordsPage
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get(this: HTMLElement) { return isScroll(this) ? (this.querySelector('[role="listbox"]')?.childElementCount ?? 0) * ROW : 0 },
+    })
+    const arrive = async (count: number) => {
+      for (let index = 0; index < count; index++) {
+        log(1)
+        await signal()
+        await act(async () => vi.advanceTimersByTime(333))
+      }
+      await act(async () => vi.advanceTimersByTime(1000))
+    }
+
+    await mount()
+    vi.useFakeTimers()
+    expect(titles()).toEqual(store.slice(0, 100).map((row) => row.title))
+
+    // At the top, new records appear at the top on their own.
+    await arrive(3)
+    expect(titles().slice(0, 4)).toEqual(store.slice(0, 4).map((row) => row.title))
+
+    // Scrolled down with a record selected, new records move nothing.
+    await scrollTo(1200)
+    await act(async () => options()[31]!.click())
+    const held = { titles: titles(), top: box.scrollTop, selected: options()[31]!.dataset.recordKey }
+    const reads = pageCalls().length
+    await arrive(5)
+    expect(titles()).toEqual(held.titles)
+    expect(box.scrollTop).toBe(held.top)
+    expect(pageCalls()).toHaveLength(reads)
+
+    // Back at the top they are there, and loaded rows and the selection stay.
+    await scrollTo(0)
+    await act(async () => vi.advanceTimersByTime(1000))
+    expect(titles().slice(0, 9)).toEqual(store.slice(0, 9).map((row) => row.title))
+    expect(titles().length).toBeGreaterThanOrEqual(held.titles.length + 5)
+    const selected = options().find((option) => option.getAttribute('aria-selected') === 'true')
+    expect(selected?.dataset.recordKey).toBe(held.selected)
+
+    // Reaching the end again and again loads every record once, in order,
+    // while records keep arriving out of sight.
+    const lastTitle = () => listbox().lastElementChild?.querySelector('[data-record-title]')?.textContent
+    let step = 0
+    while (lastTitle() !== 'record 1') {
+      const height = listbox().childElementCount * ROW
+      await scrollTo(height - box.clientHeight)
+      if (++step % 10 === 0) await arrive(1)
+    }
+    const first = store.findIndex((row) => row.title === titles()[0])
+    expect(titles()).toEqual(store.slice(first).map((row) => row.title))
+    expect(titles().length).toBeGreaterThan(10_000)
+    expect(new Set(titles()).size).toBe(titles().length)
+  })
+
   it('says when a selected record cannot be read', async () => {
     answer('records:detail', null)
     await mount()

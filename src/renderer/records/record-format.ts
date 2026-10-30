@@ -1,5 +1,6 @@
 import type { MessageKey } from '@shared/i18n/catalogues'
 import type {
+  RecordsPage,
   RecordCursor,
   RecordKind,
   RecordLevel,
@@ -90,6 +91,36 @@ export const LEVEL_CLASSES: Readonly<Record<RecordLevel, string>> = {
 export function cursorAfter(records: readonly RecordSummary[]): RecordCursor | null {
   const last = records.at(-1)
   return last === undefined ? null : { time: last.time, kind: last.kind, id: last.id }
+}
+
+// The order the list shows records in, newest first; the database pages them
+// the same way.
+function newestFirst(a: RecordSummary, b: RecordSummary): number {
+  if (a.time !== b.time) return a.time < b.time ? 1 : -1
+  if (a.kind !== b.kind) return a.kind < b.kind ? 1 : -1
+  return b.id - a.id
+}
+
+/** The newest page merged into what is shown, so pages already loaded stay.
+ *  A page wholly newer than everything shown, sharing no record with it,
+ *  starts the list again: keeping the old rows would leave a gap that loading
+ *  more could never fill. */
+export function mergeNewestPage(
+  shown: readonly RecordSummary[],
+  shownMore: boolean,
+  page: RecordsPage,
+): { records: RecordSummary[]; more: boolean } {
+  const byKey = new Map(shown.map((record) => [recordKey(record), record]))
+  const oldestNew = page.records.at(-1)
+  const newestShown = shown[0]
+  if (oldestNew && newestShown && newestFirst(oldestNew, newestShown) < 0 &&
+      !page.records.some((record) => byKey.has(recordKey(record)))) {
+    return { records: page.records, more: page.more }
+  }
+  for (const record of page.records) byKey.set(recordKey(record), record)
+  const records = [...byKey.values()].sort(newestFirst)
+  const beyond = oldestNew !== undefined && shown.some((record) => newestFirst(record, oldestNew) > 0)
+  return { records, more: beyond ? shownMore : page.more }
 }
 
 /** Within about one screen of the end of what is loaded. */
