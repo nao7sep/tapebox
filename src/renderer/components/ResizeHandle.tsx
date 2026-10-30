@@ -21,13 +21,17 @@ type Props = {
   /**
    * When given, the handle is a keyboard stop with this accessible name: the
    * arrows along its axis move it by {@link KEY_STEP} px, Home and End go to the
-   * bounds, and the size is committed once, on key release or blur.
+   * bounds, and the size is committed once the keys rest for
+   * {@link KEY_COMMIT_DELAY_MS}, each press pushing it back, or at once on blur.
    */
   keyboardLabel?: string
 }
 
 /** How far one arrow press moves a keyboard-operated handle. */
 export const KEY_STEP = 16
+
+/** How long a keyboard-operated handle waits after the last press before it commits. */
+export const KEY_COMMIT_DELAY_MS = 500
 
 const POSITION: Record<Edge, string> = {
   left: 'inset-y-0 -left-px w-1.5',
@@ -56,8 +60,14 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit, keyboar
   const handleRef = useRef<HTMLDivElement>(null)
   // A keyboard move not yet committed: the intent it reached.
   const pending = useRef<number | null>(null)
+  const commitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const commit = useRef(onCommit)
+  commit.current = onCommit
   const cancelDrag = useRef<(() => void) | null>(null)
-  useEffect(() => () => cancelDrag.current?.(), [])
+  useEffect(() => () => {
+    cancelDrag.current?.()
+    commitKeyboardMove()
+  }, [])
 
   function onKeyDown(e: React.KeyboardEvent) {
     const toward: Record<string, number> = alongY ? { ArrowUp: -1, ArrowDown: 1 } : { ArrowLeft: -1, ArrowRight: 1 }
@@ -71,13 +81,17 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit, keyboar
     e.preventDefault()
     pending.current = next
     onResize(next)
+    clearTimeout(commitTimer.current)
+    commitTimer.current = setTimeout(commitKeyboardMove, KEY_COMMIT_DELAY_MS)
   }
 
   function commitKeyboardMove() {
+    clearTimeout(commitTimer.current)
+    commitTimer.current = undefined
     if (pending.current === null) return
     const final = pending.current
     pending.current = null
-    onCommit(final)
+    commit.current(final)
   }
 
   function onMouseDown(e: React.MouseEvent) {
@@ -128,7 +142,6 @@ export function ResizeHandle({ edge, size, min, max, onResize, onCommit, keyboar
       aria-valuemax={keyboardLabel === undefined ? undefined : max}
       aria-valuenow={keyboardLabel === undefined ? undefined : Math.round(size)}
       onKeyDown={keyboardLabel === undefined ? undefined : onKeyDown}
-      onKeyUp={keyboardLabel === undefined ? undefined : commitKeyboardMove}
       onBlur={keyboardLabel === undefined ? undefined : commitKeyboardMove}
       className={
         'absolute z-10 transition-colors hover:bg-line-strong/70 focus-visible:bg-line-strong ' +

@@ -2,7 +2,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ResizeHandle } from '@renderer/components/ResizeHandle'
+import { KEY_COMMIT_DELAY_MS, ResizeHandle } from '@renderer/components/ResizeHandle'
 import { LAYOUT_BOUNDS } from '@shared/layout'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -159,18 +159,32 @@ describe('ResizeHandle by keyboard', () => {
   const key = (handle: HTMLElement, type: 'keydown' | 'keyup', name: string) =>
     act(() => { handle.dispatchEvent(new KeyboardEvent(type, { key: name, bubbles: true })) })
 
-  it('moves 16 px per arrow toward the growing edge, and commits once on release', () => {
+  it('moves 16 px per arrow toward the growing edge, and commits once after the last press', () => {
+    vi.useFakeTimers()
     const { handle, onResize, onCommit } = keyed('right')
     expect(handle.tabIndex).toBe(0)
     expect(handle.getAttribute('aria-label')).toBe('List width')
     key(handle, 'keydown', 'ArrowRight')
+    key(handle, 'keyup', 'ArrowRight')
+    act(() => { vi.advanceTimersByTime(KEY_COMMIT_DELAY_MS - 1) })
     key(handle, 'keydown', 'ArrowRight')
+    key(handle, 'keyup', 'ArrowRight')
     expect(onResize.mock.calls.map(([size]) => size)).toEqual([316, 332])
-    expect(onCommit).not.toHaveBeenCalled()
-    key(handle, 'keyup', 'ArrowRight')
+    act(() => { vi.advanceTimersByTime(KEY_COMMIT_DELAY_MS - 1) })
+    expect(onCommit, 'each press pushes the save back').not.toHaveBeenCalled()
+    act(() => { vi.advanceTimersByTime(1) })
     expect(onCommit).toHaveBeenCalledExactlyOnceWith(332)
-    key(handle, 'keyup', 'ArrowRight')
+    act(() => { vi.advanceTimersByTime(KEY_COMMIT_DELAY_MS) })
     expect(onCommit, 'nothing pending, nothing saved').toHaveBeenCalledOnce()
+    vi.useRealTimers()
+  })
+
+  it('commits a pending keyboard move when the handle goes away', () => {
+    const { handle, onCommit } = keyed('right')
+    key(handle, 'keydown', 'ArrowRight')
+    act(() => root!.unmount())
+    root = null
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(316)
   })
 
   it('reverses for a left edge, stops at the bounds, and jumps with Home and End', () => {
