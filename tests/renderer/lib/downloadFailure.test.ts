@@ -4,7 +4,7 @@ import { inEnglish } from '../../helpers/i18n'
 
 describe('download failure presentation', () => {
   it('maps each code, and no code, to authored copy', () => {
-    expect(inEnglish(downloadFailurePresentation('duplicate'))).toContain('already in the library')
+    expect(inEnglish(downloadFailurePresentation('duplicate'))).toContain('already in the collection')
     expect(inEnglish(downloadFailurePresentation('download'))).toContain('could not be completed')
     expect(inEnglish(downloadFailurePresentation(null))).toContain('could not be completed')
   })

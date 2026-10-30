@@ -52,7 +52,7 @@ export class SourceIndex {
 }
 
 /** Index every tape's source by its tape id, leaving out `exceptId` (a tape checking against the rest). */
-export function librarySourceIndex(tapes: readonly Tape[], exceptId?: string): SourceIndex {
+export function collectionSourceIndex(tapes: readonly Tape[], exceptId?: string): SourceIndex {
   const index = new SourceIndex()
   for (const tape of tapes) {
     if (tape.id !== exceptId) index.add(tapeSourceRef(tape), tape.id)

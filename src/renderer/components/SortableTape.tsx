@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/react/sortable'
 import { TAPE_DRAG_TYPE, TAPE_SORT_GROUP } from '@renderer/lib/dnd'
 
 /**
- * One drag-sortable list item, shared by the inbox and the archive's box list.
+ * One drag-sortable list item, shared by the inbox and the Shelf's box list.
  * The whole row is the drag handle (the provider's PointerSensor has a
  * small movement threshold, so a plain click still selects). Current dnd-kit owns
  * the fixed feedback layer and placeholder, so the app does not reproduce source

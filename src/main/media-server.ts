@@ -3,7 +3,7 @@ import { createReadStream, type ReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { extname, normalize, sep } from 'node:path'
 import { nanoid } from 'nanoid'
-import { getLibraryDir } from '@main/store/config'
+import { getCollectionDir } from '@main/store/config'
 import * as session from '@main/store/session'
 import { tapeFile } from '@main/paths'
 import { EntityIdSchema } from '@shared/domain'
@@ -131,7 +131,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
 
     const filename = decodeURIComponent(encodedName)
-    const full = resolveLibraryFile(tapeId!, filename)
+    const full = resolveCollectionFile(tapeId!, filename)
     if (!full) {
       res.writeHead(403)
       res.end()
@@ -217,13 +217,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
  * is belt-and-suspenders. libraryDir is read per request so a changed setting
  * is honored without a restart.
  */
-function resolveLibraryFile(tapeId: string, filename: string): string | null {
+function resolveCollectionFile(tapeId: string, filename: string): string | null {
   if (!EntityIdSchema.safeParse(tapeId).success) return null
   if (!filename) return null
   if (filename.includes('/') || filename.includes('\\') || filename.includes('\0')) return null
   const tape = session.getTape(tapeId)
   if (!tape) return null
-  const libDir = normalize(getLibraryDir())
+  const libDir = normalize(getCollectionDir())
   const full = normalize(tapeFile(libDir, tape, filename))
   const within = full === libDir || full.startsWith(libDir + sep)
   return within ? full : null

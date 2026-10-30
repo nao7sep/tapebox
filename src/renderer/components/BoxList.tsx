@@ -4,7 +4,7 @@ import { useSortable } from '@dnd-kit/react/sortable'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { useListboxKeyboard } from '@renderer/lib/useListboxKeyboard'
 import { useComposing, isComposingKeyboardEvent } from '@renderer/lib/useComposing'
 import {
@@ -31,15 +31,15 @@ const CLOSE_ACTION_LABEL: Record<BoxAction, MessageKey> = {
   delete: 'boxes.closeDeleteResult',
 }
 
-/** Droppable id for the Unboxed row (it is not a real box, so it has no box id). */
-export const UNBOXED_DROP_ID = '__unboxed__'
+/** Droppable id for the Loose tapes row (it is not a real box, so it has no box id). */
+export const LOOSE_DROP_ID = '__loose__'
 
 /**
- * Top list of the archive organizer: the boxes plus an always-present Unboxed
+ * Top list of the Shelf organizer: the boxes plus an always-present Loose tapes
  * row, with counts, selection, create, inline rename, and delete. Boxes are
  * sortable (drag a header to reorder) and droppable (drag a tape onto a box to
  * file it); the parent provider owns completion mapping. Deleting a box only
- * re-files its tapes to Unboxed — it never removes the tapes.
+ * re-files its tapes to Loose tapes — it never removes the tapes.
  */
 export function BoxList({
   onReorder,
@@ -56,7 +56,7 @@ export function BoxList({
     const unsubscribeDraft = useBoxesStore.subscribe((state, previous) => {
       if (state.collection !== previous.collection || state.editingId !== previous.editingId || state.draftName !== previous.draftName) pendingCreate.current = null
     })
-    const unsubscribeSelection = useArchiveStore.subscribe((state, previous) => {
+    const unsubscribeSelection = useShelfStore.subscribe((state, previous) => {
       if (state.selectedBoxId !== previous.selectedBoxId) pendingCreate.current = null
     })
     return () => {
@@ -67,8 +67,8 @@ export function BoxList({
   }, [])
   const boxes = useBoxesStore((s) => s.boxes)
   const tapes = useTapesStore((s) => s.tapes)
-  const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
-  const selectBox = useArchiveStore((s) => s.selectBox)
+  const selectedBoxId = useShelfStore((s) => s.selectedBoxId)
+  const selectBox = useShelfStore((s) => s.selectBox)
 
   const editingId = useBoxesStore((s) => s.editingId)
   const draftName = useBoxesStore((s) => s.draftName)
@@ -91,14 +91,14 @@ export function BoxList({
     return result
   }, [tapes])
 
-  // The box list is a listbox over the always-present Unboxed row (id UNBOXED_DROP_ID)
+  // The box list is a listbox over the always-present Loose tapes row (id LOOSE_DROP_ID)
   // followed by the boxes in display order — the order the list reads. Clicking a row
   // selects it and, since the row sits inside this focusable container, hands Up/Down
   // to the box list; arrowing selects whichever box is moved to.
   const kb = useListboxKeyboard<HTMLDivElement>({
-    itemIds: [UNBOXED_DROP_ID, ...sorted.map((g) => g.id)],
-    activeId: selectedBoxId ?? UNBOXED_DROP_ID,
-    onActivate: (id) => selectBox(id === UNBOXED_DROP_ID ? null : id),
+    itemIds: [LOOSE_DROP_ID, ...sorted.map((g) => g.id)],
+    activeId: selectedBoxId ?? LOOSE_DROP_ID,
+    onActivate: (id) => selectBox(id === LOOSE_DROP_ID ? null : id),
     idPrefix: 'box',
     onCommandKey: (event) => {
       if (event.target !== event.currentTarget || editingId !== null || !selectedBox || isComposingKeyboardEvent(composingRef, event)) return false
@@ -108,7 +108,7 @@ export function BoxList({
       return true
     },
     onReorder: (id, offset) => {
-      if (id !== UNBOXED_DROP_ID) onReorder(id, offset)
+      if (id !== LOOSE_DROP_ID) onReorder(id, offset)
     },
   })
 
@@ -249,8 +249,8 @@ export function BoxList({
         aria-label={t.t('boxes.heading')}
         className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 outline-none"
       >
-        <UnboxedRow
-          id={kb.optionId(UNBOXED_DROP_ID)}
+        <LooseTapesRow
+          id={kb.optionId(LOOSE_DROP_ID)}
           count={counts.get(null) ?? 0}
           selected={selectedBoxId === null}
           onSelect={() => selectBox(null)}
@@ -302,7 +302,7 @@ export function BoxList({
       {confirmDeleteId && (
         <ConfirmModal
           title={t.t('boxes.delete')}
-          message={t.t('boxes.deleteMessage', { unboxed: t.t('boxes.unboxed') })}
+          message={t.t('boxes.deleteMessage', { loose: t.t('boxes.loose') })}
           confirmLabel={t.t('boxes.delete')}
           danger
           onCancel={() => setConfirmDeleteId(null)}
@@ -337,10 +337,10 @@ function rowClass(selected: boolean, dropTarget: boolean): string {
   )
 }
 
-function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: number; selected: boolean; onSelect: () => void }) {
+function LooseTapesRow({ id, count, selected, onSelect }: { id: string; count: number; selected: boolean; onSelect: () => void }) {
   const t = useI18n()
   const { ref, isDropTarget } = useDroppable({
-    id: UNBOXED_DROP_ID,
+    id: LOOSE_DROP_ID,
     type: BOX_TARGET_TYPE,
     accept: TAPE_DRAG_TYPE,
     data: { type: BOX_TARGET_TYPE, boxId: null },
@@ -358,7 +358,7 @@ function UnboxedRow({ id, count, selected, onSelect }: { id: string; count: numb
         onClick={onSelect}
         className="min-w-0 flex-1 cursor-pointer truncate text-left"
       >
-        {t.t('boxes.unboxed')}
+        {t.t('boxes.loose')}
       </div>
       <span className="shrink-0 text-xs tabular-nums text-fg-muted">{count}</span>
     </div>

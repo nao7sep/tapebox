@@ -3,7 +3,7 @@ import { act, createElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TapeSchema, type Tape } from '@shared/domain'
-import { ARCHIVE_SEARCH_BOX_HEIGHT, defaultLayout } from '@shared/layout'
+import { SHELF_SEARCH_BOX_HEIGHT, defaultLayout } from '@shared/layout'
 
 const { ipcInvoke, logError } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), logError: vi.fn() }))
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn: () => () => {} }))
@@ -26,13 +26,13 @@ vi.mock('@dnd-kit/dom', () => ({
 }))
 
 import { TapeList } from '@renderer/components/TapeList'
-import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
+import { ShelfOrganizer } from '@renderer/components/ShelfOrganizer'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { useLayoutStore } from '@renderer/store/layout'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
@@ -88,11 +88,11 @@ function currentTape(id: string): Tape {
 }
 
 async function mountTapes(boxId: string | null = null) {
-  useFilterStore.setState({ filter: 'archived' })
+  useFilterStore.setState({ filter: 'shelf' })
   useTapesStore.setState({ tapes: [tape('TapeFirst1', 10), tape('TapeSecond', 20), tape('TapeThird1', 30)].map((item) => ({ ...item, boxId })) })
-  useArchiveStore.getState().selectBox(boxId)
+  useShelfStore.getState().selectBox(boxId)
   useSelectionStore.setState({ selectedId: 'TapeFirst1' })
-  await act(async () => root.render(createElement(ArchiveOrganizer)))
+  await act(async () => root.render(createElement(ShelfOrganizer)))
 }
 
 async function reorder(label: string, key = 'ArrowDown') {
@@ -109,9 +109,9 @@ beforeEach(() => {
   useTapesStore.setState({ tapes: [], progress: {}, stalled: {} })
   useBoxesStore.setState({ boxes: [], editingId: null, draftName: '', pendingRenames: 0 })
   useSelectionStore.setState({ selectedId: null })
-  useArchiveStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
+  useShelfStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
   useLayoutStore.getState().setHydratedLayout(defaultLayout)
-  useOrderFailuresStore.setState({ boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
+  useOrderFailuresStore.setState({ boxes: null, shelfTapes: {}, attempts: {}, pending: {} })
   useTapeActionResultsStore.setState({ byTape: {} })
   useBoxActionResultsStore.setState({ results: {} })
   const host = document.createElement('div')
@@ -167,7 +167,7 @@ describe('Shelf tape reorder settlement through its list', () => {
 
     expect(currentTape('TapeFirst1')).toEqual({ ...downloaded, order: 10 })
     expect(currentTape('TapeSecond').order).toBe(20)
-    const result = useOrderFailuresStore.getState().archiveTapes.unboxed
+    const result = useOrderFailuresStore.getState().shelfTapes.unboxed
     expect(inEnglish(result)).toContain('order')
     expect(inEnglish(result)).not.toMatch(/EACCES|private\/tmp|ORDER_SENTINEL/)
     expect(JSON.stringify(logError.mock.calls)).toContain('ORDER_SENTINEL')
@@ -216,7 +216,7 @@ describe('Shelf tape reorder settlement through its list', () => {
     expect(currentTape('TapeFirst1')).toEqual(downloaded)
     expect(currentTape('TapeSecond').order).toBe(20)
     expect(currentTape('TapeThird1').order).toBe(30)
-    const result = useOrderFailuresStore.getState().archiveTapes.unboxed
+    const result = useOrderFailuresStore.getState().shelfTapes.unboxed
     expect(inEnglish(result)).toContain('order')
     expect(inEnglish(result)).not.toContain('WHOLE_ROW_SENTINEL')
     expect(JSON.stringify(logError.mock.calls)).toContain('WHOLE_ROW_SENTINEL')
@@ -249,7 +249,7 @@ describe('Shelf tape reorder settlement through its list', () => {
     expect(currentTape('TapeFirst1').order).toBe(10)
     expect(currentTape('TapeThird1').order).toBe(30)
     expect(currentTape(destinationMember.id)).toEqual(destinationMember)
-    const result = useOrderFailuresStore.getState().archiveTapes[`box:${sourceBoxId}`]
+    const result = useOrderFailuresStore.getState().shelfTapes[`box:${sourceBoxId}`]
     expect(inEnglish(result)).toContain('order')
   })
 
@@ -261,16 +261,16 @@ describe('Shelf tape reorder settlement through its list', () => {
     await act(async () => root.render(null))
     // An authoritative refresh restores the saved values while the view is away.
     useTapesStore.getState().setAll(before)
-    await act(async () => root.render(createElement(ArchiveOrganizer)))
+    await act(async () => root.render(createElement(ShelfOrganizer)))
     const newer = pendingWrite()
     await reorder(label)
     const latest = useTapesStore.getState().tapes
     await act(async () => older.reject(new Error('superseded remount order rejected')))
 
-    expect(useOrderFailuresStore.getState().pending['archive:unboxed']?.active.size).toBe(1)
+    expect(useOrderFailuresStore.getState().pending['shelf:unboxed']?.active.size).toBe(1)
 
     expect(useTapesStore.getState().tapes).toBe(latest)
-    const result = useOrderFailuresStore.getState().archiveTapes.unboxed
+    const result = useOrderFailuresStore.getState().shelfTapes.unboxed
     expect(result ?? null).toBeNull()
     await act(async () => newer.resolve())
     expect(useOrderFailuresStore.getState().pending).toEqual({})
@@ -284,14 +284,14 @@ describe('Shelf tape reorder settlement through its list', () => {
     await reorder(label)
     const latest = useTapesStore.getState().tapes
     const retained = message('tapes.orderSaveFailed')
-    await act(async () => useOrderFailuresStore.getState().setArchiveTapes('unboxed', retained))
+    await act(async () => useOrderFailuresStore.getState().setShelfTapes('unboxed', retained))
     await act(async () => older.reject(new Error('older reorder rejected')))
 
     expect(useTapesStore.getState().tapes).toEqual(latest)
-    const result = useOrderFailuresStore.getState().archiveTapes.unboxed
+    const result = useOrderFailuresStore.getState().shelfTapes.unboxed
     expect(result).toEqual(retained)
     await act(async () => newer.resolve())
-    const cleared = useOrderFailuresStore.getState().archiveTapes.unboxed
+    const cleared = useOrderFailuresStore.getState().shelfTapes.unboxed
     expect(cleared ?? null).toBeNull()
   })
 
@@ -309,24 +309,24 @@ describe('Shelf tape reorder settlement through its list', () => {
 
 // The boxes height is clamped against the search box's reserved height, which the
 // search box takes.
-describe('the archive search box', () => {
+describe('the Shelf search box', () => {
   it('takes the height the boxes clamp reserves for it', async () => {
     await mountTapes()
     const search = document.querySelector<HTMLInputElement>('input')!
-    expect(search.parentElement!.style.height).toBe(`${ARCHIVE_SEARCH_BOX_HEIGHT}px`)
+    expect(search.parentElement!.style.height).toBe(`${SHELF_SEARCH_BOX_HEIGHT}px`)
   })
 })
 
-describe('box reorder settlement through ArchiveOrganizer', () => {
+describe('box reorder settlement through ShelfOrganizer', () => {
   async function mountBoxes() {
-    useFilterStore.setState({ filter: 'archived' })
+    useFilterStore.setState({ filter: 'shelf' })
     useBoxesStore.getState().setBoxes([
       { id: 'BoxFirst01', name: 'First box', order: 10 },
       { id: 'BoxSecond1', name: 'Second box', order: 20 },
       { id: 'BoxThird01', name: 'Third box', order: 30 },
     ])
-    useArchiveStore.getState().selectBox('BoxFirst01')
-    await act(async () => root.render(createElement(ArchiveOrganizer)))
+    useShelfStore.getState().selectBox('BoxFirst01')
+    await act(async () => root.render(createElement(ShelfOrganizer)))
   }
 
   it('preserves a live rename and an added box while restoring rejected order', async () => {
@@ -372,7 +372,7 @@ describe('box reorder settlement through ArchiveOrganizer', () => {
     const newer = pendingWrite()
     await reorder('Boxes')
     const latest = useBoxesStore.getState().boxes
-    const retained = message('archive.boxOrderSaveFailed')
+    const retained = message('shelf.boxOrderSaveFailed')
     await act(async () => useOrderFailuresStore.getState().setBoxes(retained))
     await act(async () => older.reject(new Error('older box order rejected')))
 
@@ -389,7 +389,7 @@ describe('box reorder settlement through ArchiveOrganizer', () => {
     await reorder('Boxes')
     await act(async () => root.render(null))
     useBoxesStore.getState().setBoxes(before)
-    await act(async () => root.render(createElement(ArchiveOrganizer)))
+    await act(async () => root.render(createElement(ShelfOrganizer)))
     const newer = pendingWrite()
     await reorder('Boxes')
     const latest = useBoxesStore.getState().boxes

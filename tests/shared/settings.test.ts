@@ -65,7 +65,7 @@ describe('SettingsSchema', () => {
   })
 
   // libraryDir defaults to blank ("use the default folder"), exactly like
-  // defaultExportDir. main resolves blank → paths.library via getLibraryDir(); the
+  // defaultExportDir. main resolves blank → paths.library via getCollectionDir(); the
   // persisted default must never be an absolute path or a cleared field couldn't
   // mean "default".
   it('defaults libraryDir to blank, not an absolute path', () => {

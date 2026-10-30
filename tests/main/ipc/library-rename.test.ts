@@ -1,4 +1,4 @@
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
@@ -25,8 +25,8 @@ const renameTapeDurably = vi.hoisted(() => vi.fn())
 const logError = vi.hoisted(() => vi.fn())
 const logWarn = vi.hoisted(() => vi.fn())
 vi.mock('@main/store/session', () => ({
-  sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(state.tape ? [state.tape] : [], exceptId).find(ref),
-  onCatalogSaveFailure: () => {},
+  sourceOwner: (ref: SourceRef, exceptId?: string) => collectionSourceIndex(state.tape ? [state.tape] : [], exceptId).find(ref),
+  onCollectionSaveFailure: () => {},
   getTape: (id: string) => state.tape?.id === id ? state.tape : undefined,
   getTapes: () => state.tape ? [state.tape] : [],
   getBoxes: () => [],
@@ -35,7 +35,7 @@ vi.mock('@main/store/session', () => ({
   removeTapes: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getLibraryDir: () => state.libraryDir,
+  getCollectionDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: true, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
@@ -88,7 +88,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
   }
 })
 
-const { registerLibraryHandlers } = await import('@main/ipc/library')
+const { registerCollectionHandlers } = await import('@main/ipc/collection')
 
 // The library root, and the tape's own folder inside it, where its files live.
 let lib: string
@@ -137,16 +137,16 @@ beforeEach(async () => {
     rollbackMutation.order.push('catalog:committed')
     return state.tape
   })
-  registerLibraryHandlers()
+  registerCollectionHandlers()
 })
 
 afterEach(async () => {
   await rm(lib, { recursive: true, force: true })
 })
 
-describe('library:rename', () => {
+describe('collection:rename', () => {
   it('keeps physical filenames authoritative during a case-only logical rename', async () => {
-    const rename = handlers.get('library:rename')
+    const rename = handlers.get('collection:rename')
     if (!rename) throw new Error('library:rename was not registered')
 
     await rename({ tapeId: state.tape!.id, name: 'take' })
@@ -161,7 +161,7 @@ describe('library:rename', () => {
   })
 
   it('leaves the tape and its sidecar alone when a case-only rename is repeated', async () => {
-    const rename = handlers.get('library:rename')!
+    const rename = handlers.get('collection:rename')!
     await rename({ tapeId: state.tape!.id, name: 'take' })
     const renamed = state.tape
     const sidecarBefore = await readFile(join(dir, 'Take.json'), 'utf8')
@@ -188,7 +188,7 @@ describe('library:rename', () => {
       sidecarFilename: `${decomposed}.json`,
       thumbnailFilename: `${decomposed}.jpg`,
     }
-    const invoke = handlers.get('library:rename')!
+    const invoke = handlers.get('collection:rename')!
 
     await invoke({ tapeId: state.tape.id, name: composed })
 
@@ -204,7 +204,7 @@ describe('library:rename', () => {
 
   it('removes what it published and keeps the old files when a later publication fails', async () => {
     rollbackMutation.mode = 'second-fails'
-    const invoke = handlers.get('library:rename')!
+    const invoke = handlers.get('collection:rename')!
 
     await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow('The operation could not be completed.')
 
@@ -213,7 +213,7 @@ describe('library:rename', () => {
   })
 
   it('publishes all destinations while every old source is still visible, then commits before cleanup', async () => {
-    const invoke = handlers.get('library:rename')!
+    const invoke = handlers.get('collection:rename')!
 
     await invoke({ tapeId: state.tape!.id, name: 'renamed' })
 
@@ -231,7 +231,7 @@ describe('library:rename', () => {
   it.skipIf(process.platform === 'win32')("gives the renamed sidecar the old sidecar's permissions", async () => {
     await chmod(join(dir, 'Take.json'), 0o600)
 
-    await handlers.get('library:rename')!({ tapeId: state.tape!.id, name: 'renamed' })
+    await handlers.get('collection:rename')!({ tapeId: state.tape!.id, name: 'renamed' })
 
     expect((await stat(join(dir, 'renamed.json'))).mode & 0o777).toBe(0o600)
   })
@@ -246,7 +246,7 @@ describe('library:rename', () => {
       return state.tape
     })
 
-    await handlers.get('library:rename')!({ tapeId: state.tape!.id, name: 'renamed' })
+    await handlers.get('collection:rename')!({ tapeId: state.tape!.id, name: 'renamed' })
 
     expect(linkedAtCommit).toEqual([true, true])
     expect((await readdir(dir)).sort()).toEqual(['renamed.jpg', 'renamed.json', 'renamed.mp4'])
@@ -254,7 +254,7 @@ describe('library:rename', () => {
 
   it('rolls back every destination and keeps the old catalog/sources when durable commit fails', async () => {
     rollbackMutation.durableFails = true
-    const invoke = handlers.get('library:rename')!
+    const invoke = handlers.get('collection:rename')!
 
     await expect(invoke({ tapeId: state.tape!.id, name: 'renamed' })).rejects.toThrow('The operation could not be completed.')
 
@@ -271,7 +271,7 @@ describe('library:rename', () => {
 
   it('keeps committed cleanup paths diagnostic-only while the catalog stays authoritative', async () => {
     rollbackMutation.mode = 'final-cleanup'
-    const invoke = handlers.get('library:rename')!
+    const invoke = handlers.get('collection:rename')!
 
     const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'renamed' }))
     // The rename committed, so the user is told exactly that; the paths stay in the log.

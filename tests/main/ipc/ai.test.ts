@@ -16,7 +16,7 @@ const source = vi.hoisted(() => ({ sidecarFilename: null as string | null, read:
 vi.mock('@main/store/session', () => ({
   getTape: (id: string) => ({ id, shelved: false, title: 'A Title', uploader: 'Someone', sidecarFilename: source.sidecarFilename }),
 }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => '/library' }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => '/library' }))
 vi.mock('@main/core/sidecar', () => ({ readSidecarFile: source.read }))
 
 const seenSignals = vi.hoisted(() => [] as AbortSignal[])

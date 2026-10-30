@@ -82,11 +82,11 @@ describe('TapeImportReceiver', () => {
   it('renders a persistent prominent duplicate result beside the receiver', () => {
     act(() => useImportResultStore.getState().settle({ operationKey: 'duplicate', entryKey: 'drop' }, {
       imported: [],
-      issues: [{ path: '/tmp/sample.json', reason: message('import.alreadyInLibrary'), severity: 'information' }],
+      issues: [{ path: '/tmp/sample.json', reason: message('import.alreadyInCollection'), severity: 'information' }],
     }))
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!
-    expect(status.textContent).toContain('already in the library')
+    expect(status.textContent).toContain('already in the collection')
     expect(status.querySelector('button')?.getAttribute('aria-label')).toBe('Close import result')
   })
 
@@ -146,11 +146,11 @@ describe('TapeImportReceiver', () => {
   it('describes a successful import with duplicates as information, not failure', () => {
     act(() => useImportResultStore.getState().settle({ operationKey: 'mixed', entryKey: 'drop' }, {
       imported: [{ id: 'new-tape' } as never],
-      issues: [{ path: '/tmp/old.json', reason: message('import.alreadyInLibrary'), severity: 'information' }],
+      issues: [{ path: '/tmp/old.json', reason: message('import.alreadyInCollection'), severity: 'information' }],
     }))
 
     const status = host.querySelector<HTMLElement>('[role="status"]')!
-    expect(status.textContent).toContain('Added 1 new tape; 1 was already in the library.')
+    expect(status.textContent).toContain('Added 1 new tape; 1 was already in the collection.')
     expect(status.textContent).not.toContain('Information')
     expect(status.textContent).not.toContain('not added')
   })

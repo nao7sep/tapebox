@@ -40,7 +40,7 @@ vi.mock('@main/store/session', () => ({
 }))
 vi.mock('@main/store/config', () => ({
   getSettings: () => ({ maxConcurrentDownloads: 2, autoStartDownloads: true }),
-  getLibraryDir: () => '/library',
+  getCollectionDir: () => '/library',
 }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
@@ -57,10 +57,10 @@ describe('queue and library moves', () => {
   it('starts no job while the library moves and catches up on the next tick', async () => {
     vi.resetModules()
     const queue = await import('@main/queue/manager')
-    const { withLibraryMove } = await import('@main/library-writes')
+    const { withCollectionMove } = await import('@main/collection-writes')
     tapes.push(queued('h1'))
     let startedWhileHeld: string[] = []
-    await withLibraryMove(async () => {
+    await withCollectionMove(async () => {
       queue.tick()
       startedWhileHeld = [...jobs.started]
     })

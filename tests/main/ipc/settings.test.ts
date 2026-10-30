@@ -14,14 +14,14 @@ import { until } from '../../helpers/until'
 //     before it is stored — blank stays blank, a leading ~ expands, and a relative
 //     value is REJECTED so it can never resolve against the working directory
 //     (which is `/` on a double-clicked build — storage-path-conventions).
-//   - relocateIfLibraryDirChanged: moving the library is REFUSED while downloads
+//   - relocateIfCollectionDirChanged: moving the library is REFUSED while downloads
 //     run, because an in-flight job finalizes files straight into the current
 //     library dir; the move must not run and the new dir must not be committed.
 //
 // Both are internal to ipc/settings, so they're exercised through the registered
 // settings:update handler — the real production boundary. ipcMain.handle is
 // captured to invoke the handler directly; every collaborator is mocked so the
-// test asserts pure decisions (did relocateLibrary run? did updateSettings get the
+// test asserts pure decisions (did relocateCollection run? did updateSettings get the
 // normalized value?) without touching disk, the real queue, or the storage root.
 // `node:os` (homedir) and `node:path` stay real, so the ~ expansion is genuine.
 
@@ -44,23 +44,23 @@ vi.mock('@main/queue/manager', () => ({
 }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
-const { getSettings, getLibraryDir, updateSettings } = vi.hoisted(() => ({
+const { getSettings, getCollectionDir, updateSettings } = vi.hoisted(() => ({
   getSettings: vi.fn(),
-  getLibraryDir: vi.fn(),
+  getCollectionDir: vi.fn(),
   updateSettings: vi.fn(),
 }))
-vi.mock('@main/store/config', () => ({ getSettings, getLibraryDir, updateSettings }))
+vi.mock('@main/store/config', () => ({ getSettings, getCollectionDir, updateSettings }))
 
-const { completeLibraryRelocation, relocateLibrary, rollbackLibraryRelocation } = vi.hoisted(() => ({
-  completeLibraryRelocation: vi.fn(),
-  relocateLibrary: vi.fn(),
-  rollbackLibraryRelocation: vi.fn(),
+const { completeCollectionRelocation, relocateCollection, rollbackCollectionRelocation } = vi.hoisted(() => ({
+  completeCollectionRelocation: vi.fn(),
+  relocateCollection: vi.fn(),
+  rollbackCollectionRelocation: vi.fn(),
 }))
 const logError = vi.hoisted(() => vi.fn())
-vi.mock('@main/store/library-move', () => ({
-  completeLibraryRelocation,
-  relocateLibrary,
-  rollbackLibraryRelocation,
+vi.mock('@main/store/collection-move', () => ({
+  completeCollectionRelocation,
+  relocateCollection,
+  rollbackCollectionRelocation,
 }))
 
 vi.mock('@main/store/session', () => ({
@@ -83,7 +83,7 @@ vi.mock('@main/io/logger', () => ({
 }))
 
 const { registerSettingsHandlers } = await import('@main/ipc/settings')
-const { isLibraryMoving, withLibraryTurn } = await import('@main/library-writes')
+const { isCollectionMoving, withCollectionTurn } = await import('@main/collection-writes')
 
 function update(patch: Partial<Settings>): Promise<{ settings: Settings; warning: Message | null }> {
   const fn = handlers.get('settings:update')
@@ -97,13 +97,13 @@ beforeEach(() => {
   handlers.clear()
   base = defaultSettings()
   getSettings.mockReturnValue(base)
-  getLibraryDir.mockReturnValue('/current/library')
+  getCollectionDir.mockReturnValue('/current/library')
   // updateSettings echoes the merged result, as the real one does, so the autostart
   // check in the handler sees a stable shape.
   updateSettings.mockImplementation(async (patch: Partial<Settings>) => ({ ...base, ...patch }))
-  relocateLibrary.mockResolvedValue({ moved: false, reason: 'same-dir' })
-  completeLibraryRelocation.mockResolvedValue(undefined)
-  rollbackLibraryRelocation.mockResolvedValue(undefined)
+  relocateCollection.mockResolvedValue({ moved: false, reason: 'same-dir' })
+  completeCollectionRelocation.mockResolvedValue(undefined)
+  rollbackCollectionRelocation.mockResolvedValue(undefined)
   registerSettingsHandlers()
 })
 
@@ -140,11 +140,11 @@ describe('settings:update effects', () => {
 })
 
 describe('settings:update — normalizeUserDir at the boundary', () => {
-  it('rejects a relative typed library folder (it must never reach a path join)', async () => {
-    await expect(update({ libraryDir: 'relative/library' })).rejects.toThrow('Library folder must be an absolute path')
+  it('rejects a relative typed collection folder (it must never reach a path join)', async () => {
+    await expect(update({ libraryDir: 'relative/library' })).rejects.toThrow('Collection folder must be an absolute path')
     // The relative value must not have been stored, and no relocation attempted.
     expect(updateSettings).not.toHaveBeenCalled()
-    expect(relocateLibrary).not.toHaveBeenCalled()
+    expect(relocateCollection).not.toHaveBeenCalled()
   })
 
   it('rejects a relative typed default export folder', async () => {
@@ -199,34 +199,34 @@ describe('settings:update — normalizeUserDir at the boundary', () => {
 })
 
 describe('settings:update — relocation at its library turn', () => {
-  it('throws and moves nothing when the library dir changes while a download runs', async () => {
+  it('throws and moves nothing when the collection folder changes while a download runs', async () => {
     hasActiveJobs.mockReturnValueOnce(true)
     // A real change: from the current resolved dir to a new absolute custom folder.
     await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow(
-      "Can't move the library while downloads are running.",
+      "Can't move the collection while downloads are running.",
     )
     // The safety guard fires BEFORE the move and BEFORE the commit.
-    expect(relocateLibrary).not.toHaveBeenCalled()
+    expect(relocateCollection).not.toHaveBeenCalled()
     expect(updateSettings).not.toHaveBeenCalled()
   })
 
   it('waits for a library action in progress, then moves', async () => {
-    relocateLibrary.mockResolvedValue({ moved: true, count: 0, crossDevice: false, files: [] })
+    relocateCollection.mockResolvedValue({ moved: true, count: 0, crossDevice: false, files: [] })
     let finishImport!: () => void
-    const importing = withLibraryTurn(() => new Promise<void>((resolve) => { finishImport = resolve }))
+    const importing = withCollectionTurn(() => new Promise<void>((resolve) => { finishImport = resolve }))
     const pending = update({ libraryDir: '/data/new-library' })
     await Promise.resolve()
-    expect(relocateLibrary).not.toHaveBeenCalled()
+    expect(relocateCollection).not.toHaveBeenCalled()
     finishImport()
     await importing
     await pending
-    expect(relocateLibrary).toHaveBeenCalledOnce()
+    expect(relocateCollection).toHaveBeenCalledOnce()
     expect(updateSettings).toHaveBeenCalledOnce()
   })
 
   it('saves other settings while a library action runs when the folder is unchanged', async () => {
     let finishImport!: () => void
-    const importing = withLibraryTurn(() => new Promise<void>((resolve) => { finishImport = resolve }))
+    const importing = withCollectionTurn(() => new Promise<void>((resolve) => { finishImport = resolve }))
     await update({ autoplay: false })
     expect(updateSettings).toHaveBeenCalledOnce()
     finishImport()
@@ -234,11 +234,11 @@ describe('settings:update — relocation at its library turn', () => {
   })
 
   it('proceeds with the move and commit when no library write is in flight', async () => {
-    relocateLibrary.mockResolvedValue({ moved: true, count: 0, crossDevice: false, files: [] })
+    relocateCollection.mockResolvedValue({ moved: true, count: 0, crossDevice: false, files: [] })
     await update({ libraryDir: '/data/new-library' })
-    expect(relocateLibrary).toHaveBeenCalledTimes(1)
+    expect(relocateCollection).toHaveBeenCalledTimes(1)
     expect(updateSettings).toHaveBeenCalledTimes(1)
-    expect(completeLibraryRelocation).toHaveBeenCalledWith([])
+    expect(completeCollectionRelocation).toHaveBeenCalledWith([])
     const stored = updateSettings.mock.calls[0]![0] as Partial<Settings>
     expect(stored.libraryDir).toBe('/data/new-library')
   })
@@ -256,14 +256,14 @@ describe('settings:update — relocation at its library turn', () => {
         claim: { path: '/data/new-library/a.json', identity: '2:2' },
       },
     ]
-    relocateLibrary.mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false, files })
+    relocateCollection.mockResolvedValueOnce({ moved: true, count: 2, crossDevice: false, files })
     updateSettings.mockRejectedValueOnce(new Error('config disk full'))
 
     await expect(update({ libraryDir: '/data/new-library' })).rejects.toThrow('The operation could not be completed.')
 
-    expect(relocateLibrary).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', ['shelf.json'], expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(rollbackLibraryRelocation).toHaveBeenCalledWith(files)
-    expect(completeLibraryRelocation).not.toHaveBeenCalled()
+    expect(relocateCollection).toHaveBeenNthCalledWith(1, '/current/library', '/data/new-library', ['shelf.json'], expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(rollbackCollectionRelocation).toHaveBeenCalledWith(files)
+    expect(completeCollectionRelocation).not.toHaveBeenCalled()
   })
 
   it('keeps an exact rollback recovery path in diagnostics, not the rejection copy', async () => {
@@ -275,9 +275,9 @@ describe('settings:update — relocation at its library turn', () => {
         claim: { path: '/data/new-library/a.mp4', identity: '2:1' },
       },
     ]
-    relocateLibrary.mockResolvedValueOnce({ moved: true, count: 1, crossDevice: false, files })
+    relocateCollection.mockResolvedValueOnce({ moved: true, count: 1, crossDevice: false, files })
     updateSettings.mockRejectedValueOnce(new Error('config disk full'))
-    rollbackLibraryRelocation.mockRejectedValueOnce(
+    rollbackCollectionRelocation.mockRejectedValueOnce(
       new AggregateError([new Error(`Recovery claim remains at ${recoveryPath}`)], 'rollback incomplete'),
     )
 
@@ -293,51 +293,51 @@ describe('settings:update — relocation at its library turn', () => {
       sourceClaim: { path: sourcePath, identity: '1:1' },
       claim: { path: '/data/new-library/a.mp4', identity: '2:1' },
     }]
-    relocateLibrary.mockResolvedValueOnce({ moved: true, count: 1, crossDevice: false, files })
-    completeLibraryRelocation.mockRejectedValueOnce(
+    relocateCollection.mockResolvedValueOnce({ moved: true, count: 1, crossDevice: false, files })
+    completeCollectionRelocation.mockRejectedValueOnce(
       new AggregateError([new Error(`Source claim remains at ${sourcePath}`)], 'cleanup incomplete'),
     )
 
     const result = await update({ libraryDir: '/data/new-library' })
     expect(result.settings.libraryDir).toBe('/data/new-library')
-    expect(inEnglish(result.warning)).toMatch(/saved and the library now uses the new folder/)
+    expect(inEnglish(result.warning)).toMatch(/saved and the collection now uses the new folder/)
     expect(inEnglish(result.warning)).not.toContain(sourcePath)
     expect(JSON.stringify(logError.mock.calls)).toContain(sourcePath)
     expect(updateSettings).toHaveBeenCalledOnce()
-    expect(rollbackLibraryRelocation).not.toHaveBeenCalled()
+    expect(rollbackCollectionRelocation).not.toHaveBeenCalled()
   })
 })
 
 describe('settings:update — library move control', () => {
   it.each(['disk', 'rollback'])('keeps a %s failure distinct from a concurrent Stop request', async (kind) => {
-    relocateLibrary.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
+    relocateCollection.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
       options.signal.addEventListener('abort', () => reject(kind === 'disk'
         ? new Error('disk failed')
         : new AggregateError([options.signal.reason, new Error('rollback failed')], 'rollback incomplete')), { once: true })
     }))
     const pending = update({ libraryDir: '/data/new-library' })
-    await until(() => expect(relocateLibrary).toHaveBeenCalledOnce())
-    await handlers.get('settings:cancelLibraryMove')!(undefined)
+    await until(() => expect(relocateCollection).toHaveBeenCalledOnce())
+    await handlers.get('settings:cancelCollectionMove')!(undefined)
     await expect(pending).rejects.toMatchObject({ code: 'internal' })
     expect(updateSettings).not.toHaveBeenCalled()
   })
 
   it('holds off downloads while the move runs, and Stop Move aborts it without committing', async () => {
     const seenDuringMove: boolean[] = []
-    relocateLibrary.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => {
-      seenDuringMove.push(isLibraryMoving())
+    relocateCollection.mockImplementation((_from: string, _to: string, _entries: string[], options: { signal: AbortSignal }) => {
+      seenDuringMove.push(isCollectionMoving())
       return new Promise((_resolve, reject) => {
         options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
       })
     })
 
     const pending = update({ libraryDir: '/data/new-library' })
-    await until(() => expect(relocateLibrary).toHaveBeenCalledTimes(1))
-    await handlers.get('settings:cancelLibraryMove')!(undefined)
+    await until(() => expect(relocateCollection).toHaveBeenCalledTimes(1))
+    await handlers.get('settings:cancelCollectionMove')!(undefined)
 
     await expect(pending).rejects.toMatchObject({ code: 'cancelled' })
     expect(seenDuringMove).toEqual([true])
-    expect(isLibraryMoving()).toBe(false)
+    expect(isCollectionMoving()).toBe(false)
     // The queue catches up once the move has settled.
     expect(tick).toHaveBeenCalled()
     expect(updateSettings).not.toHaveBeenCalled()

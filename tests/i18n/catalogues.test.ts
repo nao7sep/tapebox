@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { UNBOXED_LABELS } from "@shared/box-names";
+import { LOOSE_TAPES_LABELS } from "@shared/box-names";
 import { LANGUAGE_NAMES, LANGUAGES, type Language } from "@shared/i18n/languages";
 import { loadAllCatalogues } from "../helpers/i18n";
 
@@ -145,8 +145,8 @@ describe("catalogues", () => {
     expect(new Set(names).size).toBe(LANGUAGES.length);
   });
 
-  it.each(LANGUAGES)("%s reserves the box name its catalogue shows for Unboxed", (language) => {
-    expect(UNBOXED_LABELS[language]).toBe(catalogues[language]["boxes.unboxed"]);
+  it.each(LANGUAGES)("%s reserves the box name its catalogue shows for Loose tapes", (language) => {
+    expect(LOOSE_TAPES_LABELS[language]).toBe(catalogues[language]["boxes.loose"]);
   });
 
   // Every control that opens About — the in-window hamburger menu's item here —

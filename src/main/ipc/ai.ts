@@ -4,7 +4,7 @@ import * as session from '@main/store/session'
 import * as ai from '@main/services/ai-client'
 import { readSidecarFile } from '@main/core/sidecar'
 import { slugifyAscii } from '@main/core/slug'
-import { getLibraryDir } from '@main/store/config'
+import { getCollectionDir } from '@main/store/config'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import type { Tape } from '@shared/domain'
 
@@ -42,7 +42,7 @@ function aiRequestKey(requestId: string): string {
  */
 async function readDescription(tape: Tape): Promise<string | null> {
   if (!tape.sidecarFilename) return null
-  const data = await readSidecarFile(tapeFile(getLibraryDir(), tape, tape.sidecarFilename))
+  const data = await readSidecarFile(tapeFile(getCollectionDir(), tape, tape.sidecarFilename))
   const description = data['description']
   return typeof description === 'string' ? description : null
 }

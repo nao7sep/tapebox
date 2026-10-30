@@ -23,9 +23,9 @@ vi.mock('node:fs/promises', async () => {
 })
 
 const {
-  completeLibraryRelocation,
-  relocateLibrary,
-} = await import('@main/store/library-move')
+  completeCollectionRelocation,
+  relocateCollection,
+} = await import('@main/store/collection-move')
 
 let root: string
 let fromDir: string
@@ -70,10 +70,10 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-describe('relocateLibrary', () => {
+describe('relocateCollection', () => {
   it('is a no-op when the source and destination resolve to the same dir', async () => {
     await seed(fromDir, 'a.mp4', 'video')
-    const result = await relocateLibrary(fromDir, join(fromDir, '.', ''), ['a.mp4'])
+    const result = await relocateCollection(fromDir, join(fromDir, '.', ''), ['a.mp4'])
     expect(result).toEqual({ moved: false, reason: 'same-dir' })
     expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('video')
   })
@@ -83,14 +83,14 @@ describe('relocateLibrary', () => {
     await seed(fromDir, 'a.json', 'sidecar-a')
     await seed(fromDir, 'a.jpg', 'thumb-a')
 
-    const result = await relocateLibrary(fromDir, toDir, ['a.mp4', 'a.json', 'a.jpg'])
+    const result = await relocateCollection(fromDir, toDir, ['a.mp4', 'a.json', 'a.jpg'])
 
     expect(result).toMatchObject({ moved: true, count: 3, crossDevice: false })
     expect(await names(toDir)).toEqual(['a.jpg', 'a.json', 'a.mp4'])
     expect(await names(fromDir)).toEqual(['a.jpg', 'a.json', 'a.mp4'])
     expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('video-a')
     if (!result.moved) throw new Error('fixture did not publish')
-    await completeLibraryRelocation(result.files)
+    await completeCollectionRelocation(result.files)
     expect(await names(fromDir)).toEqual([])
   })
 
@@ -100,7 +100,7 @@ describe('relocateLibrary', () => {
     await seed(fromDir, 'x.webm', 'x')
     await seed(fromDir, 'x.json', 'xj')
 
-    const result = await relocateLibrary(fromDir, toDir, ['x.webm', 'x.json'])
+    const result = await relocateCollection(fromDir, toDir, ['x.webm', 'x.json'])
 
     expect(result.moved).toBe(true)
     expect(await names(toDir)).toEqual(['x.json', 'x.webm'])
@@ -109,7 +109,7 @@ describe('relocateLibrary', () => {
 
   it('relocates from a custom folder back to the default (custom→default)', async () => {
     await seed(fromDir, 'y.mkv', 'y')
-    const result = await relocateLibrary(fromDir, toDir, ['y.mkv'])
+    const result = await relocateCollection(fromDir, toDir, ['y.mkv'])
     expect(result.moved).toBe(true)
     expect(await readFile(join(toDir, 'y.mkv'), 'utf8')).toBe('y')
     expect(await readFile(join(fromDir, 'y.mkv'), 'utf8')).toBe('y')
@@ -119,7 +119,7 @@ describe('relocateLibrary', () => {
     await seed(fromDir, 'a.mp4', 'video')
     await seed(fromDir, 'notes.txt', 'mine') // not a tracked library file
 
-    await relocateLibrary(fromDir, toDir, ['a.mp4'])
+    await relocateCollection(fromDir, toDir, ['a.mp4'])
 
     expect(await exists(join(fromDir, 'notes.txt'))).toBe(true)
     expect(await exists(join(toDir, 'notes.txt'))).toBe(false)
@@ -130,7 +130,7 @@ describe('relocateLibrary', () => {
     await seed(fromDir, 'a.mp4', 'video')
     // 'a.json' is named but missing on disk — relocation should move what exists and
     // not fail on the missing one.
-    const result = await relocateLibrary(fromDir, toDir, ['a.mp4', 'a.json'])
+    const result = await relocateCollection(fromDir, toDir, ['a.mp4', 'a.json'])
     expect(result).toMatchObject({ moved: true, count: 1, crossDevice: false })
     expect(await names(toDir)).toEqual(['a.mp4'])
   })
@@ -148,7 +148,7 @@ describe('relocateLibrary', () => {
       throw err
     })
 
-    const result = await relocateLibrary(fromDir, toDir, ['a.mp4', 'a.json'])
+    const result = await relocateCollection(fromDir, toDir, ['a.mp4', 'a.json'])
 
     expect(result).toMatchObject({ moved: true, count: 2, crossDevice: true })
     expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('video-bytes')
@@ -162,7 +162,7 @@ describe('relocateLibrary', () => {
     await mkdir(toDir, { recursive: true })
     await seed(toDir, 'a.json', 'PRE-EXISTING') // collision
 
-    await expect(relocateLibrary(fromDir, toDir, ['a.mp4', 'a.json'])).rejects.toThrow(/already contains/)
+    await expect(relocateCollection(fromDir, toDir, ['a.mp4', 'a.json'])).rejects.toThrow(/already contains/)
 
     // Nothing moved: both source files intact, the pre-existing destination file
     // untouched, and no stray a.mp4 copied into the destination.
@@ -181,7 +181,7 @@ describe('relocateLibrary', () => {
       await seed(toDir, name, 'PRE-EXISTING')
     }
 
-    const error = await relocateLibrary(fromDir, toDir, files).then(() => { throw new Error('moved') }, (caught: unknown) => caught as Error)
+    const error = await relocateCollection(fromDir, toDir, files).then(() => { throw new Error('moved') }, (caught: unknown) => caught as Error)
     expect(error.message).toContain(`${long.slice(0, 48)}…, b.mp4, c.mp4, d.mp4, e.mp4`)
     expect(error.message).not.toContain(long)
     expect(error.message).not.toContain('f.mp4')
@@ -195,14 +195,14 @@ describe('relocateLibrary', () => {
     await seed(fromDir, 'catalog.json', 'catalog')
     await mkdir(join(toDir, 'tape000001'), { recursive: true })
 
-    await expect(relocateLibrary(fromDir, toDir, ['catalog.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')]))
+    await expect(relocateCollection(fromDir, toDir, ['catalog.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')]))
       .rejects.toThrow(/already contains/)
     expect(await names(join(toDir, 'tape000001'))).toEqual([])
 
     await rm(join(toDir, 'tape000001'), { recursive: true })
-    const result = await relocateLibrary(fromDir, toDir, ['catalog.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')])
+    const result = await relocateCollection(fromDir, toDir, ['catalog.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')])
     expect(await names(join(toDir, 'Tape000001'))).toEqual(['a.json', 'a.mp4'])
-    await completeLibraryRelocation(result.moved ? result.files : [])
+    await completeCollectionRelocation(result.moved ? result.files : [])
     expect(await names(fromDir), 'the emptied tape folder goes with its files').toEqual([])
   })
 
@@ -221,7 +221,7 @@ describe('relocateLibrary', () => {
       return realFsPromises.link(src, dest)
     })
 
-    await expect(relocateLibrary(fromDir, toDir, ['a.mp4', 'b.mp4', 'c.mp4'])).rejects.toMatchObject({ code: 'EEXIST' })
+    await expect(relocateCollection(fromDir, toDir, ['a.mp4', 'b.mp4', 'c.mp4'])).rejects.toMatchObject({ code: 'EEXIST' })
 
     // Every source stayed public throughout; only the external winner remains at
     // the destination after exact rollback of the transaction's earlier claims.
@@ -246,7 +246,7 @@ describe('relocateLibrary', () => {
       return realFsPromises.link(src, dest)
     })
 
-    const relocation = relocateLibrary(fromDir, toDir, ['a.mp4', 'b.mp4'])
+    const relocation = relocateCollection(fromDir, toDir, ['a.mp4', 'b.mp4'])
     await paused
 
     // If the process stopped here, config.json would still name fromDir and both
@@ -273,7 +273,7 @@ describe('relocateLibrary', () => {
     const controller = new AbortController()
     const seen: { filesDone: number; bytesDone: number; filesTotal: number; bytesTotal: number }[] = []
 
-    await expect(relocateLibrary(fromDir, toDir, ['a.mp4', 'b.mp4', 'c.mp4'], {
+    await expect(relocateCollection(fromDir, toDir, ['a.mp4', 'b.mp4', 'c.mp4'], {
       signal: controller.signal,
       onProgress: (progress) => {
         seen.push(progress)
@@ -298,7 +298,7 @@ describe('relocation preflight directory scan', () => {
     await seed(fromDir, 'existing.mp4', 'incoming')
     readdirSpy.mockClear()
     linkSpy.mockClear()
-    await expect(relocateLibrary(fromDir, toDir, ['first.mp4', 'existing.mp4'])).rejects.toThrow()
+    await expect(relocateCollection(fromDir, toDir, ['first.mp4', 'existing.mp4'])).rejects.toThrow()
     expect(readdirSpy).toHaveBeenCalledExactlyOnceWith(toDir)
     expect(linkSpy).not.toHaveBeenCalled()
   })

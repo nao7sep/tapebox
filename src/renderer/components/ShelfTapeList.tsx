@@ -13,7 +13,7 @@ import type { Message } from '@shared/i18n/translate'
  * box row) are both handled by the parent provider's completion mapping. Rows reuse the
  * shared TapeRow; the sortable wrapper is shared with the inbox.
  */
-export function ArchiveTapeList({
+export function ShelfTapeList({
   onReorder,
   orderError,
   onDismissOrderError,
@@ -30,18 +30,18 @@ export function ArchiveTapeList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {orderError && (
-        <InlineError className="m-3 mb-0 shrink-0" onDismiss={onDismissOrderError} closeLabel={t.t('archive.closeTapeOrderResult')}>
+        <InlineError className="m-3 mb-0 shrink-0" onDismiss={onDismissOrderError} closeLabel={t.t('shelf.closeTapeOrderResult')}>
           {t.text(orderError)}
         </InlineError>
       )}
       {tapes.length === 0 ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-6 text-sm text-fg">{t.t('archive.boxEmpty')}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6 text-sm text-fg">{t.t('shelf.boxEmpty')}</div>
       ) : (
         <ul
           ref={kb.ref}
           {...kb.listboxProps}
           role="listbox"
-          aria-label={t.t('archive.boxTapes')}
+          aria-label={t.t('shelf.boxTapes')}
           className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3 outline-none"
         >
           {tapes.map((tape, index) => (

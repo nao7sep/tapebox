@@ -80,7 +80,7 @@ describe('settings by set', () => {
   it('stops for a library folder it cannot use, rather than look in the wrong place', async () => {
     const text = JSON.stringify({ formatVersion: 1, libraryDir: 'relative/library' })
     await writeFile(paths.config, text)
-    await expect(loadSettings()).rejects.toMatchObject({ name: 'LibraryFolderSettingError', path: paths.config })
+    await expect(loadSettings()).rejects.toMatchObject({ name: 'CollectionFolderSettingError', path: paths.config })
     expect(await readFile(paths.config, 'utf8')).toBe(text)
   })
 

@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => mocks.libraryDir }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => mocks.libraryDir }))
 // The server finds a tape's folder from the tape itself; this one is on the Shelf.
 vi.mock('@main/store/session', () => ({
   getTape: (id: string) => id === 'Tape000001' ? { id, shelved: true } : undefined,

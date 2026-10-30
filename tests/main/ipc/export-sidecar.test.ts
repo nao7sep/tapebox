@@ -34,14 +34,14 @@ const libraryState = vi.hoisted(() => ({ dir: '' }))
 const MEDIA = { width: 640, height: 360, fps: 30, vcodec: 'h264', acodec: 'aac', durationSeconds: 1, bitrateKbps: 900 }
 const tapeFolder = () => join(libraryState.dir, 'inbox', tape.id)
 vi.mock('@main/store/session', () => ({ getTape: () => tape }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => libraryState.dir }))
-vi.mock('@main/ipc/library', () => ({
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => libraryState.dir }))
+vi.mock('@main/ipc/collection', () => ({
   caseInsensitiveSiblingExists: vi.fn(async () => false),
   removeTapesFrom: vi.fn(async () => ({ removed: [], failed: [] as string[] })),
 }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 
-const { removeTapesFrom } = await import('@main/ipc/library')
+const { removeTapesFrom } = await import('@main/ipc/collection')
 const { registerExportHandlers } = await import('@main/ipc/export')
 const { classifyImport, tapeFromSidecar } = await import('@main/core/import-classify')
 

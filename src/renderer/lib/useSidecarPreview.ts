@@ -33,7 +33,7 @@ export function useSidecarPreview(tape: Tape): SidecarPreview {
     }
     let active = true
     setResult({ key, status: 'loading', data: null })
-    ipcInvoke('library:getSidecar', { tapeId: tape.id }).then((data) => {
+    ipcInvoke('collection:getSidecar', { tapeId: tape.id }).then((data) => {
       if (active) setResult({ key, status: 'loaded', data })
     }).catch((error: unknown) => {
       if (!active) return

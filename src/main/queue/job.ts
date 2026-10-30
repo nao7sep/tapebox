@@ -5,7 +5,7 @@ import * as ytdlp from '@main/services/ytdlp'
 import * as ffmpeg from '@main/services/ffmpeg'
 import * as sidecar from '@main/core/sidecar'
 import * as session from '@main/store/session'
-import { getLibraryDir } from '@main/store/config'
+import { getCollectionDir } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { describeError } from '@shared/error'
 import { log } from '@main/io/logger'
@@ -14,7 +14,7 @@ import type { Tape } from '@shared/domain'
 import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { StopRequest, type StopCause } from '@main/stop-request'
 import { findFinishedBundle } from '@main/queue/finished-bundle'
-import { withLibraryTurn } from '@main/library-writes'
+import { withCollectionTurn } from '@main/collection-writes'
 
 const DOWNLOAD_FAILURE_MESSAGE =
   'The download could not be completed. Check the source and your connection, then try again.'
@@ -44,8 +44,8 @@ export interface JobDeps {
     upsertTape: typeof session.upsertTape
     persistNow: typeof session.persistNow
   }
-  getLibraryDir: typeof getLibraryDir
-  withLibraryTurn: typeof withLibraryTurn
+  getCollectionDir: typeof getCollectionDir
+  withCollectionTurn: typeof withCollectionTurn
   emit: typeof emit
   log: { info: typeof log.info; warn: typeof log.warn; error: typeof log.error }
   now: () => string
@@ -62,8 +62,8 @@ export const defaultJobDeps: JobDeps = {
     upsertTape: session.upsertTape,
     persistNow: session.persistNow,
   },
-  getLibraryDir,
-  withLibraryTurn,
+  getCollectionDir,
+  withCollectionTurn,
   emit,
   log: { info: log.info, warn: log.warn, error: log.error },
   now: nowUtcIso,
@@ -125,7 +125,7 @@ export class Job {
     try {
       // Recovery and a new attempt both work in the tape's own folder, whose
       // files no other tape can name.
-      if (await this.d.withLibraryTurn(() => this.adoptFinishedDownload())) return
+      if (await this.d.withCollectionTurn(() => this.adoptFinishedDownload())) return
       const isVideo = await this.probe()
       if (!isVideo || this.controller.signal.aborted) return
       await this.download()
@@ -174,7 +174,7 @@ export class Job {
   private async adoptFinishedDownload(): Promise<boolean> {
     const cur = this.current()
     if (!cur) return false
-    const found = await this.d.findFinishedBundle(tapeDir(this.d.getLibraryDir(), cur), cur)
+    const found = await this.d.findFinishedBundle(tapeDir(this.d.getCollectionDir(), cur), cur)
     if (found.status === 'none') return false
     if (found.status === 'unusable') {
       // Clearing the stem for a new attempt could delete a finished download, so
@@ -249,7 +249,7 @@ export class Job {
     if (!cur || !cur.sourceId) throw new Error('Job: download called without sourceId')
 
     // The tape's own folder holds the download, its partial files and its poster.
-    const dir = tapeDir(this.d.getLibraryDir(), cur)
+    const dir = tapeDir(this.d.getCollectionDir(), cur)
     await mkdir(dir, { recursive: true })
 
     this.update({ state: 'downloading', downloadStartedAtUtc: this.d.now() })
@@ -321,7 +321,7 @@ export class Job {
     // delete the finished download. The download is done either way: a failed
     // catalog write is the session store's to retry and report, never a download
     // failure that would invite a Retry over these files.
-    const committed = await this.d.withLibraryTurn(() => {
+    const committed = await this.d.withCollectionTurn(() => {
       this.move({
         state: 'downloaded',
         failureCode: null,

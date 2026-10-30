@@ -59,7 +59,7 @@ type Tab = 'general' | 'ai' | 'ytdlp'
  * library in place; it never merges the two collections.
  */
 
-type MoveProgress = IpcEvents['settings:libraryMoveProgress']
+type MoveProgress = IpcEvents['settings:collectionMoveProgress']
 export function SettingsModal({ onClose }: Props) {
   const [tab, setTab] = useState<Tab>('general')
   const [original, setOriginal] = useState<Settings | null>(null)
@@ -67,8 +67,8 @@ export function SettingsModal({ onClose }: Props) {
   // What the concurrency field holds as typed; the draft takes it only while valid.
   const [concurrentText, setConcurrentText] = useState('')
   const [keyState, setKeyState] = useState<IpcCalls['settings:apiKeyState']['res']>('absent')
-  const [defaultLibraryDir, setDefaultLibraryDir] = useState('')
-  const [openExistingLibrary, setOpenExistingLibrary] = useState(false)
+  const [defaultCollectionDir, setDefaultCollectionDir] = useState('')
+  const [openExistingCollection, setOpenExistingCollection] = useState(false)
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [wantsClearKey, setWantsClearKey] = useState(false)
   const [error, setError] = useState<Message | null>(null)
@@ -88,13 +88,13 @@ export function SettingsModal({ onClose }: Props) {
     void Promise.all([
       ipcInvoke('settings:get'),
       ipcInvoke('settings:apiKeyState'),
-      ipcInvoke('settings:defaultLibraryDir'),
+      ipcInvoke('settings:defaultCollectionDir'),
     ]).then(([s, state, defaultLibDir]) => {
       setOriginal(s)
       setDraft(s)
       setConcurrentText(String(s.maxConcurrentDownloads))
       setKeyState(state)
-      setDefaultLibraryDir(defaultLibDir)
+      setDefaultCollectionDir(defaultLibDir)
     }, (error) => {
       setLoadError(presentFailure(
         error,
@@ -108,11 +108,11 @@ export function SettingsModal({ onClose }: Props) {
     load()
   }, [])
 
-  useEffect(() => ipcOn('settings:libraryMoveProgress', setMoveProgress), [])
+  useEffect(() => ipcOn('settings:collectionMoveProgress', setMoveProgress), [])
 
   function stopMove() {
     setStoppingMove(true)
-    void ipcInvoke('settings:cancelLibraryMove')
+    void ipcInvoke('settings:cancelCollectionMove')
       .catch((err) => log.debug('library move cancel failed', { error: describeError(err) }))
   }
 
@@ -165,9 +165,9 @@ export function SettingsModal({ onClose }: Props) {
   // Compare effective strings: blank or whitespace-only values mean the default
   // folder; nonblank values are compared as entered. Switching between blank and
   // the explicit default is unchanged.
-  function libraryDirChanged(): boolean {
+  function collectionDirChanged(): boolean {
     if (!original || !draft) return false
-    const effective = (v: string) => v.trim() ? v : defaultLibraryDir
+    const effective = (v: string) => v.trim() ? v : defaultCollectionDir
     return effective(original.libraryDir) !== effective(draft.libraryDir)
   }
 
@@ -183,13 +183,13 @@ export function SettingsModal({ onClose }: Props) {
   function requestSave() {
     if (!draft || concurrentInvalid) return
     const boxes = useBoxesStore.getState()
-    if (openExistingLibrary && libraryDirChanged() && boxes.editingId !== null &&
+    if (openExistingCollection && collectionDirChanged() && boxes.editingId !== null &&
       boxes.draftName !== boxes.boxes.find((box) => box.id === boxes.editingId)?.name) {
       setConfirmOpenDiscard(true)
       return
     }
     const count = tapesOnDiskCount()
-    if (!openExistingLibrary && libraryDirChanged() && count > 0) {
+    if (!openExistingCollection && collectionDirChanged() && count > 0) {
       setConfirmMove({ count })
       return
     }
@@ -207,7 +207,7 @@ export function SettingsModal({ onClose }: Props) {
     try {
       const patch: SettingsSets = changedSettings(pickEditable(original), pickEditable(draft))
       if (Object.keys(patch).length > 0) {
-        const { settings: updated, warning } = await ipcInvoke('settings:update', { ...patch, ...(openExistingLibrary ? { libraryAction: 'open' as const } : {}) })
+        const { settings: updated, warning } = await ipcInvoke('settings:update', { ...patch, ...(openExistingCollection ? { collectionAction: 'open' as const } : {}) })
         // Not a rehydration: a playback toggle's own save may still be in flight.
         useSettingsStore.getState().setSettings(updated)
         setOriginal(updated)
@@ -301,9 +301,9 @@ export function SettingsModal({ onClose }: Props) {
                 concurrentText={concurrentText}
                 concurrentInvalid={concurrentInvalid}
                 onConcurrentText={changeConcurrentText}
-                defaultLibraryDir={defaultLibraryDir}
-                openExistingLibrary={openExistingLibrary}
-                onOpenExistingLibrary={setOpenExistingLibrary}
+                defaultCollectionDir={defaultCollectionDir}
+                openExistingCollection={openExistingCollection}
+                onOpenExistingCollection={setOpenExistingCollection}
               />
             )}
             {tab === 'ai' && (
@@ -506,9 +506,9 @@ function GeneralTab({
   concurrentText,
   concurrentInvalid,
   onConcurrentText,
-  defaultLibraryDir,
-  openExistingLibrary,
-  onOpenExistingLibrary,
+  defaultCollectionDir,
+  openExistingCollection,
+  onOpenExistingCollection,
 }: {
   draft: Settings
   busy: boolean
@@ -516,9 +516,9 @@ function GeneralTab({
   concurrentText: string
   concurrentInvalid: boolean
   onConcurrentText: (text: string) => void
-  defaultLibraryDir: string
-  openExistingLibrary: boolean
-  onOpenExistingLibrary: (value: boolean) => void
+  defaultCollectionDir: string
+  openExistingCollection: boolean
+  onOpenExistingCollection: (value: boolean) => void
 }) {
   const [pickerError, setPickerError] = useState<Message | null>(null)
   const t = useI18n()
@@ -570,10 +570,10 @@ function GeneralTab({
       setPickerError(presentFailure(error, message('common.folderPickerFailed'), 'settings export folder picker failed'))
     }
   }
-  async function chooseLibraryDir() {
+  async function chooseCollectionDir() {
     setPickerError(null)
     try {
-      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickLibraryFolder'), initialDirectory: draft.libraryDir.trim() ? draft.libraryDir : defaultLibraryDir })
+      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickCollectionFolder'), initialDirectory: draft.libraryDir.trim() ? draft.libraryDir : defaultCollectionDir })
       if (dir) onPatch({ libraryDir: dir })
     } catch (error) {
       setPickerError(presentFailure(error, message('common.folderPickerFailed'), 'settings library folder picker failed'))
@@ -671,29 +671,29 @@ function GeneralTab({
         onChange={onConcurrentText}
       />
       <div>
-        <div className="text-xs font-medium text-fg">{t.t('settings.libraryFolder')}</div>
+        <div className="text-xs font-medium text-fg">{t.t('settings.collectionFolder')}</div>
         <div className="mt-1 flex items-center gap-2">
           <input
             type="text"
             value={draft.libraryDir}
             onChange={(e) => onPatch({ libraryDir: e.target.value })}
-            placeholder={defaultLibraryDir}
+            placeholder={defaultCollectionDir}
             spellCheck={false}
             disabled={busy}
             className={`flex-1 ${INPUT_LINE_CLASS}`}
           />
-          <Button variant="secondary" onClick={() => void chooseLibraryDir()} disabled={busy}>
+          <Button variant="secondary" onClick={() => void chooseCollectionDir()} disabled={busy}>
             {t.t('common.choose')}
           </Button>
         </div>
         <p className="mt-1 text-xs text-fg-muted">
-          {t.t(openExistingLibrary ? 'settings.openLibraryHint' : 'settings.libraryFolderHint')}
+          {t.t(openExistingCollection ? 'settings.openCollectionHint' : 'settings.collectionFolderHint')}
         </p>
         <Toggle
-          label={t.t('settings.openLibrary')}
-          checked={openExistingLibrary}
+          label={t.t('settings.openCollection')}
+          checked={openExistingCollection}
           disabled={busy}
-          onChange={onOpenExistingLibrary}
+          onChange={onOpenExistingCollection}
         />
       </div>
       <Toggle

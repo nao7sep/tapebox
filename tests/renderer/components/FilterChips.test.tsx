@@ -39,7 +39,7 @@ describe('FilterChips', () => {
     expect(document.activeElement).toBe(radios[0])
     expect(useFilterStore.getState().filter).toBe('inbox')
     await act(async () => radios[1]!.click())
-    expect(useFilterStore.getState().filter).toBe('archived')
+    expect(useFilterStore.getState().filter).toBe('shelf')
     expect(radios[1]!.checked).toBe(true)
   })
 })

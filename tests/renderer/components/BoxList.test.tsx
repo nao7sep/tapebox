@@ -8,7 +8,7 @@ import { windowCloseState } from '@renderer/lib/windowClose'
 import { useBoxesStore } from '@renderer/store/boxes'
 import type { Tape } from '@shared/domain'
 import { useTapesStore } from '@renderer/store/tapes'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { useBoxActionResultsStore } from '@renderer/store/boxActionResults'
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), closeRequest: ((_request: { requestId: number; ask: boolean }) => {}) as (request: { requestId: number; ask: boolean }) => void }))
@@ -30,7 +30,7 @@ beforeEach(async () => {
   bridge.invoke.mockReset().mockImplementation(async (channel: string) => channel === 'app:quitDraftsReady' ? true : undefined)
   vi.spyOn(document, 'hasFocus').mockReturnValue(true)
   useTapesStore.setState({ tapes: [] })
-  useArchiveStore.setState({ selectedBoxId: null })
+  useShelfStore.setState({ selectedBoxId: null })
   useBoxesStore.setState({ editingId: null, draftName: '', pendingRenames: 0, boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
   useBoxActionResultsStore.setState({ results: {} })
   const host = document.createElement('div')
@@ -111,10 +111,10 @@ it('marks the whole selected box row for keyboard emphasis while hover leaves na
   expect(selected.parentElement!.classList.contains('listbox-item')).toBe(true)
   expect(selected.parentElement!.matches(':has(> [role="option"][aria-selected="true"])')).toBe(true)
   await act(async () => options[0]!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
-  expect(useArchiveStore.getState().selectedBoxId).toBe('box1')
+  expect(useShelfStore.getState().selectedBoxId).toBe('box1')
   expect(document.activeElement).toBe(list)
   await act(async () => list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })))
-  expect(useArchiveStore.getState().selectedBoxId).toBeNull()
+  expect(useShelfStore.getState().selectedBoxId).toBeNull()
   expect(bridge.invoke).not.toHaveBeenCalled()
 })
 
@@ -234,15 +234,15 @@ describe('new box reply ownership', () => {
     const create = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'New box')!
     await act(async () => create.click())
     await act(async () => {
-      if (change === 'selection') useArchiveStore.getState().selectBox('other')
+      if (change === 'selection') useShelfStore.getState().selectBox('other')
       else if (change === 'collection') useBoxesStore.setState({ collection: {}, editingId: null, draftName: '' })
     })
     if (change === 'draft') await type('Newer draft')
     const { editingId, draftName } = useBoxesStore.getState()
-    const { selectedBoxId } = useArchiveStore.getState()
+    const { selectedBoxId } = useShelfStore.getState()
     await act(async () => finish({ id: 'new', name: 'New box', order: 1 }))
     expect(useBoxesStore.getState()).toMatchObject({ editingId, draftName })
-    expect(useArchiveStore.getState().selectedBoxId).toBe(selectedBoxId)
+    expect(useShelfStore.getState().selectedBoxId).toBe(selectedBoxId)
   })
 
   it('lets only the newest creation reply open editing', async () => {
@@ -254,11 +254,11 @@ describe('new box reply ownership', () => {
     expect(useBoxesStore.getState().editingId).toBe('box1')
     await act(async () => finish[1]!({ id: 'second', name: 'Second', order: 2 }))
     expect(useBoxesStore.getState()).toMatchObject({ editingId: 'second', draftName: 'Second' })
-    expect(useArchiveStore.getState().selectedBoxId).toBe('second')
+    expect(useShelfStore.getState().selectedBoxId).toBe('second')
   })
 })
 
-it('derives archived counts after moves and unarchiving, including Unboxed', async () => {
+it('derives archived counts after moves and unarchiving, including Loose tapes', async () => {
   const tape: Tape = {
     id: 'TapeID0001', sourceUrl: 'https://example.test', state: 'downloaded', addedAtUtc: '2026-01-01T00:00:00Z',
     sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: null,

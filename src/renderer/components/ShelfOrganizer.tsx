@@ -2,23 +2,23 @@ import { useEffect, useRef } from 'react'
 import type { DragEndEvent } from '@dnd-kit/react'
 import {
   LAYOUT_BOUNDS,
-  archiveLowerListMin,
-  ARCHIVE_SEARCH_BOX_HEIGHT,
+  shelfLowerListMin,
+  SHELF_SEARCH_BOX_HEIGHT,
 } from '@shared/layout'
 import { ipcInvoke } from '@renderer/ipc/client'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { useVisibleTapes } from '@renderer/lib/tapeOrder'
-import { ListboxDragProvider, planArchiveDrop } from '@renderer/lib/dnd'
+import { ListboxDragProvider, planShelfDrop } from '@renderer/lib/dnd'
 import { isInSameTapeList, moveArrayItem, rollbackOptimisticOrder, settleOptimisticOrder } from '@renderer/lib/optimisticOrder'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { presentFailure } from '@renderer/lib/presentFailure'
 import { moveTapeToBox } from '@renderer/lib/tapeActions'
 import { BoxList } from './BoxList'
-import { ArchiveTapeList } from './ArchiveTapeList'
+import { ShelfTapeList } from './ShelfTapeList'
 import { SearchResults } from './SearchResults'
 import { ResizeHandle } from './ResizeHandle'
 import { LayoutWriteResult } from './LayoutWriteResult'
@@ -26,27 +26,27 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 import { message } from '@shared/i18n/translate'
 
 /**
- * The archived view's left-pane layout and drag handling: boxes on top, the
+ * The Shelf view's left-pane layout and drag handling: boxes on top, the
  * selected box's tapes below. One provider covers both lists so a tape can be
  * dragged from the lower list onto a box in the upper one. Drags update the
  * stores optimistically, then persist via boxes:place / boxes:reorder /
  * tapes:reorder (the IPC re-emits the authoritative state).
  */
-export function ArchiveOrganizer() {
+export function ShelfOrganizer() {
   const boxes = useBoxesStore((s) => s.boxes)
-  const query = useArchiveStore((s) => s.query)
-  const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
-  const setQuery = useArchiveStore((s) => s.setQuery)
-  const pendingSearchFocus = useArchiveStore((s) => s.pendingSearchFocus)
-  const setPendingSearchFocus = useArchiveStore((s) => s.setPendingSearchFocus)
+  const query = useShelfStore((s) => s.query)
+  const selectedBoxId = useShelfStore((s) => s.selectedBoxId)
+  const setQuery = useShelfStore((s) => s.setQuery)
+  const pendingSearchFocus = useShelfStore((s) => s.pendingSearchFocus)
+  const setPendingSearchFocus = useShelfStore((s) => s.setPendingSearchFocus)
   const boxesIntent = useLayoutStore((s) => s.layout!.archiveBoxesHeight)
   const tapes = useVisibleTapes()
   const searching = query.trim().length > 0
   const boxOrderError = useOrderFailuresStore((s) => s.boxes)
   const setBoxOrderError = useOrderFailuresStore((s) => s.setBoxes)
   const tapeListKey = selectedBoxId === null ? 'unboxed' : `box:${selectedBoxId}`
-  const tapeOrderError = useOrderFailuresStore((s) => s.archiveTapes[tapeListKey] ?? null)
-  const setTapeOrderError = useOrderFailuresStore((s) => s.setArchiveTapes)
+  const tapeOrderError = useOrderFailuresStore((s) => s.shelfTapes[tapeListKey] ?? null)
+  const setTapeOrderError = useOrderFailuresStore((s) => s.setShelfTapes)
   const t = useI18n()
 
   // Consume the one-shot focus request from the "/" shortcut: focus + select the
@@ -68,7 +68,7 @@ export function ArchiveOrganizer() {
   // and returns in full when the window grows. Display-only — only a splitter
   // drag persists. The far-side reserve is derived from named sibling minimums
   // (search box + lower list), not a hand-typed magic number.
-  const siblingMin = ARCHIVE_SEARCH_BOX_HEIGHT + archiveLowerListMin.min
+  const siblingMin = SHELF_SEARCH_BOX_HEIGHT + shelfLowerListMin.min
   const { containerRef: paneRef, displayed: effectiveBoxesHeight } = usePaneSize<HTMLDivElement>(
     boxesIntent,
     true,
@@ -80,7 +80,7 @@ export function ArchiveOrganizer() {
   )
 
   function onDragEnd(event: DragEndEvent) {
-    const plan = planArchiveDrop(event)
+    const plan = planShelfDrop(event)
     if (!plan) return
     if (plan.kind === 'reorder-box') {
       reorderBox(plan.boxId, plan.toIndex)
@@ -115,7 +115,7 @@ export function ArchiveOrganizer() {
         boxes: rollbackOptimisticOrder(state.boxes, useOrderFailuresStore.getState().confirmedOrder('boxes'), optimistic),
       })),
       () => setBoxOrderError(null),
-      (error) => setBoxOrderError(presentFailure(error, message('archive.boxOrderSaveFailed'), 'box order save failed')),
+      (error) => setBoxOrderError(presentFailure(error, message('shelf.boxOrderSaveFailed'), 'box order save failed')),
       (saved) => useOrderFailuresStore.getState().finishAttempt('boxes', attempt, saved ? optimistic : null),
     )
   }
@@ -125,7 +125,7 @@ export function ArchiveOrganizer() {
     if (from < 0 || to < 0 || to >= tapes.length || from === to) return
     const reordered = moveArrayItem(tapes, from, to)
     const optimistic = reordered.map((tape, i) => ({ ...tape, order: i }))
-    const list = `archive:${tapeListKey}` as const
+    const list = `shelf:${tapeListKey}` as const
     const attempt = useOrderFailuresStore.getState().beginAttempt(list, tapes)
     useTapesStore.getState().upsertMany(optimistic)
     settleOptimisticOrder(
@@ -143,12 +143,12 @@ export function ArchiveOrganizer() {
   return (
     <ListboxDragProvider onDragEnd={onDragEnd}>
       <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-col justify-center px-3" style={{ height: ARCHIVE_SEARCH_BOX_HEIGHT }}>
+        <div className="flex shrink-0 flex-col justify-center px-3" style={{ height: SHELF_SEARCH_BOX_HEIGHT }}>
           <input
             ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t.t('archive.searchPlaceholder')}
+            placeholder={t.t('shelf.searchPlaceholder')}
             spellCheck={false}
             className="w-full rounded border border-field-line bg-panel px-2.5 py-1.5 text-sm placeholder-fg-subtle focus:border-field-focus focus:outline-hidden"
           />
@@ -176,7 +176,7 @@ export function ArchiveOrganizer() {
           {searching ? (
             <SearchResults />
           ) : (
-            <ArchiveTapeList
+            <ShelfTapeList
               orderError={tapeOrderError}
               onDismissOrderError={() => setTapeOrderError(tapeListKey, null)}
               onReorder={(id, offset) => {

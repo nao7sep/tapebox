@@ -26,21 +26,21 @@ export const LAYOUT_BOUNDS = {
 } as const
 
 /**
- * The archived view's lower tape-list minimum height — the sibling below the
+ * The Shelf view's lower tape-list minimum height — the sibling below the
  * draggable boxes list within the left pane. Reserved so a tall persisted (or
  * dragged) boxes height can never swallow the lower list and shove its separator
  * off-screen: the boxes ceiling is the live pane height minus the search box minus
  * this. Replaces the old hand-typed RESERVE_PX cap with a named minimum the clamp
  * derives from.
  */
-export const archiveLowerListMin = { min: 120 } as const
+export const shelfLowerListMin = { min: 120 } as const
 
 /**
- * The archived view's search box height: its wrapper takes this height, centring
+ * The Shelf view's search box height: its wrapper takes this height, centring
  * the py-1.5 text-sm input. Fixed chrome above the boxes list, reserved alongside
  * the lower-list minimum when clamping the boxes height.
  */
-export const ARCHIVE_SEARCH_BOX_HEIGHT = 52
+export const SHELF_SEARCH_BOX_HEIGHT = 52
 
 /**
  * The right detail column's minimum width. Unlike the panes above it is not

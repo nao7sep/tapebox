@@ -2,8 +2,8 @@ import { create } from 'zustand'
 import type { Message } from '@shared/i18n/translate'
 
 export type TapeAction =
-  | 'archive'
-  | 'unarchive'
+  | 'shelve'
+  | 'unshelve'
   | 'placement'
   | 'retry'
   | 'cancel'

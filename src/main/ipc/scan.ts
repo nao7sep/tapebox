@@ -5,7 +5,7 @@ import * as scanService from '@main/services/ytdlp-scan'
 import * as session from '@main/store/session'
 import { describeError } from '@shared/error'
 import { isImportableUrl } from '@shared/url'
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import { log } from '@main/io/logger'
 import type { ScanResult } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
@@ -37,7 +37,7 @@ export function registerScanHandlers(): void {
     // Mark what the library already holds with its one identity rule: the
     // (extractor, id) pair for probed tapes, the canonical URL for any tape,
     // including ones still queued unprobed (added with autostart off).
-    const known = librarySourceIndex(session.getTapes())
+    const known = collectionSourceIndex(session.getTapes())
 
     const handle_ = scanService.startScan(url, sessionId, (raw) => {
       const entry: ScanResult = {
@@ -47,7 +47,7 @@ export function registerScanHandlers(): void {
         durationSeconds: raw.duration,
         uploadDateUtc: raw.uploadDate ? ymdToUtcIso(raw.uploadDate) : null,
         thumbnailUrl: raw.thumbnailUrl,
-        alreadyInLibrary: known.has({ url: raw.url, extractor: raw.extractor, sourceId: raw.id }),
+        alreadyInCollection: known.has({ url: raw.url, extractor: raw.extractor, sourceId: raw.id }),
         unavailable: null,
       }
       emit('scan:entry', { sessionId, entry })

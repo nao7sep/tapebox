@@ -1,4 +1,4 @@
-import { registerLibraryHandlers } from './library'
+import { registerCollectionHandlers } from './collection'
 import { registerSettingsHandlers } from './settings'
 import { registerLayoutHandlers } from './layout'
 import { registerBinaryHandlers } from './binaries'
@@ -18,7 +18,7 @@ import { registerRecordsHandlers } from './records'
  * the renderer window is created.
  */
 export function registerIpcHandlers(): void {
-  registerLibraryHandlers()
+  registerCollectionHandlers()
   registerSettingsHandlers()
   registerLayoutHandlers()
   registerBinaryHandlers()

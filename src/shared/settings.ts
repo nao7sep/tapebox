@@ -107,8 +107,8 @@ export type ThemePreference = (typeof THEME_PREFERENCES)[number]
 export const SettingsObjectSchema = z.object({
   // Folder where the library lives — where tapes are saved and read from. Empty =
   // use the default library folder (~/.tapebox/library); main resolves it via
-  // getLibraryDir(). A set value is a custom folder used as-is. Never read this as a
-  // path directly in main — always go through getLibraryDir() so an empty value
+  // getCollectionDir(). A set value is a custom folder used as-is. Never read this as a
+  // path directly in main — always go through getCollectionDir() so an empty value
   // can't become a cwd-relative path. Changing this relocates the existing library:
   // ipc/settings moves every tracked file to the new folder before committing the
   // new value, or explicitly opens an existing collection without moving files.
@@ -303,7 +303,7 @@ export function changedSettings(original: Partial<Settings>, draft: Partial<Sett
 /**
  * Built-in settings used for absent or malformed sets without writing config.json.
  * libraryDir defaults to '' — an empty value means "use the default library
- * folder", which main/ resolves to paths.library via getLibraryDir(). The actual
+ * folder", which main/ resolves to paths.library via getCollectionDir(). The actual
  * path lives in main/ (path resolution stays there); the built-in value is just
  * blank, exactly like defaultExportDir.
  */

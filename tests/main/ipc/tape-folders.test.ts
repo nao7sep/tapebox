@@ -24,14 +24,14 @@ vi.mock('electron', () => ({
   } },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => state.libraryDir, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => state.libraryDir, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/ipc/events', () => ({ emit }))
 vi.mock('@main/queue/manager', () => ({ ...queue, holdFromScheduling: () => () => {} }))
 vi.mock('@main/services/ytdlp', () => ({ downloadThumbnail: thumbnail.download, probe: vi.fn(), download: vi.fn(), findThumbnail: vi.fn() }))
 vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: thumbnail.save, probeMedia: vi.fn() }))
-import { registerLibraryHandlers } from '@main/ipc/library'
+import { registerCollectionHandlers } from '@main/ipc/collection'
 import { registerExportHandlers } from '@main/ipc/export'
 import { defaultJobDeps, Job } from '@main/queue/job'
 import * as session from '@main/store/session'
@@ -59,7 +59,7 @@ async function stage(folder: string, stem: string, sourceUrl = `https://example.
 }
 
 async function importPath(path: string): Promise<ImportResult> {
-  return await handlers.get('library:import')!({ paths: [path] }) as ImportResult
+  return await handlers.get('collection:import')!({ paths: [path] }) as ImportResult
 }
 
 function hold(): { started: Promise<void>; release: () => void } {
@@ -117,7 +117,7 @@ beforeEach(async () => {
   await writeFile(join(inboxFolder(original.id), 'Original.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   session.upsertTape(original)
   await session.persistNow()
-  registerLibraryHandlers()
+  registerCollectionHandlers()
   registerExportHandlers()
 })
 
@@ -140,7 +140,7 @@ describe('tape folders across producers and cleanup', () => {
       await writeFile(join(inboxFolder(id), `${id}.mp4.part`), 'late fragment')
       state.events.push(`settled:${id}`)
     })
-    const removing = handlers.get('library:remove')!({ tapeIds: [original.id, other.id], deleteFiles: true })
+    const removing = handlers.get('collection:remove')!({ tapeIds: [original.id, other.id], deleteFiles: true })
     try {
       await gate.started
       expect(await readFile(join(inboxFolder(original.id), 'Original.mp4'), 'utf8')).toBe('video')
@@ -155,14 +155,14 @@ describe('tape folders across producers and cleanup', () => {
 
   it('removes a tape whose folder is already gone', async () => {
     await rm(inboxFolder(original.id), { recursive: true })
-    await handlers.get('library:remove')!({ tapeIds: [original.id], deleteFiles: true })
+    await handlers.get('collection:remove')!({ tapeIds: [original.id], deleteFiles: true })
     expect(session.getTapes()).toEqual([])
   })
 
   it('imports bundles whose files share names, each into a folder of its own, keeping no catalog copies in the sidecar', async () => {
     const first = await stage('first', 'Original')
     const second = await stage('second', 'Original')
-    const result = await handlers.get('library:import')!({ paths: [first, second] }) as ImportResult
+    const result = await handlers.get('collection:import')!({ paths: [first, second] }) as ImportResult
     expect(result.issues).toEqual([])
     expect(result.imported.map((tape) => tape.filename)).toEqual(['Original.mp4', 'Original.mp4'])
     const [a, b] = result.imported
@@ -189,7 +189,7 @@ describe('tape folders across producers and cleanup', () => {
       return scratch
     })
     thumbnail.save.mockRejectedValueOnce(new Error('conversion failed'))
-    const applying = handlers.get('library:applyMetadata')!({ tapeId: original.id, metadata: {
+    const applying = handlers.get('collection:applyMetadata')!({ tapeId: original.id, metadata: {
       title: 'New title', uploader: null, description: 'New description', probedAtUtc: AT,
     } }).then((result) => result, (error: unknown) => error)
     try {
@@ -206,7 +206,7 @@ describe('tape folders across producers and cleanup', () => {
 
   it('exports into the library folder itself, and that output imports back after the tape is removed', async () => {
     await handlers.get('export:files')!({ tapeId: original.id, name: 'Exported', destinationDir: state.libraryDir, deleteFromApp: false })
-    await handlers.get('library:remove')!({ tapeIds: [original.id], deleteFiles: false })
+    await handlers.get('collection:remove')!({ tapeIds: [original.id], deleteFiles: false })
     const imported = await importPath(join(state.libraryDir, 'Exported.json'))
     expect(imported.issues).toEqual([])
     expect(imported.imported).toMatchObject([{ filename: 'Exported.mp4', sidecarFilename: 'Exported.json', name: 'Exported' }])

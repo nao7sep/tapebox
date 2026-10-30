@@ -12,7 +12,7 @@ import { useSettingsStore } from '@renderer/store/settings'
 import { useLayoutStore, patchLayout } from '@renderer/store/layout'
 import { usePaneSize } from '@renderer/lib/usePaneSize'
 import { releaseVideo } from '@renderer/lib/video'
-import { archiveTape, openTapeSourceUrl, unarchiveTape } from '@renderer/lib/tapeActions'
+import { shelveTape, openTapeSourceUrl, unshelveTape } from '@renderer/lib/tapeActions'
 import { useCopyTapeSourceUrl } from '@renderer/lib/useCopyTapeSourceUrl'
 import { keyEventIsComposing } from '@renderer/lib/useComposing'
 import { isShortcutBlocked } from '@renderer/lib/dom'
@@ -172,8 +172,8 @@ export function DetailPane({
 
   // Archive / unarchive from the detail pane use the 'tape' policy: follow the
   // video to where it lands (switch to Archive/Inbox, select + focus it there).
-  function archive()         { archiveTape(tape, 'tape') }
-  function unarchive()       { unarchiveTape(tape, 'tape') }
+  function archive()         { shelveTape(tape, 'tape') }
+  function unarchive()       { unshelveTape(tape, 'tape') }
   async function cancel() {
     await runTapeAction(
       tape.id,
@@ -198,7 +198,7 @@ export function DetailPane({
       'open',
       'external player open failed',
       message('detail.openExternalFailed'),
-      () => ipcInvoke('library:playExternal', { tapeId: tape.id }),
+      () => ipcInvoke('collection:playExternal', { tapeId: tape.id }),
     )
   }
   async function revealFile() {
@@ -207,7 +207,7 @@ export function DetailPane({
       'reveal',
       'tape reveal failed',
       message('detail.revealFailed'),
-      () => ipcInvoke('library:reveal', { tapeId: tape.id }),
+      () => ipcInvoke('collection:reveal', { tapeId: tape.id }),
     )
   }
 
@@ -225,7 +225,7 @@ export function DetailPane({
     releaseVideo(v) // drop the file handle now…
     setRenaming(true) // …and unmount the player for the operation
     try {
-      await ipcInvoke('library:rename', { tapeId: tape.id, name })
+      await ipcInvoke('collection:rename', { tapeId: tape.id, name })
     } finally {
       // Remount either way: the new filename on success, the unchanged one on
       // failure. onLoadedMetadata then restores the position (see restorePlayback).
@@ -273,9 +273,9 @@ export function DetailPane({
         onRequestRemove(tape)
         return
       }
-      if (matchShortcut(SHORTCUTS.archiveToggle, e) >= 0) {
-        if (tape.shelved) { e.preventDefault(); unarchiveTape(tape, 'list') }
-        else if (tape.state === 'downloaded') { e.preventDefault(); archiveTape(tape, 'list') }
+      if (matchShortcut(SHORTCUTS.shelveToggle, e) >= 0) {
+        if (tape.shelved) { e.preventDefault(); unshelveTape(tape, 'list') }
+        else if (tape.state === 'downloaded') { e.preventDefault(); shelveTape(tape, 'list') }
         return
       }
 
@@ -545,10 +545,10 @@ export function DetailPane({
               {tape.shelved ? (
                 <>
                   <MoveToBoxButton tape={tape} />
-                  <ActionButton onClick={unarchive}>{t.t('detail.moveToInbox')}</ActionButton>
+                  <ActionButton onClick={unarchive}>{t.t('detail.backToInbox')}</ActionButton>
                 </>
               ) : (
-                <ActionButton onClick={archive}>{t.t('detail.archive')}</ActionButton>
+                <ActionButton onClick={archive}>{t.t('detail.shelve')}</ActionButton>
               )}
             </>
           )}
@@ -630,7 +630,7 @@ function headerStatus(tape: Tape, progress: ProgressEntry | undefined, stalled: 
   if (progress?.phase === 'downloading' && progress.speedBps) {
     base = joinMessages(base, t.bytesPerSecond(progress.speedBps))
   }
-  return tape.shelved ? joinMessages(base, message('filter.archived')) : base
+  return tape.shelved ? joinMessages(base, message('filter.shelf')) : base
 }
 
 /** A label/value row in the disclosed detail list. */

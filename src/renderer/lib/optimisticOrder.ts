@@ -10,7 +10,7 @@ export function moveArrayItem<T>(items: readonly T[], from: number, to: number):
 
 export type OrderedItem = { id: string; order: number }
 
-/** A tape's order belongs to its current Inbox, Unboxed, or box tape list. */
+/** A tape's order belongs to its current Inbox, Loose tapes, or box tape list. */
 export function isInSameTapeList(
   current: Pick<Tape, 'shelved' | 'boxId'>,
   submitted: Pick<Tape, 'shelved' | 'boxId'>,

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useFilterStore } from '@renderer/store/filter'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { useRuntimeStore } from '@renderer/store/runtime'
 import { isEditableElement, isModalOpen } from '@renderer/lib/dom'
 import { keyEventIsComposing } from '@renderer/lib/useComposing'
@@ -40,15 +40,15 @@ export function useAppShortcuts(onShowShortcuts: () => void): void {
         if (showList === 0 ? modChordStandsDown : typing) return
         e.preventDefault()
         onShowRef.current()
-      } else if (matchShortcut(SHORTCUTS.inbox, e) >= 0 || matchShortcut(SHORTCUTS.archived, e) >= 0) {
+      } else if (matchShortcut(SHORTCUTS.inbox, e) >= 0 || matchShortcut(SHORTCUTS.shelf, e) >= 0) {
         if (modChordStandsDown) return
         e.preventDefault()
-        useFilterStore.getState().setFilter(matchShortcut(SHORTCUTS.inbox, e) >= 0 ? 'inbox' : 'archived')
-      } else if (matchShortcut(SHORTCUTS.searchArchive, e) >= 0) {
+        useFilterStore.getState().setFilter(matchShortcut(SHORTCUTS.inbox, e) >= 0 ? 'inbox' : 'shelf')
+      } else if (matchShortcut(SHORTCUTS.searchShelf, e) >= 0) {
         if (typing) return
         e.preventDefault()
-        useFilterStore.getState().setFilter('archived')
-        useArchiveStore.getState().setPendingSearchFocus(true)
+        useFilterStore.getState().setFilter('shelf')
+        useShelfStore.getState().setPendingSearchFocus(true)
       }
     }
     window.addEventListener('keydown', onKeyDown)

@@ -27,7 +27,7 @@ import { PassiveScrollRegion } from '@renderer/components/PassiveScrollRegion'
 import { BinariesModal } from '@renderer/components/BinariesModal'
 import { TopBar } from '@renderer/components/TopBar'
 import { TapeList } from '@renderer/components/TapeList'
-import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
+import { ShelfOrganizer } from '@renderer/components/ShelfOrganizer'
 import { DetailPane } from '@renderer/components/DetailPane'
 import { FilterChips } from '@renderer/components/FilterChips'
 import { PlaybackSettingResults, PlaybackToggles } from '@renderer/components/PlaybackToggles'
@@ -271,8 +271,8 @@ function HydratedApp() {
             </div>
             <PlaybackSettingResults />
             <LayoutWriteResult field="leftPaneWidth" className="m-3 mb-0 shrink-0" />
-            {filter === 'archived' ? (
-              <ArchiveOrganizer />
+            {filter === 'shelf' ? (
+              <ShelfOrganizer />
             ) : (
               <TapeImportReceiver>
                 <TapeList />

@@ -18,12 +18,12 @@ export class StoreAccessError extends Error {
  * it, and the built-in folder would be the wrong place, so startup stops and the
  * file is left as it is.
  */
-export class LibraryFolderSettingError extends Error {
+export class CollectionFolderSettingError extends Error {
   readonly path: string
 
   constructor(path: string) {
     super(`The library folder saved in ${path} could not be read`)
-    this.name = 'LibraryFolderSettingError'
+    this.name = 'CollectionFolderSettingError'
     this.path = path
   }
 }

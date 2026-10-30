@@ -24,7 +24,7 @@ beforeEach(async () => {
   onChange.mockReset()
   onGeneratingChange.mockReset()
   ipcInvoke.mockImplementation((channel: string) => {
-    if (channel === 'library:getSidecar') return Promise.resolve({})
+    if (channel === 'collection:getSidecar') return Promise.resolve({})
     if (channel === 'ai:generateSlug') return new Promise(() => {}) // a provider that never answers
     return Promise.resolve()
   })
@@ -91,7 +91,7 @@ describe('NameEditor description preview', () => {
   it('shows a retryable failure while keeping the draft and title-only Suggest usable', async () => {
     let reads = 0
     ipcInvoke.mockImplementation((channel: string) => {
-      if (channel === 'library:getSidecar') {
+      if (channel === 'collection:getSidecar') {
         reads += 1
         return reads === 1 ? Promise.reject(new Error('EACCES /private/PREVIEW_SENTINEL')) : Promise.resolve({ description: 'A readable description' })
       }
@@ -127,7 +127,7 @@ describe('NameEditor description preview', () => {
     let reject!: (error: Error) => void
     const old = new Promise((yes, no) => { resolve = yes; reject = no })
     ipcInvoke.mockImplementation((channel: string, request?: { tapeId?: string }) => {
-      if (channel === 'library:getSidecar') return request?.tapeId === 'old' ? old : Promise.resolve({ description: 'Current description' })
+      if (channel === 'collection:getSidecar') return request?.tapeId === 'old' ? old : Promise.resolve({ description: 'Current description' })
       return Promise.resolve()
     })
     await renderTape({ ...tape, id: 'old' })

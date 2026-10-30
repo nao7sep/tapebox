@@ -15,7 +15,7 @@ vi.mock('openai', async (original) => {
   } }
 })
 vi.mock('electron', () => ({ ipcMain: { handle: mocks.handle } }))
-vi.mock('@main/store/config', () => ({ getSettings: defaultSettings, getLibraryDir: () => '/unused' }))
+vi.mock('@main/store/config', () => ({ getSettings: defaultSettings, getCollectionDir: () => '/unused' }))
 vi.mock('@main/store/session', () => ({ getTape: () => ({ title: 'Title', uploader: null, sidecarFilename: null }) }))
 vi.mock('@main/services/api-keys', () => ({ resolveApiKey: async () => 'diagnostic-test-key' }))
 vi.mock('@main/io/records', () => ({ writeRecord: mocks.writeRecord, toConsole: vi.fn() }))

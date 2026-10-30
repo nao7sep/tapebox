@@ -10,7 +10,7 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 import { message } from '@shared/i18n/translate'
 
 /**
- * Files an archived tape into a box (or Unboxed, or a brand-new box) via a small
+ * Files an archived tape into a box (or Loose tapes, or a brand-new box) via a small
  * dropdown — a deliberate "put this one there" click, so it uses the 'tape' policy:
  * the view follows the tape into its new box and keeps it selected. Drag-and-drop
  * hits the same moveTapeToBox but with the 'list' policy. The menu opens upward
@@ -62,7 +62,7 @@ export function MoveToBoxButton({ tape }: { tape: Tape }) {
     >
       <MenuItem onSelect={() => moveTo(null)} selected={tape.boxId === null}>
         {tape.boxId === null ? <CheckIcon className="mr-1.5" /> : null}
-        {t.t('boxes.unboxed')}
+        {t.t('boxes.loose')}
       </MenuItem>
       {sorted.map((g) => (
         <MenuItem key={g.id} onSelect={() => moveTo(g.id)} selected={tape.boxId === g.id}>

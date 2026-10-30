@@ -1,4 +1,4 @@
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
@@ -62,8 +62,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 const upsertTape = vi.hoisted(() => vi.fn((_tape: Tape) => {}))
 vi.mock('@main/store/session', () => ({
-  sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex([], exceptId).find(ref),
-  onCatalogSaveFailure: () => {},
+  sourceOwner: (ref: SourceRef, exceptId?: string) => collectionSourceIndex([], exceptId).find(ref),
+  onCollectionSaveFailure: () => {},
   persistNow: vi.fn(async () => {}),
   getTape: () => undefined,
   getTapes: () => [],
@@ -72,7 +72,7 @@ vi.mock('@main/store/session', () => ({
   removeTapes: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getLibraryDir: () => state.libraryDir,
+  getCollectionDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: true, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
@@ -82,7 +82,7 @@ const mainLog = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn()
 vi.mock('@main/io/logger', () => ({ log: mainLog }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
-const { registerLibraryHandlers } = await import('@main/ipc/library')
+const { registerCollectionHandlers } = await import('@main/ipc/collection')
 
 let root: string
 let sourceDir: string
@@ -108,7 +108,7 @@ beforeEach(async () => {
       renamedAtUtc: null, media: null, mediaFilename: 'clip.mp4', thumbnailFilename: null,
     },
   }))
-  registerLibraryHandlers()
+  registerCollectionHandlers()
 })
 
 afterEach(async () => {
@@ -118,7 +118,7 @@ afterEach(async () => {
 
 describe('library:import rollback ownership', () => {
   it('removes the files it copied when a later bundle publication fails', async () => {
-    const result = await handlers.get('library:import')!({
+    const result = await handlers.get('collection:import')!({
       paths: [join(sourceDir, 'clip.json'), join(sourceDir, 'clip.mp4')],
     }) as {
       imported: Tape[]
@@ -128,7 +128,7 @@ describe('library:import rollback ownership', () => {
     expect(result.imported).toEqual([])
     expect(result.issues).toHaveLength(1)
     expect(inEnglish(result.issues[0]?.reason)).toBe(
-      'The tape files could not be copied into the library. Check that the library folder is available and try again.',
+      'The tape files could not be copied into the collection. Check that the collection folder is available and try again.',
     )
     expect(await readdir(join(state.libraryDir, 'inbox'))).toEqual([])
     expect(upsertTape).not.toHaveBeenCalled()
@@ -140,14 +140,14 @@ describe('library:import rollback ownership', () => {
 
   it('surfaces a thrown rollback cleanup together with the initiating failure', async () => {
     state.cleanupThrows = true
-    const result = await handlers.get('library:import')!({ paths: [join(sourceDir, 'clip.json')] }) as {
+    const result = await handlers.get('collection:import')!({ paths: [join(sourceDir, 'clip.json')] }) as {
       imported: Tape[]
       issues: { reason: Message }[]
     }
 
     expect(result.imported).toEqual([])
     expect(inEnglish(result.issues[0]?.reason)).toBe(
-      'The tape files could not be copied completely. Check the library folder and the log before trying again.',
+      'The tape files could not be copied completely. Check the collection folder and the log before trying again.',
     )
     expect(inEnglish(result.issues[0]?.reason)).not.toMatch(/sidecar|clip\.mp4/)
     expect(mainLog.error).toHaveBeenCalledWith(
@@ -171,7 +171,7 @@ describe('library:import rollback ownership', () => {
       },
     }))
 
-    const result = await handlers.get('library:import')!({
+    const result = await handlers.get('collection:import')!({
       paths: [
         join(sourceDir, 'clip.json'),
         join(sourceDir, 'clip.mp4'),

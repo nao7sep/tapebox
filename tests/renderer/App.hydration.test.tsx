@@ -22,7 +22,7 @@ vi.mock('@renderer/components/ResizeHandle', () => ({ ResizeHandle: () => null }
 vi.mock('@renderer/components/PassiveScrollRegion', () => ({ PassiveScrollRegion: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@renderer/components/BinariesModal', () => ({ BinariesModal: () => null }))
 vi.mock('@renderer/components/TapeList', () => ({ TapeList: () => createElement('div', { 'data-hydrated-shell': true }) }))
-vi.mock('@renderer/components/ArchiveOrganizer', () => ({ ArchiveOrganizer: () => null }))
+vi.mock('@renderer/components/ShelfOrganizer', () => ({ ShelfOrganizer: () => null }))
 vi.mock('@renderer/components/DetailPane', () => ({ DetailPane: () => null }))
 vi.mock('@renderer/components/FilterChips', () => ({ FilterChips: () => null }))
 vi.mock('@renderer/components/PlaybackToggles', () => ({ PlaybackSettingResults: () => null, PlaybackToggles: () => null }))
@@ -84,7 +84,7 @@ beforeEach(() => {
   answers.clear()
   catalog.tapes = [tape()]
   catalog.boxes = []
-  answers.set('library:subscribe', async () => { listeners.get('library:current')?.({ ...catalog }) })
+  answers.set('collection:subscribe', async () => { listeners.get('collection:current')?.({ ...catalog }) })
   answers.set('binaries:status', [])
   answers.set('app:runtimeInfo', { platform: 'darwin', arch: 'arm64', version: '1.0.0' })
   answers.set('media:endpoint', { baseUrl: 'http://127.0.0.1:1234' })

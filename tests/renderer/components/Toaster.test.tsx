@@ -19,7 +19,7 @@ afterEach(async () => {
 
 describe('Toaster error results', () => {
   it('stacks persistent results as alerts without redundant severity labels', async () => {
-    useToastStore.getState().notify(message('app.librarySaveFailed'), 'error')
+    useToastStore.getState().notify(message('app.collectionSaveFailed'), 'error')
     useToastStore.getState().notify(message('tapes.orderSaveFailed'), 'error')
     const container = document.createElement('div')
     document.body.append(container)
@@ -30,7 +30,7 @@ describe('Toaster error results', () => {
     const alerts = document.querySelectorAll('[role="alert"]')
     expect(alerts).toHaveLength(2)
     expect(alerts[0]?.textContent).not.toContain('Error')
-    expect(alerts[0]?.textContent).toContain('Library changes could not be saved to disk.')
+    expect(alerts[0]?.textContent).toContain('Collection changes could not be saved to disk.')
 
     await act(async () => {
       alerts[0]?.querySelector<HTMLButtonElement>('button')?.click()
@@ -43,7 +43,7 @@ describe('Toaster error results', () => {
   // the button's margin-top derived from the text-sm line height rather than an
   // absolute offset that only approximates it (same mechanism as InlineError).
   it('centres the close button on the first line via a derived margin, not an absolute offset', async () => {
-    useToastStore.getState().notify(message('app.librarySaveFailed'), 'error')
+    useToastStore.getState().notify(message('app.collectionSaveFailed'), 'error')
     const container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)

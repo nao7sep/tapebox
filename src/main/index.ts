@@ -280,8 +280,8 @@ const quit = createQuit({
     if (signal.aborted || !workIsRunning()) return true
     return askToStopWork(signal)
   },
-  saveLibrary: () => persistNow({ quitting: true }),
-  ask: askAfterFailedLibrarySave,
+  saveCollection: () => persistNow({ quitting: true }),
+  ask: askAfterFailedCollectionSave,
   // Cancel leaves the window as it was; only a main window that is gone comes back.
   resume: () => {
     quitRunning?.resolve()
@@ -366,25 +366,25 @@ async function askAfterUnresponsiveWindow(signal: AbortSignal, reloading = false
     title: 'TapeBox',
     message: t.t('quit.unresponsive.message'),
     closeLabel: t.t('common.cancel'),
-    actions: [{ id: 'quit-anyway', label: t.t(reloading ? 'nativeMenu.reload' : 'quit.libraryNotSaved.quitAnyway'), danger: true }],
+    actions: [{ id: 'quit-anyway', label: t.t(reloading ? 'nativeMenu.reload' : 'quit.collectionNotSaved.quitAnyway'), danger: true }],
     signal,
   })
   return choice === 'quit-anyway'
 }
 
-async function askAfterFailedLibrarySave(signal: AbortSignal): Promise<QuitChoice> {
+async function askAfterFailedCollectionSave(signal: AbortSignal): Promise<QuitChoice> {
   const t = mainTranslator()
   const choice = await showPlainMessageDialog({
     // Above the window the user quit from, such as Records (window-conventions).
     owner: questionOwner(),
     language: t.language,
-    title: t.t('quit.libraryNotSaved.title'),
-    message: t.t('quit.libraryNotSaved.message'),
-    detail: t.t('quit.libraryNotSaved.detail'),
+    title: t.t('quit.collectionNotSaved.title'),
+    message: t.t('quit.collectionNotSaved.message'),
+    detail: t.t('quit.collectionNotSaved.detail'),
     closeLabel: t.t('common.cancel'),
     actions: [
       { id: 'retry', label: t.t('common.tryAgain') },
-      { id: 'quit-anyway', label: t.t('quit.libraryNotSaved.quitAnyway'), danger: true },
+      { id: 'quit-anyway', label: t.t('quit.collectionNotSaved.quitAnyway'), danger: true },
     ],
     signal,
   })

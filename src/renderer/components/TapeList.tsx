@@ -42,7 +42,7 @@ export function TapeList() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {visible.length === 0 ? (
-          <div className="p-6 text-sm text-fg">{t.t(filter === 'archived' ? 'tapes.emptyArchived' : 'tapes.emptyInbox')}</div>
+          <div className="p-6 text-sm text-fg">{t.t(filter === 'shelf' ? 'tapes.emptyShelf' : 'tapes.emptyInbox')}</div>
         ) : (
           <>
             <div ref={topRef} />

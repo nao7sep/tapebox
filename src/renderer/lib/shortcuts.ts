@@ -31,13 +31,13 @@ export const SHORTCUTS = {
   moveSelection: { label: 'shortcuts.moveSelection', chords: [[{ key: 'ArrowUp', mod: 'any', shift: 'any' }], [{ key: 'ArrowDown', mod: 'any', shift: 'any' }]] },
   reorder: { label: 'shortcuts.reorder', chords: [[{ key: 'ArrowUp', mod: 'yes', shift: 'yes' }], [{ key: 'ArrowDown', mod: 'yes', shift: 'yes' }]] },
   inbox: { label: 'filter.inbox', chords: [[{ key: '1', mod: 'yes', shift: 'any' }]] },
-  archived: { label: 'filter.archived', chords: [[{ key: '2', mod: 'yes', shift: 'any' }]] },
-  searchArchive: { label: 'shortcuts.searchArchive', chords: [[plain('/')]] },
+  shelf: { label: 'filter.shelf', chords: [[{ key: '2', mod: 'yes', shift: 'any' }]] },
+  searchShelf: { label: 'shortcuts.searchShelf', chords: [[plain('/')]] },
   mainAction: { label: 'shortcuts.mainAction', chords: [[plain('Enter')]] },
   refreshMetadata: { label: 'detail.refreshMetadata', chords: [[plain('m')]] },
   rename: { label: 'detail.rename', chords: [[plain('r')]] },
   export: { label: 'detail.export', chords: [[plain('e')]] },
-  archiveToggle: { label: 'shortcuts.archiveToggle', chords: [[plain('a')]] },
+  shelveToggle: { label: 'shortcuts.shelveToggle', chords: [[plain('a')]] },
   // Backspace or Delete removes, with or without Cmd/Ctrl.
   remove: { label: 'remove.moveToTrash', chords: [[{ key: 'Backspace', mod: 'any', shift: 'any' }], [{ key: 'Delete', mod: 'any', shift: 'any' }]] },
   // YouTube's J and L beside the arrows; Shift+arrow is left to the player.
@@ -60,13 +60,13 @@ export const SHORTCUT_GROUPS: readonly { title: MessageKey; note?: MessageKey; s
   {
     title: 'shortcuts.navigate',
     note: 'shortcuts.navigateNote',
-    shortcuts: [SHORTCUTS.moveSelection, SHORTCUTS.reorder, SHORTCUTS.inbox, SHORTCUTS.archived, SHORTCUTS.searchArchive],
+    shortcuts: [SHORTCUTS.moveSelection, SHORTCUTS.reorder, SHORTCUTS.inbox, SHORTCUTS.shelf, SHORTCUTS.searchShelf],
   },
   {
     // Same order as the detail-pane button row: primary action, then the
     // housekeeping group (refresh → rename → export), then archive, then remove.
     title: 'shortcuts.selectedTape',
-    shortcuts: [SHORTCUTS.mainAction, SHORTCUTS.refreshMetadata, SHORTCUTS.rename, SHORTCUTS.export, SHORTCUTS.archiveToggle, SHORTCUTS.remove],
+    shortcuts: [SHORTCUTS.mainAction, SHORTCUTS.refreshMetadata, SHORTCUTS.rename, SHORTCUTS.export, SHORTCUTS.shelveToggle, SHORTCUTS.remove],
   },
   { title: 'shortcuts.player', note: 'shortcuts.playerNote', shortcuts: [SHORTCUTS.seek, SHORTCUTS.jumpChapter] },
   { title: 'settings.tabGeneral', shortcuts: [SHORTCUTS.addUrl, SHORTCUTS.showList, SHORTCUTS.closeDialog] },

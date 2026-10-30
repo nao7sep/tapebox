@@ -130,7 +130,7 @@ describe('copies onto exFAT', () => {
     try {
       // Import from the exFAT volume into the library on the system volume.
       const first = await writeBundle(join(volume, 'incoming'), 'First', 'https://example.test/first')
-      const imported = await invoke('library:import', { paths: first }) as ImportResult
+      const imported = await invoke('collection:import', { paths: first }) as ImportResult
       expect(imported.issues).toEqual([])
       const [tape] = imported.imported
       expect((await stat(join(home, 'library', 'First.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
@@ -153,7 +153,7 @@ describe('copies onto exFAT', () => {
 
       // Import from the system volume into the library that now lives on exFAT.
       const second = await writeBundle(join(root, 'incoming'), 'Second', 'https://example.test/second')
-      const again = await invoke('library:import', { paths: second }) as ImportResult
+      const again = await invoke('collection:import', { paths: second }) as ImportResult
       expect(again.issues).toEqual([])
       expect((await stat(join(library, 'Second.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
 

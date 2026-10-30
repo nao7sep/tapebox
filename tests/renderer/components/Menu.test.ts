@@ -290,7 +290,7 @@ describe('Menu', () => {
             align: 'right',
             trigger: (props: Record<string, unknown>) =>
               React.createElement('button', { ...props, 'data-testid': 'trigger' }, 'Move to box'),
-            children: React.createElement(MenuItem, { onSelect: vi.fn(), children: 'Unboxed' }),
+            children: React.createElement(MenuItem, { onSelect: vi.fn(), children: 'Loose tapes' }),
           }),
         )
       })

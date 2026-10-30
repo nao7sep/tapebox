@@ -7,7 +7,7 @@ const TAPE_LIST_PAGE = 10
 
 /**
  * The keyboard spine shared by all three tape lists — the inbox, a box's tapes, and
- * the archive search results: arrow / Home / End / PageUp / PageDown navigation over
+ * the Shelf search results: arrow / Home / End / PageUp / PageDown navigation over
  * the visible tapes, selecting whichever one is arrowed to, plus a mount-time focus
  * hand-off so the arrows work the instant the view appears (without yanking the caret
  * out of the search box). Selecting is the only "activation" — the detail pane

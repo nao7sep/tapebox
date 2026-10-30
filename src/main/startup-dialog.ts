@@ -1,7 +1,7 @@
 import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { mainTranslator } from './i18n.js'
 import { NewerFormatError } from './io/format-version.js'
-import { LibraryFolderSettingError, StoreAccessError } from './io/store-access.js'
+import { CollectionFolderSettingError, StoreAccessError } from './io/store-access.js'
 import type { MessageValues } from '@shared/i18n/translate'
 import type { BrowserWindow } from 'electron'
 
@@ -14,8 +14,8 @@ import type { BrowserWindow } from 'electron'
  */
 
 type Notice =
-  | 'settingsUnreadable' | 'libraryUnreadable' | 'settingsKept' | 'tapesDamaged'
-  | 'failed' | 'storeNewer' | 'storeInaccessible' | 'libraryFolderUnreadable'
+  | 'settingsUnreadable' | 'shelfUnreadable' | 'settingsKept' | 'tapesDamaged'
+  | 'failed' | 'storeNewer' | 'storeInaccessible' | 'collectionFolderUnreadable'
 
 async function showNotice(notice: Notice, owner?: BrowserWindow, values?: MessageValues): Promise<void> {
   const t = mainTranslator()
@@ -36,7 +36,7 @@ export async function notifyCorruptConfig(quarantinePath: string, owner?: Browse
 }
 
 export async function notifyCorruptSession(quarantinePath: string, owner?: BrowserWindow): Promise<void> {
-  await showNotice('libraryUnreadable', owner, { path: quarantinePath })
+  await showNotice('shelfUnreadable', owner, { path: quarantinePath })
 }
 
 /** Tapes whose own tape.json could not be read are named by that file, which
@@ -57,6 +57,6 @@ export async function notifySettingsKept(configPath: string, owner?: BrowserWind
 export async function notifyStartupFailure(error: unknown): Promise<void> {
   if (error instanceof NewerFormatError) await showNotice('storeNewer', undefined, { path: error.path })
   else if (error instanceof StoreAccessError) await showNotice('storeInaccessible', undefined, { path: error.path })
-  else if (error instanceof LibraryFolderSettingError) await showNotice('libraryFolderUnreadable', undefined, { path: error.path })
+  else if (error instanceof CollectionFolderSettingError) await showNotice('collectionFolderUnreadable', undefined, { path: error.path })
   else await showNotice('failed')
 }

@@ -18,7 +18,7 @@ vi.mock('electron', () => ({
   } },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => state.root, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => state.root, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/ipc/events', () => ({ emit }))
@@ -41,7 +41,7 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
   }
 })
 
-import { registerLibraryHandlers } from '@main/ipc/library'
+import { registerCollectionHandlers } from '@main/ipc/collection'
 import { registerBoxHandlers } from '@main/ipc/boxes'
 import * as session from '@main/store/session'
 
@@ -102,7 +102,7 @@ beforeEach(async () => {
   session.upsertBox({ id: SOURCE, name: 'Source', order: 0 })
   session.upsertBox({ id: DEST, name: 'Destination', order: 1 })
   await session.persistNow()
-  registerLibraryHandlers()
+  registerCollectionHandlers()
   registerBoxHandlers()
   emit.mockClear()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })

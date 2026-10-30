@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { TapeSchema, type Tape } from '@shared/domain'
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 
 function tape(overrides: Partial<Tape>): Tape {
   return TapeSchema.parse({
@@ -16,24 +16,24 @@ function tape(overrides: Partial<Tape>): Tape {
 
 describe('library source identity', () => {
   it('matches the same URL with tracking parameters or a fragment added', () => {
-    const index = librarySourceIndex([tape({})])
+    const index = collectionSourceIndex([tape({})])
     expect(index.find({ url: 'https://www.youtube.com/watch?v=X&si=abc#t=3' })).toBe('Tape000001')
     expect(index.has({ url: 'https://www.youtube.com/watch?v=Y' })).toBe(false)
   })
 
   it('matches a different URL with the same extractor and id, whatever the extractor spelling', () => {
-    const index = librarySourceIndex([tape({ extractor: 'youtube', sourceId: 'X' })])
+    const index = collectionSourceIndex([tape({ extractor: 'youtube', sourceId: 'X' })])
     expect(index.has({ url: 'https://youtu.be/X', extractor: 'Youtube', sourceId: 'X' })).toBe(true)
   })
 
   it('never matches on a bare id from another or an unknown extractor', () => {
-    const index = librarySourceIndex([tape({ extractor: 'youtube', sourceId: 'X' })])
+    const index = collectionSourceIndex([tape({ extractor: 'youtube', sourceId: 'X' })])
     expect(index.has({ url: 'https://vimeo.com/X', extractor: 'vimeo', sourceId: 'X' })).toBe(false)
     expect(index.has({ url: 'https://example.test/X', extractor: null, sourceId: 'X' })).toBe(false)
   })
 
   it('leaves out the tape doing the checking', () => {
     const self = tape({ extractor: 'youtube', sourceId: 'X' })
-    expect(librarySourceIndex([self], self.id).has({ url: self.sourceUrl, extractor: 'youtube', sourceId: 'X' })).toBe(false)
+    expect(collectionSourceIndex([self], self.id).has({ url: self.sourceUrl, extractor: 'youtube', sourceId: 'X' })).toBe(false)
   })
 })

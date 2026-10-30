@@ -16,9 +16,9 @@ describe('presentFailure', () => {
   it('shows the copy main authored for the user instead of the generic fallback', () => {
     const error = new IpcCallError('settings:update', {
       code: 'refused',
-      userMessage: message('errors.libraryMoveBlocked'),
+      userMessage: message('errors.collectionMoveBlocked'),
     })
-    expect(presentFailure(error, FALLBACK, 'settings save failed')).toEqual(message('errors.libraryMoveBlocked'))
+    expect(presentFailure(error, FALLBACK, 'settings save failed')).toEqual(message('errors.collectionMoveBlocked'))
     expect(logError).not.toHaveBeenCalled()
   })
 

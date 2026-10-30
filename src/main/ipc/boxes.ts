@@ -11,8 +11,8 @@ import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
 
 /**
- * Organization of archived tapes into boxes. A box is a named, ordered list; a
- * tape belongs to one box (Tape.boxId) or to Unboxed. Box membership and
+ * Organization of shelved tapes into boxes. A box is a named, ordered list; a
+ * tape belongs to one box (Tape.boxId) or to Loose tapes. Box membership and
  * within-box order live on the tapes; the box list itself is in the session.
  */
 export function registerBoxHandlers(): void {
@@ -28,7 +28,7 @@ export function registerBoxHandlers(): void {
     const box: Box = { id: nanoid(10), name: finalName, order }
     session.upsertBox(box)
     emit('boxes:changed', session.getBoxes())
-    log.info('archive: box created', { id: box.id, name: box.name })
+    log.info('shelf: box created', { id: box.id, name: box.name })
     return box
   })
 
@@ -45,14 +45,14 @@ export function registerBoxHandlers(): void {
     const updated = { ...box, name: trimmed }
     session.upsertBox(updated)
     emit('boxes:changed', session.getBoxes())
-    log.info('archive: box renamed', { id: box.id, from: box.name, to: trimmed })
+    log.info('shelf: box renamed', { id: box.id, from: box.name, to: trimmed })
     return updated
   })
 
   handle('boxes:delete', async ({ boxId }) => {
-    // The deleted box's tapes fall back to Unboxed, landing on top as a block in the
+    // The deleted box's tapes fall back to Loose tapes, landing on top as a block in the
     // order they held inside the box — so their arrangement survives the delete
-    // and their orders can't collide with whatever Unboxed already holds.
+    // and their orders can't collide with whatever Loose tapes already holds.
     const orphans = session
       .getTapes()
       .filter((t) => t.boxId === boxId)
@@ -68,7 +68,7 @@ export function registerBoxHandlers(): void {
     session.removeBox(boxId)
     emit('boxes:changed', session.getBoxes())
     if (changed.length > 0) emit('tapes:updatedMany', changed)
-    log.info('archive: box deleted', { id: boxId, orphaned: changed.length })
+    log.info('shelf: box deleted', { id: boxId, orphaned: changed.length })
   })
 
   handle('boxes:reorder', async ({ orderedIds }) => {
@@ -78,7 +78,7 @@ export function registerBoxHandlers(): void {
     // the rest.
     const changed = await session.reorderBoxesDurably(orderedIds)
     if (changed.length > 0) emit('boxes:changed', session.getBoxes())
-    log.info('archive: boxes reordered', { count: orderedIds.length })
+    log.info('shelf: boxes reordered', { count: orderedIds.length })
   })
 
   handle('boxes:place', async ({ tapeIds, boxId }) => {
@@ -88,8 +88,8 @@ export function registerBoxHandlers(): void {
     const moving = new Set(tapeIds)
     const all = session.getTapes()
 
-    // The destination list's current members (archived tapes filed there), minus
-    // anything being moved. Unboxed is boxId === null, so the archived guard keeps
+    // The destination list's current members (shelved tapes filed there), minus
+    // anything being moved. Loose tapes is boxId === null, so the archived guard keeps
     // inbox tapes — which also have boxId null — out of it.
     const members = all
       .filter((i) => i.shelved && i.boxId === boxId && !moving.has(i.id))

@@ -1,4 +1,4 @@
-import { getLibraryDir } from '@main/store/config'
+import { getCollectionDir } from '@main/store/config'
 
 /**
  * The one owner of file actions in the library folder. Import, rename, Apply's
@@ -16,15 +16,15 @@ let turns: Promise<unknown> = Promise.resolve()
 let moving = false
 
 /** Run `work` at its turn, with the library folder resolved when the turn starts. */
-export function withLibraryTurn<T>(work: (libraryDir: string) => Promise<T>): Promise<T> {
-  const run = turns.then(() => work(getLibraryDir()))
+export function withCollectionTurn<T>(work: (libraryDir: string) => Promise<T>): Promise<T> {
+  const run = turns.then(() => work(getCollectionDir()))
   turns = run.catch(() => {})
   return run
 }
 
 /** Run a library move at its turn, holding off new downloads until it settles. */
-export function withLibraryMove<T>(work: () => Promise<T>): Promise<T> {
-  return withLibraryTurn(async () => {
+export function withCollectionMove<T>(work: () => Promise<T>): Promise<T> {
+  return withCollectionTurn(async () => {
     moving = true
     try {
       return await work()
@@ -34,6 +34,6 @@ export function withLibraryMove<T>(work: () => Promise<T>): Promise<T> {
   })
 }
 
-export function isLibraryMoving(): boolean {
+export function isCollectionMoving(): boolean {
   return moving
 }

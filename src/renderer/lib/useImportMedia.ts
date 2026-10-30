@@ -26,7 +26,7 @@ export function useImportMedia(): (
       return
     }
     try {
-      const result = await ipcInvoke('library:import', { paths })
+      const result = await ipcInvoke('collection:import', { paths })
       const combined = { ...result, issues: [...result.issues, ...preliminaryIssues] }
       // A complete success is represented by its new tape rows. It does not erase
       // an unrelated earlier issue that the user has not dismissed.

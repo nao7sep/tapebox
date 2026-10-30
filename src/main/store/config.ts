@@ -3,7 +3,7 @@ import { paths } from '@main/paths'
 import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { FORMAT_VERSION_KEY, FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
-import { LibraryFolderSettingError, StoreAccessError } from '@main/io/store-access'
+import { CollectionFolderSettingError, StoreAccessError } from '@main/io/store-access'
 import { maskCredentials, maskYtdlpArgs } from '@main/io/mask'
 import { tokenizeArgs } from '@main/services/ytdlp-args'
 import { describeError } from '@shared/error'
@@ -34,7 +34,7 @@ const QUIET_SETS: ReadonlySet<string> = new Set(['theme', 'language'])
 export async function loadSettings(): Promise<ConfigLoadResult> {
   const found = await readSettingsStore(paths.config)
   if (found !== null && 'sets' in found) {
-    if (found.rejected.includes('libraryDir')) throw new LibraryFolderSettingError(paths.config)
+    if (found.rejected.includes('libraryDir')) throw new CollectionFolderSettingError(paths.config)
     cache = effectiveSettings(found.sets)
     kept = found.kept
     const material = found.rejected.filter((key) => !QUIET_SETS.has(key))
@@ -101,7 +101,7 @@ export function getSettings(): Settings {
  * through this is what keeps a cleared Settings field from ever producing a
  * cwd-relative path (join('', file)) — see storage-path-conventions.
  */
-export function getLibraryDir(): string {
+export function getCollectionDir(): string {
   return getSettings().libraryDir || paths.library
 }
 

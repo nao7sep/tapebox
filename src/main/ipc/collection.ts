@@ -4,7 +4,7 @@ import { shell } from 'electron'
 import { handle } from './handle'
 import { emit, sendTo } from './events'
 import * as session from '@main/store/session'
-import { getLibraryDir, getSettings } from '@main/store/config'
+import { getCollectionDir, getSettings } from '@main/store/config'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import {
@@ -17,7 +17,7 @@ import { openExternalPlayer } from '@main/io/external-player'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
-import { librarySidecar, readSidecarFile, writeSidecar } from '@main/core/sidecar'
+import { collectionSidecar, readSidecarFile, writeSidecar } from '@main/core/sidecar'
 import { reserveTapeId } from '@main/core/stem'
 import { areaDir, tapeDir, tapeFile } from '@main/paths'
 import { portableFilenameIdentity } from '@main/core/filename'
@@ -25,7 +25,7 @@ import { classifyImport, tapeFromSidecar } from '@main/core/import-classify'
 import { unsupportedSelectedPaths } from '@main/core/import-selection'
 import * as queue from '@main/queue/manager'
 import { cancelWork, runCancellable } from '@main/work-registry'
-import { withLibraryTurn } from '@main/library-writes'
+import { withCollectionTurn } from '@main/collection-writes'
 import { type SourceRef } from '@shared/source-identity'
 import { downloadThumbnail, probe } from '@main/services/ytdlp'
 import { saveThumbnailJpeg } from '@main/services/ffmpeg'
@@ -34,7 +34,7 @@ import { TAPE_FILE, type Tape } from '@shared/domain'
 import type { ImportIssue, ImportResult, RefreshedMetadata, SidecarRaw } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
-import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
+import { ALREADY_IN_COLLECTION } from '@shared/import-issues'
 
 const PASSIVE_MEDIA_EXTENSIONS = new Set(['.mp4', '.m4v', '.mkv', '.webm', '.mov', '.avi', '.mpg', '.mpeg', '.ogv', '.flv', '.wmv', '.3gp', '.mp3', '.m4a', '.aac', '.flac', '.wav', '.ogg', '.opus', '.aiff'])
 
@@ -45,13 +45,13 @@ function emitCurrent(tapeIds: readonly string[]): void {
   if (current.length > 0) emit('tapes:updatedMany', current)
 }
 
-export function registerLibraryHandlers(): void {
-  session.onCatalogSaveFailure(() => emit('library:saveFailed', null))
+export function registerCollectionHandlers(): void {
+  session.onCollectionSaveFailure(() => emit('collection:saveFailed', null))
 
   // The catalog goes as this subscription's first event, sent in the same turn
   // as any later change would be, so the window needs no second source.
-  handle('library:subscribe', async (_req, event) => {
-    sendTo(event.sender, 'library:current', { tapes: session.getTapes(), boxes: session.getBoxes() })
+  handle('collection:subscribe', async (_req, event) => {
+    sendTo(event.sender, 'collection:current', { tapes: session.getTapes(), boxes: session.getBoxes() })
   })
 
   // Shelving and taking back move tape folders, so they take a collection turn:
@@ -59,7 +59,7 @@ export function registerLibraryHandlers(): void {
   // tape still downloading writes into its Inbox folder, so only a downloaded
   // tape with no job shelves; shelved tapes start on top of Loose tapes, in the
   // order they were selected.
-  handle('library:archive', ({ tapeIds }) => withLibraryTurn(async () => {
+  handle('collection:shelve', ({ tapeIds }) => withCollectionTurn(async () => {
     const shelvable = tapeIds.filter((id) => session.getTape(id)?.state === 'downloaded' && !queue.isActive(id))
     if (shelvable.length === 0) return
     try {
@@ -71,7 +71,7 @@ export function registerLibraryHandlers(): void {
 
   // Back to Inbox drops the tape's Shelf organization (its box and place); the
   // Inbox shows it by when it was added.
-  handle('library:unarchive', ({ tapeIds }) => withLibraryTurn(async () => {
+  handle('collection:unshelve', ({ tapeIds }) => withCollectionTurn(async () => {
     try {
       await session.unshelveTapes(tapeIds)
     } finally {
@@ -79,7 +79,7 @@ export function registerLibraryHandlers(): void {
     }
   }))
 
-  // Reindex one list (the inbox, a box, or Unboxed) to the caller's sequence after
+  // Reindex one list (the inbox, a box, or Loose tapes) to the caller's sequence after
   // a drag — order = position, top first. Membership (archived / box) is left
   // untouched; this is reorder-in-place, not a move between lists.
   //
@@ -94,7 +94,7 @@ export function registerLibraryHandlers(): void {
 
   // Registered as work so a quit waits for it, files and catalog commit alike,
   // before its final catalog save. Removal is not abandoned midway: it settles.
-  handle('library:remove', ({ tapeIds, deleteFiles }) => runCancellable(async () => {
+  handle('collection:remove', ({ tapeIds, deleteFiles }) => runCancellable(async () => {
     const { failed } = await removeTapes(tapeIds, deleteFiles)
     // Tapes whose files couldn't be discarded are KEPT (not removed from the list);
     // surface the failure so the user is never told a removal succeeded while the
@@ -104,24 +104,24 @@ export function registerLibraryHandlers(): void {
     }
   }))
 
-  handle('library:getSidecar', async ({ tapeId }) => {
+  handle('collection:getSidecar', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape || !tape.sidecarFilename) {
       throw new Error(`Sidecar not available for tape ${tapeId}`)
     }
-    return await readSidecarFile(tapeFile(getLibraryDir(), tape, tape.sidecarFilename)) as SidecarRaw
+    return await readSidecarFile(tapeFile(getCollectionDir(), tape, tape.sidecarFilename)) as SidecarRaw
   })
 
-  handle('library:reveal', async ({ tapeId }) => {
+  handle('collection:reveal', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape?.filename) throw new Error('No file to reveal for this tape')
-    shell.showItemInFolder(tapeFile(getLibraryDir(), tape, tape.filename))
+    shell.showItemInFolder(tapeFile(getCollectionDir(), tape, tape.filename))
   })
 
-  handle('library:playExternal', async ({ tapeId }) => {
+  handle('collection:playExternal', async ({ tapeId }) => {
     const tape = session.getTape(tapeId)
     if (!tape?.filename) throw new Error('No file to play for this tape')
-    const full = tapeFile(getLibraryDir(), tape, tape.filename)
+    const full = tapeFile(getCollectionDir(), tape, tape.filename)
     const player = getSettings().externalPlayer.trim()
 
     if (!player) {
@@ -136,10 +136,10 @@ export function registerLibraryHandlers(): void {
     await openExternalPlayer(player, full)
   })
 
-  handle('library:rename', ({ tapeId, name }) => runCancellable((signal) =>
-    withLibraryTurn((libraryDir) => renameTape(tapeId, name, libraryDir, signal))))
+  handle('collection:rename', ({ tapeId, name }) => runCancellable((signal) =>
+    withCollectionTurn((libraryDir) => renameTape(tapeId, name, libraryDir, signal))))
 
-  handle('library:probeMetadata', async ({ tapeId, requestId }) => {
+  handle('collection:probeMetadata', async ({ tapeId, requestId }) => {
     const tape = session.getTape(tapeId)
     if (!tape) throw new Error(`Tape not found: ${tapeId}`)
 
@@ -159,19 +159,19 @@ export function registerLibraryHandlers(): void {
     }
   })
 
-  handle('library:cancelMetadataProbe', async ({ requestId }) => {
+  handle('collection:cancelMetadataProbe', async ({ requestId }) => {
     cancelWork(`metadata-probe:${requestId}`)
   })
 
   // Writes the sidecar and may save a poster into the library, so it takes a library turn.
-  handle('library:applyMetadata', ({ tapeId, metadata }) => runCancellable((signal) =>
-    withLibraryTurn((dir) => applyMetadata(tapeId, metadata, dir, signal))))
+  handle('collection:applyMetadata', ({ tapeId, metadata }) => runCancellable((signal) =>
+    withCollectionTurn((dir) => applyMetadata(tapeId, metadata, dir, signal))))
 
   // Sidecar-driven import: the whole selection arrives here so this filesystem-owning
   // boundary can tell referenced bundle companions from unsupported extras. One
   // sidecar = one tape, so a duplicate is reported once, not once per selected file.
-  handle('library:import', ({ paths }) => runCancellable((signal) =>
-    withLibraryTurn((libraryDir) => importBundles(paths, libraryDir, signal))))
+  handle('collection:import', ({ paths }) => runCancellable((signal) =>
+    withCollectionTurn((libraryDir) => importBundles(paths, libraryDir, signal))))
 }
 
 async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, libraryDir: string, signal: AbortSignal): Promise<Tape> {
@@ -350,7 +350,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // The catalog owns source admission, even for missing files. Admit the
     // source before awaiting any of the companion-file work.
     if (session.sourceOwner(source)) {
-      issues.push({ path: sidecarPath, reason: message(ALREADY_IN_LIBRARY), severity: 'information' })
+      issues.push({ path: sidecarPath, reason: message(ALREADY_IN_COLLECTION), severity: 'information' })
       continue
     }
 
@@ -372,7 +372,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     const id = await reserveTapeId(libraryDir, [...session.getTapes(), ...imported].map((tape) => tape.id))
     const bundleStem = mediaFilename.slice(0, -extname(mediaFilename).length)
     const mediaStem = portableFilenameIdentity(`${bundleStem}.json`) === portableFilenameIdentity(TAPE_FILE) ? id : bundleStem
-    const libraryMedia = `${mediaStem}${extname(mediaFilename)}`
+    const collectionMedia = `${mediaStem}${extname(mediaFilename)}`
     const sidecarFilename = `${mediaStem}.json`
     const folder = tapeDir(libraryDir, { id, shelved: false })
     try {
@@ -381,8 +381,8 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       // the user's library membership, is what is backed up.
       await mkdir(areaDir(libraryDir, false), { recursive: true })
       await mkdir(folder)
-      await copyFileNoOverwrite(srcMedia, join(folder, libraryMedia), { hardLinks, signal })
-      await writeSidecar(join(folder, sidecarFilename), librarySidecar(sidecar))
+      await copyFileNoOverwrite(srcMedia, join(folder, collectionMedia), { hardLinks, signal })
+      await writeSidecar(join(folder, sidecarFilename), collectionSidecar(sidecar))
     } catch (err) {
       try {
         await rm(folder, { recursive: true, force: true })
@@ -442,7 +442,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     const tape = tapeFromSidecar(sidecar, {
       id,
       sourceUrl,
-      mediaFilename: libraryMedia,
+      mediaFilename: collectionMedia,
       sidecarFilename,
       thumbnailFilename,
       addedIndex: imported.length,
@@ -476,7 +476,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     })
   }
 
-  log.info('library:import', { imported: imported.length, issues: issues.length })
+  log.info('collection:import', { imported: imported.length, issues: issues.length })
   return { imported, issues }
 }
 
@@ -616,7 +616,7 @@ export async function removeTapes(
   const release = queue.holdFromScheduling(ids)
   try {
     for (const id of ids) if (queue.isActive(id)) await queue.cancel(id)
-    return await withLibraryTurn((libraryDir) => removeTapesFrom(libraryDir, [...ids], deleteFiles))
+    return await withCollectionTurn((libraryDir) => removeTapesFrom(libraryDir, [...ids], deleteFiles))
   } finally {
     release()
   }

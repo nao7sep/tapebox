@@ -40,7 +40,7 @@ describe('composite row states', () => {
 // New truncation is reviewed here, by file, rather than slipping in with a class
 // name; the path for each kept site is recorded beside it.
 const REVIEWED_MARKERS: Record<string, number> = {
-  // Box rows and Unboxed; renaming shows a name whole.
+  // Box rows and Loose tapes; renaming shows a name whole.
   'components/BoxList.tsx': 2,
   // Chapter rows; the visible start tells chapters apart, with their times.
   'components/ChapterList.tsx': 1,

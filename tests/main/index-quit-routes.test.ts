@@ -212,7 +212,7 @@ describe('the quit questions', () => {
       title: 'TapeBox',
       message: 'quit.unresponsive.message',
       closeLabel: 'common.cancel',
-      actions: [{ id: 'quit-anyway', label: 'quit.libraryNotSaved.quitAnyway', danger: true }],
+      actions: [{ id: 'quit-anyway', label: 'quit.collectionNotSaved.quitAnyway', danger: true }],
     })
     expect(state.order).not.toContain('save-library')
     expect(state.order).not.toContain('stop-downloads')

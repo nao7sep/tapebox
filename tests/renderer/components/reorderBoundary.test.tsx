@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
   } },
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => bridge.dir, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => bridge.dir, getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }) }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/ipc/events', () => ({ emit: (channel: string, payload: unknown) => {
@@ -68,17 +68,17 @@ vi.mock('@dnd-kit/react', () => ({
 vi.mock('@dnd-kit/react/sortable', () => ({ useSortable: () => ({ ref: () => {} }), isSortable: () => false, isSortableOperation: () => false }))
 vi.mock('@dnd-kit/dom', () => ({ Accessibility: class {}, PointerActivationConstraints: { Distance: class {} }, PointerSensor: { configure: () => ({}) } }))
 
-import { registerLibraryHandlers } from '@main/ipc/library'
+import { registerCollectionHandlers } from '@main/ipc/collection'
 import { registerBoxHandlers } from '@main/ipc/boxes'
 import * as session from '@main/store/session'
 import { readCollection } from '@main/store/collection-files'
-import { ArchiveOrganizer } from '@renderer/components/ArchiveOrganizer'
+import { ShelfOrganizer } from '@renderer/components/ShelfOrganizer'
 import { startIpcSync, type IpcSync } from '@renderer/ipc/sync'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { useLayoutStore } from '@renderer/store/layout'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 
@@ -119,13 +119,13 @@ beforeEach(async () => {
   bridge.dir = directory
   bridge.handlers.clear(); bridge.listeners.clear(); bridge.gates = []; bridge.calls = []; releases = []
   await session.loadSession()
-  registerLibraryHandlers(); registerBoxHandlers()
-  useOrderFailuresStore.setState({ boxes: null, archiveTapes: {}, attempts: {}, pending: {} })
+  registerCollectionHandlers(); registerBoxHandlers()
+  useOrderFailuresStore.setState({ boxes: null, shelfTapes: {}, attempts: {}, pending: {} })
   useTapesStore.setState({ tapes: [], progress: {}, stalled: {} })
   useBoxesStore.setState({ boxes: [], editingId: null, draftName: '', pendingRenames: 0 })
   useSelectionStore.setState({ selectedId: ids[0] })
-  useArchiveStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
-  useFilterStore.setState({ filter: 'archived' })
+  useShelfStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
+  useFilterStore.setState({ filter: 'shelf' })
   useLayoutStore.getState().setHydratedLayout(defaultLayout)
   HTMLElement.prototype.scrollIntoView = vi.fn()
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
@@ -153,10 +153,10 @@ describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC,
       ids.forEach((id, order) => session.upsertBox({ id, name: id, order }))
       useBoxesStore.getState().setBoxes(session.getBoxes())
       // The box list moves the selected box.
-      useArchiveStore.getState().selectBox(ids[0])
+      useShelfStore.getState().selectBox(ids[0])
     }
     await session.persistNow()
-    await act(async () => root.render(createElement(ArchiveOrganizer)))
+    await act(async () => root.render(createElement(ShelfOrganizer)))
     const label = kind === 'tapes' ? 'Box tapes' : 'Boxes'
     const first = gate(firstFails)
     await reorder(label)
@@ -174,7 +174,7 @@ describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC,
     expect(identityOrder(main)).toEqual([ids[1], ids[2], ids[0]])
     expect(renderer).toEqual(main)
     expect(useOrderFailuresStore.getState().pending).toEqual({})
-    expect(kind === 'tapes' ? useOrderFailuresStore.getState().archiveTapes.unboxed ?? null : useOrderFailuresStore.getState().boxes).toBeNull()
+    expect(kind === 'tapes' ? useOrderFailuresStore.getState().shelfTapes.unboxed ?? null : useOrderFailuresStore.getState().boxes).toBeNull()
     await session.persistNow()
     const saved = await readCollection(directory)
     if (saved.kind !== 'current') throw new Error('expected the current collection layout')

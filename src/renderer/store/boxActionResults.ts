@@ -8,7 +8,7 @@ type BoxActionResultsState = {
   setResult: (action: BoxAction, message: Message | null) => void
 }
 
-/** Retained results owned by the archive's box list, independent by command. */
+/** Retained results owned by the Shelf's box list, independent by command. */
 export const useBoxActionResultsStore = create<BoxActionResultsState>((set) => ({
   results: {},
   setResult: (action, message) => set((state) => {

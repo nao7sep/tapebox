@@ -35,11 +35,11 @@ describe('startup recovery dialogs', () => {
     }))
   })
 
-  it('names where an unreadable library file was set aside and what TapeBox started with', async () => {
+  it('names where an unreadable shelf file was set aside and what TapeBox started with', async () => {
     await notifyCorruptSession('/data/shelf-20260101-000000-000-utc.invalid')
 
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Library could not be opened',
+      title: 'Shelf could not be read',
       message: expect.stringContaining('/data/shelf-20260101-000000-000-utc.invalid'),
       detail: expect.stringContaining('tapes are all there'),
     }))

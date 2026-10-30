@@ -8,7 +8,7 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 
 /**
  * Read-only results for an archive search: matching tapes across all boxes,
- * ordered exactly like the box list reads (Unboxed first, then boxes in their
+ * ordered exactly like the box list reads (Loose tapes first, then boxes in their
  * order) and grouped under a header band per box. The header — a flush, borderless
  * strip that sticks to the top while scrolling — does the job the old per-row
  * "in <box>" caption did, but as a real separator instead of a repeated label.
@@ -24,11 +24,11 @@ export function SearchResults() {
   const t = useI18n()
 
   if (tapes.length === 0) {
-    return <div className="p-6 text-sm text-fg">{t.t('archive.noMatches')}</div>
+    return <div className="p-6 text-sm text-fg">{t.t('shelf.noMatches')}</div>
   }
 
   const boxName = (boxId: string | null) =>
-    (boxId === null ? null : boxes.find((g) => g.id === boxId)?.name) ?? t.t('boxes.unboxed')
+    (boxId === null ? null : boxes.find((g) => g.id === boxId)?.name) ?? t.t('boxes.loose')
 
   // The list already arrives ordered by box, so equal-box rows are contiguous —
   // group them in one pass, starting a new group whenever the box changes.
@@ -40,10 +40,10 @@ export function SearchResults() {
   }
 
   return (
-    <div ref={kb.ref} {...kb.listboxProps} role="listbox" aria-label={t.t('archive.searchResults')} className="min-h-0 flex-1 overflow-y-auto pb-3 outline-none">
+    <div ref={kb.ref} {...kb.listboxProps} role="listbox" aria-label={t.t('shelf.searchResults')} className="min-h-0 flex-1 overflow-y-auto pb-3 outline-none">
       {groups.map((group) => (
         <section
-          key={group.boxId ?? '__unboxed__'}
+          key={group.boxId ?? '__loose__'}
           role="group"
           aria-label={boxName(group.boxId)}
         >

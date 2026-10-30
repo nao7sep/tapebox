@@ -5,10 +5,10 @@ import type { MessageKey } from '@shared/i18n/catalogues'
 
 const labels: Record<Filter, MessageKey> = {
   inbox: 'filter.inbox',
-  archived: 'filter.archived',
+  shelf: 'filter.shelf',
 }
 
-const order: Filter[] = ['inbox', 'archived']
+const order: Filter[] = ['inbox', 'shelf']
 
 export function FilterChips() {
   const filter = useFilterStore((s) => s.filter)
@@ -18,7 +18,7 @@ export function FilterChips() {
 
   const counts: Record<Filter, number> = {
     inbox: tapes.filter((i) => !i.shelved).length,
-    archived: tapes.filter((i) => i.shelved).length,
+    shelf: tapes.filter((i) => i.shelved).length,
   }
 
   // A single-choice filter selector, so a native radio group: one tab stop, the

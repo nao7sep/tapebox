@@ -11,7 +11,7 @@ import { message } from '@shared/i18n/translate'
  * A value its set schema refuses is reported with the folder's own message.
  */
 export function normalizeUserDir(
-  notAbsolute: 'errors.libraryFolderNotAbsolute' | 'errors.exportFolderNotAbsolute',
+  notAbsolute: 'errors.collectionFolderNotAbsolute' | 'errors.exportFolderNotAbsolute',
   value: string,
 ): string {
   // Absolute paths include literal native selections; never trim their names.

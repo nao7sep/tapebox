@@ -84,7 +84,7 @@ const ENTRY: ScanResult = {
   durationSeconds: 12,
   uploadDateUtc: null,
   thumbnailUrl: null,
-  alreadyInLibrary: false,
+  alreadyInCollection: false,
   unavailable: null,
 }
 
@@ -145,7 +145,7 @@ describe('ScanPageModal bulk add', () => {
     expect(onClose).not.toHaveBeenCalled()
     const alert = document.querySelector('[role="dialog"] [role="alert"]')
     expect(alert?.textContent).toContain(
-      'The selected tapes could not be added. The library is unchanged; try again.',
+      'The selected tapes could not be added. The collection is unchanged; try again.',
     )
     expect(alert?.textContent).not.toMatch(/EACCES|private\/tmp|TAPEBOX_SCAN_SENTINEL/)
     // Not stuck on "Adding…": the button is interactive again for a retry.

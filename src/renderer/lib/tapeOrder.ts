@@ -4,7 +4,7 @@ import { compareInbox } from '@shared/order'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useFilterStore, type Filter } from '@renderer/store/filter'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 
 /**
  * The on-screen order of the tape list — the single source of truth shared by
@@ -33,9 +33,9 @@ function byOrder(a: Tape, b: Tape): number {
 
 /**
  * Pure: the on-screen tape order. The Inbox is every tape not on the Shelf,
- * newest added first. The archived view shows one box at a time (selectedBoxId, null = Unboxed)
+ * newest added first. The Shelf view shows one box at a time (selectedBoxId, null = Loose tapes)
  * in manual order — unless a search query is active, in which case it spans ALL
- * boxes, ordered the same way the box list reads (Unboxed first, then boxes by their
+ * boxes, ordered the same way the box list reads (Loose tapes first, then boxes by their
  * order) and within each box by that box's manual order. Search is read-only (not
  * drag-reorderable), but it's no longer recency-shuffled: a tape from box A always
  * precedes one from box B when A precedes B.
@@ -47,14 +47,14 @@ export function visibleTapes(
   query = '',
   boxes: Box[] = [],
 ): Tape[] {
-  if (filter !== 'archived') {
+  if (filter !== 'shelf') {
     return tapes.filter((t) => !t.shelved).sort(compareInbox)
   }
 
   const archived = tapes.filter((t) => t.shelved)
   const q = query.trim().toLowerCase()
   if (q) {
-    // Unboxed (no box) leads, mirroring the box list where Unboxed sits on top; then
+    // Loose tapes (no box) leads, mirroring the box list where Loose tapes sits on top; then
     // boxes in their own order. Unknown box ids (shouldn't happen) sort last.
     const boxRankById = new Map(boxes.map((b) => [b.id, b.order]))
     const boxRank = (boxId: string | null) =>
@@ -70,8 +70,8 @@ export function visibleTapes(
 export function useVisibleTapes(): Tape[] {
   const tapes = useTapesStore((s) => s.tapes)
   const filter = useFilterStore((s) => s.filter)
-  const selectedBoxId = useArchiveStore((s) => s.selectedBoxId)
-  const query = useArchiveStore((s) => s.query)
+  const selectedBoxId = useShelfStore((s) => s.selectedBoxId)
+  const query = useShelfStore((s) => s.query)
   const boxes = useBoxesStore((s) => s.boxes)
   return useMemo(() => visibleTapes(tapes, filter, selectedBoxId, query, boxes), [tapes, filter, selectedBoxId, query, boxes])
 }

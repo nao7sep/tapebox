@@ -61,14 +61,14 @@ import {
   ListboxDragProvider,
   TAPE_DRAG_TYPE,
   TAPE_SORT_GROUP,
-  planArchiveDrop,
+  planShelfDrop,
   planTapeListDrop,
 } from '@renderer/lib/dnd'
 import { SortableTape } from '@renderer/components/SortableTape'
-import { BoxList, UNBOXED_DROP_ID } from '@renderer/components/BoxList'
+import { BoxList, LOOSE_DROP_ID } from '@renderer/components/BoxList'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useTapesStore } from '@renderer/store/tapes'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { message } from '@shared/i18n/translate'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -83,7 +83,7 @@ afterEach(() => {
   dnd.droppables = []
   useBoxesStore.setState({ boxes: [] })
   useTapesStore.setState({ tapes: [], progress: {} })
-  useArchiveStore.setState({ selectedBoxId: null, query: '' })
+  useShelfStore.setState({ selectedBoxId: null, query: '' })
   document.body.innerHTML = ''
 })
 
@@ -151,7 +151,7 @@ describe('listbox drag configuration', () => {
     }])
     expect(dnd.droppables).toEqual([
       {
-        id: UNBOXED_DROP_ID,
+        id: LOOSE_DROP_ID,
         type: BOX_TARGET_TYPE,
         accept: TAPE_DRAG_TYPE,
         data: { type: BOX_TARGET_TYPE, boxId: null },
@@ -174,7 +174,7 @@ describe('listbox drag configuration', () => {
     root = createRoot(host)
     act(() => root!.render(createElement(BoxList, {
       onReorder: vi.fn(),
-      orderError: message('archive.boxOrderSaveFailed'),
+      orderError: message('shelf.boxOrderSaveFailed'),
       onDismissOrderError: dismiss,
     })))
 
@@ -215,7 +215,7 @@ describe('current dnd-kit completion mapping', () => {
   })
 
   it('keeps archive list sorting distinct from semantic box delivery', () => {
-    expect(planArchiveDrop(dropEvent(
+    expect(planShelfDrop(dropEvent(
       sortable('box-a', BOX_DRAG_TYPE, 0, 1),
       sortable('box-b', BOX_DRAG_TYPE, 1, 1),
     ))).toEqual({
@@ -225,7 +225,7 @@ describe('current dnd-kit completion mapping', () => {
       toIndex: 1,
     })
 
-    expect(planArchiveDrop(dropEvent(
+    expect(planShelfDrop(dropEvent(
       sortable('tape-a', TAPE_DRAG_TYPE, 2, 0),
       sortable('tape-b', TAPE_DRAG_TYPE, 0, 0),
     ))).toEqual({
@@ -235,7 +235,7 @@ describe('current dnd-kit completion mapping', () => {
       toIndex: 0,
     })
 
-    expect(planArchiveDrop(dropEvent(
+    expect(planShelfDrop(dropEvent(
       sortable('tape-a', TAPE_DRAG_TYPE, 0, 0),
       {
         id: 'box-target:box-b',
@@ -244,16 +244,16 @@ describe('current dnd-kit completion mapping', () => {
       },
     ))).toEqual({ kind: 'move-tape', tapeId: 'tape-a', boxId: 'box-b' })
 
-    expect(planArchiveDrop(dropEvent(
+    expect(planShelfDrop(dropEvent(
       sortable('tape-a', TAPE_DRAG_TYPE, 0, 0),
       {
-        id: '__unboxed__',
+        id: '__loose__',
         type: BOX_TARGET_TYPE,
         data: { type: BOX_TARGET_TYPE, boxId: null },
       },
     ))).toEqual({ kind: 'move-tape', tapeId: 'tape-a', boxId: null })
 
-    expect(planArchiveDrop(dropEvent(
+    expect(planShelfDrop(dropEvent(
       sortable('tape-a', TAPE_DRAG_TYPE, 0, 1),
       sortable('tape-b', TAPE_DRAG_TYPE, 1, 1),
       true,

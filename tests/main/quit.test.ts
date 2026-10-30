@@ -13,7 +13,7 @@ function makeSteps(overrides: Partial<QuitSteps> = {}) {
   const questions: { signal: AbortSignal; answer: (choice: QuitChoice) => void }[] = []
   const steps: QuitSteps = {
     confirm: vi.fn(async () => true),
-    saveLibrary: vi.fn(async () => { order.push('saveLibrary'); return true }),
+    saveCollection: vi.fn(async () => { order.push('saveCollection'); return true }),
     ask: vi.fn((signal: AbortSignal) => new Promise<QuitChoice>((resolve) => {
       order.push('ask')
       questions.push({ signal, answer: resolve })
@@ -46,7 +46,7 @@ describe('quit', () => {
 
     expect(first.preventDefault).toHaveBeenCalledOnce()
     expect(second.preventDefault).toHaveBeenCalledOnce()
-    expect(order).toEqual(['saveLibrary', 'stopWork', 'saveLibrary', 'saveLayout', 'close', 'exit'])
+    expect(order).toEqual(['saveCollection', 'stopWork', 'saveCollection', 'saveLayout', 'close', 'exit'])
     expect(steps.exit).toHaveBeenCalledWith(false)
     expect(steps.close).toHaveBeenCalledWith(false)
     expect(steps.ask).not.toHaveBeenCalled()
@@ -107,8 +107,8 @@ describe('quit', () => {
   })
 
   it('cancels the quit when the library save fails and the user cancels, with nothing stopped', async () => {
-    const saveLibrary = vi.fn(async () => false)
-    const { steps, questions } = makeSteps({ saveLibrary })
+    const saveCollection = vi.fn(async () => false)
+    const { steps, questions } = makeSteps({ saveCollection })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(0)
@@ -121,15 +121,15 @@ describe('quit', () => {
     expect(steps.exit).not.toHaveBeenCalled()
 
     // The app carries on, and a later quit runs again.
-    saveLibrary.mockResolvedValue(true)
+    saveCollection.mockResolvedValue(true)
     quit.beforeQuit(quitEvent())
     await vi.runAllTimersAsync()
     expect(steps.exit).toHaveBeenCalledOnce()
   })
 
   it('keeps the final catalog save required after work changes it', async () => {
-    const saveLibrary = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValue(true)
-    const { steps, questions } = makeSteps({ saveLibrary })
+    const saveCollection = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValue(true)
+    const { steps, questions } = makeSteps({ saveCollection })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(0)
@@ -138,13 +138,13 @@ describe('quit', () => {
     expect(steps.exit).not.toHaveBeenCalled()
     questions[0]!.answer('retry')
     await vi.runAllTimersAsync()
-    expect(saveLibrary).toHaveBeenCalledTimes(3)
+    expect(saveCollection).toHaveBeenCalledTimes(3)
     expect(steps.exit).toHaveBeenCalledOnce()
   })
 
   it.each(['cancel', 'failed-question'] as const)('resumes after a final-save %s without closing stores', async (choice) => {
-    const saveLibrary = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false)
-    const { steps, questions } = makeSteps({ saveLibrary })
+    const saveCollection = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false)
+    const { steps, questions } = makeSteps({ saveCollection })
     if (choice === 'failed-question') steps.ask = vi.fn(async () => { throw new Error('dialog failed') })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
@@ -161,7 +161,7 @@ describe('quit', () => {
   })
 
   it('cancels safely when the initial failed-save question rejects', async () => {
-    const { steps } = makeSteps({ saveLibrary: vi.fn(async () => false), ask: vi.fn(async () => { throw new Error('dialog failed') }) })
+    const { steps } = makeSteps({ saveCollection: vi.fn(async () => false), ask: vi.fn(async () => { throw new Error('dialog failed') }) })
     createQuit(steps).beforeQuit(quitEvent())
     await vi.runAllTimersAsync()
     expect(steps.resume).toHaveBeenCalledOnce()
@@ -170,21 +170,21 @@ describe('quit', () => {
   })
 
   it('retries the save and quits once it succeeds', async () => {
-    const saveLibrary = vi.fn(async () => false)
-    const { steps, questions, order } = makeSteps({ saveLibrary })
+    const saveCollection = vi.fn(async () => false)
+    const { steps, questions, order } = makeSteps({ saveCollection })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(0)
 
-    saveLibrary.mockResolvedValue(true)
+    saveCollection.mockResolvedValue(true)
     questions[0]!.answer('retry')
     await vi.runAllTimersAsync()
-    expect(saveLibrary).toHaveBeenCalledTimes(3)
+    expect(saveCollection).toHaveBeenCalledTimes(3)
     expect(order).toEqual(['ask', 'stopWork', 'saveLayout', 'close', 'exit'])
   })
 
   it('quits anyway when the user chooses so, and logs it', async () => {
-    const { steps, questions } = makeSteps({ saveLibrary: vi.fn(async () => false) })
+    const { steps, questions } = makeSteps({ saveCollection: vi.fn(async () => false) })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(0)
@@ -197,7 +197,7 @@ describe('quit', () => {
   })
 
   it('treats a library save that stalls past the deadline as failed and asks', async () => {
-    const { steps } = makeSteps({ saveLibrary: vi.fn(() => never<boolean>()) })
+    const { steps } = makeSteps({ saveCollection: vi.fn(() => never<boolean>()) })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
 
@@ -209,8 +209,8 @@ describe('quit', () => {
   })
 
   it('clears the forced-exit decision after a timed-out quit is cancelled', async () => {
-    const saveLibrary = vi.fn().mockImplementationOnce(() => never<boolean>()).mockResolvedValue(true)
-    const { steps, questions } = makeSteps({ saveLibrary })
+    const saveCollection = vi.fn().mockImplementationOnce(() => never<boolean>()).mockResolvedValue(true)
+    const { steps, questions } = makeSteps({ saveCollection })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(EXIT_DEADLINE_MS)
@@ -223,8 +223,8 @@ describe('quit', () => {
   })
 
   it('exits normally once a retried library save succeeds after one timed out', async () => {
-    const saveLibrary = vi.fn().mockImplementationOnce(() => never<boolean>()).mockResolvedValue(true)
-    const { steps, questions } = makeSteps({ saveLibrary })
+    const saveCollection = vi.fn().mockImplementationOnce(() => never<boolean>()).mockResolvedValue(true)
+    const { steps, questions } = makeSteps({ saveCollection })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(EXIT_DEADLINE_MS)
@@ -242,7 +242,7 @@ describe('quit', () => {
   })
 
   it('forgets a shutdown signal that no quit followed, so a later quit asks on a failed save', async () => {
-    const { steps } = makeSteps({ saveLibrary: vi.fn(async () => false) })
+    const { steps } = makeSteps({ saveCollection: vi.fn(async () => false) })
     const quit = createQuit(steps)
     quit.markSessionEnd()
     await vi.advanceTimersByTimeAsync(SESSION_END_MARK_MS)
@@ -253,7 +253,7 @@ describe('quit', () => {
   })
 
   it('keeps a quit soon after a shutdown signal a session end, even past the window', async () => {
-    const { steps } = makeSteps({ saveLibrary: vi.fn(async () => false), stopWork: vi.fn(() => never<void>()) })
+    const { steps } = makeSteps({ saveCollection: vi.fn(async () => false), stopWork: vi.fn(() => never<void>()) })
     const quit = createQuit(steps)
     quit.markSessionEnd()
     await vi.advanceTimersByTimeAsync(SESSION_END_MARK_MS - 1)
@@ -279,8 +279,8 @@ describe('quit', () => {
   })
 
   it('restarts the deadline when the failed-save question is answered', async () => {
-    const saveLibrary = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true)
-    const { steps, questions } = makeSteps({ saveLibrary, stopWork: vi.fn(() => never<void>()) })
+    const saveCollection = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true)
+    const { steps, questions } = makeSteps({ saveCollection, stopWork: vi.fn(() => never<void>()) })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(EXIT_DEADLINE_MS * 3)
@@ -294,7 +294,7 @@ describe('quit', () => {
 
   it('never asks during a session end, and exits at the deadline when every step stalls', async () => {
     const { steps } = makeSteps({
-      saveLibrary: vi.fn(() => never<boolean>()),
+      saveCollection: vi.fn(() => never<boolean>()),
       stopWork: vi.fn(() => never<void>()),
       saveLayout: vi.fn(() => never<void>()),
       close: vi.fn(() => never<void>()),
@@ -310,8 +310,8 @@ describe('quit', () => {
   })
 
   it('closes an open question as cancelled when the session ends, then quits without asking', async () => {
-    const saveLibrary = vi.fn(async () => false)
-    const { steps, questions } = makeSteps({ saveLibrary })
+    const saveCollection = vi.fn(async () => false)
+    const { steps, questions } = makeSteps({ saveCollection })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(0)
@@ -355,7 +355,7 @@ describe('quit', () => {
   })
 
   it('closes an open question and exits when Windows ends the session during a user quit', async () => {
-    const { steps, questions } = makeSteps({ saveLibrary: vi.fn(async () => false) })
+    const { steps, questions } = makeSteps({ saveCollection: vi.fn(async () => false) })
     const quit = createQuit(steps)
     quit.beforeQuit(quitEvent())
     await vi.advanceTimersByTimeAsync(0)

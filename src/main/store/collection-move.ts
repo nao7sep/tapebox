@@ -120,7 +120,7 @@ async function removeEmptiedFolders(files: readonly RelocatedFile[], side: 'sour
 
 /** Roll back pre-config publication. The catalog-visible sources were never
  * removed. */
-export async function rollbackLibraryRelocation(
+export async function rollbackCollectionRelocation(
   files: readonly RelocatedFile[],
 ): Promise<void> {
   await rollbackPublishedFiles(files)
@@ -129,7 +129,7 @@ export async function rollbackLibraryRelocation(
 /** Complete a relocation only after config.json durably names the destination.
  * A source that cannot be removed is reported as an explicit partial success;
  * the authoritative destination bundle remains complete. */
-export async function completeLibraryRelocation(files: readonly RelocatedFile[]): Promise<void> {
+export async function completeCollectionRelocation(files: readonly RelocatedFile[]): Promise<void> {
   const sources = files.map((file) => file.source)
   await unlinkFiles(sources)
   await removeEmptiedFolders(files, 'source')
@@ -142,7 +142,7 @@ export async function completeLibraryRelocation(files: readonly RelocatedFile[])
  * caller; portable aliases are rejected by preflight before any destination
  * publication.
  */
-export async function relocateLibrary(
+export async function relocateCollection(
   fromDir: string,
   toDir: string,
   entries: readonly string[],
@@ -171,8 +171,8 @@ export async function relocateLibrary(
     throw new UserFacingError(
       'conflict',
       collisions.length > 5
-        ? message('errors.libraryMoveCollisionsMore', { count: collisions.length, names: shown, more: collisions.length - 5 })
-        : message('errors.libraryMoveCollisions', { count: collisions.length, names: shown }),
+        ? message('errors.collectionMoveCollisionsMore', { count: collisions.length, names: shown, more: collisions.length - 5 })
+        : message('errors.collectionMoveCollisions', { count: collisions.length, names: shown }),
     )
   }
 

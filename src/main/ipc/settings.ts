@@ -11,11 +11,11 @@ import { reconcileWakeLock } from '@main/power-blocker'
 import { applyThemePreference, systemAppearance } from '@main/theme'
 import { applyLanguagePreference } from '@main/i18n'
 import {
-  completeLibraryRelocation,
-  relocateLibrary,
-  rollbackLibraryRelocation,
+  completeCollectionRelocation,
+  relocateCollection,
+  rollbackCollectionRelocation,
   type RelocatedFile,
-} from '@main/store/library-move'
+} from '@main/store/collection-move'
 import { UserFacingError } from '@main/user-facing-error'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
@@ -23,7 +23,7 @@ import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
 import { emit } from './events'
 import { cancelWork, runCancellable } from '@main/work-registry'
 import { settingsAfterPatch, type Settings, type SettingsSets } from '@shared/settings'
-import { withLibraryMove } from '@main/library-writes'
+import { withCollectionMove } from '@main/collection-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { message } from '@shared/i18n/translate'
 
@@ -33,7 +33,7 @@ import { message } from '@shared/i18n/translate'
  * inbox/ or shelf/. Relocation never adopts unrelated files the user dropped in
  * the folder.
  */
-function trackedLibraryFiles(): string[] {
+function trackedCollectionFiles(): string[] {
   const names = session.collectionStoreFiles()
   for (const tape of session.getTapes()) {
     for (const name of [tape.filename, tape.sidecarFilename, tape.thumbnailFilename]) {
@@ -45,12 +45,12 @@ function trackedLibraryFiles(): string[] {
 
 /**
  * Resolve a persisted libraryDir value to its effective absolute path, the same way
- * getLibraryDir() does (blank → the default library folder). Used to
+ * getCollectionDir() does (blank → the default library folder). Used to
  * compare the OLD effective dir against the NEW one a patch would produce, so the
  * move triggers on any real change — including custom→default and default→custom —
  * and no-ops when they resolve equal.
  */
-function effectiveLibraryDir(libraryDir: string): string {
+function effectiveCollectionDir(libraryDir: string): string {
   return libraryDir || paths.library
 }
 
@@ -70,30 +70,30 @@ function effectiveLibraryDir(libraryDir: string): string {
 type CompletedRelocation = { fromDir: string; files: RelocatedFile[] }
 
 /** Work-registry key for the one library move that can be in flight. */
-const LIBRARY_MOVE_KEY = 'library-move'
+const COLLECTION_MOVE_KEY = 'collection-move'
 
 /** True when applying `patch` would change the effective library folder. */
-function movesLibrary(patch: SettingsSets): boolean {
+function movesCollection(patch: SettingsSets): boolean {
   if (patch.libraryDir === undefined) return false
-  return resolve(config.getLibraryDir()) !== resolve(effectiveLibraryDir(patch.libraryDir))
+  return resolve(config.getCollectionDir()) !== resolve(effectiveCollectionDir(patch.libraryDir))
 }
 
-async function relocateIfLibraryDirChanged(
+async function relocateIfCollectionDirChanged(
   patch: SettingsSets,
   signal: AbortSignal,
 ): Promise<CompletedRelocation | null> {
-  if (!movesLibrary(patch)) return null
-  const fromDir = config.getLibraryDir()
-  const toDir = effectiveLibraryDir(patch.libraryDir!)
+  if (!movesCollection(patch)) return null
+  const fromDir = config.getCollectionDir()
+  const toDir = effectiveCollectionDir(patch.libraryDir!)
 
   await session.prepareCollection()
   signal.throwIfAborted()
-  const entries = trackedLibraryFiles()
+  const entries = trackedCollectionFiles()
   const storeFiles = new Set(session.collectionStoreFiles())
   log.info('relocating library', { from: fromDir, to: toDir, files: entries.length })
-  const result = await relocateLibrary(fromDir, toDir, entries, {
+  const result = await relocateCollection(fromDir, toDir, entries, {
     signal,
-    onProgress: (progress) => emit('settings:libraryMoveProgress', progress),
+    onProgress: (progress) => emit('settings:collectionMoveProgress', progress),
     // The library store copies its own files, so no save can land mid-copy.
     publish: (name, source, destination, signal) => storeFiles.has(name)
       ? session.copyStoreFileTo(name, destination, signal)
@@ -113,12 +113,12 @@ async function relocateIfLibraryDirChanged(
 export function registerSettingsHandlers(): void {
   handle('settings:get', async () => config.getSettings())
   // The default library folder, shown as the placeholder when libraryDir is blank.
-  handle('settings:defaultLibraryDir', async () => paths.library)
-  handle('settings:update', async ({ libraryAction, ...patch }) => {
+  handle('settings:defaultCollectionDir', async () => paths.library)
+  handle('settings:update', async ({ collectionAction, ...patch }) => {
     // Normalize user-typed folder fields at the boundary.
     const normalized: SettingsSets = { ...patch }
     if (patch.libraryDir !== undefined) {
-      normalized.libraryDir = normalizeUserDir('errors.libraryFolderNotAbsolute', patch.libraryDir)
+      normalized.libraryDir = normalizeUserDir('errors.collectionFolderNotAbsolute', patch.libraryDir)
     }
     if (patch.defaultExportDir !== undefined) {
       normalized.defaultExportDir = normalizeUserDir('errors.exportFolderNotAbsolute', patch.defaultExportDir)
@@ -133,12 +133,12 @@ export function registerSettingsHandlers(): void {
     // renderer surfaces the error and the catalog still points at the old folder.
     // The library turn lasts for the whole move and settings commit so no download,
     // import or rename writes into the old folder meanwhile; the queue catches up
-    // after. Stop (settings:cancelLibraryMove) or quitting aborts the copy and rolls
+    // after. Stop (settings:cancelCollectionMove) or quitting aborts the copy and rolls
     // back every file already published.
     const apply = () => runCancellable(
       async (signal) => {
         try {
-          return await applySettingsPatch(normalized, signal, libraryAction)
+          return await applySettingsPatch(normalized, signal, collectionAction)
         } catch (error) {
           // Only the actual abort reason proves a clean stop. A filesystem or
           // rollback failure remains a failure even if Stop was also requested.
@@ -148,20 +148,20 @@ export function registerSettingsHandlers(): void {
           throw error
         }
       },
-      LIBRARY_MOVE_KEY,
+      COLLECTION_MOVE_KEY,
     )
-    if (!movesLibrary(normalized)) return apply()
+    if (!movesCollection(normalized)) return apply()
     try {
-      return await withLibraryMove(() => {
-        if (queue.hasActiveJobs()) throw new UserFacingError('refused', message('errors.libraryMoveBlocked'))
+      return await withCollectionMove(() => {
+        if (queue.hasActiveJobs()) throw new UserFacingError('refused', message('errors.collectionMoveBlocked'))
         return apply()
       })
     } finally {
       queue.tick()
     }
   })
-  handle('settings:cancelLibraryMove', async () => {
-    cancelWork(LIBRARY_MOVE_KEY)
+  handle('settings:cancelCollectionMove', async () => {
+    cancelWork(COLLECTION_MOVE_KEY)
   })
   handle('settings:setApiKey', async ({ apiKey }) => {
     await apiKeys.writeApiKey('openai', apiKey)
@@ -176,29 +176,29 @@ export function registerSettingsHandlers(): void {
 type SettingsUpdateResult = IpcCalls['settings:update']['res']
 
 /** Shown when the new library folder is committed but old copies remain in the previous one. */
-const OBSOLETE_SOURCES_WARNING = message('errors.libraryOldCopiesKept')
+const OBSOLETE_SOURCES_WARNING = message('errors.collectionOldCopiesKept')
 
 async function applySettingsPatch(
   normalized: SettingsSets,
   signal: AbortSignal,
-  libraryAction?: 'open',
+  collectionAction?: 'open',
 ): Promise<SettingsUpdateResult> {
   const previous = config.getSettings()
-  const switching = movesLibrary(normalized)
-  const toDir = effectiveLibraryDir(normalized.libraryDir ?? config.getSettings().libraryDir)
-  const opening = switching && libraryAction === 'open'
+  const switching = movesCollection(normalized)
+  const toDir = effectiveCollectionDir(normalized.libraryDir ?? config.getSettings().libraryDir)
+  const opening = switching && collectionAction === 'open'
   // Inspect an explicitly opened collection without quarantine. It is never a
   // destination for the current collection's media or organization. One in the
   // layout before Inbox and Shelf is converted now, before anything commits; a
   // conversion stopped partway runs again the next time it is opened.
   const opened = opening
     ? await session.openCollection(toDir, { requireExisting: true }).catch((cause: unknown) => {
-      throw new UserFacingError('refused', message('errors.libraryOpenFailed', { path: toDir }), { cause })
+      throw new UserFacingError('refused', message('errors.collectionOpenFailed', { path: toDir }), { cause })
     })
     : null
   if (opening) await session.prepareCollection()
   signal.throwIfAborted()
-  const relocation = opening ? null : await relocateIfLibraryDirChanged(normalized, signal)
+  const relocation = opening ? null : await relocateIfCollectionDirChanged(normalized, signal)
   let next: Settings
   try {
     signal.throwIfAborted()
@@ -206,7 +206,7 @@ async function applySettingsPatch(
   } catch (saveError) {
     if (relocation) {
       try {
-        await rollbackLibraryRelocation(relocation.files)
+        await rollbackCollectionRelocation(relocation.files)
         log.info('library destinations rolled back after settings save failure', {
           source: relocation.fromDir,
           files: relocation.files.length,
@@ -225,7 +225,7 @@ async function applySettingsPatch(
     // its own catalog before the opened one replaces it.
     await session.persistNow()
     session.bindSession(toDir, opened)
-    emit('library:opened', opened.session)
+    emit('collection:opened', opened.session)
     if (opened.damaged.length > 0) void notifyDamagedTapes(opened.damaged.map((tape) => tape.path))
   } else if (relocation) {
     await session.bindMovedSession(toDir)
@@ -249,7 +249,7 @@ async function applySettingsPatch(
   // cleanup of the old copies is a warning on a successful save, never a failure.
   if (relocation) {
     try {
-      await completeLibraryRelocation(relocation.files)
+      await completeCollectionRelocation(relocation.files)
       log.info('obsolete library sources cleaned after settings commit', {
         from: relocation.fromDir,
         files: relocation.files.length,

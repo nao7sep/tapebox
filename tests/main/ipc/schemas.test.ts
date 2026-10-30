@@ -19,12 +19,12 @@ describe('ipcRequestSchemas — validation at the IPC trust boundary', () => {
 
   it('rejects a request missing a required field', () => {
     expect(ipcRequestSchemas['downloads:add'].safeParse({}).success).toBe(false)
-    expect(ipcRequestSchemas['library:rename'].safeParse({ tapeId: 'a' }).success).toBe(false)
+    expect(ipcRequestSchemas['collection:rename'].safeParse({ tapeId: 'a' }).success).toBe(false)
   })
 
   it('rejects a wrongly-typed field', () => {
     expect(
-      ipcRequestSchemas['library:remove'].safeParse({ tapeIds: 'not-an-array', deleteFiles: true }).success,
+      ipcRequestSchemas['collection:remove'].safeParse({ tapeIds: 'not-an-array', deleteFiles: true }).success,
     ).toBe(false)
   })
 
@@ -38,8 +38,8 @@ describe('ipcRequestSchemas — validation at the IPC trust boundary', () => {
   })
 
   it('requires bare undefined for a no-argument channel', () => {
-    expect(ipcRequestSchemas['library:subscribe'].safeParse(undefined).success).toBe(true)
-    expect(ipcRequestSchemas['library:subscribe'].safeParse({ sneaky: 1 }).success).toBe(false)
+    expect(ipcRequestSchemas['collection:subscribe'].safeParse(undefined).success).toBe(true)
+    expect(ipcRequestSchemas['collection:subscribe'].safeParse({ sneaky: 1 }).success).toBe(false)
   })
 
   it('strips unknown keys from an object request', () => {

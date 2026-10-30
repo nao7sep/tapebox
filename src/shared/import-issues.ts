@@ -5,4 +5,4 @@ import type { MessageKey } from './i18n/catalogues'
  * import result names it apart from real problems, so a selection of duplicates
  * reads as "already there" rather than as a failure.
  */
-export const ALREADY_IN_LIBRARY: MessageKey = 'import.alreadyInLibrary'
+export const ALREADY_IN_COLLECTION: MessageKey = 'import.alreadyInCollection'

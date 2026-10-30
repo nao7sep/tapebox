@@ -36,7 +36,7 @@ describe('truthful renderer persistence', () => {
     expect(state.layout?.leftPaneWidth).toBe(defaultLayout.leftPaneWidth)
     expect(state.appliedLayout?.leftPaneWidth).toBe(defaultLayout.leftPaneWidth)
     expect(inEnglish(state.writeErrors.leftPaneWidth)).toBe(
-      'The library pane size was not saved. Its previous size is back; try resizing it again.',
+      'The collection pane size was not saved. Its previous size is back; try resizing it again.',
     )
     expect(inEnglish(state.writeErrors.leftPaneWidth)).not.toMatch(/EACCES|private\/tmp|SENTINEL|remote method/i)
     expect(JSON.stringify(logError.mock.calls)).toContain('TAPEBOX_WRITE_SENTINEL')

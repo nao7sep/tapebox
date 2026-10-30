@@ -1,4 +1,4 @@
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
@@ -35,8 +35,8 @@ const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), de
 
 const persistNow = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@main/store/session', () => ({
-  sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(state.tapes, exceptId).find(ref),
-  onCatalogSaveFailure: () => {},
+  sourceOwner: (ref: SourceRef, exceptId?: string) => collectionSourceIndex(state.tapes, exceptId).find(ref),
+  onCollectionSaveFailure: () => {},
   persistNow,
   getTape: (id: string) => state.tapes.find((tape) => tape.id === id),
   getTapes: () => state.tapes,
@@ -48,7 +48,7 @@ vi.mock('@main/store/session', () => ({
   reorderTapesDurably: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getLibraryDir: () => state.libraryDir,
+  getCollectionDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
@@ -57,8 +57,8 @@ vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log }))
 vi.mock('@main/ipc/events', () => ({ emit }))
 
-const { registerLibraryHandlers } = await import('@main/ipc/library')
-const { withLibraryMove } = await import('@main/library-writes')
+const { registerCollectionHandlers } = await import('@main/ipc/collection')
+const { withCollectionMove } = await import('@main/collection-writes')
 
 let root: string
 let sourceDir: string
@@ -123,7 +123,7 @@ function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
 // Each issue's reason as an English interface shows it, so the assertions read
 // the words a user sees.
 async function importPaths(...paths: string[]): Promise<ImportResult> {
-  const result = await handlers.get('library:import')!({ paths }) as {
+  const result = await handlers.get('collection:import')!({ paths }) as {
     imported: Tape[]
     issues: Array<{ path: string; reason: Message; severity: string }>
   }
@@ -140,7 +140,7 @@ beforeEach(async () => {
   await mkdir(sourceDir)
   // A fresh collection has no inbox/ folder yet; import makes it.
   await mkdir(state.libraryDir, { recursive: true })
-  registerLibraryHandlers()
+  registerCollectionHandlers()
 })
 
 afterEach(async () => {
@@ -198,7 +198,7 @@ describe('importing a bundle', () => {
   it('waits for a library move to end before copying anything', async () => {
     const sidecar = await stageBundle({ stem: 'late' })
     let finishMove!: () => void
-    const moving = withLibraryMove(() => new Promise<void>((resolve) => { finishMove = resolve }))
+    const moving = withCollectionMove(() => new Promise<void>((resolve) => { finishMove = resolve }))
 
     const importing = importPaths(sidecar)
     await new Promise((resolve) => setImmediate(resolve))
@@ -211,14 +211,14 @@ describe('importing a bundle', () => {
     expect((await readdir(folder(result.imported[0].id))).sort()).toEqual(['late.json', 'late.mp4'])
   })
 
-  it('reports a bundle of a video already in the library under a URL with tracking parameters', async () => {
+  it('reports a bundle of a video already in the collection under a URL with tracking parameters', async () => {
     state.tapes = [makeTape({ id: 'already-in', sourceUrl: 'https://www.youtube.com/watch?v=X' })]
     const sidecar = await stageBundle({ stem: 'shared', sourceUrl: 'https://www.youtube.com/watch?v=X&si=abc' })
 
     const result = await importPaths(sidecar)
 
     expect(result.imported).toEqual([])
-    expect(result.issues).toEqual([expect.objectContaining({ path: sidecar, reason: 'Already in the library.' })])
+    expect(result.issues).toEqual([expect.objectContaining({ path: sidecar, reason: 'Already in the collection.' })])
     expect(await readdir(state.libraryDir)).toEqual([])
   })
 
@@ -263,7 +263,7 @@ describe('importing a bundle', () => {
 
     expect(result.imported[0].thumbnailFilename, 'the tape comes in without a poster').toBeNull()
     expect(result.issues.map((issue) => issue.reason)).toEqual([
-      'The thumbnail could not be copied into the library. The tape was imported without it.',
+      'The thumbnail could not be copied into the collection. The tape was imported without it.',
     ])
   })
 
@@ -313,7 +313,7 @@ describe('what the import refuses, and what it says', () => {
     expect(result.issues[0].reason.length).toBeGreaterThan(10)
   })
 
-  it('says a tape is already in the library rather than importing it twice', async () => {
+  it('says a tape is already in the collection rather than importing it twice', async () => {
     const sidecar = await stageBundle({ stem: 'holiday', sourceUrl: 'https://example.test/holiday' })
     state.tapes = [makeTape({ id: 'already-here', sourceUrl: 'https://example.test/holiday' })]
 
@@ -321,7 +321,7 @@ describe('what the import refuses, and what it says', () => {
 
     expect(result.imported).toEqual([])
     expect(result.issues).toEqual([
-      expect.objectContaining({ severity: 'information', reason: 'Already in the library.' }),
+      expect.objectContaining({ severity: 'information', reason: 'Already in the collection.' }),
     ])
     expect(await readdir(state.libraryDir)).toEqual([])
   })
@@ -359,6 +359,6 @@ describe('what the import refuses, and what it says', () => {
 
     expect(result.imported).toEqual([])
     expect(emit).not.toHaveBeenCalled()
-    expect(log.info).toHaveBeenCalledWith('library:import', { imported: 0, issues: 1 })
+    expect(log.info).toHaveBeenCalledWith('collection:import', { imported: 0, issues: 1 })
   })
 })

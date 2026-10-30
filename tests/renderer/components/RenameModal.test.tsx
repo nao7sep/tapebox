@@ -22,7 +22,7 @@ const tape = { id: 'Rename0001', title: 'A Title', uploader: null, name: 'Take',
 
 beforeEach(async () => {
   onClose.mockReset()
-  ipcInvoke.mockReset().mockImplementation(async (channel: string) => (channel === 'library:getSidecar' ? {} : undefined))
+  ipcInvoke.mockReset().mockImplementation(async (channel: string) => (channel === 'collection:getSidecar' ? {} : undefined))
   const host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)

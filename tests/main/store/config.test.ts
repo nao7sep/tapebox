@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// getLibraryDir() resolves the persisted libraryDir to a real path: blank means
+// getCollectionDir() resolves the persisted libraryDir to a real path: blank means
 // "use the default library folder" (paths.library); a set value is used as-is.
 // This is what stops a cleared Settings field from ever producing a cwd-relative
 // path (join('', file)). The dependencies are mocked so loadSettings() populates
@@ -27,7 +27,7 @@ vi.mock('@main/io/logger', () => ({
 }))
 
 import { writeManagedJson } from '@main/io/atomic-json'
-import { getLibraryDir, getSettings, loadSettings, updateSettings } from '@main/store/config'
+import { getCollectionDir, getSettings, loadSettings, updateSettings } from '@main/store/config'
 
 beforeEach(async () => {
   // No config.json on disk → loadSettings uses built-ins in memory (blank
@@ -40,19 +40,19 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('getLibraryDir', () => {
+describe('getCollectionDir', () => {
   it('resolves a blank libraryDir to the default library folder', async () => {
-    expect(getLibraryDir()).toBe(DEFAULT_LIBRARY)
+    expect(getCollectionDir()).toBe(DEFAULT_LIBRARY)
   })
 
   it('refuses a whitespace-only libraryDir and keeps the default library folder', async () => {
     await expect(updateSettings({ libraryDir: '   ' })).rejects.toThrow()
-    expect(getLibraryDir()).toBe(DEFAULT_LIBRARY)
+    expect(getCollectionDir()).toBe(DEFAULT_LIBRARY)
   })
 
   it('uses a set libraryDir as-is', async () => {
     await updateSettings({ libraryDir: '/custom/library' })
-    expect(getLibraryDir()).toBe('/custom/library')
+    expect(getCollectionDir()).toBe('/custom/library')
   })
 
   it('keeps the last durable settings authoritative when a save fails', async () => {
@@ -61,6 +61,6 @@ describe('getLibraryDir', () => {
     await expect(updateSettings({ libraryDir: '/not-durable' })).rejects.toThrow('disk full')
 
     expect(getSettings().libraryDir).toBe('')
-    expect(getLibraryDir()).toBe(DEFAULT_LIBRARY)
+    expect(getCollectionDir()).toBe(DEFAULT_LIBRARY)
   })
 })

@@ -1,7 +1,7 @@
 import { invalidateTapeActions } from '@renderer/lib/runTapeAction'
 import { useBoxActionResultsStore } from '@renderer/store/boxActionResults'
 import { ipcInvoke, ipcOn } from './client'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
@@ -22,7 +22,7 @@ import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { message } from '@shared/i18n/translate'
 
 /** Shown when main reports that library changes are not reaching disk. */
-export const LIBRARY_SAVE_FAILED_MESSAGE = message('app.librarySaveFailed')
+export const LIBRARY_SAVE_FAILED_MESSAGE = message('app.collectionSaveFailed')
 
 export type InitialSyncState = {
   binaries: BinaryStatus[]
@@ -40,7 +40,7 @@ export type InitialSyncState = {
  */
 export async function pullInitialSyncState(): Promise<InitialSyncState> {
   const [, binaries, runtime, media, layout, settings] = await Promise.all([
-    ipcInvoke('library:subscribe'),
+    ipcInvoke('collection:subscribe'),
     ipcInvoke('binaries:status'),
     ipcInvoke('app:runtimeInfo'),
     ipcInvoke('media:endpoint'),
@@ -69,23 +69,23 @@ export function startIpcSync(): IpcSync {
   }
 
   const offs = [
-    ipcOn('library:current', ({ tapes, boxes }) => {
+    ipcOn('collection:current', ({ tapes, boxes }) => {
       useTapesStore.getState().setAll(tapes)
       useBoxesStore.getState().setBoxes(boxes)
     }),
-    ipcOn('library:opened', ({ tapes, boxes }) => {
+    ipcOn('collection:opened', ({ tapes, boxes }) => {
       useDownloadLogStore.setState({ entries: {}, trimmed: {} })
       useMediaStore.setState((media) => ({ collectionRevision: media.collectionRevision + 1 }))
       invalidateTapeActions()
       useTapeActionResultsStore.setState({ byTape: {} })
       useBoxActionResultsStore.setState({ results: {} })
       useSelectionStore.getState().select(null)
-      useArchiveStore.getState().selectBox(null)
+      useShelfStore.getState().selectBox(null)
       // Invalidate replies from the previous collection, including lists that
       // reuse the same IDs. Advancing counters avoids a new attempt's ABA match.
       const attempts = useOrderFailuresStore.getState().attempts
       useOrderFailuresStore.setState({
-        boxes: null, archiveTapes: {}, pending: {},
+        boxes: null, shelfTapes: {}, pending: {},
         attempts: Object.fromEntries(Object.entries(attempts).map(([key, value]) => [key, value! + 1])),
       })
       useTapesStore.setState({ tapes, progress: {}, stalled: {} })
@@ -102,7 +102,7 @@ export function startIpcSync(): IpcSync {
       })
     }),
     ipcOn('boxes:changed',    (boxes) => useBoxesStore.getState().setBoxes(boxes)),
-    ipcOn('library:saveFailed', () => useToastStore.getState().notify(LIBRARY_SAVE_FAILED_MESSAGE, 'error')),
+    ipcOn('collection:saveFailed', () => useToastStore.getState().notify(LIBRARY_SAVE_FAILED_MESSAGE, 'error')),
     ipcOn('tapes:progress',  ({ tapeId, phase, percent, speedBps, etaSec }) =>
       useTapesStore.getState().setProgress(tapeId, { phase, percent, speedBps, etaSec }),
     ),

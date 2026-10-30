@@ -86,7 +86,7 @@ describe('SessionSchema identities', () => {
     expect(() => SessionSchema.parse({
       tapes: [
         { ...completeTape(), filename: 'Archive.MP4' },
-        { ...completeTape(), id: 'def7654321', sourceUrl: 'https://example.com/watch?v=y', filename: 'archive.mp4' },
+        { ...completeTape(), id: 'def7654321', sourceUrl: 'https://example.com/watch?v=y', filename: 'shelf.mp4' },
       ],
       boxes: [],
     })).not.toThrow()

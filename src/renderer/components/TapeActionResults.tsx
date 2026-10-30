@@ -10,8 +10,8 @@ const ACTION_ORDER: TapeAction[] = [
   'reveal',
   'open-url',
   'copy-url',
-  'archive',
-  'unarchive',
+  'shelve',
+  'unshelve',
   'placement',
   'remove',
 ]
@@ -24,8 +24,8 @@ const CLOSE_LABEL: Record<TapeAction, MessageKey> = {
   reveal: 'tapeActions.closeReveal',
   'open-url': 'tapeActions.closeOpenUrl',
   'copy-url': 'tapeActions.closeCopyUrl',
-  archive: 'tapeActions.closeArchive',
-  unarchive: 'tapeActions.closeUnarchive',
+  shelve: 'tapeActions.closeShelve',
+  unshelve: 'tapeActions.closeUnshelve',
   placement: 'tapeActions.closePlacement',
   remove: 'tapeActions.closeRemove',
 }

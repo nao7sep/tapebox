@@ -75,7 +75,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     if (batch.length === 0) return
     pendingRef.current = []
     setEntries((prev) => prev.concat(batch))
-    const selectable = batch.filter((entry) => !entry.alreadyInLibrary && !entry.unavailable)
+    const selectable = batch.filter((entry) => !entry.alreadyInCollection && !entry.unavailable)
     if (selectable.length > 0) {
       setSelected((prev) => {
         const next = new Set(prev)
@@ -247,7 +247,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     setSelected((prev) => {
       const next = new Set(prev)
       for (const e of filtered) {
-        if (e.alreadyInLibrary || e.unavailable) continue
+        if (e.alreadyInCollection || e.unavailable) continue
         if (on) next.add(e.sourceUrl)
         else next.delete(e.sourceUrl)
       }
@@ -274,12 +274,12 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
   // The breakdown line (new / already in the library / unavailable) drawn under
   // the result headline once scanning finishes: entries fall into exactly one of
   // these three per ScanResult's own fields.
-  const inLibraryCount = useMemo(() => entries.filter((e) => e.alreadyInLibrary).length, [entries])
+  const inCollectionCount = useMemo(() => entries.filter((e) => e.alreadyInCollection).length, [entries])
   const unavailableCount = useMemo(() => entries.filter((e) => e.unavailable !== null).length, [entries])
-  const newCount = entries.length - inLibraryCount - unavailableCount
+  const newCount = entries.length - inCollectionCount - unavailableCount
   const breakdownParts: string[] = []
   if (newCount > 0) breakdownParts.push(t.t('scan.breakdownNew', { count: newCount }))
-  if (inLibraryCount > 0) breakdownParts.push(t.t('scan.breakdownInLibrary', { count: inLibraryCount }))
+  if (inCollectionCount > 0) breakdownParts.push(t.t('scan.breakdownInCollection', { count: inCollectionCount }))
   if (unavailableCount > 0) breakdownParts.push(t.t('scan.breakdownUnavailable', { count: unavailableCount }))
   const breakdown = t.list(breakdownParts)
 
@@ -371,7 +371,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
             }}
           >
             {visibleRows.map((e) => {
-              const disabled = e.alreadyInLibrary || e.unavailable !== null
+              const disabled = e.alreadyInCollection || e.unavailable !== null
               const checked = selected.has(e.sourceUrl) && !disabled
               return (
                 <li key={e.sourceUrl} style={{ height: ROW_HEIGHT }}>
@@ -391,7 +391,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
                       onChange={() => { if (!disabled) toggle(e.sourceUrl) }}
                       onFocus={() => setActiveUrl(e.sourceUrl)}
                     />
-                    {e.alreadyInLibrary && <span className="shrink-0 text-xs text-fg-muted">{t.t('tapeState.downloaded')}</span>}
+                    {e.alreadyInCollection && <span className="shrink-0 text-xs text-fg-muted">{t.t('tapeState.downloaded')}</span>}
                     <span className="min-w-0 flex-1 truncate">
                       {e.title ?? e.sourceUrl}
                       {e.unavailable && <span className="ml-2 text-xs text-fg">({e.unavailable.reason})</span>}

@@ -41,7 +41,7 @@ describe('export draft window protection', () => {
     await act(async () => {
       if (field === 'folder') button('Choose').click()
       else if (field === 'delete-after') [...document.querySelectorAll('label')]
-        .find((label) => label.textContent?.includes('Delete from library after export'))!.querySelector('input')!.click()
+        .find((label) => label.textContent?.includes('Delete from collection after export'))!.querySelector('input')!.click()
       else {
         editName('New name')
       }

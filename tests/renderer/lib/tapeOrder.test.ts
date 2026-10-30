@@ -88,8 +88,8 @@ describe('visibleTapes — archived', () => {
       archived({ id: 'b2________', boxId: 'box1', order: 1 }),
       archived({ id: 'b1________', boxId: 'box1', order: 0 }),
     ]
-    expect(ids(visibleTapes(tapes, 'archived', 'box1'))).toEqual(['b1________', 'b2________'])
-    expect(ids(visibleTapes(tapes, 'archived', null))).toEqual(['unboxed___'])
+    expect(ids(visibleTapes(tapes, 'shelf', 'box1'))).toEqual(['b1________', 'b2________'])
+    expect(ids(visibleTapes(tapes, 'shelf', null))).toEqual(['unboxed___'])
   })
 
   it('search orders by box (then within-box order), spanning all boxes', () => {
@@ -104,16 +104,16 @@ describe('visibleTapes — archived', () => {
     ]
     // Box A (order 0) precedes box B (order 1) even though B's match is newer; the
     // selected box is ignored (search spans all); 'dog' is filtered out.
-    expect(ids(visibleTapes(tapes, 'archived', 'box1', 'cat', boxes))).toEqual(['aaaaaaaaaa', 'bbbbbbbbbb'])
+    expect(ids(visibleTapes(tapes, 'shelf', 'box1', 'cat', boxes))).toEqual(['aaaaaaaaaa', 'bbbbbbbbbb'])
   })
 
-  it('search puts Unboxed first, then each box in its own manual order', () => {
+  it('search puts Loose tapes first, then each box in its own manual order', () => {
     const boxes = [{ id: 'box1', name: 'A', order: 0 }]
     const tapes = [
       archived({ id: 'a1________', title: 'x one', boxId: 'box1', order: 0 }),
       archived({ id: 'unboxed___', title: 'x unboxed', boxId: null, order: 0 }),
       archived({ id: 'a2________', title: 'x two', boxId: 'box1', order: 1 }),
     ]
-    expect(ids(visibleTapes(tapes, 'archived', null, 'x', boxes))).toEqual(['unboxed___', 'a1________', 'a2________'])
+    expect(ids(visibleTapes(tapes, 'shelf', null, 'x', boxes))).toEqual(['unboxed___', 'a1________', 'a2________'])
   })
 })

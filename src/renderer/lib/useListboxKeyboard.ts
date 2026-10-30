@@ -24,7 +24,7 @@ import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
  *
  * Per-list specifics — the ordered id sequence, the active id, what activation does,
  * and any extra command keys — are passed in. Ids are strings; a list whose key is
- * not a string (the Unboxed row, a chapter index) maps it to a stable string and back.
+ * not a string (the Loose tapes row, a chapter index) maps it to a stable string and back.
  */
 export type ListboxKeyboard<E extends HTMLElement> = {
   /** Ref for the container element (the listbox). */
@@ -121,7 +121,7 @@ export function useListboxKeyboard<E extends HTMLElement = HTMLElement>(opts: {
 /**
  * Focus a list container on mount unless the user is already typing in a field — the
  * deliberate hand-off that keeps "switch to this view and the arrows just work"
- * without ever yanking the caret out of the archive search box. Mirrors the old
+ * without ever yanking the caret out of the Shelf search box. Mirrors the old
  * roving-focus guard (focus only when document.activeElement isn't editable).
  */
 export function useAutoFocusList(ref: RefObject<HTMLElement | null>): void {

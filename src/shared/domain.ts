@@ -161,8 +161,8 @@ export const SidecarTapeBoxSchema = z.object({
 export type SidecarTapeBox = z.infer<typeof SidecarTapeBoxSchema>
 
 /**
- * A box: a named, ordered collection of archived tapes. Membership is single — a
- * tape belongs to one box (via Tape.boxId) or to Unboxed. `order` is the
+ * A box: a named, ordered collection of shelved tapes. Membership is single — a
+ * tape belongs to one box (via Tape.boxId) or to Loose tapes. `order` is the
  * box's position in the box list.
  */
 export const BoxSchema = z.object({

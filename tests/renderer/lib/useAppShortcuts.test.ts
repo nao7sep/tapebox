@@ -31,7 +31,7 @@ beforeEach(async () => {
   document.body.append(input)
   root = createRoot(document.createElement('div'))
   await act(async () => root!.render(createElement(Harness)))
-  useFilterStore.getState().setFilter('archived')
+  useFilterStore.getState().setFilter('shelf')
 })
 
 afterEach(() => {
@@ -50,7 +50,7 @@ function pressCmd1(init: KeyboardEventInit = {}): KeyboardEvent {
 describe('app shortcuts during IME composition', () => {
   it('Cmd+1 stands down while a candidate is pending, without swallowing the key', () => {
     const event = pressCmd1({ isComposing: true })
-    expect(useFilterStore.getState().filter).toBe('archived')
+    expect(useFilterStore.getState().filter).toBe('shelf')
     expect(event.defaultPrevented).toBe(false)
   })
 
@@ -68,7 +68,7 @@ describe('app shortcuts per platform', () => {
     await onPlatform('darwin')
     expect(modifierWord).toBe('Cmd')
     const event = pressCmd1({ metaKey: false, ctrlKey: true })
-    expect(useFilterStore.getState().filter).toBe('archived')
+    expect(useFilterStore.getState().filter).toBe('shelf')
     expect(event.defaultPrevented).toBe(false)
   })
 

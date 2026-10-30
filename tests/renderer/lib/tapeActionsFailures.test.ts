@@ -6,12 +6,12 @@ const { ipcInvoke, logError } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), logError
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: logError } }))
 
-import { advanceSelection, archiveTape, unarchiveTape, moveTapeToBox } from '@renderer/lib/tapeActions'
+import { advanceSelection, shelveTape, unshelveTape, moveTapeToBox } from '@renderer/lib/tapeActions'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useTapeActionResultsStore } from '@renderer/store/tapeActionResults'
 import { useSelectionStore } from '@renderer/store/selection'
 import { useFilterStore } from '@renderer/store/filter'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { inEnglish, inEnglishAll } from '../../helpers/i18n'
 import { message } from '@shared/i18n/translate'
 import { until } from '../../helpers/until'
@@ -55,7 +55,7 @@ beforeEach(() => {
   useTapeActionResultsStore.setState({ byTape: {} })
   useSelectionStore.setState({ selectedId: null })
   useFilterStore.setState({ filter: 'inbox' })
-  useArchiveStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
+  useShelfStore.setState({ selectedBoxId: null, query: '', pendingSearchFocus: false })
 })
 
 describe('archive and placement settlement', () => {
@@ -64,7 +64,7 @@ describe('archive and placement settlement', () => {
     ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
     const original = tape()
     useTapesStore.setState({ tapes: [original] })
-    archiveTape(original, 'tape')
+    shelveTape(original, 'tape')
     const copied = { ...useTapesStore.getState().tapes[0]!, title: 'Different collection' }
     invalidateTapeActions()
     useTapesStore.setState({ tapes: [copied] })
@@ -74,19 +74,19 @@ describe('archive and placement settlement', () => {
     expect(useTapeActionResultsStore.getState().byTape).toEqual({})
   })
 
-  it('rolls a rejected archive back and keeps a safe result with the tape', async () => {
+  it('rolls a rejected shelve back and keeps a safe result with the tape', async () => {
     const original = tape()
     useTapesStore.setState({ tapes: [original] })
     useSelectionStore.setState({ selectedId: original.id })
     ipcInvoke.mockRejectedValueOnce(new Error('EACCES /private/tmp/TAPEBOX_ARCHIVE_SENTINEL'))
 
-    archiveTape(original, 'tape')
+    shelveTape(original, 'tape')
     expect(useTapesStore.getState().tapes[0]?.shelved).toBe(true)
 
     await until(() => expect(useTapesStore.getState().tapes[0]).toEqual(original))
     expect(useFilterStore.getState().filter).toBe('inbox')
-    const shown = inEnglish(useTapeActionResultsStore.getState().byTape[original.id]?.archive)
-    expect(shown).toBe('This tape could not be archived. It remains in the Inbox; try again.')
+    const shown = inEnglish(useTapeActionResultsStore.getState().byTape[original.id]?.shelve)
+    expect(shown).toBe('This tape could not be shelved. It remains in the Inbox; try again.')
     expect(shown).not.toMatch(/EACCES|private\/tmp|SENTINEL/i)
     expect(JSON.stringify(logError.mock.calls)).toContain('TAPEBOX_ARCHIVE_SENTINEL')
   })
@@ -108,8 +108,8 @@ describe('archive and placement settlement', () => {
 })
 
 describe.each([
-  { action: 'archive' as const, original: () => tape({ order: 10 }), invoke: (original: Tape) => archiveTape(original, 'tape') },
-  { action: 'unarchive' as const, original: () => tape({ shelved: true, boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => unarchiveTape(original, 'tape') },
+  { action: 'shelve' as const, original: () => tape({ order: 10 }), invoke: (original: Tape) => shelveTape(original, 'tape') },
+  { action: 'unshelve' as const, original: () => tape({ shelved: true, boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => unshelveTape(original, 'tape') },
   { action: 'placement' as const, original: () => tape({ shelved: true, boxId: 'BoxSource1', order: 10 }), invoke: (original: Tape) => moveTapeToBox(original, 'BoxTarget1', 'tape') },
 ])('$action rollback owns only its organization fields', ({ action, original: makeOriginal, invoke }) => {
   it('preserves metadata and renamed files received while persistence was pending', async () => {
@@ -140,8 +140,8 @@ describe.each([
     }))
     expect(useTapeActionResultsStore.getState().byTape[original.id]?.[action]).toBeDefined()
     expect(useSelectionStore.getState().selectedId).toBe(original.id)
-    expect(useFilterStore.getState().filter).toBe(original.shelved ? 'archived' : 'inbox')
-    if (original.shelved) expect(useArchiveStore.getState().selectedBoxId).toBe(original.boxId)
+    expect(useFilterStore.getState().filter).toBe(original.shelved ? 'shelf' : 'inbox')
+    if (original.shelved) expect(useShelfStore.getState().selectedBoxId).toBe(original.boxId)
   })
 
   it('preserves a newer order while restoring the failed location', async () => {
@@ -165,14 +165,14 @@ describe('relocation supersession and authoritative updates', () => {
     useSelectionStore.getState().select(original.id)
     let reject!: (reason: Error) => void
     ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
-    archiveTape(original, 'tape')
+    shelveTape(original, 'tape')
     const placed = { ...useTapesStore.getState().tapes[0]!, boxId: 'BoxTarget1', order: -10 }
     useTapesStore.getState().upsert(placed)
     reject(new Error('earlier archive rejected'))
 
-    await until(() => expect(useTapeActionResultsStore.getState().byTape[original.id]?.archive).toBeDefined())
+    await until(() => expect(useTapeActionResultsStore.getState().byTape[original.id]?.shelve).toBeDefined())
     expect(useTapesStore.getState().tapes[0]).toEqual(placed)
-    expect(useFilterStore.getState().filter).toBe('archived')
+    expect(useFilterStore.getState().filter).toBe('shelf')
   })
 
   it('does not resurrect a tape removed while its placement was pending', async () => {
@@ -252,7 +252,7 @@ describe('selection after an action settles', () => {
     let reject!: (error: Error) => void
     ipcInvoke.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
 
-    archiveTape(archived, 'tape')
+    shelveTape(archived, 'tape')
     useSelectionStore.getState().select(other.id)
     reject(new Error('archive failed'))
     await until(() => expect(useTapesStore.getState().tapes.find((t) => t.id === archived.id)?.shelved).toBe(false))

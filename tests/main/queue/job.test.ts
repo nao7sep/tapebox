@@ -1,4 +1,4 @@
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import { describe, it, expect } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -94,7 +94,7 @@ function makeDeps(opts: {
     findFinishedBundle: opts.finished ?? (async () => ({ status: 'none' })),
     session: {
       getTape: (id) => tapes.get(id),
-      sourceOwner: (ref, exceptId) => librarySourceIndex([...tapes.values()], exceptId).find(ref),
+      sourceOwner: (ref, exceptId) => collectionSourceIndex([...tapes.values()], exceptId).find(ref),
       upsertTape: (t) => {
         tapes.set(t.id, t)
       },
@@ -106,8 +106,8 @@ function makeDeps(opts: {
         return opts.persistSucceeds ?? true
       },
     },
-    getLibraryDir: () => LIBRARY_DIR,
-    withLibraryTurn: (work) => work(LIBRARY_DIR),
+    getCollectionDir: () => LIBRARY_DIR,
+    withCollectionTurn: (work) => work(LIBRARY_DIR),
     emit: ((channel: string, payload: unknown) => {
       emits.push(channel)
       payloads.push(payload)

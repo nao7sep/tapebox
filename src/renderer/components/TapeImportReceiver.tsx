@@ -13,7 +13,7 @@ import { CloseIcon } from './Icon'
 import { PassiveScrollRegion } from './PassiveScrollRegion'
 import { useI18n } from '@renderer/i18n/I18nContext'
 import { message } from '@shared/i18n/translate'
-import { ALREADY_IN_LIBRARY } from '@shared/import-issues'
+import { ALREADY_IN_COLLECTION } from '@shared/import-issues'
 
 export function TapeImportReceiver({ children }: { children: ReactNode }) {
   const [deliveryActive, setDeliveryActive] = useState(false)
@@ -106,7 +106,7 @@ function ImportResultNotice() {
       ? 'warning'
       : 'information'
   const allDuplicates = result.issues.length > 0 &&
-    result.issues.every((item) => item.reason.key === ALREADY_IN_LIBRARY)
+    result.issues.every((item) => item.reason.key === ALREADY_IN_COLLECTION)
   const added = result.imported.length
   const others = result.issues.length
   // Two counts in one line: each keeps its own plural form, and the pair entry

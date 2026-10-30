@@ -44,7 +44,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   function cancelProbe() {
     const requestId = probeRequest.current
     probeRequest.current = null
-    if (requestId) void ipcInvoke('library:cancelMetadataProbe', { requestId })
+    if (requestId) void ipcInvoke('collection:cancelMetadataProbe', { requestId })
       .catch((err) => log.debug('metadata probe cancellation failed', { error: describeError(err) }))
   }
   function close() {
@@ -74,7 +74,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
     setProbing(true)
     setError(null)
     try {
-      const result = await ipcInvoke('library:probeMetadata', { tapeId: tape.id, requestId })
+      const result = await ipcInvoke('collection:probeMetadata', { tapeId: tape.id, requestId })
       if (probeRequest.current === requestId) setCandidate(result)
     } catch (err) {
       if (probeRequest.current === requestId) setError(presentFailure(err, message('refresh.checkFailed'), 'metadata source check failed'))
@@ -91,7 +91,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
     setApplying(true)
     setError(null)
     try {
-      await ipcInvoke('library:applyMetadata', { tapeId: tape.id, metadata: candidate })
+      await ipcInvoke('collection:applyMetadata', { tapeId: tape.id, metadata: candidate })
       onClose()
     } catch (err) {
       setError(presentFailure(err, message('refresh.applyFailed'), 'metadata apply failed'))

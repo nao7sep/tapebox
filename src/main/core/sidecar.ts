@@ -93,7 +93,7 @@ const CATALOG_FIELDS = ['sourceUrl', 'name', 'addedAtUtc', 'downloadedAtUtc', 'r
 /** A sidecar as the library keeps it: an imported bundle's catalog fields,
  *  which the catalog now holds, leave its tapebox section; the media facts and
  *  anything else in it stay. */
-export function librarySidecar(sidecar: Record<string, unknown>): Record<string, unknown> {
+export function collectionSidecar(sidecar: Record<string, unknown>): Record<string, unknown> {
   const section = sidecar['tapebox']
   const kept = section && typeof section === 'object' && !Array.isArray(section)
     ? Object.fromEntries(Object.entries(section).filter(([key]) => !(CATALOG_FIELDS as readonly string[]).includes(key)))
@@ -105,7 +105,7 @@ export function librarySidecar(sidecar: Record<string, unknown>): Record<string,
  *  tape beside what the library sidecar's own section holds, so the bundle can
  *  be imported from its sidecar alone. */
 export function exportNamespace(sidecar: Record<string, unknown>, tape: Tape): SidecarTapeBox & Record<string, unknown> {
-  const kept = librarySidecar(sidecar)['tapebox'] as Record<string, unknown>
+  const kept = collectionSidecar(sidecar)['tapebox'] as Record<string, unknown>
   return {
     ...kept,
     media: (kept['media'] ?? null) as SidecarMedia | null,

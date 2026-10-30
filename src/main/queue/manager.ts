@@ -3,7 +3,7 @@ import { durableTape } from '@shared/durable-tape'
 import { getSettings } from '@main/store/config'
 import { emit } from '@main/ipc/events'
 import { log } from '@main/io/logger'
-import { isLibraryMoving } from '@main/library-writes'
+import { isCollectionMoving } from '@main/collection-writes'
 import { moveTape } from '@main/core/tape-state'
 import { nowUtcIso } from '@shared/utc'
 import { Job } from './job'
@@ -39,7 +39,7 @@ const held = new Set<string>()
  * nothing starts, and the move's owner ticks again when it ends.
  */
 export function tick(): void {
-  if (stopped || isLibraryMoving()) return
+  if (stopped || isCollectionMoving()) return
   const max = getSettings().maxConcurrentDownloads
   const candidates = held.size === 0 ? session.getTapes() : session.getTapes().filter((tape) => !held.has(tape.id))
   const toStart = selectTapesToStart(candidates, new Set(active.keys()), max)

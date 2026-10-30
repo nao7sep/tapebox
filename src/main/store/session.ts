@@ -1,14 +1,14 @@
 import { mkdir, rename, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { areaDir, INBOX_FOLDER, SHELF_FILE, SHELF_FOLDER, shelfFile, tapeDir, tapeFile } from '@main/paths'
-import { getLibraryDir } from './config'
+import { getCollectionDir } from './config'
 import { writeManagedJsonBytes } from '@main/io/atomic-json'
 import { StoreAccessError } from '@main/io/store-access'
 import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { frontOrders } from '@shared/order'
-import { librarySourceIndex, type SourceRef } from '@shared/source-identity'
+import { collectionSourceIndex, type SourceRef } from '@shared/source-identity'
 export { durableTape } from '@shared/durable-tape'
 import { TAPE_FILE, type Box, type Tape, type Session } from '@shared/domain'
 import {
@@ -109,7 +109,7 @@ async function writeCollection(session: Session): Promise<void> {
  * Called once when saves start failing (not again until one succeeds), so the
  * app edge can tell the user their collection changes are not reaching disk.
  */
-export function onCatalogSaveFailure(listener: () => void): void {
+export function onCollectionSaveFailure(listener: () => void): void {
   saveFailureListener = listener
 }
 
@@ -147,7 +147,7 @@ export async function openCollection(
  * readable shelf.json gets one before startup goes on.
  */
 export async function loadSession(): Promise<SessionLoadResult> {
-  const dir = getLibraryDir()
+  const dir = getCollectionDir()
   // Only the built-in collection is created implicitly. An unavailable chosen
   // drive must not become an empty replacement collection.
   const directory = await stat(dir).catch((cause: unknown) => {
@@ -201,7 +201,7 @@ export function collectionStoreFiles(): string[] {
  * cache first so no save lands between the two. */
 export function copyStoreFileTo(name: string, destination: string, signal?: AbortSignal): Promise<{ crossDevice: boolean }> {
   assertLoaded()
-  return enqueueCatalogWrite(async () => {
+  return enqueueCollectionWrite(async () => {
     await writeCollection(cache)
     const dir = loadedDir()
     const id = name === SHELF_FILE ? null : basename(dirname(name))
@@ -215,7 +215,7 @@ export function copyStoreFileTo(name: string, destination: string, signal?: Abor
 /** A move keeps the same cache at its new location. Changes saved in the old
  * folder after the copies reach the new one with the first save there. */
 export function bindMovedSession(dir: string): Promise<boolean> {
-  void enqueueCatalogWrite(async () => {
+  void enqueueCollectionWrite(async () => {
     collectionDir = dir
     lastShelfWritten = copiedForMove.get(SHELF_FILE) ?? null
     copiedForMove.delete(SHELF_FILE)
@@ -228,7 +228,7 @@ export function bindMovedSession(dir: string): Promise<boolean> {
 /** Materialize even an empty collection before it is copied or moved. */
 export async function prepareCollection(): Promise<void> {
   assertLoaded()
-  await enqueueCatalogWrite(async () => {
+  await enqueueCollectionWrite(async () => {
     await writeCollection(cache)
   })
 }
@@ -244,7 +244,7 @@ export function getTapes(): Tape[] {
 
 export function sourceOwner(ref: SourceRef, exceptId?: string): string | undefined {
   assertLoaded()
-  return librarySourceIndex(cache.tapes, exceptId).find(ref)
+  return collectionSourceIndex(cache.tapes, exceptId).find(ref)
 }
 
 export function getTape(id: string): Tape | undefined {
@@ -336,7 +336,7 @@ function saveFailed(err: unknown): void {
  */
 export function shelveTapes(ids: readonly string[]): Promise<Tape[]> {
   assertLoaded()
-  return enqueueCatalogWrite(async () => {
+  return enqueueCollectionWrite(async () => {
     const moving = [...new Set(ids)].map(getTape).filter((tape): tape is Tape => !!tape && !tape.shelved && !releasedFolders.has(tape.id))
     const loose = cache.tapes.filter((tape) => tape.shelved && tape.boxId === null)
     const orders = frontOrders(loose.map((tape) => tape.order), moving.length)
@@ -374,7 +374,7 @@ export function shelveTapes(ids: readonly string[]): Promise<Tape[]> {
  */
 export function unshelveTapes(ids: readonly string[]): Promise<Tape[]> {
   assertLoaded()
-  return enqueueCatalogWrite(async () => {
+  return enqueueCollectionWrite(async () => {
     const moving = [...new Set(ids)].map(getTape).filter((tape): tape is Tape => !!tape && tape.shelved && !releasedFolders.has(tape.id))
     if (moving.length === 0) return []
     const movingIds = new Set(moving.map((tape) => tape.id))
@@ -418,7 +418,7 @@ export async function renameTapeDurably(id: string, fields: RenameFields): Promi
   const renamed = (tapes: Tape[]): Tape[] => tapes.map((tape) => tape.id === id ? { ...tape, ...fields } : tape)
   cancelScheduledSave()
   try {
-    await enqueueCatalogWrite(async () => {
+    await enqueueCollectionWrite(async () => {
       if (!tapePositions.has(id)) throw new Error(`Tape not found during durable rename: ${id}`)
       await writeCollection({ ...cache, tapes: renamed(cache.tapes) })
       cache.tapes = renamed(cache.tapes)
@@ -439,7 +439,7 @@ export async function renameTapeDurably(id: string, fields: RenameFields): Promi
 export async function releaseTapeFolders(ids: readonly string[]): Promise<void> {
   assertLoaded()
   for (const id of ids) releasedFolders.add(id)
-  await enqueueCatalogWrite(async () => {})
+  await enqueueCollectionWrite(async () => {})
 }
 
 export function keepTapeFolders(ids: readonly string[]): void {
@@ -543,7 +543,7 @@ export async function persistNow(options: { quitting?: boolean } = {}): Promise<
     saveTimer = null
   }
   try {
-    await enqueueCatalogWrite(async () => {
+    await enqueueCollectionWrite(async () => {
       // Snapshot at execution, not enqueue time: a durable rename ahead of this
       // write may either commit or roll back while this call is waiting its turn.
       // The tape files and shelf.json are the app's most important durable
@@ -562,7 +562,7 @@ export async function persistNow(options: { quitting?: boolean } = {}): Promise<
   }
 }
 
-function enqueueCatalogWrite<T>(write: () => Promise<T>): Promise<T> {
+function enqueueCollectionWrite<T>(write: () => Promise<T>): Promise<T> {
   const run = persistChain.then(write)
   persistChain = run.then(() => {}, () => {})
   return run

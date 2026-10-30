@@ -1,4 +1,4 @@
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import { mkdir, mkdtemp, readdir, readFile, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -53,12 +53,12 @@ function deps(tapes: Map<string, Tape>, overrides: { download: JobDeps['ytdlp'][
     findFinishedBundle,
     session: {
       getTape: (id) => tapes.get(id),
-      sourceOwner: (ref, exceptId) => librarySourceIndex([...tapes.values()], exceptId).find(ref),
+      sourceOwner: (ref, exceptId) => collectionSourceIndex([...tapes.values()], exceptId).find(ref),
       upsertTape: (tape) => { tapes.set(tape.id, tape) },
       persistNow: async () => overrides.committed,
     },
-    getLibraryDir: () => dir,
-    withLibraryTurn: (work) => work(dir),
+    getCollectionDir: () => dir,
+    withCollectionTurn: (work) => work(dir),
     emit: noop as JobDeps['emit'],
     log: { info: noop, warn: noop, error: noop },
     now: () => overrides.now,

@@ -29,7 +29,7 @@ const state = vi.hoisted(() => ({ libraryDir: '/library', tapes: [] as Tape[], e
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
 vi.mock('@main/store/session', () => ({
-  onCatalogSaveFailure: () => {},
+  onCollectionSaveFailure: () => {},
   getTape: (id: string) => state.tapes.find((tape) => tape.id === id),
   getTapes: () => state.tapes,
   getBoxes: () => [],
@@ -38,7 +38,7 @@ vi.mock('@main/store/session', () => ({
   reorderTapesDurably: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getLibraryDir: () => state.libraryDir,
+  getCollectionDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: state.externalPlayer }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
@@ -47,7 +47,7 @@ vi.mock('@main/services/ffmpeg', () => ({ saveThumbnailJpeg: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log }))
 vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 
-const { registerLibraryHandlers } = await import('@main/ipc/library')
+const { registerCollectionHandlers } = await import('@main/ipc/collection')
 
 // A shelved tape's file sits in its folder under shelf/.
 const FULL_PATH = join('/library', 'shelf', 'Hasafile12', 'Take.mp4')
@@ -78,12 +78,12 @@ beforeEach(() => {
   openExternalPlayer.mockResolvedValue()
   state.externalPlayer = ''
   state.tapes = [makeTape({ id: 'Hasafile12', shelved: true }), makeTape({ id: 'Nofileyet1', filename: null })]
-  registerLibraryHandlers()
+  registerCollectionHandlers()
 })
 
 describe('revealing a tape in the file manager', () => {
   it('points the file manager at the file itself', async () => {
-    await invoke('library:reveal', { tapeId: 'Hasafile12' })
+    await invoke('collection:reveal', { tapeId: 'Hasafile12' })
 
     expect(shell.showItemInFolder).toHaveBeenCalledExactlyOnceWith(FULL_PATH)
   })
@@ -92,7 +92,7 @@ describe('revealing a tape in the file manager', () => {
     ['a tape whose file is not downloaded yet', 'Nofileyet1'],
     ['a tape the catalog does not hold', 'not-a-tape'],
   ])('refuses for %s', async (_case, tapeId) => {
-    await expect(invoke('library:reveal', { tapeId })).rejects.toThrow('The operation could not be completed.')
+    await expect(invoke('collection:reveal', { tapeId })).rejects.toThrow('The operation could not be completed.')
     expect(shell.showItemInFolder).not.toHaveBeenCalled()
   })
 })
@@ -100,15 +100,15 @@ describe('revealing a tape in the file manager', () => {
 describe('playing a tape outside the app', () => {
   it.each(['movie.exe', 'movie.CMD', 'movie.lnk', 'movie.unknown'])('requires an explicit player for %s', async (filename) => {
     state.tapes[0]!.filename = filename
-    await expect(invoke('library:playExternal', { tapeId: 'Hasafile12' })).rejects.toThrow('Choose an external player')
+    await expect(invoke('collection:playExternal', { tapeId: 'Hasafile12' })).rejects.toThrow('Choose an external player')
     expect(shell.openPath).not.toHaveBeenCalled()
     state.externalPlayer = 'player'
-    await invoke('library:playExternal', { tapeId: 'Hasafile12' })
+    await invoke('collection:playExternal', { tapeId: 'Hasafile12' })
     expect(openExternalPlayer).toHaveBeenCalledWith('player', join('/library', 'shelf', 'Hasafile12', filename))
   })
 
   it('lets the OS choose the player when none is configured', async () => {
-    await invoke('library:playExternal', { tapeId: 'Hasafile12' })
+    await invoke('collection:playExternal', { tapeId: 'Hasafile12' })
 
     expect(shell.openPath).toHaveBeenCalledExactlyOnceWith(FULL_PATH)
     expect(openExternalPlayer).not.toHaveBeenCalled()
@@ -117,7 +117,7 @@ describe('playing a tape outside the app', () => {
   it('passes on what the OS said when it could not open the file', async () => {
     shell.openPath.mockResolvedValue('No application is registered for .mp4')
 
-    await expect(invoke('library:playExternal', { tapeId: 'Hasafile12' })).rejects.toThrow(
+    await expect(invoke('collection:playExternal', { tapeId: 'Hasafile12' })).rejects.toThrow(
       'The operation could not be completed.',
     )
   })
@@ -125,7 +125,7 @@ describe('playing a tape outside the app', () => {
   it('hands the chosen player the file', async () => {
     state.externalPlayer = '  IINA  '
 
-    await invoke('library:playExternal', { tapeId: 'Hasafile12' })
+    await invoke('collection:playExternal', { tapeId: 'Hasafile12' })
 
     expect(openExternalPlayer).toHaveBeenCalledExactlyOnceWith('IINA', FULL_PATH)
     expect(shell.openPath).not.toHaveBeenCalled()
@@ -136,9 +136,9 @@ describe('playing a tape outside the app', () => {
     const error = Object.assign(new Error('ENOENT /internal/player SENTINEL'), { code: 'ENOENT' })
     openExternalPlayer.mockRejectedValue(error)
 
-    await expect(invoke('library:playExternal', { tapeId: 'Hasafile12' })).rejects.toThrow('The operation could not be completed.')
+    await expect(invoke('collection:playExternal', { tapeId: 'Hasafile12' })).rejects.toThrow('The operation could not be completed.')
     expect(log.error).toHaveBeenCalledWith('ipc handler failed', expect.objectContaining({
-      channel: 'library:playExternal', error: expect.objectContaining({ message: expect.stringContaining('SENTINEL') }),
+      channel: 'collection:playExternal', error: expect.objectContaining({ message: expect.stringContaining('SENTINEL') }),
     }))
   })
 
@@ -146,7 +146,7 @@ describe('playing a tape outside the app', () => {
     ['a tape whose file is not downloaded yet', 'Nofileyet1'],
     ['a tape the catalog does not hold', 'not-a-tape'],
   ])('refuses for %s', async (_case, tapeId) => {
-    await expect(invoke('library:playExternal', { tapeId })).rejects.toThrow('The operation could not be completed.')
+    await expect(invoke('collection:playExternal', { tapeId })).rejects.toThrow('The operation could not be completed.')
     expect(shell.openPath).not.toHaveBeenCalled()
     expect(openExternalPlayer).not.toHaveBeenCalled()
   })

@@ -22,7 +22,7 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
 vi.mock('@main/store/config', () => ({
-  getLibraryDir: () => state.libraryDir,
+  getCollectionDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
 }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
@@ -62,7 +62,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
   }
 })
 
-import { registerLibraryHandlers } from '@main/ipc/library'
+import { registerCollectionHandlers } from '@main/ipc/collection'
 import * as session from '@main/store/session'
 
 let root: string
@@ -96,7 +96,7 @@ beforeEach(async () => {
   await writeFile(join(tapeFolder, original.sidecarFilename!), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   session.upsertTape(original)
   await session.persistNow()
-  registerLibraryHandlers()
+  registerCollectionHandlers()
 })
 
 afterEach(async () => {
@@ -112,7 +112,7 @@ describe('rename publication across the real session commit', () => {
     state.release = new Promise<void>((resolve) => { release = resolve })
     state.started = started
     state.holdRename = true
-    const renaming = handlers.get('library:rename')!({ tapeId: original.id, name: 'Renamed' })
+    const renaming = handlers.get('collection:rename')!({ tapeId: original.id, name: 'Renamed' })
     try {
       await held
       expect(session.getTape(original.id)?.filename).toBe('Original.mp4')
@@ -141,7 +141,7 @@ describe('rename publication across the real session commit', () => {
     state.release = new Promise<void>((resolve) => { release = resolve })
     state.started = started
     state.holdCleanup = true
-    const renaming = handlers.get('library:rename')!({ tapeId: original.id, name: 'Renamed' })
+    const renaming = handlers.get('collection:rename')!({ tapeId: original.id, name: 'Renamed' })
     try {
       await held
       const committed = session.getTape(original.id)!

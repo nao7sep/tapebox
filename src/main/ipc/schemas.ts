@@ -55,18 +55,18 @@ export const ipcRequestSchemas = {
   'downloads:retry':       z.object({ tapeId: z.string() }),
 
   // ── Library ──────────────────────────────────────────────────────────────
-  'library:subscribe':     z.undefined(),
-  'library:remove':        z.object({ tapeIds: z.array(z.string()), deleteFiles: z.boolean() }),
-  'library:rename':        z.object({ tapeId: z.string(), name: z.string() }),
-  'library:import':        z.object({ paths: z.array(z.string()) }),
-  'library:archive':       z.object({ tapeIds: z.array(z.string()) }),
-  'library:unarchive':     z.object({ tapeIds: z.array(z.string()) }),
-  'library:getSidecar':    z.object({ tapeId: z.string() }),
-  'library:reveal':        z.object({ tapeId: z.string() }),
-  'library:playExternal':  z.object({ tapeId: z.string() }),
-  'library:probeMetadata': z.object({ tapeId: z.string(), requestId: z.string().min(1) }),
-  'library:cancelMetadataProbe': z.object({ requestId: z.string().min(1) }),
-  'library:applyMetadata': z.object({ tapeId: z.string(), metadata: RefreshedMetadataSchema }),
+  'collection:subscribe':     z.undefined(),
+  'collection:remove':        z.object({ tapeIds: z.array(z.string()), deleteFiles: z.boolean() }),
+  'collection:rename':        z.object({ tapeId: z.string(), name: z.string() }),
+  'collection:import':        z.object({ paths: z.array(z.string()) }),
+  'collection:shelve':       z.object({ tapeIds: z.array(z.string()) }),
+  'collection:unshelve':     z.object({ tapeIds: z.array(z.string()) }),
+  'collection:getSidecar':    z.object({ tapeId: z.string() }),
+  'collection:reveal':        z.object({ tapeId: z.string() }),
+  'collection:playExternal':  z.object({ tapeId: z.string() }),
+  'collection:probeMetadata': z.object({ tapeId: z.string(), requestId: z.string().min(1) }),
+  'collection:cancelMetadataProbe': z.object({ requestId: z.string().min(1) }),
+  'collection:applyMetadata': z.object({ tapeId: z.string(), metadata: RefreshedMetadataSchema }),
 
   // ── Tape ordering ──────────────────────────────────────────────────────────
   'tapes:reorder':         z.object({ orderedIds: z.array(z.string()) }),
@@ -96,9 +96,9 @@ export const ipcRequestSchemas = {
 
   // ── Settings ──────────────────────────────────────────────────────────────
   'settings:get':          z.undefined(),
-  'settings:defaultLibraryDir': z.undefined(),
-  'settings:update':       SettingsSchema.extend({ libraryAction: z.literal('open').optional() }),
-  'settings:cancelLibraryMove': z.undefined(),
+  'settings:defaultCollectionDir': z.undefined(),
+  'settings:update':       SettingsSchema.extend({ collectionAction: z.literal('open').optional() }),
+  'settings:cancelCollectionMove': z.undefined(),
   'settings:setApiKey':    z.object({ apiKey: z.string() }),
   'settings:clearApiKey':  z.undefined(),
   'settings:apiKeyState':  z.undefined(),

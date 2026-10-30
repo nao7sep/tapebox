@@ -16,7 +16,7 @@ const catalogMutation = vi.hoisted(() => ({
 }))
 
 vi.mock('@main/paths', async (importOriginal) => ({ ...await importOriginal<typeof import('@main/paths')>() }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => testRoot }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => testRoot }))
 vi.mock('@main/store/backupStore', () => ({ record }))
 vi.mock('@main/io/logger', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -53,7 +53,7 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
 import {
   loadSession,
   sourceOwner,
-  onCatalogSaveFailure,
+  onCollectionSaveFailure,
   getBoxes,
   getTapes,
   removeTapes,
@@ -169,7 +169,7 @@ describe('collection persistence', () => {
   it('keeps a reorder whose save failed, as any library edit, and writes it on the retry', async () => {
     await loadSession()
     const failures = vi.fn()
-    onCatalogSaveFailure(failures)
+    onCollectionSaveFailure(failures)
     // Only the Shelf's lists have a chosen order; these are loose tapes.
     const first = { ...tape('abc1234567', 0), shelved: true }
     const second = { ...tape('def1234567', 1), shelved: true }
@@ -193,7 +193,7 @@ describe('collection persistence', () => {
     const saved = await onDisk()
     expect([first.id, second.id].map((id) => saved.tapes.find((item) => item.id === id)?.order)).toEqual([1, 0])
     expect([firstBox.id, secondBox.id].map((id) => saved.boxes.find((item) => item.id === id)?.order)).toEqual([1, 0])
-    onCatalogSaveFailure(() => {})
+    onCollectionSaveFailure(() => {})
   })
 
   it('writes a download in flight as its queued self, so queue steps add no tape file versions', async () => {
@@ -233,7 +233,7 @@ describe('collection persistence', () => {
   it('keeps a change whose save failed, reports the failure once, and writes it on the retry', async () => {
     await loadSession()
     const failures = vi.fn()
-    onCatalogSaveFailure(failures)
+    onCollectionSaveFailure(failures)
     const finished = tape('fin1234567')
     upsertTape(finished)
 
@@ -245,12 +245,12 @@ describe('collection persistence', () => {
 
     await expect(persistNow()).resolves.toBe(true)
     expect((await onDisk()).tapes).toEqual([finished])
-    onCatalogSaveFailure(() => {})
+    onCollectionSaveFailure(() => {})
   })
 
   it('retries a failed save on its own schedule, apart from the operation that made the change', async () => {
     await loadSession()
-    onCatalogSaveFailure(() => {})
+    onCollectionSaveFailure(() => {})
     const finished = tape('ret1234567')
     const saved = new Promise<void>((resolve) => { catalogMutation.saved = resolve })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
@@ -268,7 +268,7 @@ describe('collection persistence', () => {
   it('leaves a quit-time save failure to the quit to tell, and does not report it again afterwards', async () => {
     await loadSession()
     const failures = vi.fn()
-    onCatalogSaveFailure(failures)
+    onCollectionSaveFailure(failures)
     upsertTape(tape('qui1234567'))
 
     catalogMutation.failOrdinaryWrites = 2
@@ -278,7 +278,7 @@ describe('collection persistence', () => {
     expect(failures).not.toHaveBeenCalled()
 
     await expect(persistNow()).resolves.toBe(true)
-    onCatalogSaveFailure(() => {})
+    onCollectionSaveFailure(() => {})
   })
 })
 

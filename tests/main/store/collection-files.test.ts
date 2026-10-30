@@ -10,7 +10,7 @@ import { ShelfSchema, TapeFileSchema, type Tape } from '@shared/domain'
 // interrupted conversion and a damaged tape file are the real thing.
 
 const state = vi.hoisted(() => ({ dir: '', failWrite: null as null | ((path: string) => boolean), failRename: false }))
-vi.mock('@main/store/config', () => ({ getLibraryDir: () => state.dir }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => state.dir }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@main/io/atomic-json', async (importOriginal) => {

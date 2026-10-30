@@ -66,13 +66,13 @@ export function planTapeListDrop(event: DragEndEvent): TapeListDropPlan | null {
   }
 }
 
-export type ArchiveDropPlan =
+export type ShelfDropPlan =
   | { kind: 'reorder-box'; boxId: string; fromIndex: number; toIndex: number }
   | { kind: 'reorder-tape'; tapeId: string; fromIndex: number; toIndex: number }
   | { kind: 'move-tape'; tapeId: string; boxId: string | null }
 
 /** Map one archive release to reorder-within-list or move-to-semantic-box. */
-export function planArchiveDrop(event: DragEndEvent): ArchiveDropPlan | null {
+export function planShelfDrop(event: DragEndEvent): ShelfDropPlan | null {
   if (event.canceled) return null
   const { source, target } = event.operation
   if (!source || !target || !isSortable(source)) return null

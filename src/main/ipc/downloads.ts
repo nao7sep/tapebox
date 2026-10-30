@@ -1,12 +1,12 @@
 import { handle } from './handle'
 import { emit } from './events'
 import * as session from '@main/store/session'
-import { getLibraryDir, getSettings } from '@main/store/config'
+import { getCollectionDir, getSettings } from '@main/store/config'
 import { reserveTapeId } from '@main/core/stem'
 import * as queue from '@main/queue/manager'
 import { nowUtcIso } from '@shared/utc'
 import { isImportableUrl } from '@shared/url'
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import type { Tape } from '@shared/domain'
 import { moveTape, type TapeMove } from '@main/core/tape-state'
 import { UserFacingError } from '@main/user-facing-error'
@@ -32,13 +32,13 @@ export function registerDownloadHandlers(): void {
     // Reserve the tape's id first: it is the only await. The dedup check, the
     // order and the insert then happen in one synchronous turn, so two quick Adds
     // of the same URL cannot both pass the check.
-    const id = await reserveTapeId(getLibraryDir(), session.getTapes().map((tape) => tape.id))
+    const id = await reserveTapeId(getCollectionDir(), session.getTapes().map((tape) => tape.id))
     // Dedup by URL for the single-add path (no id yet — it's unprobed), with the
     // library's one identity rule, so the same video pasted with tracking junk or a
     // fragment isn't added twice. Any existing tape blocks the add, in any state; a
     // failed one is resumed via Retry, not re-added.
     if (session.sourceOwner({ url: trimmed })) {
-      throw new UserFacingError('refused', message('errors.urlInLibrary'))
+      throw new UserFacingError('refused', message('errors.urlInCollection'))
     }
     const tape = queuedTape(id, trimmed, nextAddedAtUtc(), 0)
     session.upsertTape(tape)
@@ -55,7 +55,7 @@ export function registerDownloadHandlers(): void {
     // synchronous turn so a concurrent add cannot slip a duplicate in between.
     const ids: string[] = []
     for (let i = 0; i < candidates.length; i++) {
-      ids.push(await reserveTapeId(getLibraryDir(), [...session.getTapes().map((tape) => tape.id), ...ids]))
+      ids.push(await reserveTapeId(getCollectionDir(), [...session.getTapes().map((tape) => tape.id), ...ids]))
     }
     const accepted = newUrls(session.getTapes(), candidates)
     if (accepted.length === 0) return []
@@ -108,7 +108,7 @@ function transition(tapeId: string, move: TapeMove): void {
  * different-URL collisions are caught later, post-probe, in the queue.
  */
 export function newUrls(tapes: readonly Tape[], urls: readonly string[]): string[] {
-  const known = librarySourceIndex(tapes)
+  const known = collectionSourceIndex(tapes)
   const accepted: string[] = []
   for (const url of urls) {
     if (known.has({ url })) continue

@@ -84,7 +84,7 @@ beforeEach(() => {
 })
 
 describe('deleting a box', () => {
-  it('drops its tapes into Unboxed as a block, on top, still in the order they held', async () => {
+  it('drops its tapes into Loose tapes as a block, on top, still in the order they held', async () => {
     state.tapes = [
       makeTape({ id: 'unboxed-old', boxId: null, order: 0 }),
       makeTape({ id: 'summer-2nd', boxId: 'box-summer', order: 5 }),
@@ -162,7 +162,7 @@ describe('filing tapes into a box', () => {
     expect(emitted('tapes:updatedMany')).toHaveLength(1)
   })
 
-  it('files tapes back into Unboxed without disturbing the inbox', async () => {
+  it('files tapes back into Loose tapes without disturbing the inbox', async () => {
     state.tapes = [
       makeTape({ id: 'in-the-inbox', shelved: false, boxId: null, order: 0 }),
       makeTape({ id: 'unboxed-old', boxId: null, order: 0 }),

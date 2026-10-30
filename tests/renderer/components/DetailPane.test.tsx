@@ -69,7 +69,7 @@ beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, 'ended', 'get').mockImplementation(function (this: HTMLMediaElement) { return states.get(this)?.ended ?? false })
   play.mockClear(); pause.mockClear(); load.mockClear()
   ipcInvoke.mockReset().mockImplementation(async (channel: string, req: unknown) => {
-    if (channel === 'library:getSidecar') return {}
+    if (channel === 'collection:getSidecar') return {}
     if (channel === 'settings:update') return { settings: { ...useSettingsStore.getState().settings, ...req as object }, warning: null }
     return undefined
   })
@@ -101,7 +101,7 @@ describe('DetailPane media lifecycle', () => {
     // An opposite global preference proves the rename snapshot owns this remount.
     useSettingsStore.setState({ settings: { ...defaultSettings(), autoplay: !playing, volume: 0.7 } })
     const rename = deferred<void>()
-    ipcInvoke.mockImplementation((channel: string) => channel === 'library:rename' ? rename.promise : Promise.resolve({}))
+    ipcInvoke.mockImplementation((channel: string) => channel === 'collection:rename' ? rename.promise : Promise.resolve({}))
     await render()
     expect(video().autoplay).toBe(!playing)
     const old = video()
@@ -156,20 +156,20 @@ describe('DetailPane media lifecycle', () => {
   })
 
   it('reloads accepted metadata and prefers the probed durationSeconds', async () => {
-    ipcInvoke.mockImplementation(async (channel: string) => channel === 'library:getSidecar'
+    ipcInvoke.mockImplementation(async (channel: string) => channel === 'collection:getSidecar'
       ? { duration: 60, tapebox: { media: { durationSeconds: tape.probedAtUtc?.endsWith('01Z') ? 135 : 90 } } }
       : undefined)
     await render()
     expect(host.textContent).toContain('1:30')
     await render({ ...tape, probedAtUtc: '2026-10-23T00:00:01Z' })
     expect(host.textContent).toContain('2:15')
-    expect(ipcInvoke.mock.calls.filter(([c]) => c === 'library:getSidecar')).toHaveLength(2)
+    expect(ipcInvoke.mock.calls.filter(([c]) => c === 'collection:getSidecar')).toHaveLength(2)
   })
 
   it('ignores sidecar replies after tape or collection replacement', async () => {
     const requests = [deferred<object>(), deferred<object>(), deferred<object>()]
     let index = 0
-    ipcInvoke.mockImplementation((channel: string) => channel === 'library:getSidecar' ? requests[index++].promise : Promise.resolve())
+    ipcInvoke.mockImplementation((channel: string) => channel === 'collection:getSidecar' ? requests[index++].promise : Promise.resolve())
     await render()
     await render({ ...tape, id: 'Tape000002' })
     await act(async () => useMediaStore.setState({ collectionRevision: 1 }))
@@ -261,10 +261,10 @@ it('logs tape identity and masks the local media credential in browser diagnosti
 })
 
 describe('shared sidecar preview', () => {
-  const reads = () => ipcInvoke.mock.calls.filter(([channel]) => channel === 'library:getSidecar')
+  const reads = () => ipcInvoke.mock.calls.filter(([channel]) => channel === 'collection:getSidecar')
 
   it('shares the settled preview with Rename and invalidates it on accepted metadata and collection changes', async () => {
-    ipcInvoke.mockImplementation(async (channel: string) => channel === 'library:getSidecar' ? { description: 'Saved description' } : undefined)
+    ipcInvoke.mockImplementation(async (channel: string) => channel === 'collection:getSidecar' ? { description: 'Saved description' } : undefined)
     await render()
     await click('Rename')
     expect(reads()).toHaveLength(1)
@@ -280,14 +280,14 @@ describe('shared sidecar preview', () => {
 
   it('shares an unfinished read and lets a tool retry the shared failure once', async () => {
     const pending = deferred<Record<string, unknown>>()
-    ipcInvoke.mockImplementation((channel: string) => channel === 'library:getSidecar' ? pending.promise : Promise.resolve())
+    ipcInvoke.mockImplementation((channel: string) => channel === 'collection:getSidecar' ? pending.promise : Promise.resolve())
     await render()
     await click('Rename')
     expect(reads()).toHaveLength(1)
     await act(async () => pending.reject(new Error('unavailable')))
     const dialog = document.querySelector('[role="dialog"]')!
     expect(dialog.querySelector('[role="alert"]')).not.toBeNull()
-    ipcInvoke.mockImplementation(async (channel: string) => channel === 'library:getSidecar' ? { description: 'Recovered preview' } : undefined)
+    ipcInvoke.mockImplementation(async (channel: string) => channel === 'collection:getSidecar' ? { description: 'Recovered preview' } : undefined)
     await click('Try again', true)
     expect(reads()).toHaveLength(2)
     expect(dialog.textContent).toContain('Recovered preview')

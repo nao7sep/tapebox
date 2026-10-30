@@ -37,7 +37,7 @@ function stubMain(updateReply: (patch: SettingsSets) => unknown, keyState = 'abs
   ipcInvoke.mockImplementation((channel: string, req?: unknown) => {
     if (channel === 'settings:get') return Promise.resolve(saved)
     if (channel === 'settings:apiKeyState') return Promise.resolve(keyState)
-    if (channel === 'settings:defaultLibraryDir') return Promise.resolve('/home/me/.tapebox/library')
+    if (channel === 'settings:defaultCollectionDir') return Promise.resolve('/home/me/.tapebox/library')
     if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsSets))
     if (channel === 'settings:systemAppearance') return Promise.resolve('dark')
     return Promise.resolve()
@@ -91,7 +91,7 @@ describe('SettingsModal', () => {
     await type(document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!, '/new-library')
     await click('Save')
     await act(async () => {
-      const progress = events.get('settings:libraryMoveProgress') as unknown as (value: unknown) => void
+      const progress = events.get('settings:collectionMoveProgress') as unknown as (value: unknown) => void
       progress({ filesDone: 0, filesTotal: 1, bytesDone: 0, bytesTotal: 100 })
     })
     await click('Stop Move')
@@ -130,7 +130,7 @@ describe('SettingsModal', () => {
     await render()
     const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
     await type(field, '/copied-library')
-    const toggle = [...document.querySelectorAll('label')].find((label) => label.textContent?.includes('Open an existing library'))!.querySelector('input')!
+    const toggle = [...document.querySelectorAll('label')].find((label) => label.textContent?.includes('Open an existing collection'))!.querySelector('input')!
     await act(async () => toggle.click())
     await click('Save')
     expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'settings:update')).toBe(false)
@@ -138,20 +138,20 @@ describe('SettingsModal', () => {
     expect(useBoxesStore.getState().draftName).toBe('Unsaved box')
     await click('Save')
     await click('Discard')
-    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { libraryDir: '/copied-library', libraryAction: 'open' })
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { libraryDir: '/copied-library', collectionAction: 'open' })
   })
 
-  it('saves an explicit existing-library choice and replaces the move explanation', async () => {
+  it('saves an explicit existing-collection choice and replaces the move explanation', async () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
     const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
     await type(field, '/copied-library')
-    const toggle = [...document.querySelectorAll('label')].find((label) => label.textContent?.includes('Open an existing library'))!.querySelector('input')!
+    const toggle = [...document.querySelectorAll('label')].find((label) => label.textContent?.includes('Open an existing collection'))!.querySelector('input')!
     await act(async () => toggle.click())
-    expect(document.body.textContent).toContain('The current library stays in its folder.')
+    expect(document.body.textContent).toContain('The current collection stays in its folder.')
     expect(document.body.textContent).not.toContain('Changing this moves your existing tapes')
     await click('Save')
-    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { libraryDir: '/copied-library', libraryAction: 'open' })
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { libraryDir: '/copied-library', collectionAction: 'open' })
     expect(onClose).toHaveBeenCalledOnce()
   })
 
@@ -284,7 +284,7 @@ describe('SettingsModal', () => {
     expect(document.querySelector('h3')!.textContent).toBe('OpenAI')
     expect(document.body.textContent).toContain('OpenAI is the only provider supported.')
     expect(document.querySelectorAll('select')).toHaveLength(0)
-    expect(ipcInvoke.mock.calls.map(([channel]) => channel)).toEqual(['settings:get', 'settings:apiKeyState', 'settings:defaultLibraryDir', 'settings:systemAppearance'])
+    expect(ipcInvoke.mock.calls.map(([channel]) => channel)).toEqual(['settings:get', 'settings:apiKeyState', 'settings:defaultCollectionDir', 'settings:systemAppearance'])
   })
 
   it.each([
@@ -484,7 +484,7 @@ describe('SettingsModal', () => {
   })
 
   it('treats a save main reports with a warning as saved, and keeps the warning on screen', async () => {
-    const warning = 'Settings were saved and the library now uses the new folder, but some files could not be removed from the previous folder.'
+    const warning = 'Settings were saved and the collection now uses the new folder, but some files could not be removed from the previous folder.'
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning }))
     await render()
     await click('AI')

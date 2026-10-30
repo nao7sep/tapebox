@@ -33,7 +33,7 @@ export function useTapeRemoval(videoRef: RefObject<HTMLVideoElement | null>): {
       'remove',
       'tape removal failed',
       message('tapeActions.removeFailed'),
-      () => withReleasedTapeVideo(tape, videoRef, () => ipcInvoke('library:remove', { tapeIds: [tape.id], deleteFiles: true })),
+      () => withReleasedTapeVideo(tape, videoRef, () => ipcInvoke('collection:remove', { tapeIds: [tape.id], deleteFiles: true })),
     )
     if (outcome === 'succeeded') advance()
   }

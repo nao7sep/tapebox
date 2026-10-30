@@ -24,8 +24,8 @@ describe('matching a shortcut', () => {
     expect(matchShortcut(SHORTCUTS.inbox, key({ key: '1' }))).toBe(-1)
     expect(matchShortcut(SHORTCUTS.showList, key({ key: '/', ctrlKey: true, shiftKey: true }))).toBe(0)
     expect(matchShortcut(SHORTCUTS.showList, key({ key: '?', shiftKey: true }))).toBe(1)
-    expect(matchShortcut(SHORTCUTS.archiveToggle, key({ key: 'A', shiftKey: true }))).toBe(0)
-    expect(matchShortcut(SHORTCUTS.archiveToggle, key({ key: 'a', ctrlKey: true }))).toBe(-1)
+    expect(matchShortcut(SHORTCUTS.shelveToggle, key({ key: 'A', shiftKey: true }))).toBe(0)
+    expect(matchShortcut(SHORTCUTS.shelveToggle, key({ key: 'a', ctrlKey: true }))).toBe(-1)
   })
 
   it('reorders only with the modifier and Shift held', () => {

@@ -48,7 +48,7 @@ describe('useImportMedia', () => {
     })
     await act(async () => importMedia(['/tmp/poster.png']))
 
-    expect(ipcInvoke).toHaveBeenCalledWith('library:import', { paths: ['/tmp/poster.png'] })
+    expect(ipcInvoke).toHaveBeenCalledWith('collection:import', { paths: ['/tmp/poster.png'] })
     expect(useImportResultStore.getState().result?.issues[0]).toMatchObject({
       path: '/tmp/poster.png',
       reason: expect.stringContaining('.json sidecars'),

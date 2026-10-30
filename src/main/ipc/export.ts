@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { handle } from './handle'
-import { removeTapesFrom } from './library'
+import { removeTapesFrom } from './collection'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
 import { exportNamespace, readSidecarFile, SIDECAR_JSON } from '@main/core/sidecar'
@@ -17,7 +17,7 @@ import {
 } from '@main/io/atomic-file'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { runCancellable } from '@main/work-registry'
-import { withLibraryTurn } from '@main/library-writes'
+import { withCollectionTurn } from '@main/collection-writes'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
@@ -40,7 +40,7 @@ export function registerExportHandlers(): void {
   // A library turn: the export reads the library's files and, with
   // deleteFromApp, removes them.
   handle('export:files', (req) => runCancellable((signal) =>
-    withLibraryTurn((libraryDir) => exportTape(req, libraryDir, signal))))
+    withCollectionTurn((libraryDir) => exportTape(req, libraryDir, signal))))
 }
 
 /**

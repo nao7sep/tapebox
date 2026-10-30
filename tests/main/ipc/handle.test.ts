@@ -59,20 +59,20 @@ describe('IPC failure boundary', () => {
 
   it('carries a main-authored refusal across as its code and copy, keeping the cause in the log', async () => {
     handle('settings:get', async () => {
-      throw new UserFacingError('refused', message('errors.libraryMoveBlocked'), {
+      throw new UserFacingError('refused', message('errors.collectionMoveBlocked'), {
         cause: new Error('/private/tmp/HOSTILE-SENTINEL'),
       })
     })
 
     const reply = await registered()(trustedEvent(), undefined)
-    expect(reply).toEqual({ ok: false, failure: { code: 'refused', userMessage: { key: 'errors.libraryMoveBlocked' } } })
+    expect(reply).toEqual({ ok: false, failure: { code: 'refused', userMessage: { key: 'errors.collectionMoveBlocked' } } })
     expect(JSON.stringify(reply)).not.toContain('HOSTILE-SENTINEL')
     expect(JSON.stringify(mocks.logWarn.mock.calls)).toContain('HOSTILE-SENTINEL')
 
     let thrown: unknown
     try { unwrapIpcReply('settings:get', reply) } catch (error) { thrown = error }
     expect(thrown).toBeInstanceOf(IpcCallError)
-    expect(thrown).toMatchObject({ code: 'refused', userMessage: { key: 'errors.libraryMoveBlocked' } })
+    expect(thrown).toMatchObject({ code: 'refused', userMessage: { key: 'errors.collectionMoveBlocked' } })
   })
 
   it('wraps a successful result as its value', async () => {

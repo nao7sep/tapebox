@@ -69,7 +69,7 @@ describe('RefreshMetadataModal saved description comparison', () => {
 
     expect(button('Apply').disabled).toBe(true)
     await act(async () => button('Apply').click())
-    expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'library:applyMetadata')).toBe(false)
+    expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'collection:applyMetadata')).toBe(false)
     expect(host.textContent).toContain('Description')
 
     await act(async () => { finishLoad({ description: 'Saved description that Apply would erase.' }) })
@@ -98,9 +98,9 @@ describe('RefreshMetadataModal saved description comparison', () => {
     ipcInvoke.mockResolvedValueOnce({ description: 'Saved description' })
     await act(async () => button('Retry').click())
 
-    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'library:getSidecar')).toEqual([
-      ['library:getSidecar', { tapeId: tape.id }],
-      ['library:getSidecar', { tapeId: tape.id }],
+    expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'collection:getSidecar')).toEqual([
+      ['collection:getSidecar', { tapeId: tape.id }],
+      ['collection:getSidecar', { tapeId: tape.id }],
     ])
     expect(host.querySelector('[role="alert"]')).toBeNull()
     expect(host.textContent).toContain('Saved description')
@@ -128,36 +128,36 @@ describe('RefreshMetadataModal saved description comparison', () => {
 it('cancels a closing editor probe and ignores its late reply after reopening', async () => {
   let finish!: (value: RefreshedMetadata) => void
   ipcInvoke.mockImplementation((channel) => {
-    if (channel === 'library:getSidecar') return Promise.resolve({})
-    if (channel === 'library:probeMetadata') return new Promise((resolve) => { finish = resolve })
+    if (channel === 'collection:getSidecar') return Promise.resolve({})
+    if (channel === 'collection:probeMetadata') return new Promise((resolve) => { finish = resolve })
     return Promise.resolve()
   })
   await mount()
   await act(async () => button('Check source').click())
-  const firstRequest = ipcInvoke.mock.calls.find(([channel]) => channel === 'library:probeMetadata')![1]
+  const firstRequest = ipcInvoke.mock.calls.find(([channel]) => channel === 'collection:probeMetadata')![1]
   await act(async () => root!.unmount())
   root = null
-  expect(ipcInvoke).toHaveBeenCalledWith('library:cancelMetadataProbe', { requestId: firstRequest.requestId })
+  expect(ipcInvoke).toHaveBeenCalledWith('collection:cancelMetadataProbe', { requestId: firstRequest.requestId })
   await mount()
   await act(async () => { finish(candidate) })
   expect(host.textContent).not.toContain(candidate.title)
   expect(button('Check source').disabled).toBe(false)
   await act(async () => button('Check source').click())
-  const probes = ipcInvoke.mock.calls.filter(([channel]) => channel === 'library:probeMetadata')
+  const probes = ipcInvoke.mock.calls.filter(([channel]) => channel === 'collection:probeMetadata')
   expect(probes[1]![1].requestId).not.toBe(firstRequest.requestId)
 })
 
 it('still closes when the cancellation request fails', async () => {
   const onClose = vi.fn()
   ipcInvoke.mockImplementation((channel) => {
-    if (channel === 'library:getSidecar') return Promise.resolve({})
-    if (channel === 'library:probeMetadata') return new Promise(() => {})
-    if (channel === 'library:cancelMetadataProbe') return Promise.reject(new Error('closed IPC'))
+    if (channel === 'collection:getSidecar') return Promise.resolve({})
+    if (channel === 'collection:probeMetadata') return new Promise(() => {})
+    if (channel === 'collection:cancelMetadataProbe') return Promise.reject(new Error('closed IPC'))
     return Promise.resolve()
   })
   await mount(onClose)
   await act(async () => button('Check source').click())
   await act(async () => button('Cancel').click())
   expect(onClose).toHaveBeenCalledOnce()
-  expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'library:cancelMetadataProbe')).toHaveLength(1)
+  expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'collection:cancelMetadataProbe')).toHaveLength(1)
 })

@@ -1,4 +1,4 @@
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 const tapes = vi.hoisted(() => [] as Tape[])
 vi.mock('@main/store/session', () => ({
-  sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(tapes, exceptId).find(ref),
+  sourceOwner: (ref: SourceRef, exceptId?: string) => collectionSourceIndex(tapes, exceptId).find(ref),
   getTapes: () => tapes,
   getTape: (id: string) => tapes.find((t) => t.id === id),
   upsertTape: (tape: Tape) => {
@@ -26,7 +26,7 @@ vi.mock('@main/store/session', () => ({
   },
 }))
 vi.mock('@main/store/config', () => ({
-  getLibraryDir: () => '/library',
+  getCollectionDir: () => '/library',
   getSettings: () => ({ autoStartDownloads: true }),
 }))
 const stat = vi.hoisted(() => vi.fn())

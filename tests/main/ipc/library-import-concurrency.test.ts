@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
 vi.mock('@main/store/config', () => ({
-  getLibraryDir: () => state.libraryDir,
+  getCollectionDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
 }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
@@ -59,7 +59,7 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
   }
 })
 
-import { registerLibraryHandlers } from '@main/ipc/library'
+import { registerCollectionHandlers } from '@main/ipc/collection'
 import * as session from '@main/store/session'
 
 let root: string
@@ -92,7 +92,7 @@ async function stageBundle(dir: string, stem: string, sourceUrl: string, poster 
 }
 
 async function importBundle(path: string): Promise<ImportResult> {
-  return await handlers.get('library:import')!({ paths: [path] }) as ImportResult
+  return await handlers.get('collection:import')!({ paths: [path] }) as ImportResult
 }
 
 const byId = (a: Tape, b: Tape) => a.id.localeCompare(b.id)
@@ -122,7 +122,7 @@ beforeEach(async () => {
   // A collection that already holds Inbox tapes has its inbox/ folder.
   await mkdir(join(state.libraryDir, 'inbox'), { recursive: true })
   await session.loadSession()
-  registerLibraryHandlers()
+  registerCollectionHandlers()
 })
 
 afterEach(async () => {
@@ -135,7 +135,7 @@ describe('bundle import beside catalog changes', () => {
     const firstPath = await stageBundle(sourceDir, 'first', 'https://example.test/first')
     const secondPath = await stageBundle(sourceDir, 'second', 'https://example.test/second')
     const gate = hold('heldCopy', 'second.mp4')
-    const batch = handlers.get('library:import')!({ paths: [firstPath, secondPath] })
+    const batch = handlers.get('collection:import')!({ paths: [firstPath, secondPath] })
     const added = 'url0000001'
     try {
       await gate.started

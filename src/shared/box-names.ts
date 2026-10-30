@@ -11,26 +11,26 @@ import type { Language } from './i18n/languages'
 import { message, type Message } from './i18n/translate'
 
 /**
- * The implicit "no box" bucket's label (`boxes.unboxed`), in every interface
+ * The implicit "no box" bucket's label (`boxes.loose`), in every interface
  * language. Not a real box, so each spelling is reserved: a user-created box must
  * not shadow it in any language the list may be shown in. Written out here
  * because only the interface language's catalogue is loaded; a test holds each
  * one equal to its catalogue's entry.
  */
-export const UNBOXED_LABELS: Readonly<Record<Language, string>> = {
-  en: 'Unboxed',
-  de: 'Ohne Box',
-  es: 'Sin caja',
-  fr: 'Sans boîte',
-  it: 'Senza scatola',
-  'pt-BR': 'Sem caixa',
-  ru: 'Без коробки',
-  ja: 'ボックスなし',
-  ko: '상자 없음',
-  'zh-Hans': '未装盒',
+export const LOOSE_TAPES_LABELS: Readonly<Record<Language, string>> = {
+  en: 'Loose tapes',
+  de: 'Lose Bänder',
+  es: 'Cintas sueltas',
+  fr: 'Cassettes en vrac',
+  it: 'Cassette sfuse',
+  'pt-BR': 'Fitas avulsas',
+  ru: 'Кассеты без коробки',
+  ja: 'ボックス外のテープ',
+  ko: '상자 밖 테이프',
+  'zh-Hans': '未装盒的录像带',
 }
 
-const RESERVED_BOX_NAMES = Object.values(UNBOXED_LABELS)
+const RESERVED_BOX_NAMES = Object.values(LOOSE_TAPES_LABELS)
 
 
 /**

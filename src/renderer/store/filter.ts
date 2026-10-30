@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type Filter = 'inbox' | 'archived'
+export type Filter = 'inbox' | 'shelf'
 
 type FilterState = {
   filter: Filter

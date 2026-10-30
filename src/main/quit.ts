@@ -42,7 +42,7 @@ export interface QuitSteps {
    * the questions, and the quit goes on. */
   confirm(signal: AbortSignal): Promise<boolean>
   /** Saves the library catalog; resolves true once it is on disk. */
-  saveLibrary(): Promise<boolean>
+  saveCollection(): Promise<boolean>
   /** Shows the failed library save and resolves with the user's choice. An abort
    * of `signal` closes it as cancelled. */
   ask(signal: AbortSignal): Promise<QuitChoice>
@@ -104,12 +104,12 @@ export function createQuit(steps: QuitSteps): Quit {
   let forced = false
   /** The last library save outlived the deadline. A later successful save clears
    * it: catalog writes run in order, so that one settled first. */
-  let librarySaveUnsettled = false
+  let collectionSaveUnsettled = false
   let deadlineAt = 0
   let markTimer: ReturnType<typeof setTimeout> | null = null
   let question: AbortController | null = null
 
-  const exit = (force = forced || librarySaveUnsettled): void => {
+  const exit = (force = forced || collectionSaveUnsettled): void => {
     if (exited) return
     exited = true
     if (markTimer) clearTimeout(markTimer)
@@ -149,8 +149,8 @@ export function createQuit(steps: QuitSteps): Quit {
    * Resolves false when the user cancelled the quit. */
   async function saveOrAsk(): Promise<boolean> {
     for (;;) {
-      const saved = await within(steps.saveLibrary(), remaining())
-      librarySaveUnsettled = saved.outcome === 'timeout'
+      const saved = await within(steps.saveCollection(), remaining())
+      collectionSaveUnsettled = saved.outcome === 'timeout'
       if (saved.outcome === 'done' && saved.value) return true
       warnUnsettled('the library save', saved)
       if (sessionEnding) {
@@ -216,7 +216,7 @@ export function createQuit(steps: QuitSteps): Quit {
       running = true
       allowUnsaved = false
       forced = false
-      librarySaveUnsettled = false
+      collectionSaveUnsettled = false
       restartDeadline()
       // The session end this quit belongs to no longer expires.
       clearMarkTimer()

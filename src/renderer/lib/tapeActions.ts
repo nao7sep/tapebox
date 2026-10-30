@@ -4,7 +4,7 @@ import { ipcInvoke } from '@renderer/ipc/client'
 import { visibleTapes } from '@renderer/lib/tapeOrder'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useFilterStore } from '@renderer/store/filter'
-import { useArchiveStore } from '@renderer/store/archive'
+import { useShelfStore } from '@renderer/store/shelf'
 import { useBoxesStore } from '@renderer/store/boxes'
 import { useSelectionStore } from '@renderer/store/selection'
 import { runTapeAction } from '@renderer/lib/runTapeAction'
@@ -43,8 +43,8 @@ export function currentVisibleTapes(): Tape[] {
   return visibleTapes(
     useTapesStore.getState().tapes,
     useFilterStore.getState().filter,
-    useArchiveStore.getState().selectedBoxId,
-    useArchiveStore.getState().query,
+    useShelfStore.getState().selectedBoxId,
+    useShelfStore.getState().query,
     useBoxesStore.getState().boxes,
   )
 }
@@ -76,11 +76,11 @@ export function advanceSelection(tape: Tape): () => void {
 /** The 'tape' policy: point the view at where the tape now lives and select it.
  *  The selected row becomes its listbox's active descendant and scrolls into view;
  *  a view switch also hands focus to that list (see useAutoFocusList). */
-export function revealTape(tapeId: string, dest: { archived: boolean; boxId: string | null }): void {
-  useFilterStore.getState().setFilter(dest.archived ? 'archived' : 'inbox')
-  if (dest.archived) {
-    useArchiveStore.getState().setQuery('') // show the box, not search results
-    useArchiveStore.getState().selectBox(dest.boxId)
+export function revealTape(tapeId: string, dest: { shelved: boolean; boxId: string | null }): void {
+  useFilterStore.getState().setFilter(dest.shelved ? 'shelf' : 'inbox')
+  if (dest.shelved) {
+    useShelfStore.getState().setQuery('') // show the box, not search results
+    useShelfStore.getState().selectBox(dest.boxId)
   }
   useSelectionStore.getState().select(tapeId)
 }
@@ -88,9 +88,9 @@ export function revealTape(tapeId: string, dest: { archived: boolean; boxId: str
 /** A front-of-list `order` for the destination list, so an optimistic move lands the
  *  tape at the top at once — matching where the IPC re-emit will file it — instead of
  *  briefly showing it at its old position before the authoritative order arrives. */
-function frontOrderFor(dest: { archived: boolean; boxId: string | null }, excludeId: string): number {
+function frontOrderFor(dest: { shelved: boolean; boxId: string | null }, excludeId: string): number {
   // The Inbox has no chosen order; it shows the tape by when it was added.
-  if (!dest.archived) return 0
+  if (!dest.shelved) return 0
   const members = useTapesStore.getState().tapes.filter((t) =>
     t.id !== excludeId && t.shelved && t.boxId === dest.boxId,
   )
@@ -102,7 +102,7 @@ function frontOrderFor(dest: { archived: boolean; boxId: string | null }, exclud
 function relocate(
   tape: Tape,
   patch: Partial<Pick<Tape, 'shelved' | 'boxId'>>,
-  dest: { archived: boolean; boxId: string | null },
+  dest: { shelved: boolean; boxId: string | null },
   keep: Keep,
   action: TapeAction,
   operation: string,
@@ -129,49 +129,49 @@ function relocate(
     useTapesStore.getState().upsert(rollbackOptimisticFields(current, tape, optimisticPatch))
     // Back where it was, but only while it is still the tape the user is on.
     if (keep === 'tape' && useSelectionStore.getState().selectedId === tape.id) {
-      revealTape(tape.id, { archived: tape.shelved, boxId: tape.boxId })
+      revealTape(tape.id, { shelved: tape.shelved, boxId: tape.boxId })
     }
   })
 }
 
-/** Archive a downloaded tape — it goes to the top of Unboxed. No-op otherwise. */
-export function archiveTape(tape: Tape, keep: Keep): void {
+/** Archive a downloaded tape — it goes to the top of Loose tapes. No-op otherwise. */
+export function shelveTape(tape: Tape, keep: Keep): void {
   if (tape.state !== 'downloaded' || tape.shelved) return
   relocate(
     tape,
     { shelved: true, boxId: null },
-    { archived: true, boxId: null },
+    { shelved: true, boxId: null },
     keep,
-    'archive',
+    'shelve',
     'tape archive failed',
-    message('tapeActions.archiveFailed'),
-    () => ipcInvoke('library:archive', { tapeIds: [tape.id] }),
+    message('tapeActions.shelveFailed'),
+    () => ipcInvoke('collection:shelve', { tapeIds: [tape.id] }),
   )
 }
 
 /** Unarchive a tape — it returns to the top of the inbox. No-op if not archived. */
-export function unarchiveTape(tape: Tape, keep: Keep): void {
+export function unshelveTape(tape: Tape, keep: Keep): void {
   if (!tape.shelved) return
   relocate(
     tape,
     { shelved: false, boxId: null },
-    { archived: false, boxId: null },
+    { shelved: false, boxId: null },
     keep,
-    'unarchive',
+    'unshelve',
     'tape unarchive failed',
-    message('tapeActions.unarchiveFailed'),
-    () => ipcInvoke('library:unarchive', { tapeIds: [tape.id] }),
+    message('tapeActions.unshelveFailed'),
+    () => ipcInvoke('collection:unshelve', { tapeIds: [tape.id] }),
   )
 }
 
-/** File an archived tape into a box (null = Unboxed). No-op if not archived or
+/** File an archived tape into a box (null = Loose tapes). No-op if not archived or
  *  already there. */
 export function moveTapeToBox(tape: Tape, boxId: string | null, keep: Keep): void {
   if (!tape.shelved || boxId === tape.boxId) return
   relocate(
     tape,
     { boxId },
-    { archived: true, boxId },
+    { shelved: true, boxId },
     keep,
     'placement',
     'tape box placement failed',

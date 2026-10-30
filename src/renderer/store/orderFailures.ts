@@ -3,7 +3,7 @@ import type { Message } from '@shared/i18n/translate'
 import type { OrderedItem } from '@renderer/lib/optimisticOrder'
 
 /** The box list and each Shelf tape list settle independently. */
-export type OrderList = 'boxes' | `archive:${string}`
+export type OrderList = 'boxes' | `shelf:${string}`
 type PendingOrder = { active: Set<number>; confirmed: Map<string, number> }
 
 function orders(items: readonly OrderedItem[]): Map<string, number> {
@@ -12,7 +12,7 @@ function orders(items: readonly OrderedItem[]): Map<string, number> {
 
 type OrderFailuresState = {
   boxes: Message | null
-  archiveTapes: Record<string, Message | undefined>
+  shelfTapes: Record<string, Message | undefined>
   attempts: Partial<Record<OrderList, number>>
   pending: Partial<Record<OrderList, PendingOrder>>
   beginAttempt: (list: OrderList, current: readonly OrderedItem[]) => number
@@ -21,7 +21,7 @@ type OrderFailuresState = {
   confirmedOrder: (list: OrderList) => OrderedItem[]
   isCurrentAttempt: (list: OrderList, attempt: number) => boolean
   setBoxes: (message: Message | null) => void
-  setArchiveTapes: (boxKey: string, message: Message | null) => void
+  setShelfTapes: (boxKey: string, message: Message | null) => void
 }
 
 /**
@@ -34,7 +34,7 @@ type OrderFailuresState = {
  */
 export const useOrderFailuresStore = create<OrderFailuresState>((set, get) => ({
   boxes: null,
-  archiveTapes: {},
+  shelfTapes: {},
   attempts: {},
   pending: {},
   beginAttempt: (list, current) => {
@@ -65,10 +65,10 @@ export const useOrderFailuresStore = create<OrderFailuresState>((set, get) => ({
   confirmedOrder: (list) => [...(get().pending[list]?.confirmed ?? [])].map(([id, order]) => ({ id, order })),
   isCurrentAttempt: (list, attempt) => get().attempts[list] === attempt,
   setBoxes: (boxes) => set({ boxes }),
-  setArchiveTapes: (boxKey, message) => set((state) => {
-    const archiveTapes = { ...state.archiveTapes }
-    if (message === null) delete archiveTapes[boxKey]
-    else archiveTapes[boxKey] = message
-    return { archiveTapes }
+  setShelfTapes: (boxKey, message) => set((state) => {
+    const shelfTapes = { ...state.shelfTapes }
+    if (message === null) delete shelfTapes[boxKey]
+    else shelfTapes[boxKey] = message
+    return { shelfTapes }
   }),
 }))

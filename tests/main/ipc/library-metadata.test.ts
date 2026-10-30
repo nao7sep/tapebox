@@ -1,4 +1,4 @@
-import { librarySourceIndex } from '@shared/source-identity'
+import { collectionSourceIndex } from '@shared/source-identity'
 import type { SourceRef } from '@shared/source-identity'
 vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
@@ -35,9 +35,9 @@ const persistNow = vi.hoisted(() => vi.fn())
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
 vi.mock('@main/store/session', () => ({
-  sourceOwner: (ref: SourceRef, exceptId?: string) => librarySourceIndex(state.tapes, exceptId).find(ref),
+  sourceOwner: (ref: SourceRef, exceptId?: string) => collectionSourceIndex(state.tapes, exceptId).find(ref),
   persistNow,
-  onCatalogSaveFailure: () => {},
+  onCollectionSaveFailure: () => {},
   getTape: (id: string) => state.tapes.find((tape) => tape.id === id),
   getTapes: () => state.tapes,
   getBoxes: () => [],
@@ -48,7 +48,7 @@ vi.mock('@main/store/session', () => ({
   reorderTapesDurably: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getLibraryDir: () => state.libraryDir,
+  getCollectionDir: () => state.libraryDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn(), holdFromScheduling: () => () => {} }))
@@ -61,7 +61,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...original, open: vi.fn(original.open), rename: vi.fn(original.rename) }
 })
 
-const { registerLibraryHandlers } = await import('@main/ipc/library')
+const { registerCollectionHandlers } = await import('@main/ipc/collection')
 
 /** A file in a tape's folder, which this creates. */
 function at(id: string, name: string): string {
@@ -107,7 +107,7 @@ beforeEach(async () => {
   persistNow.mockReset().mockResolvedValue(true)
   state.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-library-metadata-'))
   state.tapes = []
-  registerLibraryHandlers()
+  registerCollectionHandlers()
 })
 
 afterEach(async () => {
@@ -126,9 +126,9 @@ describe('re-probing a tape', () => {
       signals.push(signal)
       return new Promise((resolve) => finishes.push(() => resolve({ kind: 'video', title: null, uploader: null, description: null })))
     })
-    const first = invoke('library:probeMetadata', { tapeId: 'Reprobethi', requestId: 'closed-editor' })
-    const second = invoke('library:probeMetadata', { tapeId: 'Reprobethi', requestId: 'reopened-editor' })
-    await invoke('library:cancelMetadataProbe', { requestId: 'closed-editor' })
+    const first = invoke('collection:probeMetadata', { tapeId: 'Reprobethi', requestId: 'closed-editor' })
+    const second = invoke('collection:probeMetadata', { tapeId: 'Reprobethi', requestId: 'reopened-editor' })
+    await invoke('collection:cancelMetadataProbe', { requestId: 'closed-editor' })
     expect(signals[0]!.aborted).toBe(true)
     expect(signals[1]!.aborted).toBe(false)
     expect(hasRunningWork()).toBe(true)
@@ -138,7 +138,7 @@ describe('re-probing a tape', () => {
     finishes[0]!()
     await first
     expect(hasRunningWork()).toBe(false)
-    await invoke('library:cancelMetadataProbe', { requestId: 'closed-editor' })
+    await invoke('collection:cancelMetadataProbe', { requestId: 'closed-editor' })
     expect(signals[1]!.aborted).toBe(false)
   })
 
@@ -147,7 +147,7 @@ describe('re-probing a tape', () => {
     state.tapes = [tape]
     probe.mockResolvedValue({ kind: 'video', title: 'Fresh', uploader: 'Channel', description: 'Fresh notes', sourceId: 'x' })
 
-    await expect(invoke('library:probeMetadata', { tapeId: 'Reprobethi', requestId: 'probe-test' })).resolves.toEqual({
+    await expect(invoke('collection:probeMetadata', { tapeId: 'Reprobethi', requestId: 'probe-test' })).resolves.toEqual({
       title: 'Fresh',
       uploader: 'Channel',
       description: 'Fresh notes',
@@ -162,13 +162,13 @@ describe('re-probing a tape', () => {
     state.tapes = [makeTape({ id: 'Nowaplayli' })]
     probe.mockResolvedValue({ kind: 'page', entries: [] })
 
-    await expect(invoke('library:probeMetadata', { tapeId: 'Nowaplayli', requestId: 'probe-test' })).rejects.toThrow(
+    await expect(invoke('collection:probeMetadata', { tapeId: 'Nowaplayli', requestId: 'probe-test' })).rejects.toThrow(
       'This link now points to a list of videos, not a single video.',
     )
   })
 
   it('refuses for a tape the catalog does not hold', async () => {
-    await expect(invoke('library:probeMetadata', { tapeId: 'not-a-tape', requestId: 'probe-test' })).rejects.toThrow(
+    await expect(invoke('collection:probeMetadata', { tapeId: 'not-a-tape', requestId: 'probe-test' })).rejects.toThrow(
       'The operation could not be completed.',
     )
     expect(probe).not.toHaveBeenCalled()
@@ -180,7 +180,7 @@ describe('accepting refreshed metadata', () => {
     state.tapes = [makeTape({ id: 'Savewait01', filename: null })]
     let release!: (value: boolean) => void
     persistNow.mockImplementation(() => new Promise<boolean>((resolve) => { release = resolve }))
-    const apply = invoke<Tape>('library:applyMetadata', { tapeId: 'Savewait01', metadata: ACCEPTED })
+    const apply = invoke<Tape>('collection:applyMetadata', { tapeId: 'Savewait01', metadata: ACCEPTED })
     let settled = false
     void apply.then(() => { settled = true }, () => { settled = true })
     try {
@@ -196,7 +196,7 @@ describe('accepting refreshed metadata', () => {
     state.tapes = [makeTape({ id: 'Partial001', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
     if (kind === 'false') persistNow.mockResolvedValueOnce(false)
     else persistNow.mockRejectedValueOnce(new Error('catalog writer rejected'))
-    await expect(invoke('library:applyMetadata', { tapeId: 'Partial001', metadata: ACCEPTED })).rejects.toMatchObject({ userMessage: { key: 'refresh.applyPartial' } })
+    await expect(invoke('collection:applyMetadata', { tapeId: 'Partial001', metadata: ACCEPTED })).rejects.toMatchObject({ userMessage: { key: 'refresh.applyPartial' } })
     expect(state.tapes[0]?.title).toBe('New title')
     expect(JSON.parse(await readFile(sidecar, 'utf8')).title).toBe('New title')
     expect(emit).toHaveBeenCalledWith('tapes:updated', expect.objectContaining({ title: 'New title' }))
@@ -207,13 +207,13 @@ describe('accepting refreshed metadata', () => {
     state.tapes = [tape]
     let release!: (value: string | null) => void
     downloadThumbnail.mockImplementationOnce(() => new Promise<string | null>((resolve) => { release = resolve }))
-    const apply = invoke<Tape>('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })
+    const apply = invoke<Tape>('collection:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })
     try {
       await until(() => expect(downloadThumbnail).toHaveBeenCalledOnce())
       state.tapes = [{ ...tape, boxId: 'box-summer', order: 7 }]
     } finally { release(null); await apply }
     expect(state.tapes[0]).toMatchObject({ title: 'New title', boxId: 'box-summer', order: 7 })
-    await expect(invoke('library:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })).resolves.toMatchObject({ title: 'New title' })
+    await expect(invoke('collection:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })).resolves.toMatchObject({ title: 'New title' })
   })
 
   it('saves the catalog fields and puts the same values in the sidecar', async () => {
@@ -221,7 +221,7 @@ describe('accepting refreshed metadata', () => {
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', description: 'Old description', extra: 'kept' }), 'utf8')
     state.tapes = [makeTape({ id: 'Acceptthis', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
 
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Acceptthis', metadata: ACCEPTED })
+    const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Acceptthis', metadata: ACCEPTED })
 
     expect(updated).toMatchObject({ title: 'New title', uploader: 'New uploader', thumbnailFilename: 'Take.jpg' })
     expect(updated.probedAtUtc, 'the probe time is when the source answered, not the Apply click').toBe(PROBED_AT)
@@ -246,7 +246,7 @@ describe('accepting refreshed metadata', () => {
     const before = (await stat(sidecar)).mtimeMs
     state.tapes = [makeTape({ id: 'Unchanged1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
 
-    await invoke<Tape>('library:applyMetadata', { tapeId: 'Unchanged1', metadata: ACCEPTED })
+    await invoke<Tape>('collection:applyMetadata', { tapeId: 'Unchanged1', metadata: ACCEPTED })
 
     expect(await readFile(sidecar, 'utf8')).toBe(text)
     expect((await stat(sidecar)).mtimeMs).toBe(before)
@@ -256,7 +256,7 @@ describe('accepting refreshed metadata', () => {
     const tape = makeTape({ id: 'Nosidecarf', sidecarFilename: 'gone.json', thumbnailFilename: 'Take.jpg' })
     state.tapes = [tape]
 
-    await expect(invoke<Tape>('library:applyMetadata', { tapeId: 'Nosidecarf', metadata: ACCEPTED })).rejects.toThrow()
+    await expect(invoke<Tape>('collection:applyMetadata', { tapeId: 'Nosidecarf', metadata: ACCEPTED })).rejects.toThrow()
 
     expect(state.tapes[0], 'the catalog and the sidecar never disagree').toBe(tape)
     expect(emit).not.toHaveBeenCalled()
@@ -269,13 +269,13 @@ describe('accepting refreshed metadata', () => {
     const tape = makeTape({ id: 'Newersidec', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })
     state.tapes = [tape]
 
-    const failure = await invoke<Tape>('library:applyMetadata', { tapeId: 'Newersidec', metadata: ACCEPTED })
+    const failure = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Newersidec', metadata: ACCEPTED })
       .catch((error: unknown) => error)
 
     expect(failure).toMatchObject({ userMessage: { key: 'errors.fileNewer', values: { name: 'Take.json' } } })
     expect(await readFile(sidecar, 'utf8')).toBe(text)
     expect(state.tapes[0], 'nothing is applied').toBe(tape)
-    await expect(invoke('library:getSidecar', { tapeId: 'Newersidec' }), 'nor shown as if read')
+    await expect(invoke('collection:getSidecar', { tapeId: 'Newersidec' }), 'nor shown as if read')
       .rejects.toMatchObject({ userMessage: { key: 'errors.fileNewer' } })
   })
 
@@ -285,7 +285,7 @@ describe('accepting refreshed metadata', () => {
     downloadThumbnail.mockImplementation(async () => { await writeFile(raw, 'raw poster'); return raw })
     saveThumbnailJpeg.mockResolvedValue('Holiday.jpg')
 
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Noposteryt', metadata: ACCEPTED })
+    const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Noposteryt', metadata: ACCEPTED })
 
     expect(downloadThumbnail).toHaveBeenCalledExactlyOnceWith(
       'Noposteryt',
@@ -313,7 +313,7 @@ describe('accepting refreshed metadata', () => {
     downloadThumbnail.mockImplementation(async () => { await writeFile(raw, 'raw poster'); return raw })
     saveThumbnailJpeg.mockResolvedValue('Holiday.jpg')
 
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Posterside', metadata: ACCEPTED })
+    const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Posterside', metadata: ACCEPTED })
 
     const written = JSON.parse(await readFile(sidecar, 'utf8')) as { title: string; tapebox: Record<string, unknown> }
     expect(updated.thumbnailFilename).toBe('Holiday.jpg')
@@ -325,7 +325,7 @@ describe('accepting refreshed metadata', () => {
     await writeFile(at('Casealias1', 'holiday.webp'), 'untracked')
     state.tapes = [makeTape({ id: 'Casealias1', filename: 'Holiday.mp4' })]
 
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Casealias1', metadata: ACCEPTED })
+    const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Casealias1', metadata: ACCEPTED })
 
     expect(downloadThumbnail).not.toHaveBeenCalled()
     expect(updated.thumbnailFilename).toBeNull()
@@ -335,7 +335,7 @@ describe('accepting refreshed metadata', () => {
     state.tapes = [makeTape({ id: 'Sourcehasn', filename: 'Holiday.mp4' })]
     downloadThumbnail.mockResolvedValue(null)
 
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Sourcehasn', metadata: ACCEPTED })
+    const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Sourcehasn', metadata: ACCEPTED })
 
     expect(saveThumbnailJpeg).not.toHaveBeenCalled()
     expect(updated.thumbnailFilename).toBeNull()
@@ -345,7 +345,7 @@ describe('accepting refreshed metadata', () => {
     state.tapes = [makeTape({ id: 'Posterfail', filename: 'Holiday.mp4' })]
     downloadThumbnail.mockRejectedValue(new Error('network unreachable'))
 
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Posterfail', metadata: ACCEPTED })
+    const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Posterfail', metadata: ACCEPTED })
 
     expect(updated).toMatchObject({ title: 'New title', thumbnailFilename: null })
     expect(log.warn).toHaveBeenCalledWith('thumbnail backfill failed', expect.objectContaining({ tapeId: 'Posterfail' }))
@@ -354,13 +354,13 @@ describe('accepting refreshed metadata', () => {
   it('does not go looking for a poster for a tape with no file yet', async () => {
     state.tapes = [makeTape({ id: 'Nofileyet1', filename: null })]
 
-    await invoke('library:applyMetadata', { tapeId: 'Nofileyet1', metadata: ACCEPTED })
+    await invoke('collection:applyMetadata', { tapeId: 'Nofileyet1', metadata: ACCEPTED })
 
     expect(downloadThumbnail).not.toHaveBeenCalled()
   })
 
   it('refuses for a tape the catalog does not hold', async () => {
-    await expect(invoke('library:applyMetadata', { tapeId: 'not-a-tape', metadata: ACCEPTED })).rejects.toThrow(
+    await expect(invoke('collection:applyMetadata', { tapeId: 'not-a-tape', metadata: ACCEPTED })).rejects.toThrow(
       'The operation could not be completed.',
     )
   })
@@ -370,7 +370,7 @@ describe('accepting refreshed metadata', () => {
     downloadThumbnail.mockImplementationOnce((_id, _url, _dir, signal: AbortSignal) => new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => reject(signal.reason), { once: true })
     }))
-    const apply = invoke('library:applyMetadata', { tapeId: 'Quitapply1', metadata: ACCEPTED }).catch((error: unknown) => error)
+    const apply = invoke('collection:applyMetadata', { tapeId: 'Quitapply1', metadata: ACCEPTED }).catch((error: unknown) => error)
     try { await until(() => expect(downloadThumbnail).toHaveBeenCalledOnce()) }
     finally { await cancelAllWork(); await apply }
     expect(state.tapes[0]?.title).toBe('Old title')
@@ -389,7 +389,7 @@ describe('accepting refreshed metadata', () => {
       await original.rename(from, to)
       if (String(to) === sidecar && !quitting) quitting = cancelAllWork()
     })
-    const updated = await invoke<Tape>('library:applyMetadata', { tapeId: 'Lateabort1', metadata: ACCEPTED })
+    const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Lateabort1', metadata: ACCEPTED })
     expect(quitting, 'the quit arrived after the sidecar committed').toBeDefined()
     await quitting
     expect(JSON.parse(await readFile(sidecar, 'utf8'))).toMatchObject({ title: 'New title' })
