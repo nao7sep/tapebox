@@ -86,6 +86,8 @@ async function exportTape(
   const original = await readSidecarFile(tapeFile(libDir, tape.id, tape.sidecarFilename))
   const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
   const tb = exportNamespace(sidecar, tape)
+  // The catalog's source URL leaves under the same masking as the sidecar.
+  tb['sourceUrl'] = maskUrlCredentials(maskYtdlpOutput(tape.sourceUrl))
   // Exporting under another name renames the bundle, so the sidecar records when.
   if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
   tb['name'] = cleanName

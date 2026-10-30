@@ -96,6 +96,16 @@ describe('export:files sidecar', () => {
     })).toMatchObject({ name: 'Take', addedAtUtc: tape.addedAtUtc, downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: RENAMED_AT })
   })
 
+  it('masks credentials in the catalog\'s source URL', async () => {
+    const original = tape.sourceUrl
+    tape.sourceUrl = 'https://login:password@example.test/watch?v=1&signature=SIGN_SENTINEL'
+    try {
+      const tb = await exportedSidecar('Take')
+      expect(tb['sourceUrl']).toBe('https://[REDACTED]@example.test/watch?v=1&signature=[REDACTED]')
+      expect(JSON.stringify(tb)).not.toMatch(/password|SIGN_SENTINEL/)
+    } finally { tape.sourceUrl = original }
+  })
+
   it('records the rename when the bundle leaves under a new name', async () => {
     const tb = await exportedSidecar('Holiday')
 
