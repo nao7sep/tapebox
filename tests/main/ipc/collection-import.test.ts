@@ -10,6 +10,7 @@ import { TAPE_FILE, type Tape } from '@shared/domain'
 import { compareInbox } from '@shared/order'
 import type { Message } from '@shared/i18n/translate'
 import { inEnglish } from '../../helpers/i18n'
+import { header } from '../../helpers/file-header'
 
 // Importing a bundle someone exported: the sidecar names its media and poster,
 // and this boundary decides what comes into the collection, what is refused and
@@ -88,9 +89,9 @@ async function stageBundle(options: {
   const sidecarPath = join(dir, options.sidecarName ?? `${options.stem}.json`)
   const body =
     options.tapebox === null
-      ? { formatVersion: 1 }
+      ? { ...header('sidecar'), ytDlp: {} }
       : {
-          formatVersion: 1,
+          ...header('sidecar'), ytDlp: {},
           tapebox: {
             sourceUrl: options.sourceUrl ?? `https://example.test/${options.stem}`,
             name: options.stem,

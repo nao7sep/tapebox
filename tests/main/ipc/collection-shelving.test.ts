@@ -11,6 +11,7 @@ import { INBOX_FOLDER, SHELF_FOLDER, tapeDir } from '@main/paths'
 import { readCollection } from '@main/store/collection-files'
 import { cancelAllWork, resumeWork } from '@main/work-registry'
 import { until } from '../../helpers/until'
+import { header, sidecarFixture } from '../../helpers/file-header'
 
 // Moving tapes between the inbox and the Shelf, and taking them out of the
 // collection altogether. The collection directory is real — a removal that claims to
@@ -286,9 +287,9 @@ describe('removing tapes from the collection', () => {
   async function stageFiles(id: string, stem = id): Promise<Tape> {
     await mkdir(folder(id), { recursive: true })
     for (const name of [`${stem}.mp4`, `${stem}.json`, `${stem}.jpg`]) {
-      await writeFile(join(folder(id), name), name.endsWith('.json') ? '{"formatVersion":1}' : 'content', 'utf8')
+      await writeFile(join(folder(id), name), name.endsWith('.json') ? JSON.stringify(sidecarFixture()) : 'content', 'utf8')
     }
-    await writeFile(join(folder(id), TAPE_FILE), '{"formatVersion":1}', 'utf8')
+    await writeFile(join(folder(id), TAPE_FILE), JSON.stringify(header('tape')), 'utf8')
     return makeTape({ id, filename: `${stem}.mp4`, sidecarFilename: `${stem}.json`, thumbnailFilename: `${stem}.jpg` })
   }
 
@@ -351,7 +352,7 @@ describe('removing tapes from the collection', () => {
   it('keeps every bundle file when its sidecar is from a newer TapeBox', async () => {
     const tape = await stageFiles('Protected1')
     state.tapes = [tape]
-    await writeFile(join(folder('Protected1'), 'Protected1.json'), '{"formatVersion":2}')
+    await writeFile(join(folder('Protected1'), 'Protected1.json'), JSON.stringify(sidecarFixture({}, undefined, 2)))
     await expect(invoke('collection:remove', { tapeIds: ['Protected1'], deleteFiles: true })).rejects.toThrow('could not be removed')
     expect(state.tapes).toEqual([tape])
     expect((await readdir(folder('Protected1'))).sort()).toEqual(['Protected1.jpg', 'Protected1.json', 'Protected1.mp4', TAPE_FILE])
@@ -430,7 +431,7 @@ describe('removing tapes from the collection', () => {
     queueManager.isActive.mockReturnValue(true)
     queueManager.cancel.mockImplementation(async (id: string) => {
       await mkdir(folder(id), { recursive: true })
-      for (const name of [`${id}.mp4`, `${id}.json`, `${id}.jpg`]) await writeFile(join(folder(id), name), name.endsWith('.json') ? '{"formatVersion":1}' : 'finished', 'utf8')
+      for (const name of [`${id}.mp4`, `${id}.json`, `${id}.jpg`]) await writeFile(join(folder(id), name), name.endsWith('.json') ? JSON.stringify(sidecarFixture()) : 'finished', 'utf8')
       state.tapes = state.tapes.map((tape) => tape.id === id
         ? { ...tape, state: 'downloaded', filename: `${id}.mp4`, sidecarFilename: `${id}.json`, thumbnailFilename: `${id}.jpg` }
         : tape)
@@ -490,13 +491,12 @@ describe('removing tapes from the collection', () => {
 describe('reading a tape sidecar', () => {
   it('hands back the parsed sidecar', async () => {
     await mkdir(folder('Hassidecar'), { recursive: true })
-    await writeFile(join(folder('Hassidecar'), 'Take.json'), JSON.stringify({ formatVersion: 1, title: 'Take', description: 'note' }), 'utf8')
+    await writeFile(join(folder('Hassidecar'), 'Take.json'), JSON.stringify(sidecarFixture({ title: 'Take', description: 'note' })), 'utf8')
     state.tapes = [makeTape({ id: 'Hassidecar', sidecarFilename: 'Take.json' })]
 
     await expect(invoke('collection:getSidecar', { tapeId: 'Hassidecar' })).resolves.toEqual({
-      formatVersion: 1,
-      title: 'Take',
-      description: 'note',
+      ytDlp: { title: 'Take', description: 'note' },
+      tapebox: { media: null },
     })
   })
 

@@ -2,12 +2,12 @@ import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { parentPort, workerData } from 'node:worker_threads'
 import { databaseTransaction, openWritableDatabase } from '../io/sqlite-store.ts'
-import { FORMAT_VERSIONS } from '../io/format-version.ts'
+import { FORMATS, type FileWriter } from '../io/file-header.ts'
 import { describeError } from '../../shared/error.ts'
 
 export type BackupRequest = { id: number; absolutePath: string; bytes: Uint8Array }
 /** `session`: this launch, so each file keeps one row per launch rather than one per save. */
-export type BackupWorkerData = { databasePath: string; session: string }
+export type BackupWorkerData = { databasePath: string; session: string; writer: FileWriter }
 export type BackupResponse = { id: number; warning?: { message: string; fields: Record<string, unknown> }; disabled?: boolean }
 
 const SCHEMA = `
@@ -26,7 +26,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_backups_path_session ON backups (path, ses
 
 if (!parentPort) throw new Error('The backup worker needs a parent port.')
 const port = parentPort
-const { databasePath, session } = workerData as BackupWorkerData
+const { databasePath, session, writer } = workerData as BackupWorkerData
 let db: DatabaseSync | null = null
 let initialized = false
 
@@ -35,7 +35,7 @@ port.on('message', (request: BackupRequest) => {
   try {
     if (!initialized) {
       initialized = true
-      try { db = openWritableDatabase(databasePath, FORMAT_VERSIONS.backups, SCHEMA) }
+      try { db = openWritableDatabase(databasePath, FORMATS.backups, SCHEMA, writer) }
       catch (error) {
         response.disabled = true
         response.warning = { message: 'backup store: could not open; recording disabled for this session', fields: { file: databasePath, error: describeError(error) } }

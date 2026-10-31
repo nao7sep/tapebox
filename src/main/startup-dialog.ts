@@ -1,6 +1,6 @@
 import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { mainTranslator } from './i18n.js'
-import { NewerFormatError } from './io/format-version.js'
+import { NewerFormatError } from './io/file-header.js'
 import { CollectionFolderSettingError, StoreAccessError } from './io/store-access.js'
 import type { MessageValues } from '@shared/i18n/translate'
 import type { BrowserWindow } from 'electron'

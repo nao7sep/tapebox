@@ -36,16 +36,17 @@ import { registerExportHandlers } from '@main/ipc/export'
 import { defaultJobDeps, Job } from '@main/queue/job'
 import * as session from '@main/store/session'
 import { tapeDir } from '@main/paths'
+import { sidecarFixture } from '../../helpers/file-header'
 
 let root: string
 let original: Tape
 const AT = '2026-01-01T00:00:00.000Z'
 
 function sidecar(sourceUrl: string, mediaFilename: string, thumbnailFilename: string | null = null): string {
-  return JSON.stringify({ formatVersion: 1, id: sourceUrl, tapebox: {
+  return JSON.stringify(sidecarFixture({ id: sourceUrl }, {
     sourceUrl, name: null, addedAtUtc: AT, downloadedAtUtc: AT, renamedAtUtc: null,
     media: null, mediaFilename, thumbnailFilename,
-  } })
+  }))
 }
 
 /** An exported bundle outside the collection, as import reads it. */
@@ -113,7 +114,7 @@ beforeEach(async () => {
   }
   await mkdir(inboxFolder(original.id), { recursive: true })
   await writeFile(join(inboxFolder(original.id), 'Original.mp4'), 'video')
-  await writeFile(join(inboxFolder(original.id), 'Original.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
+  await writeFile(join(inboxFolder(original.id), 'Original.json'), JSON.stringify(sidecarFixture()))
   session.upsertTape(original)
   await session.persistNow()
   registerCollectionHandlers()
@@ -170,7 +171,7 @@ describe('tape folders across producers and cleanup', () => {
     expect(await readFile(join(inboxFolder(b!.id), 'Original.mp4'), 'utf8')).toBe('media:second')
     const kept = JSON.parse(await readFile(join(inboxFolder(a!.id), 'Original.json'), 'utf8'))
     expect(kept.tapebox).toEqual({ media: null })
-    expect(kept.id).toBe('https://example.test/first/Original')
+    expect(kept.ytDlp.id).toBe('https://example.test/first/Original')
     expect(await readFile(join(inboxFolder(original.id), 'Original.mp4'), 'utf8')).toBe('video')
     await assertCompleteCollection()
   })

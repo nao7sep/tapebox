@@ -2,7 +2,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import type { Tape } from '@shared/domain'
 import { tapeFromSidecar } from '@main/core/import-classify'
-import { readSidecarFile } from '@main/core/sidecar'
+import { readSidecarFile, type Sidecar } from '@main/core/sidecar'
 import type { TapeMove } from '@main/core/tape-state'
 import { SourceIndex, tapeSourceRef } from '@shared/source-identity'
 
@@ -33,7 +33,7 @@ const NOT_MEDIA = new Set(['.json', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.
 export async function findFinishedBundle(dir: string, tape: Tape): Promise<FinishedBundle> {
   const stem = tape.id
   const sidecarFilename = `${stem}.json`
-  let sidecar: Record<string, unknown>
+  let sidecar: Sidecar
   let downloadedAtUtc: string
   try {
     sidecar = await readSidecarFile(join(dir, sidecarFilename))
@@ -43,7 +43,7 @@ export async function findFinishedBundle(dir: string, tape: Tape): Promise<Finis
     return { status: 'unusable', reason: 'the sidecar could not be read' }
   }
 
-  const text = (key: string) => typeof sidecar[key] === 'string' ? sidecar[key] : null
+  const text = (key: string) => typeof sidecar.ytDlp[key] === 'string' ? sidecar.ytDlp[key] : null
   const source = new SourceIndex()
   source.add(tapeSourceRef(tape), tape.id)
   if (!source.has({ url: text('original_url') ?? text('webpage_url') ?? '', extractor: text('extractor'), sourceId: text('id') })) {

@@ -3,7 +3,7 @@ import { basename } from 'node:path'
 import { z } from 'zod'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
-import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
+import { FORMATS, parseStoreJson } from '@main/io/file-header'
 import { log } from '@main/io/logger'
 import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
@@ -145,11 +145,11 @@ async function readAll(): Promise<KeyRead> {
       })
       return 'unreadable'
     }
-    const found = parseStoreJson(text, FORMAT_VERSIONS.apiKeys)
+    const found = parseStoreJson(text, FORMATS.apiKeys)
     if (found.status === 'newer') {
       log.warn('api-keys.json is from a newer TapeBox; treating it as empty and leaving it as it is', {
         path: paths.apiKeys,
-        formatVersion: found.version,
+        version: found.version,
       })
       return 'newer'
     }
@@ -188,7 +188,7 @@ async function writeAll(data: ApiKeysFile): Promise<void> {
   // sensitive-at-rest in its entirety (data-backup conventions: secrets are never
   // recorded); the live file keeps its own 0600 at-rest protection here instead.
   await writeJsonAtomic(paths.apiKeys, data, {
-    formatVersion: FORMAT_VERSIONS.apiKeys,
+    format: FORMATS.apiKeys,
     schema: SCHEMA,
     mode: ENFORCE_FILE_MODE ? SECRETS_FILE_MODE : undefined,
   })

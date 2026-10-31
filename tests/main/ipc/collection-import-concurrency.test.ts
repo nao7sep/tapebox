@@ -61,6 +61,7 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
 
 import { registerCollectionHandlers } from '@main/ipc/collection'
 import * as session from '@main/store/session'
+import { header } from '../../helpers/file-header'
 
 let root: string
 let sourceDir: string
@@ -81,7 +82,7 @@ async function stageBundle(dir: string, stem: string, sourceUrl: string, poster 
   if (poster) await writeFile(join(dir, `${stem}.jpg`), `poster:${stem}`)
   const path = join(dir, `${stem}.json`)
   await writeFile(path, JSON.stringify({
-    formatVersion: 1,
+    ...header('sidecar'), ytDlp: {},
     tapebox: {
       sourceUrl, name: stem, addedAtUtc: '2026-01-01T00:00:00.000Z',
       downloadedAtUtc: '2026-01-01T00:00:00.000Z', renamedAtUtc: null,

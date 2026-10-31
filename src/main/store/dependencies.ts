@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
+import { FORMATS, parseStoreJson } from '@main/io/file-header'
 import { describeError } from '@shared/error'
 import { DependenciesSchema, defaultDependencies, type Dependencies } from '@shared/dependencies'
 
@@ -49,13 +49,13 @@ export async function loadDependencies(): Promise<void> {
     }
     return
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.dependencies)
+  const found = parseStoreJson(text, FORMATS.dependencies)
   if (found.status === 'newer') {
     // Intact, from a newer build: fresh facts serve this session, and it is never written.
     newerOnDisk = true
     log.warn('dependencies are from a newer TapeBox; using fresh facts and leaving the file as it is', {
       path: paths.dependencies,
-      formatVersion: found.version,
+      version: found.version,
     })
     return
   }
@@ -100,7 +100,7 @@ export function mutateDependencies(
     const key = JSON.stringify(merged)
     if (!newerOnDisk && key !== lastWritten) {
       await writeJsonAtomic(paths.dependencies, merged, {
-        formatVersion: FORMAT_VERSIONS.dependencies,
+        format: FORMATS.dependencies,
         schema: DependenciesSchema,
       })
       lastWritten = key

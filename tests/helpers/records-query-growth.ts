@@ -8,7 +8,7 @@ import type { RecordsQuery } from '../../src/shared/records.ts'
 /** Bootstrap the actual writer's schema without touching an app data home. */
 export async function createRecordsDatabase(path: string): Promise<void> {
   const worker = new Worker(new URL('../../src/main/io/records-write-worker.ts', import.meta.url), {
-    workerData: { databasePath: path, logsPath: join(path, '..', 'logs'), fallbackPath: join(path, '..', 'fallback.log'), session: 'synthetic-query-session' },
+    workerData: { databasePath: path, logsPath: join(path, '..', 'logs'), fallbackPath: join(path, '..', 'fallback.log'), session: 'synthetic-query-session', writer: { name: 'tapebox', version: '1.0.0' } },
   })
   try {
     await new Promise<void>((resolve, reject) => {

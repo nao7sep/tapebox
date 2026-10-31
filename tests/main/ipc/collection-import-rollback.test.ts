@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 import type { Message } from '@shared/i18n/translate'
 import { inEnglish } from '../../helpers/i18n'
+import { header } from '../../helpers/file-header'
 
 const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
@@ -101,7 +102,7 @@ beforeEach(async () => {
   await mkdir(join(state.collectionDir, 'inbox'), { recursive: true })
   await writeFile(join(sourceDir, 'clip.mp4'), 'source video')
   await writeFile(join(sourceDir, 'clip.json'), JSON.stringify({
-    formatVersion: 1,
+    ...header('sidecar'), ytDlp: {},
     tapebox: {
       sourceUrl: 'https://example.test/clip', name: 'Clip',
       addedAtUtc: '2026-01-01T00:00:00.000Z', downloadedAtUtc: '2026-01-01T00:00:00.000Z',
@@ -163,7 +164,7 @@ describe('collection:import rollback ownership', () => {
     state.failCopyOf = 'poster.jpg'
     await writeFile(join(sourceDir, 'poster.jpg'), 'source poster')
     await writeFile(join(sourceDir, 'clip.json'), JSON.stringify({
-      formatVersion: 1,
+      ...header('sidecar'), ytDlp: {},
       tapebox: {
         sourceUrl: 'https://example.test/clip', name: 'Clip',
         addedAtUtc: '2026-01-01T00:00:00.000Z', downloadedAtUtc: '2026-01-01T00:00:00.000Z',

@@ -8,6 +8,7 @@ import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 import { tapeDir } from '@main/paths'
+import { sidecarFixture } from '../../helpers/file-header'
 
 const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
@@ -123,7 +124,7 @@ beforeEach(async () => {
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'Take.mp4'), 'video')
   await writeFile(join(dir, 'Take.jpg'), 'poster')
-  await writeFile(join(dir, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
+  await writeFile(join(dir, 'Take.json'), JSON.stringify(sidecarFixture()))
   renameTapeDurably.mockImplementation(async (_id: string, fields: Partial<Tape>) => {
     rollbackMutation.order.push('collection:start')
     rollbackMutation.sourcesVisibleAtCommit = await Promise.all(
@@ -156,7 +157,7 @@ describe('collection:rename', () => {
     expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
     expect(state.tape).toMatchObject({ name: 'take', filename: 'Take.mp4', sidecarFilename: 'Take.json' })
     // The collection alone records the name; the sidecar is not rewritten.
-    expect(JSON.parse(await readFile(join(dir, 'Take.json'), 'utf8'))).toEqual({ formatVersion: 1, tapebox: { media: null } })
+    expect(JSON.parse(await readFile(join(dir, 'Take.json'), 'utf8'))).toEqual(sidecarFixture())
     expect(rollbackMutation.publishes).toBe(0)
   })
 

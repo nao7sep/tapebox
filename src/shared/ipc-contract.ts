@@ -179,8 +179,8 @@ export type BinaryCancelResult =
  * it's a large, evolving surface. Only consumers that need a specific field
  * cast it locally.
  */
-export type SidecarRaw = Record<string, unknown> & {
-  chapters?: Array<{ start_time: number; end_time: number; title: string }>
+export type SidecarRaw = {
+  ytDlp?: Record<string, unknown> & { chapters?: Array<{ start_time: number; end_time: number; title: string }> }
   tapebox?: Record<string, unknown>
 }
 

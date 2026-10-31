@@ -5,6 +5,7 @@ import { describeError } from '@shared/error'
 import type { LogLevel } from '@shared/log'
 import { utcTimestampForFilename } from '@shared/utc'
 import { toJson } from './log-format'
+import { APP_WRITER } from './app-writer'
 import type { RecordsRead, RecordsReadResults } from './records-query'
 import type { RecordReadResponse, RecordWriteData, RecordWriteRequest, RecordWriteResponse } from './records-write-worker'
 export type { RecordTable, RecordRow } from './records-write-worker'
@@ -102,7 +103,7 @@ export function openRecords(): string {
     const module = import.meta.url.endsWith('.ts') ? './records-write-worker.ts' : './records-write-worker.js'
     const created = new Worker(new URL(module, import.meta.url), { workerData: {
       databasePath: paths.records, logsPath: paths.logs, responsePort: port2,
-      fallbackPath, session,
+      fallbackPath, session, writer: APP_WRITER,
     } satisfies RecordWriteData, transferList: [port2] })
     port1.on('message', acknowledge)
     port1.unref()

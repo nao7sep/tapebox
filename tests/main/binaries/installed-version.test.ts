@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { header } from '../../helpers/file-header'
 
 const home = vi.hoisted(() => ({ bin: '' }))
 const capture = vi.hoisted(() => ({
@@ -204,7 +205,7 @@ describe('the sidecar, where a binary cannot report itself', () => {
   })
 
   it('treats an old unbound sidecar as an unknown version', async () => {
-    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ formatVersion: 1, version: 'autobuild-2026-08-19-19-21' }))
+    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ ...header('binaryVersion'), version: 'autobuild-2026-08-19-19-21' }))
     expect(await readInstalledVersion('ffmpeg')).toBeNull()
   })
 
@@ -238,22 +239,22 @@ describe('the sidecar, where a binary cannot report itself', () => {
     forgetInstalledVersion('ffmpeg')
 
     await writeVersionSidecar('ffmpeg', 'autobuild-2026-09-01-00-00')
-    expect(JSON.parse(readFileSync(versionSidecarPath('ffmpeg'), 'utf8'))).toMatchObject({ formatVersion: 1 })
+    expect(JSON.parse(readFileSync(versionSidecarPath('ffmpeg'), 'utf8'))).toMatchObject(header('binaryVersion'))
   })
 
   it('reads a sidecar in a newer format as unknown and leaves it byte-identical', async () => {
-    const text = JSON.stringify({ formatVersion: 2, version: 'autobuild-2026-08-19-19-21' })
+    const text = JSON.stringify({ ...header('binaryVersion', 2), version: 'autobuild-2026-08-19-19-21' })
     writeFileSync(versionSidecarPath('ffmpeg'), text)
     expect(await readInstalledVersion('ffmpeg')).toBeNull()
     expect(readFileSync(versionSidecarPath('ffmpeg'), 'utf8')).toBe(text)
   })
 
   it('is replaced by a reinstall over a sidecar in a newer format', async () => {
-    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ formatVersion: 2, version: 'autobuild-2027-01-01-00-00' }))
+    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ ...header('binaryVersion', 2), version: 'autobuild-2027-01-01-00-00' }))
     await writeVersionSidecar('ffmpeg', 'autobuild-2026-09-01-00-00')
     forgetInstalledVersion('ffmpeg')
     expect(await readInstalledVersion('ffmpeg')).toBe('autobuild-2026-09-01-00-00')
-    expect(JSON.parse(readFileSync(versionSidecarPath('ffmpeg'), 'utf8'))).toMatchObject({ formatVersion: 1 })
+    expect(JSON.parse(readFileSync(versionSidecarPath('ffmpeg'), 'utf8'))).toMatchObject(header('binaryVersion'))
   })
 
   it('is null when unreadable or empty, rather than a blank version', async () => {
@@ -261,7 +262,7 @@ describe('the sidecar, where a binary cannot report itself', () => {
     expect(await readInstalledVersion('ffmpeg')).toBeNull()
 
     forgetInstalledVersion('ffmpeg')
-    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ formatVersion: 1, version: '  ' }))
+    writeFileSync(versionSidecarPath('ffmpeg'), JSON.stringify({ ...header('binaryVersion'), version: '  ' }))
     expect(await readInstalledVersion('ffmpeg')).toBeNull()
   })
 })

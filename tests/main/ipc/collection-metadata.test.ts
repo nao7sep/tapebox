@@ -12,6 +12,7 @@ import type { Tape } from '@shared/domain'
 import { tapeDir } from '@main/paths'
 import { cancelAllWork, hasRunningWork, resumeWork } from '@main/work-registry'
 import { until } from '../../helpers/until'
+import { sidecarFixture } from '../../helpers/file-header'
 
 // Re-probing a tape and accepting the result. The tape's fields and the
 // sidecar's description are written for real; only the network-facing services
@@ -192,13 +193,13 @@ describe('accepting refreshed metadata', () => {
 
   it.each(['false', 'rejected'])('reports a truthful partial result on a %s collection save without rolling back saved sidecar or live metadata', async (kind) => {
     const sidecar = at('Partial001', 'Take.json')
-    await writeFile(sidecar, JSON.stringify({ formatVersion: 1, title: 'Old title' }))
+    await writeFile(sidecar, JSON.stringify(sidecarFixture({ title: 'Old title' })))
     state.tapes = [makeTape({ id: 'Partial001', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
     if (kind === 'false') persistNow.mockResolvedValueOnce(false)
     else persistNow.mockRejectedValueOnce(new Error('collection writer rejected'))
     await expect(invoke('collection:applyMetadata', { tapeId: 'Partial001', metadata: ACCEPTED })).rejects.toMatchObject({ userMessage: { key: 'refresh.applyPartial' } })
     expect(state.tapes[0]?.title).toBe('New title')
-    expect(JSON.parse(await readFile(sidecar, 'utf8')).title).toBe('New title')
+    expect(JSON.parse(await readFile(sidecar, 'utf8')).ytDlp.title).toBe('New title')
     expect(emit).toHaveBeenCalledWith('tapes:updated', expect.objectContaining({ title: 'New title' }))
   })
 
@@ -218,7 +219,7 @@ describe('accepting refreshed metadata', () => {
 
   it('saves the tape\'s fields and puts the same values in the sidecar', async () => {
     const sidecar = at('Acceptthis', 'Take.json')
-    await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', description: 'Old description', extra: 'kept' }), 'utf8')
+    await writeFile(sidecar, JSON.stringify(sidecarFixture({ id: 'source', description: 'Old description', extra: 'kept' })), 'utf8')
     state.tapes = [makeTape({ id: 'Acceptthis', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
 
     const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Acceptthis', metadata: ACCEPTED })
@@ -226,14 +227,13 @@ describe('accepting refreshed metadata', () => {
     expect(updated).toMatchObject({ title: 'New title', uploader: 'New uploader', thumbnailFilename: 'Take.jpg' })
     expect(updated.probedAtUtc, 'the probe time is when the source answered, not the Apply click').toBe(PROBED_AT)
     expect(updated, 'facts fixed by the file are not re-stated').toMatchObject({ durationSeconds: 61, chapterCount: 3 })
-    expect(JSON.parse(await readFile(sidecar, 'utf8'))).toEqual({
-      formatVersion: 1,
+    expect(JSON.parse(await readFile(sidecar, 'utf8'))).toEqual(sidecarFixture({
       id: 'source',
       title: 'New title',
       uploader: 'New uploader',
       description: 'New description',
       extra: 'kept',
-    })
+    }))
     expect(state.tapes[0]).toEqual(updated)
     expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:updated', updated)
     expect(downloadThumbnail, 'a tape that already has a poster is left alone').not.toHaveBeenCalled()
@@ -241,7 +241,7 @@ describe('accepting refreshed metadata', () => {
 
   it('leaves a sidecar that already holds the accepted values unwritten', async () => {
     const sidecar = at('Unchanged1', 'Take.json')
-    const text = JSON.stringify({ formatVersion: 1, title: 'New title', uploader: 'New uploader', description: 'New description' })
+    const text = JSON.stringify(sidecarFixture({ title: 'New title', uploader: 'New uploader', description: 'New description' }))
     await writeFile(sidecar, text, 'utf8')
     const before = (await stat(sidecar)).mtimeMs
     state.tapes = [makeTape({ id: 'Unchanged1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
@@ -264,7 +264,7 @@ describe('accepting refreshed metadata', () => {
 
   it('refuses a sidecar in a newer format, naming it, and leaves it byte-identical', async () => {
     const sidecar = at('Newersidec', 'Take.json')
-    const text = JSON.stringify({ formatVersion: 2, title: 'Future', extra: 'kept' })
+    const text = JSON.stringify(sidecarFixture({ title: 'Future', extra: 'kept' }, undefined, 2))
     await writeFile(sidecar, text, 'utf8')
     const tape = makeTape({ id: 'Newersidec', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })
     state.tapes = [tape]
@@ -307,7 +307,7 @@ describe('accepting refreshed metadata', () => {
   it('records a backfilled poster in the tape alone, leaving the sidecar\'s own section as it was', async () => {
     const sidecar = at('Posterside', 'Holiday.json')
     const tape = makeTape({ id: 'Posterside', filename: 'Holiday.mp4', sidecarFilename: 'Holiday.json' })
-    await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', tapebox: { media: null } }), 'utf8')
+    await writeFile(sidecar, JSON.stringify(sidecarFixture({ id: 'source' })), 'utf8')
     state.tapes = [tape]
     const raw = at('Posterside', 'Posterside.poster-raw.webp')
     downloadThumbnail.mockImplementation(async () => { await writeFile(raw, 'raw poster'); return raw })
@@ -315,10 +315,10 @@ describe('accepting refreshed metadata', () => {
 
     const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Posterside', metadata: ACCEPTED })
 
-    const written = JSON.parse(await readFile(sidecar, 'utf8')) as { title: string; tapebox: Record<string, unknown> }
+    const written = JSON.parse(await readFile(sidecar, 'utf8')) as { ytDlp: { title: string }; tapebox: Record<string, unknown> }
     expect(updated.thumbnailFilename).toBe('Holiday.jpg')
     expect(written.tapebox).toEqual({ media: null })
-    expect(written.title).toBe('New title')
+    expect(written.ytDlp.title).toBe('New title')
   })
 
   it('fetches no poster beside a file that spells the stem differently', async () => {
@@ -380,7 +380,7 @@ describe('accepting refreshed metadata', () => {
 
   it('finishes its collection commit when cancelled after the sidecar has committed', async () => {
     const sidecar = at('Lateabort1', 'Take.json')
-    await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source' }), 'utf8')
+    await writeFile(sidecar, JSON.stringify(sidecarFixture({ id: 'source' })), 'utf8')
     state.tapes = [makeTape({ id: 'Lateabort1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
     const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
     let quitting: Promise<void> | undefined
@@ -392,7 +392,7 @@ describe('accepting refreshed metadata', () => {
     const updated = await invoke<Tape>('collection:applyMetadata', { tapeId: 'Lateabort1', metadata: ACCEPTED })
     expect(quitting, 'the quit arrived after the sidecar committed').toBeDefined()
     await quitting
-    expect(JSON.parse(await readFile(sidecar, 'utf8'))).toMatchObject({ title: 'New title' })
+    expect(JSON.parse(await readFile(sidecar, 'utf8'))).toMatchObject({ ytDlp: { title: 'New title' } })
     expect(persistNow).toHaveBeenCalledOnce()
     expect(updated).toMatchObject({ title: 'New title', uploader: 'New uploader' })
     expect(state.tapes[0]).toEqual(updated)

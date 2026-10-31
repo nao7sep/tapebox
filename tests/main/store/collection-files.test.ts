@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ShelfSchema, TapeFileSchema, type Tape } from '@shared/domain'
+import { header } from '../../helpers/file-header'
 
 // The collection on disk: inbox/<id>/ and shelf/<id>/ tape folders, each with its
 // own tape.json, and shelf.json for the Shelf's boxes and order. Real temp
@@ -113,7 +114,7 @@ describe('tapes without shelf.json', () => {
     ]) session.upsertTape(item)
     await session.persistNow()
     await writeFile(join(state.dir, 'shelf.json'), JSON.stringify({
-      formatVersion: 1,
+      ...header('shelf'),
       boxes: [{ id: BOX, name: 'Box', tapeIds: ['Missing001', 'InInbox001'] }],
       loose: ['Missing002', 'Listed0001'],
     }))
@@ -190,7 +191,7 @@ describe('a damaged tape file', () => {
     const broken = join(state.dir, 'inbox', 'Inbox00001', 'tape.json')
     await writeFile(broken, '{ not json')
     const newer = join(state.dir, 'shelf', 'Boxed00001', 'tape.json')
-    const newerBytes = JSON.stringify({ formatVersion: 99, id: 'Boxed00001' })
+    const newerBytes = JSON.stringify({ ...header('tape', 99), id: 'Boxed00001' })
     await writeFile(newer, newerBytes)
 
     const result = await session.loadSession()

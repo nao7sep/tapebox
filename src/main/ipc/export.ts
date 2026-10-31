@@ -4,7 +4,7 @@ import { handle } from './handle'
 import { removeTapesFrom } from './collection'
 import * as session from '@main/store/session'
 import { planExport } from '@main/core/export-plan'
-import { exportNamespace, readSidecarFile, SIDECAR_JSON } from '@main/core/sidecar'
+import { exportNamespace, readSidecarFile, SIDECAR_JSON, type Sidecar } from '@main/core/sidecar'
 import { tapeFile } from '@main/paths'
 import { serializeStoreJson } from '@main/io/atomic-json'
 import { maskYtdlpOutput, maskUrlCredentials } from '@main/io/mask'
@@ -84,7 +84,7 @@ async function exportTape(
   // copied out — so a corrupt source sidecar fails the export before it leaves
   // partial files in the user's folder.
   const original = await readSidecarFile(tapeFile(collectionDir, tape, tape.sidecarFilename))
-  const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
+  const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Sidecar
   const tb = exportNamespace(sidecar, tape)
   // The tape's source URL leaves under the same masking as the sidecar.
   tb['sourceUrl'] = maskUrlCredentials(maskYtdlpOutput(tape.sourceUrl))

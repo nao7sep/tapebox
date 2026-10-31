@@ -59,7 +59,7 @@ export function NameEditor({
   const [error, setError] = useState<Message | null>(null)
   const t = useI18n()
   const preview = useSidecarPreview(tape)
-  const rawDescription = preview.data?.['description']
+  const rawDescription = preview.data?.ytDlp?.['description']
   const description = typeof rawDescription === 'string' && rawDescription.trim() ? rawDescription : null
   const descriptionError = preview.status === 'failed' ? preview.userMessage ?? message('nameEditor.descriptionLoadFailed') : null
   const [include, setInclude] = useState<Record<SourceField, boolean>>({

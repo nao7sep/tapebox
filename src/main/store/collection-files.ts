@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { areaDir, shelfFile, tapeFile } from '@main/paths'
 import { quarantineFile, serializeStoreJson } from '@main/io/atomic-json'
 import { StoreAccessError } from '@main/io/store-access'
-import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
+import { FORMATS, NewerFormatError, parseStoreJson } from '@main/io/file-header'
 import { durableTape } from '@shared/durable-tape'
 import { portableFilenameIdentity } from '@shared/filename'
 import { compareInbox } from '@shared/order'
@@ -46,8 +46,8 @@ export type CollectionRead = {
   shelfWritten: boolean
 }
 
-const TAPE_JSON = { formatVersion: FORMAT_VERSIONS.tape, schema: TapeFileSchema }
-const SHELF_JSON = { formatVersion: FORMAT_VERSIONS.shelf, schema: ShelfSchema }
+const TAPE_JSON = { format: FORMATS.tape, schema: TapeFileSchema }
+const SHELF_JSON = { format: FORMATS.shelf, schema: ShelfSchema }
 
 /** What a tape's own file holds: its durable facts. */
 export function tapeFacts(tape: Tape): TapeFile {
@@ -127,8 +127,8 @@ async function readShelf(collectionDir: string, requireExisting: boolean): Promi
     // collection unloaded and startup names the file, instead of starting empty.
     throw new StoreAccessError(path, err)
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.shelf)
-  if (found.status === 'newer') throw new NewerFormatError(path, found.version, FORMAT_VERSIONS.shelf)
+  const found = parseStoreJson(text, FORMATS.shelf)
+  if (found.status === 'newer') throw new NewerFormatError(path, found.version, FORMATS.shelf.version)
   const parsed = found.status === 'read' ? ShelfSchema.safeParse(found.value) : null
   if (parsed?.success) return { kind: 'shelf', shelf: parsed.data }
   if (requireExisting) throw new StoreAccessError(path, new Error('Invalid shelf file'))
@@ -150,7 +150,7 @@ export async function readTapeFile(path: string, id: string): Promise<TapeFile |
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     return { reason: (err as Error).message ?? String(err) }
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.tape)
+  const found = parseStoreJson(text, FORMATS.tape)
   if (found.status !== 'read') return { reason: found.status === 'newer' ? `format ${found.version} is newer` : found.error.message }
   const parsed = TapeFileSchema.safeParse(found.value)
   if (!parsed.success) return { reason: parsed.error.message }

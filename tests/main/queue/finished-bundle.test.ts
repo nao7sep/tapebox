@@ -8,6 +8,7 @@ import { findFinishedBundle } from '@main/queue/finished-bundle'
 import { finalize } from '@main/core/sidecar'
 import { clearStem } from '@main/services/ytdlp'
 import type { Tape } from '@shared/domain'
+import { sidecarFixture } from '../../helpers/file-header'
 
 // A download that finished on disk while its tape.json commit failed must survive
 // the next attempt: the files are real, the queued row is what a relaunch reads.
@@ -113,9 +114,9 @@ describe('a download finished before its tape file commit', () => {
 })
 
 describe('findFinishedBundle', () => {
-  const sidecar = (fields: Record<string, unknown> = {}) => JSON.stringify({
-    formatVersion: 1, id: 'vid1', original_url: 'https://example.test/watch', tapebox: { media: null }, ...fields,
-  })
+  const sidecar = (fields: Record<string, unknown> = {}) => JSON.stringify(sidecarFixture({
+    id: 'vid1', original_url: 'https://example.test/watch', ...fields,
+  }))
   const folder = async (id: string, files: Record<string, string>) => {
     await mkdir(join(dir, id))
     for (const [name, text] of Object.entries(files)) await writeFile(join(dir, id, name), text)
@@ -133,7 +134,7 @@ describe('findFinishedBundle', () => {
   })
 
   it('reports a sidecar it cannot adopt, leaving it in place', async () => {
-    const text = JSON.stringify({ formatVersion: 99, tapebox: {} })
+    const text = JSON.stringify(sidecarFixture({}, {}, 99))
     const at = await folder('Newer00001', { 'Newer00001.json': text, 'Newer00001.mp4': 'media' })
     expect(await findFinishedBundle(at, queued('Newer00001'))).toMatchObject({ status: 'unusable' })
     expect(await readFile(join(at, 'Newer00001.json'), 'utf8')).toBe(text)

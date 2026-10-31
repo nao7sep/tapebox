@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { binaryPath, paths } from '@main/paths'
 import { execCapture } from '@main/io/spawn'
 import { writeJsonAtomic } from '@main/io/atomic-json'
-import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
+import { FORMATS, parseStoreJson } from '@main/io/file-header'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import type { BinaryName } from '@shared/ipc-contract'
@@ -74,7 +74,7 @@ export async function writeVersionSidecar(name: BinaryName, version: string, sig
   // install (data-backup conventions protect only what the user creates or adds).
   // Any earlier sidecar is replaced, one from a newer TapeBox too: reinstalling is
   // how its facts are rebuilt, so refusing it would make every install fail.
-  await writeJsonAtomic(versionSidecarPath(name), sidecar, { formatVersion: FORMAT_VERSIONS.binaryVersion })
+  await writeJsonAtomic(versionSidecarPath(name), sidecar, { format: FORMATS.binaryVersion })
 }
 
 const cache = new Map<BinaryName, Promise<string | null>>()
@@ -145,9 +145,9 @@ async function probe(
 
 async function readSidecarVersion(name: BinaryName, path: string, parse: (stored: string) => string | null): Promise<string | null> {
   try {
-    const found = parseStoreJson(await readFile(path, 'utf8'), FORMAT_VERSIONS.binaryVersion)
+    const found = parseStoreJson(await readFile(path, 'utf8'), FORMATS.binaryVersion)
     if (found.status === 'newer') {
-      log.warn('version sidecar is from a newer TapeBox', { name, path, formatVersion: found.version })
+      log.warn('version sidecar is from a newer TapeBox', { name, path, version: found.version })
       return null
     }
     if (found.status === 'unreadable') throw found.error

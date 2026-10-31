@@ -3,7 +3,7 @@ import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 import { parentPort, workerData, type MessagePort } from 'node:worker_threads'
 import { describeError } from '../../shared/error.ts'
 import { toJson } from './log-format.ts'
-import { FORMAT_VERSIONS } from './format-version.ts'
+import { FORMATS, type FileWriter } from './file-header.ts'
 import { readRecords, type RecordsRead, type RecordsReadResult } from './records-query.ts'
 import { databaseTransaction, openWritableDatabase } from './sqlite-store.ts'
 
@@ -16,7 +16,7 @@ export type RecordWriteResponse = { id: number; stored: boolean; console?: strin
 export type RecordReadResponse =
   | { id: number; read: true; ok: true; value: RecordsReadResult }
   | { id: number; read: true; ok: false; error: string }
-export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; responsePort?: MessagePort }
+export type RecordWriteData = { databasePath: string; logsPath: string; fallbackPath: string; session: string; writer: FileWriter; responsePort?: MessagePort }
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS run_output_chunks (
@@ -145,7 +145,7 @@ port.on('message', (request: RecordWriteRequest) => {
   const response: RecordWriteResponse = { id: request.id, stored: false, diagnostics: [] }
   if (!initialized) {
     initialized = true
-    try { db = openWritableDatabase(data.databasePath, FORMAT_VERSIONS.records, SCHEMA) }
+    try { db = openWritableDatabase(data.databasePath, FORMATS.records, SCHEMA, data.writer) }
     catch (error) { openFailure = error; fallback(failureNote('records database could not be opened; writing to a text file', error), response, true) }
   }
   if (request.read) {

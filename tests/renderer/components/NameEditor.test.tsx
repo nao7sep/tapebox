@@ -93,7 +93,7 @@ describe('NameEditor description preview', () => {
     ipcInvoke.mockImplementation((channel: string) => {
       if (channel === 'collection:getSidecar') {
         reads += 1
-        return reads === 1 ? Promise.reject(new Error('EACCES /private/PREVIEW_SENTINEL')) : Promise.resolve({ description: 'A readable description' })
+        return reads === 1 ? Promise.reject(new Error('EACCES /private/PREVIEW_SENTINEL')) : Promise.resolve({ ytDlp: { description: 'A readable description' } })
       }
       if (channel === 'ai:generateSlug') return Promise.resolve({ slug: 'a-title' })
       return Promise.resolve()
@@ -127,12 +127,12 @@ describe('NameEditor description preview', () => {
     let reject!: (error: Error) => void
     const old = new Promise((yes, no) => { resolve = yes; reject = no })
     ipcInvoke.mockImplementation((channel: string, request?: { tapeId?: string }) => {
-      if (channel === 'collection:getSidecar') return request?.tapeId === 'old' ? old : Promise.resolve({ description: 'Current description' })
+      if (channel === 'collection:getSidecar') return request?.tapeId === 'old' ? old : Promise.resolve({ ytDlp: { description: 'Current description' } })
       return Promise.resolve()
     })
     await renderTape({ ...tape, id: 'old' })
     await renderTape({ ...tape, id: 'current' })
-    await act(async () => outcome === 'success' ? resolve({ description: 'Obsolete description' }) : reject(new Error('obsolete error')))
+    await act(async () => outcome === 'success' ? resolve({ ytDlp: { description: 'Obsolete description' } }) : reject(new Error('obsolete error')))
     expect(host.textContent).toContain('Current description')
     expect(host.textContent).not.toContain('Obsolete description')
     expect(host.querySelector('[role="alert"]')).toBeNull()

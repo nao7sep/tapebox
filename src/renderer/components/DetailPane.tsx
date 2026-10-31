@@ -110,7 +110,7 @@ export function DetailPane({
   // Memoized so its reference is stable across renders: useCurrentChapter keys an
   // effect on it, and the chapter set only changes when the sidecar does.
   const chapters: Chapter[] = useMemo(() => {
-    const raw = sidecar?.chapters
+    const raw = sidecar?.ytDlp?.chapters
     if (!Array.isArray(raw)) return []
     const parsed = z.array(SidecarChapterSchema).safeParse(raw)
     return parsed.success ? parsed.data : []
@@ -119,7 +119,7 @@ export function DetailPane({
   const mediaMeta = mediaMetaLine(sidecar, t)
   const chapterLabel = chapterCountLabel(tape.chapterCount)
   const description = (() => {
-    const d = sidecar?.['description']
+    const d = sidecar?.ytDlp?.['description']
     return typeof d === 'string' && d.trim() ? d.trim() : null
   })()
 
@@ -721,11 +721,12 @@ function DownloadLogPanel({
 function mediaMetaLine(sidecar: SidecarRaw | null, t: UiTranslator): string | null {
   if (!sidecar) return null
   const media = (sidecar.tapebox?.['media'] ?? null) as Record<string, unknown> | null
-  const pick = (key: string): unknown => media?.[key] ?? sidecar[key]
+  const yt = sidecar.ytDlp ?? {}
+  const pick = (key: string): unknown => media?.[key] ?? yt[key]
   const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
 
   const parts: string[] = []
-  const ext = sidecar['ext']
+  const ext = yt['ext']
   if (typeof ext === 'string' && ext) parts.push(ext)
   const codecs = [pick('vcodec'), pick('acodec')]
     .filter((c): c is string => typeof c === 'string' && c.length > 0 && c !== 'none')
@@ -736,9 +737,9 @@ function mediaMetaLine(sidecar: SidecarRaw | null, t: UiTranslator): string | nu
   if (w !== null && h !== null) parts.push(`${w}×${h}`)
   const fps = num(pick('fps'))
   if (fps !== null) parts.push(`${Math.round(fps)} fps`)
-  const duration = num(media?.['durationSeconds']) ?? num(sidecar['duration'])
+  const duration = num(media?.['durationSeconds']) ?? num(yt['duration'])
   if (duration !== null) parts.push(formatTime(duration))
-  const size = num(sidecar['filesize']) ?? num(sidecar['filesize_approx'])
+  const size = num(yt['filesize']) ?? num(yt['filesize_approx'])
   if (size !== null) parts.push(t.bytes(size))
   return parts.length > 0 ? parts.join(' · ') : null
 }

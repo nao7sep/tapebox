@@ -58,7 +58,7 @@ export function RefreshMetadataModal({ tape, onClose }: { tape: Tape; onClose: (
   }, [tape.id])
 
   const probed = candidate !== null
-  const rawDescription = preview.data?.['description']
+  const rawDescription = preview.data?.ytDlp?.['description']
   const currentLoad: DescriptionLoad = preview.status === 'loaded'
     ? { tapeId: tape.id, status: 'loaded', description: typeof rawDescription === 'string' ? nv(rawDescription) : null }
     : preview.status === 'failed'

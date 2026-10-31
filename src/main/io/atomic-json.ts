@@ -2,7 +2,8 @@ import { open, rename, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
-import { withFormatVersion } from './format-version'
+import { APP_WRITER } from './app-writer'
+import { withFileHeader, type FileFormat } from './file-header'
 import { record } from '@main/store/backupStore'
 import { utcTimestampForFilename } from '@shared/utc'
 import { log } from './logger'
@@ -33,13 +34,13 @@ import { describeError } from '@shared/error'
  * not the input shape.
  */
 
-/** How a store's JSON is written: its format version, and the shape it is
+/** How a store's JSON is written: its format, and the shape it is
  *  validated against first when given. Whether a file already on disk may be
  *  replaced is decided where the store is loaded, which refuses a newer or
  *  unreadable store; one TapeBox runs per data root, so nothing changes it
  *  between that load and a save (store-recovery-conventions). */
 export type StoreJsonOptions<S extends z.ZodType> = {
-  formatVersion: number
+  format: FileFormat
   schema?: S
 }
 
@@ -60,15 +61,15 @@ async function publishJson(path: string, bytes: string | Buffer, mode?: number):
 
 /** Serialize a store's value to the canonical on-disk JSON form (2-space indent,
  *  trailing newline), validating through `schema` first when given and leading
- *  with its `formatVersion` (store-recovery-conventions). The single serializer
+ *  with its header (file-identity-conventions). The single serializer
  *  every JSON store write shares, so the bytes recorded are byte-identical to the
  *  bytes on disk. */
 export function serializeStoreJson<S extends z.ZodType>(
   data: z.input<S> | z.infer<S>,
-  { formatVersion, schema }: StoreJsonOptions<S>,
+  { format, schema }: StoreJsonOptions<S>,
 ): string {
   const validated = (schema ? schema.parse(data) : data) as object
-  return JSON.stringify(withFormatVersion(validated, formatVersion), null, 2) + '\n'
+  return JSON.stringify(withFileHeader(validated, format, APP_WRITER), null, 2) + '\n'
 }
 
 /**

@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { serializeStoreJson, writeJsonAtomic } from '@main/io/atomic-json'
+import { FORMATS } from '@main/io/file-header'
+import { header } from '../../helpers/file-header'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>()
@@ -18,7 +20,9 @@ vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 // coverage) is actually exercised for JSON specifically: the serialized shape,
 // the temp naming, and the mode option the secrets file relies on.
 
-const V1 = { formatVersion: 1 }
+const V1 = { format: FORMATS.layout }
+const HEADER = header('layout')
+const HEADER_TEXT = '  "format": {\n    "owner": "tapebox",\n    "kind": "layout",\n    "version": 1\n  },\n  "writer": {\n    "name": "tapebox",\n    "version": "1.0.0"\n  },\n'
 
 let dir: string
 
@@ -64,7 +68,7 @@ describe('writeJsonAtomic', () => {
 
     await writeJsonAtomic(target, { a: 1, b: 'two' }, V1)
 
-    expect(await readFile(target, 'utf8')).toBe('{\n  "formatVersion": 1,\n  "a": 1,\n  "b": "two"\n}\n')
+    expect(await readFile(target, 'utf8')).toBe(`{\n${HEADER_TEXT}  "a": 1,\n  "b": "two"\n}\n`)
   })
 
   it('validates and canonicalizes through the schema before writing', async () => {
@@ -73,7 +77,7 @@ describe('writeJsonAtomic', () => {
 
     await writeJsonAtomic(target, {}, { ...V1, schema })
 
-    expect(JSON.parse(await readFile(target, 'utf8'))).toEqual({ formatVersion: 1, count: 0 })
+    expect(JSON.parse(await readFile(target, 'utf8'))).toEqual({ ...HEADER, count: 0 })
   })
 
   it('rejects data that fails the schema and leaves no file behind', async () => {
@@ -100,7 +104,7 @@ describe('writeJsonAtomic', () => {
 
     await writeJsonAtomic(target, { version: 2 }, V1)
 
-    expect(JSON.parse(await readFile(target, 'utf8'))).toEqual({ formatVersion: 1, version: 2 })
+    expect(JSON.parse(await readFile(target, 'utf8'))).toEqual({ ...HEADER, version: 2 })
     expect(await readdir(dir)).toEqual(['config.json'])
   })
 
@@ -135,14 +139,14 @@ describe('writeJsonAtomic', () => {
 })
 
 describe('serializeStoreJson', () => {
-  it('leads with the format version, replacing any marker the value held', () => {
-    expect(serializeStoreJson({ a: 1, formatVersion: 7 }, { formatVersion: 1 }))
-      .toBe('{\n  "formatVersion": 1,\n  "a": 1\n}\n')
+  it('leads with the header, replacing any format or writer the value held', () => {
+    expect(serializeStoreJson({ a: 1, format: 7, writer: 'someone' }, V1))
+      .toBe(`{\n${HEADER_TEXT}  "a": 1\n}\n`)
   })
 
-  it('stamps the marker after the schema, which would strip it', () => {
+  it('adds the header after the schema, which would strip it', () => {
     const schema = z.object({ a: z.number() })
-    expect(JSON.parse(serializeStoreJson({ a: 1 }, { formatVersion: 1, schema }))).toEqual({ formatVersion: 1, a: 1 })
+    expect(JSON.parse(serializeStoreJson({ a: 1 }, { ...V1, schema }))).toEqual({ ...HEADER, a: 1 })
   })
 })
 

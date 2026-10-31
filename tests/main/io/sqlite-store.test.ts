@@ -6,6 +6,14 @@ import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
 import { databaseTransaction, openWritableDatabase } from '@main/io/sqlite-store'
 
+const FORMAT = { kind: 'records', version: 1 }
+const WRITER = { name: 'tapebox', version: '1.0.0' }
+// A format at version 2, so a store at 1 is a lower version.
+const FORMAT2 = { kind: 'records', version: 2 }
+const header = (db: DatabaseSync) => Object.fromEntries(
+  (db.prepare('SELECT key, value FROM file_header ORDER BY key').all() as Array<{ key: string; value: string }>).map((row) => [row.key, row.value]),
+)
+
 let root: string
 const opened: DatabaseSync[] = []
 const schema = 'CREATE TABLE entries (value TEXT NOT NULL)'
@@ -29,10 +37,10 @@ describe('SQLite store admission', () => {
         if (sql === 'COMMIT') process.exit(73);
         return exec.call(this, sql);
       };
-      openWritableDatabase(process.argv[2], 1, 'CREATE TABLE entries (value TEXT NOT NULL)');
+      openWritableDatabase(process.argv[2], { kind: 'records', version: 1 }, 'CREATE TABLE entries (value TEXT NOT NULL)', { name: 'tapebox', version: '1.0.0' });
     `, source, file], { encoding: 'utf8' })
     expect(child.status, child.stderr).toBe(73)
-    const db = openWritableDatabase(file, 1, schema)
+    const db = openWritableDatabase(file, FORMAT, schema, WRITER)
     opened.push(db)
     expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
     expect(db.prepare('SELECT * FROM entries').all()).toEqual([])
@@ -43,7 +51,7 @@ describe('SQLite store admission', () => {
     const db = new DatabaseSync(file)
     try { db.exec(`PRAGMA user_version = ${kind === 'negative' ? -1 : 2}`) } finally { db.close() }
     const bytes = readFileSync(file)
-    expect(() => openWritableDatabase(file, 1, schema)).toThrow(/format/)
+    expect(() => openWritableDatabase(file, FORMAT, schema, WRITER)).toThrow(/format/)
     expect(readFileSync(file)).toEqual(bytes)
     expect(existsSync(`${file}-wal`)).toBe(false)
   })
@@ -56,10 +64,10 @@ describe('SQLite store admission', () => {
       realClose.call(this)
       throw new Error('secondary close failure')
     })
-    expect(() => openWritableDatabase(file, 1, `${schema}; invalid sql`)).toThrow(/syntax/)
+    expect(() => openWritableDatabase(file, FORMAT, `${schema}; invalid sql`, WRITER)).toThrow(/syntax/)
     expect(console.error).toHaveBeenCalledWith('tapebox: SQLite failed initialization close failed', expect.objectContaining({ message: 'secondary close failure' }))
     vi.mocked(DatabaseSync.prototype.close).mockRestore()
-    const db = openWritableDatabase(file, 1, schema)
+    const db = openWritableDatabase(file, FORMAT, schema, WRITER)
     opened.push(db)
     expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
   })
@@ -73,18 +81,63 @@ describe('SQLite store admission', () => {
       earlier.exec(`PRAGMA user_version = ${version}`)
     } finally { earlier.close() }
     const bytes = readFileSync(file)
-    expect(() => openWritableDatabase(file, 2, schema)).toThrow(/format/)
+    expect(() => openWritableDatabase(file, FORMAT2, schema, WRITER)).toThrow(/format/)
     expect(readFileSync(file)).toEqual(bytes)
   })
 
   it('opens a current store with its existing rows intact', () => {
     const file = join(root, 'store.sqlite3')
     const idempotent = 'CREATE TABLE IF NOT EXISTS entries (value TEXT NOT NULL)'
-    const first = openWritableDatabase(file, 2, idempotent)
+    const first = openWritableDatabase(file, FORMAT, idempotent, WRITER)
     first.exec("INSERT INTO entries VALUES ('kept')")
     first.close()
-    const reopened = openWritableDatabase(file, 2, idempotent)
+    const reopened = openWritableDatabase(file, FORMAT, idempotent, WRITER)
     opened.push(reopened)
     expect(databaseTransaction(reopened, false, () => reopened.prepare('SELECT value FROM entries').all())).toEqual([{ value: 'kept' }])
+  })
+})
+
+describe('SQLite store header', () => {
+  const idempotent = 'CREATE TABLE IF NOT EXISTS entries (value TEXT NOT NULL)'
+
+  it('gives a new store its header with its version', () => {
+    const db = openWritableDatabase(join(root, 'store.sqlite3'), FORMAT, idempotent, WRITER)
+    opened.push(db)
+    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
+    expect(header(db)).toEqual({ 'format.kind': 'records', 'format.owner': 'tapebox', 'writer.name': 'tapebox', 'writer.version': '1.0.0' })
+  })
+
+  it('rewrites the writer rows on every open for writing, dropping a caller, and never reads them', () => {
+    const file = join(root, 'store.sqlite3')
+    openWritableDatabase(file, FORMAT, idempotent, WRITER).close()
+    const edited = new DatabaseSync(file)
+    try {
+      edited.exec("UPDATE file_header SET value = 'not-read' WHERE key LIKE 'writer.%'")
+      edited.exec("INSERT INTO file_header VALUES ('writer.caller.name', 'someone')")
+    } finally { edited.close() }
+    const db = openWritableDatabase(file, FORMAT, idempotent, { name: 'tapebox', version: '1.0.1' })
+    opened.push(db)
+    expect(header(db)).toEqual({ 'format.kind': 'records', 'format.owner': 'tapebox', 'writer.name': 'tapebox', 'writer.version': '1.0.1' })
+  })
+
+  it.each([
+    ['no file_header table', null],
+    ['another owner', { 'format.owner': 'gptimg', 'format.kind': 'records' }],
+    ['another kind', { 'format.owner': 'tapebox', 'format.kind': 'backups' }],
+    ['no owner row', { 'format.kind': 'records' }],
+  ])('refuses a store with %s, leaving it byte-identical', (_label, rows) => {
+    const file = join(root, 'store.sqlite3')
+    const other = new DatabaseSync(file)
+    try {
+      other.exec(schema)
+      if (rows) {
+        other.exec('CREATE TABLE file_header (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        for (const [key, value] of Object.entries(rows)) other.prepare('INSERT INTO file_header VALUES (?, ?)').run(key, value)
+      }
+      other.exec('PRAGMA user_version = 1')
+    } finally { other.close() }
+    const bytes = readFileSync(file)
+    expect(() => openWritableDatabase(file, FORMAT, idempotent, WRITER)).toThrow(/not a TapeBox records database/)
+    expect(readFileSync(file)).toEqual(bytes)
   })
 })

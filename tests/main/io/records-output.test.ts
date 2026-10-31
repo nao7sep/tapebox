@@ -15,7 +15,7 @@ it.each([false, true])('retains output chunk identity and completed metadata map
   const fallbackPath = join(root, 'fallback.log')
   const session = 'synthetic-session'
   const worker = new Worker(new URL('../../../src/main/io/records-write-worker.ts', import.meta.url), {
-    workerData: { databasePath: textOnly ? root : databasePath, logsPath: root, fallbackPath, session },
+    workerData: { databasePath: textOnly ? root : databasePath, logsPath: root, fallbackPath, session, writer: { name: 'tapebox', version: '1.0.0' } },
   })
   const send = (request: RecordWriteRequest) => new Promise<RecordWriteResponse>((resolve, reject) => {
     worker.once('error', reject)
@@ -52,7 +52,7 @@ it.each([1, 2])('reports incomplete output after the writer rejects sequence %s'
   const root = await mkdtemp(join(tmpdir(), 'tapebox-record-gap-'))
   const databasePath = join(root, 'records.sqlite3')
   const worker = new Worker(new URL('../../../src/main/io/records-write-worker.ts', import.meta.url), {
-    workerData: { databasePath, logsPath: root, fallbackPath: join(root, 'fallback.log'), session: 'gap-session' },
+    workerData: { databasePath, logsPath: root, fallbackPath: join(root, 'fallback.log'), session: 'gap-session', writer: { name: 'tapebox', version: '1.0.0' } },
   })
   const send = (request: RecordWriteRequest) => new Promise<RecordWriteResponse>((resolve, reject) => {
     worker.once('error', reject)

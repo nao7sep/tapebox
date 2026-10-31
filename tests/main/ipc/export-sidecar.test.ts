@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
+import type { Sidecar } from '@main/core/sidecar'
+import { header, sidecarFixture } from '../../helpers/file-header'
 
 // The collection's sidecar holds yt-dlp's info and the media facts; the exported
 // bundle's sidecar carries the collection's record of the tape under the name it
@@ -57,7 +59,7 @@ beforeEach(async () => {
   await mkdir(tapeFolder(), { recursive: true })
   await mkdir(destinationDir)
   await writeFile(join(tapeFolder(), 'Take.mp4'), 'video')
-  await writeFile(join(tapeFolder(), 'Take.json'), JSON.stringify({ formatVersion: 1, id: 'source', tapebox: { media: MEDIA } }))
+  await writeFile(join(tapeFolder(), 'Take.json'), JSON.stringify(sidecarFixture({ id: 'source' }, { media: MEDIA })))
   registerExportHandlers()
 })
 
@@ -89,8 +91,11 @@ describe('export:files sidecar', () => {
       sourceUrl: tape.sourceUrl, name: 'Take', addedAtUtc: tape.addedAtUtc, downloadedAtUtc: tape.downloadedAtUtc,
       renamedAtUtc: RENAMED_AT, media: MEDIA, mediaFilename: 'Take.mp4', thumbnailFilename: null,
     })
-    expect(classifyImport(exported)).toEqual({ status: 'accept', sourceUrl: tape.sourceUrl, mediaFilename: 'Take.mp4', thumbnailFilename: null })
-    expect(tapeFromSidecar(exported, {
+    expect(Object.keys(exported).slice(0, 2), 'the header leads').toEqual(['format', 'writer'])
+    expect(exported['format']).toEqual(header('sidecar').format)
+    const classified = classifyImport(exported)
+    expect(classified).toMatchObject({ status: 'accept', sourceUrl: tape.sourceUrl, mediaFilename: 'Take.mp4', thumbnailFilename: null })
+    expect(tapeFromSidecar((classified as { sidecar: Sidecar }).sidecar, {
       id: 'Reimport01', sourceUrl: tape.sourceUrl, mediaFilename: 'Take.mp4', sidecarFilename: 'Take.json',
       thumbnailFilename: null, addedIndex: 0, nowUtc: '2026-03-01T00:00:00.000Z',
     })).toMatchObject({ name: 'Take', addedAtUtc: tape.addedAtUtc, downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: RENAMED_AT })
@@ -126,8 +131,7 @@ describe('export:files sidecar', () => {
 
 it('masks known credentials in the export copy while preserving sparse and opaque sidecar metadata', async () => {
   const sourcePath = join(tapeFolder(), 'Take.json')
-  const original = JSON.stringify({
-    formatVersion: 1,
+  const original = JSON.stringify(sidecarFixture({
     title: 'Original title',
     cookies: 'COOKIE_SENTINEL',
     http_headers: { Authorization: 'Bearer AUTH_SENTINEL', Cookie: 'HEADER_COOKIE_SENTINEL', 'X-Ordinary': 'keep this' },
@@ -137,23 +141,22 @@ it('masks known credentials in the export copy while preserving sparse and opaqu
       future_format_metadata: { codec_notes: ['a', 7, null] },
     }],
     opaque_root: { nested: ['untouched', { enabled: true }] },
-    tapebox: {
-      opaque_namespace: { keep: ['opaque', 123] },
-    },
-  })
+  }, {
+    opaque_namespace: { keep: ['opaque', 123] },
+  }))
   await writeFile(sourcePath, original)
   await handlers.get('export:files')!({ tapeId: tape.id, destinationDir, name: 'Portable', deleteFromApp: false })
   const exported = JSON.parse(await readFile(join(destinationDir, 'Portable.json'), 'utf8'))
 
   expect(await readFile(sourcePath, 'utf8')).toBe(original)
-  expect(exported.cookies).toBe('[REDACTED]')
-  expect(exported.http_headers).toEqual({ Authorization: 'Bearer [REDACTED]', Cookie: '[REDACTED]', 'X-Ordinary': 'keep this' })
-  expect(exported.formats).toEqual([{
+  expect(exported.ytDlp.cookies).toBe('[REDACTED]')
+  expect(exported.ytDlp.http_headers).toEqual({ Authorization: 'Bearer [REDACTED]', Cookie: '[REDACTED]', 'X-Ordinary': 'keep this' })
+  expect(exported.ytDlp.formats).toEqual([{
     url: 'https://[REDACTED]@video.example.test/media?id=42&signature=[REDACTED]&lsig=[REDACTED]&pot=[REDACTED]&quality=best',
     http_headers: { 'Proxy-Authorization': 'Basic [REDACTED]' },
     future_format_metadata: { codec_notes: ['a', 7, null] },
   }])
-  expect(exported.opaque_root).toEqual({ nested: ['untouched', { enabled: true }] })
+  expect(exported.ytDlp.opaque_root).toEqual({ nested: ['untouched', { enabled: true }] })
   expect(exported.tapebox).toMatchObject({
     sourceUrl: tape.sourceUrl, name: 'Portable', addedAtUtc: tape.addedAtUtc,
     downloadedAtUtc: tape.downloadedAtUtc, media: null,
@@ -161,6 +164,6 @@ it('masks known credentials in the export copy while preserving sparse and opaqu
     opaque_namespace: { keep: ['opaque', 123] },
   })
   expect(exported.tapebox.renamedAtUtc).toEqual(expect.any(String))
-  expect(exported.title).toBe('Original title')
+  expect(exported.ytDlp.title).toBe('Original title')
   expect(await readFile(join(destinationDir, 'Portable.mp4'), 'utf8')).toBe('video')
 })

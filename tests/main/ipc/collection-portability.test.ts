@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ShelfSchema, type Session, type Tape } from '@shared/domain'
 import type { IpcCalls } from '@shared/ipc-contract'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
+import { header } from '../../helpers/file-header'
 
 const state = vi.hoisted(() => ({
   handlers: new Map<string, (req: unknown) => Promise<unknown>>(),
@@ -194,7 +195,7 @@ describe('portable collection through settings and the actual collection owner',
     const app = await seed()
     const target = join(root, 'other')
     await mkdir(target, { recursive: true })
-    const bytes = JSON.stringify({ formatVersion: 1, boxes: [], loose: [] })
+    const bytes = JSON.stringify({ ...header('shelf'), boxes: [], loose: [] })
     await writeFile(app.shelfFile(target), bytes)
     await expect(update({ collectionDir: target })).rejects.toThrow()
     expect(await readFile(app.shelfFile(target), 'utf8')).toBe(bytes)
@@ -251,7 +252,7 @@ describe('portable collection through settings and the actual collection owner',
     const app = await seed()
     const target = join(root, kind)
     await mkdir(target, { recursive: true })
-    const bytes = kind === 'invalid' ? '{broken' : JSON.stringify({ formatVersion: 999, boxes: [], loose: [] })
+    const bytes = kind === 'invalid' ? '{broken' : JSON.stringify({ ...header('shelf', 999), boxes: [], loose: [] })
     if (kind !== 'absent') await writeFile(app.shelfFile(target), bytes)
     await expect(update({ collectionDir: target, collectionAction: 'open' })).rejects.toThrow('Could not open the collection at')
     expect(app.config.getCollectionDir()).toBe(app.paths.collection)

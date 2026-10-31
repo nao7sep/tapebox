@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/settings'
+import { header } from '../../helpers/file-header'
 
 // Real filesystem (a temp dir) so the read → parse → quarantine path is exercised end to end.
 // Load the production settings owner against an isolated data root.
@@ -34,7 +35,7 @@ describe('loadSettings recovery', () => {
 
   it('returns the parsed settings for a valid config', async () => {
     const path = join(dir, 'config.json')
-    await writeFile(path, JSON.stringify({ formatVersion: 1, ...defaultSettings() }))
+    await writeFile(path, JSON.stringify({ ...header('config'), ...defaultSettings() }))
 
     expect(await config.loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
     expect(config.getSettings()).toEqual(defaultSettings())

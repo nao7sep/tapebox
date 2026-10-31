@@ -64,6 +64,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
 
 import { registerCollectionHandlers } from '@main/ipc/collection'
 import * as session from '@main/store/session'
+import { sidecarFixture } from '../../helpers/file-header'
 
 let root: string
 let original: Tape
@@ -93,7 +94,7 @@ beforeEach(async () => {
   tapeFolder = tapeDir(state.collectionDir, original)
   await mkdir(tapeFolder, { recursive: true })
   await writeFile(join(tapeFolder, original.filename!), 'video')
-  await writeFile(join(tapeFolder, original.sidecarFilename!), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
+  await writeFile(join(tapeFolder, original.sidecarFilename!), JSON.stringify(sidecarFixture()))
   session.upsertTape(original)
   await session.persistNow()
   registerCollectionHandlers()

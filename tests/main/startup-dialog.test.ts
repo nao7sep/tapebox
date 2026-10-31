@@ -13,7 +13,7 @@ vi.mock('@main/i18n.js', async () => {
 
 import { notifyCorruptConfig, notifyCorruptSession, notifyDamagedTapes, notifyStartupFailure } from '@main/startup-dialog'
 import { loadCatalogue } from '@shared/i18n/catalogues'
-import { NewerFormatError } from '@main/io/format-version'
+import { NewerFormatError } from '@main/io/file-header'
 
 await loadCatalogue('de')
 

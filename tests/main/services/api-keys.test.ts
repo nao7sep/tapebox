@@ -3,6 +3,7 @@ import { chmod, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { header } from '../../helpers/file-header'
 
 // api-keys.ts resolves its file path from TAPEBOX_DATA_DIR (paths.ts), so the override
 // must be set BEFORE the module is imported. Point the storage root at a throwaway
@@ -50,7 +51,7 @@ afterAll(async () => {
 
 describe('api-keys storage', () => {
   it('leaves a future key file mode untouched and refuses a change', async () => {
-    const future = '{"formatVersion":2,"keys":{"openai":"kept"}}'
+    const future = JSON.stringify({ ...header('apiKeys', 2), keys: { openai: 'kept' } })
     await writeFile(apiKeysPath, future)
     if (ENFORCE_MODE) await chmod(apiKeysPath, 0o644)
     const before = statSync(apiKeysPath)
@@ -61,10 +62,10 @@ describe('api-keys storage', () => {
   })
 
   it('leaves an unreadable key file in place as no key, and a newly entered key replaces it', async () => {
-    await writeFile(apiKeysPath, '{"formatVersion":1,"keys":[]}', 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys'), keys: [] }), 'utf8')
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
     await expect(apiKeys.apiKeyState('openai')).resolves.toBe('unreadable')
-    expect(await readFile(apiKeysPath, 'utf8')).toBe('{"formatVersion":1,"keys":[]}')
+    expect(await readFile(apiKeysPath, 'utf8')).toBe(JSON.stringify({ ...header('apiKeys'), keys: [] }))
     await apiKeys.writeApiKey('openai', 'replacement')
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBe('replacement')
   })
@@ -73,10 +74,10 @@ describe('api-keys storage', () => {
     await writeFile(apiKeysPath, 'not json at all', 'utf8')
     await apiKeys.clearApiKey('openai')
     await expect(apiKeys.apiKeyState('openai')).resolves.toBe('absent')
-    expect(JSON.parse(await readFile(apiKeysPath, 'utf8'))).toEqual({ formatVersion: 1, keys: {} })
+    expect(JSON.parse(await readFile(apiKeysPath, 'utf8'))).toEqual({ ...header('apiKeys'), keys: {} })
   })
 
-  it('resolves no key from a key file without its format marker', async () => {
+  it('resolves no key from a key file without its header', async () => {
     await writeFile(apiKeysPath, JSON.stringify({ keys: { openai: 'sk-plain' } }), 'utf8')
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
   })
@@ -141,12 +142,12 @@ describe('api-keys storage', () => {
   })
 
   it('treats an untagged stored value as plaintext and trims it', async () => {
-    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { openai: '  sk-plain-pasted  ' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys'), keys: { openai: '  sk-plain-pasted  ' } }), 'utf8')
     expect(await apiKeys.resolveApiKey('openai')).toBe('sk-plain-pasted')
   })
 
   it('matches stored key ids case-insensitively', async () => {
-    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { OpenAI: 'sk-case' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys'), keys: { OpenAI: 'sk-case' } }), 'utf8')
     expect(await apiKeys.resolveApiKey('openai')).toBe('sk-case')
   })
 
@@ -183,7 +184,7 @@ describe('api-keys storage', () => {
   })
 
   it.runIf(ENFORCE_MODE)('tightens a readable-by-others key file to 0600 when reading it on POSIX', async () => {
-    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { openai: 'sk-shared-456' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys'), keys: { openai: 'sk-shared-456' } }), 'utf8')
     await chmod(apiKeysPath, 0o644)
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBe('sk-shared-456')
     expect(statSync(apiKeysPath).mode & 0o777).toBe(0o600)
@@ -201,7 +202,7 @@ describe('api-keys storage', () => {
   it('treats a malformed obf: value as absent and warns naming the key id, rather than leniently decoding garbage', async () => {
     // Buffer.from(str, 'base64') is lenient and would happily "decode" this into
     // garbage bytes instead of throwing — the fix must reject it before decoding.
-    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { openai: 'obf:not-valid-base64!!' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys'), keys: { openai: 'obf:not-valid-base64!!' } }), 'utf8')
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
@@ -219,7 +220,7 @@ describe('api-keys storage', () => {
 
   it('rejects a wrong-length obf: payload (fails the length % 4 check) as absent', async () => {
     // 'QQ' (2 chars) is valid base64 alphabet but not a canonical length/padding.
-    await writeFile(apiKeysPath, JSON.stringify({ formatVersion: 1, keys: { openai: 'obf:QQ' } }), 'utf8')
+    await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys'), keys: { openai: 'obf:QQ' } }), 'utf8')
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
   })
 
@@ -235,11 +236,11 @@ describe('api-keys storage', () => {
 describe('apiKeyState reads', () => {
   it.each(['missing', 'unreadable', 'newer'] as const)('reads a %s store once per status request without caching', async (kind) => {
     if (kind === 'unreadable') await writeFile(apiKeysPath, '{invalid')
-    if (kind === 'newer') await writeFile(apiKeysPath, '{"formatVersion":2,"keys":{}}')
+    if (kind === 'newer') await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys', 2), keys: {} }))
     openKeyFile.mockClear()
     await expect(apiKeys.apiKeyState('openai')).resolves.toBe(kind === 'missing' ? 'absent' : kind)
     expect(openKeyFile).toHaveBeenCalledOnce()
-    await writeFile(apiKeysPath, '{"formatVersion":1,"keys":{"openai":"new-key"}}')
+    await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys'), keys: { openai: 'new-key' } }))
     await expect(apiKeys.apiKeyState('openai')).resolves.toBe('set')
     expect(openKeyFile).toHaveBeenCalledTimes(2)
   })

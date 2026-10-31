@@ -1,7 +1,8 @@
 import { FlatFilenameSchema, ImportableUrlSchema, type Tape } from '@shared/domain'
 import { extname } from 'node:path'
 import { collidingPortableFilename } from '@shared/filename'
-import { checkFormatVersion, FORMAT_VERSIONS } from '@main/io/format-version'
+import { checkFileHeader, FORMATS } from '@main/io/file-header'
+import type { Sidecar } from '@main/core/sidecar'
 import { message, type Message } from '@shared/i18n/translate'
 import { z } from 'zod'
 
@@ -9,13 +10,13 @@ const recordedUtc = z.iso.datetime({ offset: true })
   .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/)
 
 /** Validate present fields that enter the collection; unrelated yt-dlp data is opaque. */
-function consumedFieldsValid(sidecar: Record<string, unknown>, fields: Record<string, unknown>): boolean {
+function consumedFieldsValid(ytDlp: Record<string, unknown>, fields: Record<string, unknown>): boolean {
   for (const key of ['id', 'extractor', 'title', 'uploader']) {
-    if (sidecar[key] != null && typeof sidecar[key] !== 'string') return false
+    if (ytDlp[key] != null && typeof ytDlp[key] !== 'string') return false
   }
-  const duration = sidecar['duration']
+  const duration = ytDlp['duration']
   if (duration != null && (typeof duration !== 'number' || !Number.isFinite(duration) || duration < 0)) return false
-  if (sidecar['chapters'] != null && !Array.isArray(sidecar['chapters'])) return false
+  if (ytDlp['chapters'] != null && !Array.isArray(ytDlp['chapters'])) return false
   if (fields['name'] != null && typeof fields['name'] !== 'string') return false
   for (const key of ['addedAtUtc', 'downloadedAtUtc', 'renamedAtUtc']) {
     if (fields[key] != null && !recordedUtc.safeParse(fields[key]).success) return false
@@ -30,7 +31,7 @@ function consumedFieldsValid(sidecar: Record<string, unknown>, fields: Record<st
 
 export type ImportClassification =
   | { status: 'reject'; reason: Message }
-  | { status: 'accept'; sourceUrl: string; mediaFilename: string; thumbnailFilename: string | null }
+  | { status: 'accept'; sidecar: Sidecar; sourceUrl: string; mediaFilename: string; thumbnailFilename: string | null }
 
 /**
  * Decide whether a parsed sidecar names a TapeBox bundle that can be imported,
@@ -42,16 +43,22 @@ export function classifyImport(sidecar: unknown): ImportClassification {
   if (!sidecar || typeof sidecar !== 'object' || Array.isArray(sidecar)) {
     return { status: 'reject', reason: message('import.notSidecarRoot') }
   }
-  // One in a newer format is reported and left as it is (store-recovery-conventions).
-  const version = checkFormatVersion(sidecar as Record<string, unknown>, FORMAT_VERSIONS.sidecar)
-  if (version.status === 'newer') return { status: 'reject', reason: message('import.sidecarNewer') }
-  const tb = (sidecar as Record<string, unknown>)['tapebox']
+  // One in a newer format is reported and left as it is (store-recovery-conventions);
+  // one without the header, or another file's, is not a TapeBox sidecar.
+  const found = checkFileHeader(sidecar as Record<string, unknown>, FORMATS.sidecar)
+  if (found.status === 'newer') return { status: 'reject', reason: message('import.sidecarNewer') }
+  if (found.status === 'unreadable') return { status: 'reject', reason: message('import.sidecarInvalidJson') }
+  const tb = found.value['tapebox']
   if (!tb || typeof tb !== 'object' || Array.isArray(tb)) {
     return { status: 'reject', reason: message('import.notSidecarNoSection') }
   }
-  if (version.status === 'unreadable') return { status: 'reject', reason: message('import.sidecarInvalidJson') }
+  const ytDlp = found.value['ytDlp']
+  if (!ytDlp || typeof ytDlp !== 'object' || Array.isArray(ytDlp)) {
+    return { status: 'reject', reason: message('import.sidecarInvalidJson') }
+  }
+  const content = found.value as Sidecar
   const fields = tb as Record<string, unknown>
-  if (!consumedFieldsValid(sidecar as Record<string, unknown>, fields)) {
+  if (!consumedFieldsValid(content.ytDlp, fields)) {
     return { status: 'reject', reason: message('import.sidecarInvalidJson') }
   }
 
@@ -82,7 +89,7 @@ export function classifyImport(sidecar: unknown): ImportClassification {
   if (collidingPortableFilename(bundleNames) !== undefined) {
     return { status: 'reject', reason: message('import.bundleNamesClash') }
   }
-  return { status: 'accept', sourceUrl: sourceUrl.data, mediaFilename: media, thumbnailFilename: thumbnail }
+  return { status: 'accept', sidecar: content, sourceUrl: sourceUrl.data, mediaFilename: media, thumbnailFilename: thumbnail }
 }
 
 /**
@@ -95,7 +102,7 @@ export function classifyImport(sidecar: unknown): ImportClassification {
  * `nowUtc`, the import itself, so an imported tape keeps the oldest time known for it.
  */
 export function tapeFromSidecar(
-  sidecar: Record<string, unknown>,
+  sidecar: Sidecar,
   params: {
     id: string
     sourceUrl: string
@@ -107,8 +114,9 @@ export function tapeFromSidecar(
     nowUtc: string
   },
 ): Tape {
-  const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
-  if (!consumedFieldsValid(sidecar, tb)) throw new Error('The sidecar has invalid tape fields')
+  const tb = sidecar.tapebox
+  const yt = sidecar.ytDlp
+  if (!consumedFieldsValid(yt, tb)) throw new Error('The sidecar has invalid tape fields')
   const recordedTime = (key: string): string | null => typeof tb[key] === 'string' ? new Date(tb[key]).toISOString() : null
   const downloadedAtUtc = recordedTime('downloadedAtUtc')
   return {
@@ -116,12 +124,12 @@ export function tapeFromSidecar(
     sourceUrl: params.sourceUrl,
     state: 'downloaded',
     addedAtUtc: recordedTime('addedAtUtc') ?? downloadedAtUtc ?? params.nowUtc,
-    sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
-    extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
-    title: typeof sidecar['title'] === 'string' ? sidecar['title'] : null,
-    uploader: typeof sidecar['uploader'] === 'string' ? sidecar['uploader'] : null,
-    durationSeconds: typeof sidecar['duration'] === 'number' ? sidecar['duration'] : null,
-    chapterCount: Array.isArray(sidecar['chapters']) ? (sidecar['chapters'] as unknown[]).length : 0,
+    sourceId: typeof yt['id'] === 'string' ? yt['id'] : null,
+    extractor: typeof yt['extractor'] === 'string' ? yt['extractor'] : null,
+    title: typeof yt['title'] === 'string' ? yt['title'] : null,
+    uploader: typeof yt['uploader'] === 'string' ? yt['uploader'] : null,
+    durationSeconds: typeof yt['duration'] === 'number' ? yt['duration'] : null,
+    chapterCount: Array.isArray(yt['chapters']) ? (yt['chapters'] as unknown[]).length : 0,
     probedAtUtc: null,
     filename: params.mediaFilename,
     sidecarFilename: params.sidecarFilename,

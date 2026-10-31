@@ -72,7 +72,7 @@ describe('RefreshMetadataModal saved description comparison', () => {
     expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'collection:applyMetadata')).toBe(false)
     expect(host.textContent).toContain('Description')
 
-    await act(async () => { finishLoad({ description: 'Saved description that Apply would erase.' }) })
+    await act(async () => { finishLoad({ ytDlp: { description: 'Saved description that Apply would erase.' } }) })
 
     expect(host.textContent).toContain('Saved description that Apply would erase.')
     expect(button('Apply').disabled).toBe(false)
@@ -95,7 +95,7 @@ describe('RefreshMetadataModal saved description comparison', () => {
     expect(host.textContent).toContain('Description')
     expect(host.textContent).not.toContain('Up to date')
 
-    ipcInvoke.mockResolvedValueOnce({ description: 'Saved description' })
+    ipcInvoke.mockResolvedValueOnce({ ytDlp: { description: 'Saved description' } })
     await act(async () => button('Retry').click())
 
     expect(ipcInvoke.mock.calls.filter(([channel]) => channel === 'collection:getSidecar')).toEqual([

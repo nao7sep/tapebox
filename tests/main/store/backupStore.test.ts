@@ -390,7 +390,7 @@ describe('manual recovery from captured managed bytes', () => {
     const { tapeFromSidecar } = await import('@main/core/import-classify')
     const tape = {
       ...tapeFromSidecar({
-        id: 'original-source', extractor: 'synthetic', title: 'Imported recovery tape',
+        ytDlp: { id: 'original-source', extractor: 'synthetic', title: 'Imported recovery tape' },
         tapebox: { downloadedAtUtc: '2026-10-22T12:00:00.000Z', name: 'recovered-tape' },
       }, {
         id: 'Recover001', sourceUrl: 'https://example.test/imported', mediaFilename: 'recovered-tape.mp4',

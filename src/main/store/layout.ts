@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
+import { FORMATS, parseStoreJson } from '@main/io/file-header'
 import { describeError } from '@shared/error'
 import { LayoutSchema, defaultLayout, type Layout } from '@shared/layout'
 
@@ -38,13 +38,13 @@ export async function loadLayout(): Promise<void> {
     }
     return
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.layout)
+  const found = parseStoreJson(text, FORMATS.layout)
   if (found.status === 'newer') {
     // Intact, from a newer build: used as defaults and never written this session.
     newerOnDisk = true
     log.warn('layout is from a newer TapeBox; using defaults and leaving it as it is', {
       path: paths.layout,
-      formatVersion: found.version,
+      version: found.version,
     })
     return
   }
@@ -88,7 +88,7 @@ export async function persistNow(): Promise<void> {
     if (key === lastWritten) return
     // layout.json is volatile state only (pane sizes): the raw atomic
     // writer saves it without recording to the backup history.
-    await writeJsonAtomic(paths.layout, snapshot, { formatVersion: FORMAT_VERSIONS.layout, schema: LayoutSchema })
+    await writeJsonAtomic(paths.layout, snapshot, { format: FORMATS.layout, schema: LayoutSchema })
     lastWritten = key
   })
   writeQueue = write.catch(() => {})

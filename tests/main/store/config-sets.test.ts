@@ -13,6 +13,7 @@ vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 
 import { getSettings, loadSettings, updateSettings } from '@main/store/config'
 import { DEFAULT_SLUG_PROMPT, defaultSettings } from '@shared/settings'
+import { header } from '../../helpers/file-header'
 
 let dir: string
 beforeEach(async () => {
@@ -22,10 +23,10 @@ beforeEach(async () => {
 })
 afterEach(async () => rm(dir, { recursive: true, force: true }))
 
-/** The stored sets, without the file's format marker (config-format.test.ts owns it). */
+/** The stored sets, without the file's header (format-versions.test.ts owns it). */
 async function savedSets(): Promise<Record<string, unknown>> {
-  const { formatVersion, ...sets } = JSON.parse(await readFile(paths.config, 'utf8')) as Record<string, unknown>
-  expect(formatVersion).toBe(1)
+  const { format, writer, ...sets } = JSON.parse(await readFile(paths.config, 'utf8')) as Record<string, unknown>
+  expect({ format, writer }).toEqual(header('config'))
   return sets
 }
 
@@ -45,14 +46,14 @@ describe('settings by set', () => {
   })
 
   it('reads absent sets from built-ins without writing them', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, keepAwakeWhilePlaying: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), keepAwakeWhilePlaying: false }))
     await loadSettings()
     expect(getSettings()).toEqual({ ...defaultSettings(), keepAwakeWhilePlaying: false })
     expect(await savedSets()).toEqual({ keepAwakeWhilePlaying: false })
   })
 
   it('keeps keys it does not know exactly as written through a save', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, version: 20, future: { a: 1 }, keepAwakeWhilePlaying: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), version: 20, future: { a: 1 }, keepAwakeWhilePlaying: false }))
     await loadSettings()
     await updateSettings({ autoplay: false })
     expect(await savedSets()).toEqual({ version: 20, future: { a: 1 }, keepAwakeWhilePlaying: false, autoplay: false })
@@ -60,14 +61,14 @@ describe('settings by set', () => {
 
   it('writes from the loaded settings, not from the file as it is now', async () => {
     await loadSettings()
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, keepAwakeWhilePlaying: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), keepAwakeWhilePlaying: false }))
     await updateSettings({ autoplay: false })
     expect(await savedSets()).toEqual({ autoplay: false })
     expect(getSettings().keepAwakeWhilePlaying).toBe(true)
   })
 
   it('uses the built-in for a relative export folder, keeps the saved one through other saves, and says so', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, defaultExportDir: 'exports', autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), defaultExportDir: 'exports', autoplay: false }))
     expect(await loadSettings()).toEqual({ status: 'loaded', settingsKept: true })
     expect(getSettings()).toEqual({ ...defaultSettings(), autoplay: false })
     expect(log.warn.mock.calls.map(([, fields]) => fields)).toEqual([{ key: 'defaultExportDir' }])
@@ -78,14 +79,14 @@ describe('settings by set', () => {
   })
 
   it('stops for a collection folder it cannot use, rather than look in the wrong place', async () => {
-    const text = JSON.stringify({ formatVersion: 1, collectionDir: 'relative/collection' })
+    const text = JSON.stringify({ ...header('config'), collectionDir: 'relative/collection' })
     await writeFile(paths.config, text)
     await expect(loadSettings()).rejects.toMatchObject({ name: 'CollectionFolderSettingError', path: paths.config })
     expect(await readFile(paths.config, 'utf8')).toBe(text)
   })
 
   it('falls back quietly for a theme or language it cannot use, keeping the saved value', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, theme: 'sepia', language: 'tlh' }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), theme: 'sepia', language: 'tlh' }))
     expect(await loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
     expect(getSettings()).toEqual(defaultSettings())
     await updateSettings({ autoplay: false })
@@ -93,7 +94,7 @@ describe('settings by set', () => {
   })
 
   it('refuses a relative folder on save and keeps the file as it is', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), autoplay: false }))
     await loadSettings()
     await expect(updateSettings({ collectionDir: 'relative/collection' })).rejects.toThrow()
     await expect(updateSettings({ defaultExportDir: 'exports' })).rejects.toThrow()
@@ -102,7 +103,7 @@ describe('settings by set', () => {
 
   it('uses built-ins for malformed sets without quarantining or merging nested members', async () => {
     const raw = { 'openai.endpoint': 'http://remote.example', prompts: {}, language: 'unsupported', keepAwakeWhilePlaying: false }
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ...raw }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), ...raw }))
     await loadSettings()
     expect(getSettings()).toEqual({ ...defaultSettings(), keepAwakeWhilePlaying: false })
     expect(await savedSets()).toEqual(raw)
@@ -113,7 +114,7 @@ describe('settings by set', () => {
   })
 
   it('removes a set saved back to its built-in while preserving every other stored set', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, prompts: { slug: 'custom' }, autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), prompts: { slug: 'custom' }, autoplay: false }))
     await loadSettings()
     await updateSettings({ prompts: { slug: DEFAULT_SLUG_PROMPT } })
     expect(await savedSets()).toEqual({ autoplay: false })
@@ -121,7 +122,7 @@ describe('settings by set', () => {
   })
 
   it('removes every stored copy equal to its built-in, untouched ones included', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, keepAwakeWhilePlaying: true, theme: 'system', autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), keepAwakeWhilePlaying: true, theme: 'system', autoplay: false }))
     await loadSettings()
     await updateSettings({ autoplay: true })
     expect(await savedSets()).toEqual({})
@@ -134,16 +135,16 @@ describe('settings by set', () => {
   })
 
   it('writes nothing when the result equals the file', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), autoplay: false }))
     const before = await stat(paths.config)
     await loadSettings()
     await updateSettings({ autoplay: false, keepAwakeWhilePlaying: true })
     expect((await stat(paths.config)).mtimeMs).toBe(before.mtimeMs)
-    expect(await readFile(paths.config, 'utf8')).toBe(JSON.stringify({ formatVersion: 1, autoplay: false }))
+    expect(await readFile(paths.config, 'utf8')).toBe(JSON.stringify({ ...header('config'), autoplay: false }))
   })
 
   it('writes nothing at a Save that changes no set, keeping what it could not use', async () => {
-    const text = JSON.stringify({ formatVersion: 1, language: 'unsupported', future: 'x', keepAwakeWhilePlaying: true, autoplay: false })
+    const text = JSON.stringify({ ...header('config'), language: 'unsupported', future: 'x', keepAwakeWhilePlaying: true, autoplay: false })
     await writeFile(paths.config, text)
     await loadSettings()
     await updateSettings({ autoplay: false })
@@ -151,7 +152,7 @@ describe('settings by set', () => {
   })
 
   it('compares text after cleanup and a model id trimmed and case-insensitive', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, 'openai.slug': 'custom-model', prompts: { slug: 'custom' } }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), 'openai.slug': 'custom-model', prompts: { slug: 'custom' } }))
     await loadSettings()
     await updateSettings({
       'openai.slug': ` ${defaultSettings()['openai.slug'].toUpperCase()} `,
@@ -215,7 +216,7 @@ describe('settings by set', () => {
   })
 
   it('rejects an empty endpoint or model id and keeps the file as it is', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, autoplay: false }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), autoplay: false }))
     await loadSettings()
     await expect(updateSettings({ 'openai.endpoint': '' })).rejects.toThrow()
     await expect(updateSettings({ 'openai.slug': ' \n ' })).rejects.toThrow()
@@ -224,7 +225,7 @@ describe('settings by set', () => {
   })
 
   it('removes only the model saved back to its built-in, keeping a key it does not know', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, future: { setting: true }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), future: { setting: true }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
     await loadSettings()
     expect(getSettings()['openai.endpoint']).toBe('https://proxy.example/v1')
     await updateSettings({ 'openai.slug': defaultSettings()['openai.slug'] })
@@ -233,7 +234,7 @@ describe('settings by set', () => {
   })
 
   it('masks credentials in the yt-dlp arguments it logs at startup', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ytdlpArgs: '--password hunter22 -f best', siteProfiles: [
+    await writeFile(paths.config, JSON.stringify({ ...header('config'), ytdlpArgs: '--password hunter22 -f best', siteProfiles: [
       { id: 'abcdefgh', name: 'Site', urlPattern: 'site.test', isRegex: false, args: '--add-header "Authorization: Bearer tok3n"', comment: '' },
     ] }))
     log.info.mockClear()

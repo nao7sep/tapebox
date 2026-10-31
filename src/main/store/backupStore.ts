@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads'
 import { paths } from '@main/paths'
 import { log } from '@main/io/logger'
+import { APP_WRITER } from '@main/io/app-writer'
 import { currentSession } from '@main/io/records'
 import { describeError } from '@shared/error'
 import type { BackupRequest, BackupResponse, BackupWorkerData } from './backup-worker'
@@ -57,7 +58,7 @@ function ensureWorker(): Worker {
   if (worker) return worker
   const module = import.meta.url.endsWith('.ts') ? './backup-worker.ts' : './backup-worker.js'
   const created = new Worker(new URL(module, import.meta.url), {
-    workerData: { databasePath: paths.backupsDb, session: launch ??= currentSession() ?? new Date().toISOString() } satisfies BackupWorkerData,
+    workerData: { databasePath: paths.backupsDb, session: launch ??= currentSession() ?? new Date().toISOString(), writer: APP_WRITER } satisfies BackupWorkerData,
   })
   created.on('message', (response: BackupResponse) => {
     const entry = pending.get(response.id)

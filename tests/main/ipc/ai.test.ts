@@ -46,7 +46,7 @@ describe('AI name suggestion', () => {
 
   it('keeps a genuinely absent optional description valid', async () => {
     source.sidecarFilename = 't1.json'
-    source.read.mockResolvedValue({ title: 'No description' })
+    source.read.mockResolvedValue({ ytDlp: { title: 'No description' }, tapebox: { media: null } })
     const request = handlers.get('ai:generateSlug')!({ tapeId: 't1', requestId: 'empty-description', include: { title: true, uploader: false, description: true } })
     await until(() => expect(seenSignals).toHaveLength(1))
     await handlers.get('ai:cancelSlug')!({ requestId: 'empty-description' })

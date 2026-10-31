@@ -1,5 +1,5 @@
 import { normalizeLanguagePreference, type LanguagePreference } from '@shared/i18n/languages'
-import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
+import { FORMATS, parseStoreJson } from '@main/io/file-header'
 
 /**
  * The saved language choice, read from the settings file's text before the app
@@ -10,6 +10,6 @@ import { FORMAT_VERSIONS, parseStoreJson } from '@main/io/format-version'
  */
 export function readSavedLanguagePreference(configText: string | null): LanguagePreference {
   if (configText === null) return 'system'
-  const found = parseStoreJson(configText, FORMAT_VERSIONS.config)
+  const found = parseStoreJson(configText, FORMATS.config)
   return found.status === 'read' ? normalizeLanguagePreference(found.value['language']) : 'system'
 }

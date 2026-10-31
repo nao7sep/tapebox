@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
+import { sidecarFixture } from '../../helpers/file-header'
 
 const handlers = new Map<string, (req: unknown) => unknown>()
 vi.mock('electron', () => ({
@@ -67,7 +68,7 @@ beforeEach(async () => {
   await mkdir(state.destinationDir)
   await writeFile(join(collectionState.dir, 'inbox', tape.id, 'Take.mp4'), 'source video')
   await writeFile(join(collectionState.dir, 'inbox', tape.id, 'Take.jpg'), 'source poster')
-  await writeFile(join(collectionState.dir, 'inbox', tape.id, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
+  await writeFile(join(collectionState.dir, 'inbox', tape.id, 'Take.json'), JSON.stringify(sidecarFixture()))
   registerExportHandlers()
 })
 

@@ -43,6 +43,6 @@ function aiRequestKey(requestId: string): string {
 async function readDescription(tape: Tape): Promise<string | null> {
   if (!tape.sidecarFilename) return null
   const data = await readSidecarFile(tapeFile(getCollectionDir(), tape, tape.sidecarFilename))
-  const description = data['description']
+  const description = data.ytDlp['description']
   return typeof description === 'string' ? description : null
 }

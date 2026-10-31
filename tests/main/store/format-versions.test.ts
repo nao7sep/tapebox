@@ -4,10 +4,11 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultDependencies } from '@shared/dependencies'
 import { defaultLayout } from '@shared/layout'
+import { header } from '../../helpers/file-header'
 
 // Each JSON store's format version (store-recovery-conventions), through the
-// real store over a throwaway storage root: a file without marker 1 is
-// unreadable, what the store writes carries 1 and reads back, and
+// real store over a throwaway storage root: a file without its header is
+// unreadable, what the store writes carries it and reads back, and
 // a newer file is refused and left byte-identical, with nothing written over it.
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
@@ -42,8 +43,8 @@ async function stored(path: string): Promise<Record<string, unknown>> {
 }
 
 /** Write a newer-format file and return its exact text, for the byte check. */
-async function writeNewer(path: string, body: Record<string, unknown>, mode?: number): Promise<string> {
-  const text = JSON.stringify({ formatVersion: 2, ...body, addedByNewerBuild: true })
+async function writeNewer(kind: Parameters<typeof header>[0], path: string, body: Record<string, unknown>, mode?: number): Promise<string> {
+  const text = JSON.stringify({ ...header(kind, 2), ...body, addedByNewerBuild: true })
   await writeFile(path, text, 'utf8')
   if (mode !== undefined) await chmod(path, mode)
   return text
@@ -68,7 +69,7 @@ describe('shelf.json', () => {
   const path = () => join(root, 'collection', 'shelf.json')
   const SHELF_BOX = { id: BOX.id, name: BOX.name, tapeIds: [] }
 
-  it('sets aside a file without its marker, like any unreadable one', async () => {
+  it('sets aside a file without its header, like any unreadable one', async () => {
     const text = JSON.stringify({ boxes: [SHELF_BOX], loose: [] })
     await writeFile(path(), text)
     const store = await session()
@@ -78,14 +79,14 @@ describe('shelf.json', () => {
     expect(await readFile(join(dirname(path()), aside!), 'utf8')).toBe(text)
   })
 
-  it('sets aside a file with a lower or malformed marker', async () => {
-    for (const formatVersion of [0, 'one']) {
-      await writeFile(path(), JSON.stringify({ formatVersion, boxes: [SHELF_BOX], loose: [] }))
+  it('sets aside a file of a lower version, another kind or another owner', async () => {
+    for (const format of [header('shelf', 0).format, { owner: 'tapebox', kind: 'tape', version: 1 }, { owner: 'gptimg', kind: 'shelf', version: 1 }, 'shelf']) {
+      await writeFile(path(), JSON.stringify({ format, boxes: [SHELF_BOX], loose: [] }))
       const store = await relaunch(async () => {
         await (await import('@main/store/config')).loadSettings()
         return session()
       })
-      expect(await store.loadSession(), String(formatVersion)).toMatchObject({ status: 'recovered' })
+      expect(await store.loadSession(), JSON.stringify(format)).toMatchObject({ status: 'recovered' })
       expect(store.getBoxes()).toEqual([])
       // Set-aside names carry the second, so clear this one before the next.
       for (const name of await readdir(dirname(path()))) if (name.endsWith('.invalid')) await rm(join(dirname(path()), name))
@@ -97,8 +98,8 @@ describe('shelf.json', () => {
     await store.loadSession()
     store.upsertBox(BOX)
     expect(await store.persistNow()).toBe(true)
-    expect(Object.keys(await stored(path()))[0]).toBe('formatVersion')
-    expect(await stored(path())).toMatchObject({ formatVersion: 1 })
+    expect(Object.keys(await stored(path())).slice(0, 2)).toEqual(['format', 'writer'])
+    expect(await stored(path())).toMatchObject(header('shelf'))
 
     const relaunched = await relaunch(async () => {
       await (await import('@main/store/config')).loadSettings()
@@ -109,7 +110,7 @@ describe('shelf.json', () => {
   })
 
   it('refuses a newer file, naming it, and leaves it byte-identical', async () => {
-    const text = await writeNewer(path(), { boxes: [], loose: [] })
+    const text = await writeNewer('shelf', path(), { boxes: [], loose: [] })
     const store = await session()
     await expect(store.loadSession()).rejects.toMatchObject({ ...NEWER, path: path() })
     expect(await store.persistNow()).toBe(true)
@@ -121,31 +122,31 @@ describe('shelf.json', () => {
 describe('tape.json', () => {
   beforeEach(async () => {
     await mkdir(join(root, 'collection', 'inbox', TAPE.id), { recursive: true })
-    await writeFile(join(root, 'collection', 'shelf.json'), JSON.stringify({ formatVersion: 1, boxes: [], loose: [] }))
+    await writeFile(join(root, 'collection', 'shelf.json'), JSON.stringify({ ...header('shelf'), boxes: [], loose: [] }))
     await (await import('@main/store/config')).loadSettings()
   })
   const session = () => import('@main/store/session')
   const path = () => join(root, 'collection', 'inbox', TAPE.id, 'tape.json')
 
-  it('reports a file without its marker as damaged and leaves it as it is', async () => {
+  it('reports a file without its header as damaged and leaves it as it is', async () => {
     const text = JSON.stringify(TAPE)
     await writeFile(path(), text)
     const store = await session()
     expect(await store.loadSession()).toMatchObject({
       status: 'loaded',
       tapeCount: 0,
-      damaged: [{ id: TAPE.id, path: path(), reason: expect.stringMatching(/formatVersion is missing/) }],
+      damaged: [{ id: TAPE.id, path: path(), reason: expect.stringMatching(/no format header/) }],
     })
     expect(await readFile(path(), 'utf8')).toBe(text)
   })
 
   it('writes format 1 first and reads it back', async () => {
-    await writeFile(path(), JSON.stringify({ formatVersion: 1, ...TAPE }))
+    await writeFile(path(), JSON.stringify({ ...header('tape'), ...TAPE }))
     const store = await session()
     await store.loadSession()
     store.upsertTape({ ...store.getTapes()[0]!, title: 'Titled' })
     expect(await store.persistNow()).toBe(true)
-    expect(Object.keys(await stored(path()))[0]).toBe('formatVersion')
+    expect(Object.keys(await stored(path())).slice(0, 2)).toEqual(['format', 'writer'])
 
     const relaunched = await relaunch(async () => {
       await (await import('@main/store/config')).loadSettings()
@@ -158,7 +159,7 @@ describe('tape.json', () => {
   // One tape's newer file does not stop the collection: that tape is reported as
   // damaged and its folder is left exactly as it is.
   it('reports a newer file as damaged and leaves it byte-identical', async () => {
-    const text = await writeNewer(path(), TAPE)
+    const text = await writeNewer('tape', path(), TAPE)
     const store = await session()
     expect(await store.loadSession()).toMatchObject({
       status: 'loaded',
@@ -177,7 +178,7 @@ describe('config.json', () => {
   const config = () => import('@main/store/config')
   const path = () => join(root, 'config.json')
 
-  it('sets aside a file without its marker and uses the defaults', async () => {
+  it('sets aside a file without its header and uses the defaults', async () => {
     const text = JSON.stringify({ autoplay: false })
     await writeFile(path(), text)
     const store = await config()
@@ -198,7 +199,7 @@ describe('config.json', () => {
     const store = await config()
     await store.loadSettings()
     await store.updateSettings({ autoplay: false })
-    expect(await stored(path())).toEqual({ formatVersion: 1, autoplay: false })
+    expect(await stored(path())).toEqual({ ...header('config'), autoplay: false })
 
     const relaunched = await relaunch(config)
     expect(await relaunched.loadSettings()).toEqual({ status: 'loaded', settingsKept: false })
@@ -206,7 +207,7 @@ describe('config.json', () => {
   })
 
   it('refuses a newer file, naming it, and leaves it byte-identical', async () => {
-    const text = await writeNewer(path(), { autoplay: false, language: 'ja' })
+    const text = await writeNewer('config', path(), { autoplay: false, language: 'ja' })
     const store = await config()
     await expect(store.loadSettings()).rejects.toMatchObject({ ...NEWER, path: path() })
     expect(await readFile(path(), 'utf8')).toBe(text)
@@ -221,7 +222,7 @@ describe('layout.json', () => {
   const layout = () => import('@main/store/layout')
   const path = () => join(root, 'layout.json')
 
-  it('uses the defaults for a file without its marker', async () => {
+  it('uses the defaults for a file without its header', async () => {
     await writeFile(path(), JSON.stringify({ leftPaneWidth: 400 }))
     const store = await layout()
     await store.loadLayout()
@@ -233,8 +234,8 @@ describe('layout.json', () => {
     await store.loadLayout()
     store.updateLayout({ leftPaneWidth: 410 })
     await store.persistNow()
-    expect(Object.keys(await stored(path()))[0]).toBe('formatVersion')
-    expect(await stored(path())).toMatchObject({ formatVersion: 1, leftPaneWidth: 410 })
+    expect(Object.keys(await stored(path())).slice(0, 2)).toEqual(['format', 'writer'])
+    expect(await stored(path())).toMatchObject({ ...header('layout'), leftPaneWidth: 410 })
 
     const relaunched = await relaunch(layout)
     await relaunched.loadLayout()
@@ -242,7 +243,7 @@ describe('layout.json', () => {
   })
 
   it('uses the defaults for a newer file and never writes it', async () => {
-    const text = await writeNewer(path(), { leftPaneWidth: 400 })
+    const text = await writeNewer('layout', path(), { leftPaneWidth: 400 })
     const store = await layout()
     await store.loadLayout()
     expect(store.getLayout()).toEqual(defaultLayout)
@@ -259,7 +260,7 @@ describe('dependencies.json', () => {
   const path = () => join(root, 'dependencies.json')
   const FACT = { latestKnownVersion: '2026.09.01', lastCheckedAtUtc: '2026-09-01T00:00:00.000Z' }
 
-  it('uses fresh facts for a file without its marker', async () => {
+  it('uses fresh facts for a file without its header', async () => {
     await writeFile(path(), JSON.stringify({ ...defaultDependencies(), ffmpeg: FACT }))
     const store = await dependencies()
     await store.loadDependencies()
@@ -270,8 +271,8 @@ describe('dependencies.json', () => {
     const store = await dependencies()
     await store.loadDependencies()
     await store.mutateDependencies(() => ({ ffmpeg: FACT }))
-    expect(Object.keys(await stored(path()))[0]).toBe('formatVersion')
-    expect(await stored(path())).toMatchObject({ formatVersion: 1, ffmpeg: FACT })
+    expect(Object.keys(await stored(path())).slice(0, 2)).toEqual(['format', 'writer'])
+    expect(await stored(path())).toMatchObject({ ...header('dependencies'), ffmpeg: FACT })
 
     const relaunched = await relaunch(dependencies)
     await relaunched.loadDependencies()
@@ -279,7 +280,7 @@ describe('dependencies.json', () => {
   })
 
   it('uses fresh facts for a newer file and never writes it', async () => {
-    const text = await writeNewer(path(), { ...defaultDependencies(), ffmpeg: FACT })
+    const text = await writeNewer('dependencies', path(), { ...defaultDependencies(), ffmpeg: FACT })
     const store = await dependencies()
     await store.loadDependencies()
     expect(store.getDependencies()).toEqual(defaultDependencies())
@@ -295,7 +296,7 @@ describe('api-keys.json', () => {
   const apiKeys = () => import('@main/services/api-keys')
   const path = () => join(root, 'api-keys.json')
 
-  it('resolves no key from a file without its marker and leaves it in place', async () => {
+  it('resolves no key from a file without its header and leaves it in place', async () => {
     const text = JSON.stringify({ keys: { openai: 'sk-plain' } })
     await writeFile(path(), text, { mode: 0o600 })
     const store = await apiKeys()
@@ -306,15 +307,15 @@ describe('api-keys.json', () => {
   it('writes format 1 first and reads it back', async () => {
     const store = await apiKeys()
     await store.writeApiKey('openai', 'sk-saved')
-    expect(Object.keys(await stored(path()))).toEqual(['formatVersion', 'keys'])
-    expect(await stored(path())).toMatchObject({ formatVersion: 1 })
+    expect(Object.keys(await stored(path()))).toEqual(['format', 'writer', 'keys'])
+    expect(await stored(path())).toMatchObject(header('apiKeys'))
 
     const relaunched = await relaunch(apiKeys)
     expect(await relaunched.resolveApiKey('openai')).toBe('sk-saved')
   })
 
   it('treats a newer file as holding no key, refuses to change it, and leaves it byte-identical', async () => {
-    const text = await writeNewer(path(), { keys: { openai: 'sk-newer' } }, 0o600)
+    const text = await writeNewer('apiKeys', path(), { keys: { openai: 'sk-newer' } }, 0o600)
     const store = await apiKeys()
     expect(await store.resolveApiKey('openai')).toBeNull()
 

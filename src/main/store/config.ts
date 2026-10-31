@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
 import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { FORMAT_VERSION_KEY, FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
+import { FORMATS, NewerFormatError, parseStoreJson } from '@main/io/file-header'
 import { CollectionFolderSettingError, StoreAccessError } from '@main/io/store-access'
 import { maskCredentials, maskYtdlpArgs } from '@main/io/mask'
 import { tokenizeArgs } from '@main/services/ytdlp-args'
@@ -78,14 +78,13 @@ async function readSettingsStore(
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw new StoreAccessError(configPath, err)
   }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.config)
-  if (found.status === 'newer') throw new NewerFormatError(configPath, found.version, FORMAT_VERSIONS.config)
+  const found = parseStoreJson(text, FORMATS.config)
+  if (found.status === 'newer') throw new NewerFormatError(configPath, found.version, FORMATS.config.version)
   if (found.status === 'unreadable') {
     log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(found.error) })
     return { quarantinePath: await quarantineFile(configPath) }
   }
-  const { [FORMAT_VERSION_KEY]: _marker, ...written } = found.value
-  const read = readSettingsSets(written)
+  const read = readSettingsSets(found.value)
   for (const key of read.rejected) log.warn('settings set invalid; kept in the file, using the built-in', { key })
   return read
 }
@@ -119,7 +118,7 @@ export function updateSettings(patch: SettingsSets): Promise<Settings> {
     // is written back exactly as it was read.
     const stillKept = Object.fromEntries(Object.entries(kept).filter(([key]) => !Object.hasOwn(cleaned, key)))
     if (JSON.stringify(next) !== JSON.stringify(storedSets(current)) || Object.keys(stillKept).length !== Object.keys(kept).length) {
-      await writeManagedJson(paths.config, { ...next, ...stillKept }, { formatVersion: FORMAT_VERSIONS.config })
+      await writeManagedJson(paths.config, { ...next, ...stillKept }, { format: FORMATS.config })
       log.info('settings updated', { keys: Object.keys(patch) })
     }
     // The in-memory view is authoritative only after the durable commit. A failed

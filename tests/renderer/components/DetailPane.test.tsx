@@ -173,9 +173,9 @@ describe('DetailPane media lifecycle', () => {
     await render()
     await render({ ...tape, id: 'Tape000002' })
     await act(async () => useMediaStore.setState({ collectionRevision: 1 }))
-    await act(async () => requests[2].resolve({ ext: 'current' }))
+    await act(async () => requests[2].resolve({ ytDlp: { ext: 'current' } }))
     expect(host.textContent).toContain('current')
-    await act(async () => { requests[0].resolve({ ext: 'stale tape' }); requests[1].resolve({ ext: 'stale collection' }) })
+    await act(async () => { requests[0].resolve({ ytDlp: { ext: 'stale tape' } }); requests[1].resolve({ ytDlp: { ext: 'stale collection' } }) })
     expect(host.textContent).toContain('current')
     expect(host.textContent).not.toContain('stale')
   })
@@ -264,7 +264,7 @@ describe('shared sidecar preview', () => {
   const reads = () => ipcInvoke.mock.calls.filter(([channel]) => channel === 'collection:getSidecar')
 
   it('shares the settled preview with Rename and invalidates it on accepted metadata and collection changes', async () => {
-    ipcInvoke.mockImplementation(async (channel: string) => channel === 'collection:getSidecar' ? { description: 'Saved description' } : undefined)
+    ipcInvoke.mockImplementation(async (channel: string) => channel === 'collection:getSidecar' ? { ytDlp: { description: 'Saved description' } } : undefined)
     await render()
     await click('Rename')
     expect(reads()).toHaveLength(1)
@@ -287,7 +287,7 @@ describe('shared sidecar preview', () => {
     await act(async () => pending.reject(new Error('unavailable')))
     const dialog = document.querySelector('[role="dialog"]')!
     expect(dialog.querySelector('[role="alert"]')).not.toBeNull()
-    ipcInvoke.mockImplementation(async (channel: string) => channel === 'collection:getSidecar' ? { description: 'Recovered preview' } : undefined)
+    ipcInvoke.mockImplementation(async (channel: string) => channel === 'collection:getSidecar' ? { ytDlp: { description: 'Recovered preview' } } : undefined)
     await click('Try again', true)
     expect(reads()).toHaveLength(2)
     expect(dialog.textContent).toContain('Recovered preview')

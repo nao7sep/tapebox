@@ -14,10 +14,10 @@ import {
   unlinkFiles,
 } from '@main/io/atomic-file'
 import { openExternalPlayer } from '@main/io/external-player'
-import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
+import { FORMATS, NewerFormatError, parseStoreJson } from '@main/io/file-header'
 import { portableSiblingExists } from '@main/io/portable-directory'
 import { planRename } from '@main/core/rename-plan'
-import { collectionSidecar, readSidecarFile, writeSidecar } from '@main/core/sidecar'
+import { checkSidecar, collectionSidecar, readSidecarFile, writeSidecar, type Sidecar } from '@main/core/sidecar'
 import { reserveTapeId } from '@main/core/stem'
 import { areaDir, tapeDir, tapeFile } from '@main/paths'
 import { portableFilenameIdentity } from '@main/core/filename'
@@ -273,13 +273,13 @@ async function posterStemFree(dir: string, stem: string): Promise<boolean> {
 async function writeRefreshedSidecar(
   path: string,
   metadata: RefreshedMetadata,
-  sidecar: Record<string, unknown>,
+  sidecar: Sidecar,
 ): Promise<void> {
   let changed = false
   const fields = { title: metadata.title, uploader: metadata.uploader, description: metadata.description }
   for (const [key, value] of Object.entries(fields)) {
-    if ((sidecar[key] ?? null) === value) continue
-    sidecar[key] = value
+    if ((sidecar.ytDlp[key] ?? null) === value) continue
+    sidecar.ytDlp[key] = value
     changed = true
   }
   if (!changed) return
@@ -322,9 +322,9 @@ async function importBundles(paths: string[], collectionDir: string, signal: Abo
       continue
     }
 
-    let sidecar: Record<string, unknown>
+    let parsed: unknown
     try {
-      sidecar = JSON.parse(rawSidecar)
+      parsed = JSON.parse(rawSidecar)
     } catch (err) {
       issues.push({
         path: sidecarPath,
@@ -334,19 +334,19 @@ async function importBundles(paths: string[], collectionDir: string, signal: Abo
       continue
     }
 
-    const classification = classifyImport(sidecar)
+    const classification = classifyImport(parsed)
     if (classification.status === 'reject') {
       issues.push({ path: sidecarPath, reason: classification.reason, severity: 'warning' })
       continue
     }
-    const { sourceUrl, mediaFilename, thumbnailFilename: tbThumb } = classification
+    const { sidecar, sourceUrl, mediaFilename, thumbnailFilename: tbThumb } = classification
     claimedCompanionPaths.push(join(dir, mediaFilename))
     if (tbThumb) claimedCompanionPaths.push(join(dir, tbThumb))
 
     const source: SourceRef = {
       url: sourceUrl,
-      extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
-      sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
+      extractor: typeof sidecar.ytDlp['extractor'] === 'string' ? sidecar.ytDlp['extractor'] : null,
+      sourceId: typeof sidecar.ytDlp['id'] === 'string' ? sidecar.ytDlp['id'] : null,
     }
     // The collection owns source admission, even for missing files. Admit the
     // source before awaiting any of the companion-file work.
@@ -673,8 +673,8 @@ export async function removeTapesFrom(
 async function refuseNewerSidecar(path: string): Promise<void> {
   let text: string
   try { text = await readFile(path, 'utf8') } catch { return }
-  const found = parseStoreJson(text, FORMAT_VERSIONS.sidecar)
-  if (found.status === 'newer') throw new NewerFormatError(path, found.version, FORMAT_VERSIONS.sidecar)
+  const found = checkSidecar(parseStoreJson(text, FORMATS.sidecar))
+  if (found.status === 'newer') throw new NewerFormatError(path, found.version, FORMATS.sidecar.version)
 }
 
 /**
