@@ -86,7 +86,7 @@ beforeEach(() => {
 describe('deleting a box', () => {
   it('drops its tapes into Loose tapes as a block, on top, still in the order they held', async () => {
     state.tapes = [
-      makeTape({ id: 'unboxed-old', boxId: null, order: 0 }),
+      makeTape({ id: 'loose-old', boxId: null, order: 0 }),
       makeTape({ id: 'summer-2nd', boxId: 'box-summer', order: 5 }),
       makeTape({ id: 'summer-1st', boxId: 'box-summer', order: 1 }),
       makeTape({ id: 'winter-kept', boxId: 'box-winter', order: 0 }),
@@ -95,7 +95,7 @@ describe('deleting a box', () => {
     await invoke('boxes:delete', { boxId: 'box-summer' })
 
     expect(state.boxes.map((box) => box.id)).toEqual(['box-winter'])
-    expect(listing(null)).toEqual(['summer-1st@-2', 'summer-2nd@-1', 'unboxed-old@0'])
+    expect(listing(null)).toEqual(['summer-1st@-2', 'summer-2nd@-1', 'loose-old@0'])
     expect(listing('box-winter'), 'another box is untouched').toEqual(['winter-kept@0'])
     expect(emitted('boxes:changed')).toHaveLength(1)
     expect(emitted('tapes:updatedMany')).toEqual([[[
@@ -151,13 +151,13 @@ describe('filing tapes into a box', () => {
     state.tapes = [
       makeTape({ id: 'winter-1st', boxId: 'box-winter', order: 0 }),
       makeTape({ id: 'winter-2nd', boxId: 'box-winter', order: 1 }),
-      makeTape({ id: 'unboxed-a', boxId: null, order: 4 }),
-      makeTape({ id: 'unboxed-b', boxId: null, order: 9 }),
+      makeTape({ id: 'loose-a', boxId: null, order: 4 }),
+      makeTape({ id: 'loose-b', boxId: null, order: 9 }),
     ]
 
-    await invoke('boxes:place', { tapeIds: ['unboxed-b', 'unboxed-a'], boxId: 'box-winter' })
+    await invoke('boxes:place', { tapeIds: ['loose-b', 'loose-a'], boxId: 'box-winter' })
 
-    expect(listing('box-winter')).toEqual(['unboxed-b@0', 'unboxed-a@1', 'winter-1st@2', 'winter-2nd@3'])
+    expect(listing('box-winter')).toEqual(['loose-b@0', 'loose-a@1', 'winter-1st@2', 'winter-2nd@3'])
     expect(listing(null)).toEqual([])
     expect(emitted('tapes:updatedMany')).toHaveLength(1)
   })
@@ -165,31 +165,31 @@ describe('filing tapes into a box', () => {
   it('files tapes back into Loose tapes without disturbing the inbox', async () => {
     state.tapes = [
       makeTape({ id: 'in-the-inbox', shelved: false, boxId: null, order: 0 }),
-      makeTape({ id: 'unboxed-old', boxId: null, order: 0 }),
+      makeTape({ id: 'loose-old', boxId: null, order: 0 }),
       makeTape({ id: 'summer-tape', boxId: 'box-summer', order: 0 }),
     ]
 
     await invoke('boxes:place', { tapeIds: ['summer-tape'], boxId: null })
 
-    expect(listing(null)).toEqual(['summer-tape@0', 'unboxed-old@1'])
+    expect(listing(null)).toEqual(['summer-tape@0', 'loose-old@1'])
     expect(state.tapes.find((tape) => tape.id === 'in-the-inbox')).toMatchObject({ boxId: null, order: 0 })
   })
 
   it('ignores ids the session no longer holds', async () => {
-    state.tapes = [makeTape({ id: 'unboxed-a', boxId: null, order: 3 })]
+    state.tapes = [makeTape({ id: 'loose-a', boxId: null, order: 3 })]
 
-    await invoke('boxes:place', { tapeIds: ['gone-already', 'unboxed-a'], boxId: 'box-summer' })
+    await invoke('boxes:place', { tapeIds: ['gone-already', 'loose-a'], boxId: 'box-summer' })
 
-    expect(listing('box-summer')).toEqual(['unboxed-a@0'])
+    expect(listing('box-summer')).toEqual(['loose-a@0'])
   })
 
   it('refuses a destination deleted after the caller chose it and leaves the tapes in place', async () => {
-    state.tapes = [makeTape({ id: 'unboxed-a', boxId: null, order: 3 })]
+    state.tapes = [makeTape({ id: 'loose-a', boxId: null, order: 3 })]
     await invoke('boxes:delete', { boxId: 'box-summer' })
     emit.mockClear()
     const before = [...state.tapes]
 
-    await expect(invoke('boxes:place', { tapeIds: ['unboxed-a'], boxId: 'box-summer' })).rejects.toThrow(
+    await expect(invoke('boxes:place', { tapeIds: ['loose-a'], boxId: 'box-summer' })).rejects.toThrow(
       'This tape could not be moved to that box. Its previous location remains in use; try again.',
     )
 
@@ -200,30 +200,30 @@ describe('filing tapes into a box', () => {
   it('ignores tapes restored to the inbox after the caller selected shelved tapes', async () => {
     state.tapes = [
       makeTape({ id: 'restored', shelved: false, boxId: null, order: -4 }),
-      makeTape({ id: 'still-archived', boxId: null, order: 2 }),
+      makeTape({ id: 'still-shelved', boxId: null, order: 2 }),
       makeTape({ id: 'summer-member', boxId: 'box-summer', order: 0 }),
     ]
     const restored = state.tapes[0]
 
-    await invoke('boxes:place', { tapeIds: ['restored', 'still-archived'], boxId: 'box-summer' })
+    await invoke('boxes:place', { tapeIds: ['restored', 'still-shelved'], boxId: 'box-summer' })
 
     expect(state.tapes.find((tape) => tape.id === 'restored')).toBe(restored)
-    expect(listing('box-summer')).toEqual(['still-archived@0', 'summer-member@1'])
+    expect(listing('box-summer')).toEqual(['still-shelved@0', 'summer-member@1'])
   })
 
   it('places repeated tape ids only once without duplicating updates or leaving an order gap', async () => {
     state.tapes = [
-      makeTape({ id: 'unboxed-a', boxId: null, order: 5 }),
-      makeTape({ id: 'unboxed-b', boxId: null, order: 6 }),
+      makeTape({ id: 'loose-a', boxId: null, order: 5 }),
+      makeTape({ id: 'loose-b', boxId: null, order: 6 }),
       makeTape({ id: 'summer-member', boxId: 'box-summer', order: 0 }),
     ]
 
-    await invoke('boxes:place', { tapeIds: ['unboxed-a', 'unboxed-a', 'unboxed-b'], boxId: 'box-summer' })
+    await invoke('boxes:place', { tapeIds: ['loose-a', 'loose-a', 'loose-b'], boxId: 'box-summer' })
 
-    expect(listing('box-summer')).toEqual(['unboxed-a@0', 'unboxed-b@1', 'summer-member@2'])
+    expect(listing('box-summer')).toEqual(['loose-a@0', 'loose-b@1', 'summer-member@2'])
     expect(emitted('tapes:updatedMany')).toEqual([[[
-      expect.objectContaining({ id: 'unboxed-a', order: 0 }),
-      expect.objectContaining({ id: 'unboxed-b', order: 1 }),
+      expect.objectContaining({ id: 'loose-a', order: 0 }),
+      expect.objectContaining({ id: 'loose-b', order: 1 }),
       expect.objectContaining({ id: 'summer-member', order: 2 }),
     ]]])
   })

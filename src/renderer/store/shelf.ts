@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 /**
- * Archive organizer view state.
+ * Shelf organizer view state.
  *   - selectedBoxId: which box's tapes fill the lower list (null = Loose tapes).
  *     Keyboard nav / removal operate over them. Selecting a box clears the search.
  *   - query: free-text search across ALL shelved tapes; when non-empty the lower

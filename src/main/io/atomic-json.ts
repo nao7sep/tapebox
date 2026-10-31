@@ -21,10 +21,10 @@ import { describeError } from '@shared/error'
  *
  *   - {@link writeManagedJson} is the single managed-TEXT choke point. It is the
  *     ONLY place a data-backup record fires, strictly AFTER the rename lands, and
- *     it is what config.json / catalog.json save through. A managed-text write
+ *     it is what config.json, shelf.json and tape.json save through. A managed-text write
  *     that bypasses it is a silent backup gap (data-backup conventions).
  *   - {@link writeJsonAtomic} is the raw atomic-write primitive for JSON that must
- *     NOT be recorded — the library's sidecars (transient app-owned content until
+ *     NOT be recorded — the collection's sidecars (transient app-owned content until
  *     exported), the exported bundle's sidecar (output), the secret api-keys.json, re-derivable dependencies.json facts, and
  *     the volatile-state layout.json. It never touches the backup store.
  *
@@ -75,7 +75,7 @@ export function serializeStoreJson<S extends z.ZodType>(
  * Raw atomic JSON write, NOT recorded to the data-backup store. A file that
  * For JSON that is
  * excluded from the backup by design-time, per-write-site decision: the binary-
- * bearing library/export sidecars, the secret api-keys.json, re-derivable
+ * bearing collection/export sidecars, the secret api-keys.json, re-derivable
  * dependency/update facts, and the volatile-state layout.json (see the module
  * docstring). Managed text goes through {@link writeManagedJson} instead.
  */
@@ -94,7 +94,7 @@ export async function writeJsonAtomic<S extends z.ZodType>(
 
 /**
  * The single managed-TEXT atomic-write choke point, shared by config.json
- * (store/config.ts) and catalog.json (store/session.ts) — the app's durable,
+ * (store/config.ts) and shelf.json and tape.json (store/session.ts) — the app's durable,
  * user-authored text. It writes atomically exactly like {@link writeJsonAtomic},
  * and then, **strictly AFTER the rename lands**, records the exact bytes just
  * written into the data-backup store.
@@ -134,7 +134,7 @@ export async function writeManagedJsonBytes(path: string, bytes: Buffer): Promis
  * either lands or its failure propagates, and an earlier copy under the same
  * name is never replaced; the caller then stops rather than start fresh. Seconds
  * name it: a store is set aside at most once per launch. The one home of the
- * quarantine naming grammar, so the catalog and config cannot drift apart on it.
+ * quarantine naming grammar, so the collection and config cannot drift apart on it.
  */
 export async function quarantineFile(filePath: string): Promise<string> {
   const stem = basename(filePath, extname(filePath))

@@ -15,7 +15,7 @@ import { message, type Message } from '@shared/i18n/translate'
 type Props = { tape: Tape; videoRef: RefObject<HTMLVideoElement | null>; onClose: () => void }
 
 /**
- * Export a tape out of the library: copy its files (media, thumbnail, sidecar) to
+ * Export a tape out of the collection: copy its files (media, thumbnail, sidecar) to
  * a destination folder, renaming them via the shared NameEditor, and optionally
  * removing the tape from the app afterwards. No transcoding — TapeBox does nothing
  * yt-dlp didn't already do.

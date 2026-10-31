@@ -211,7 +211,7 @@ function terminateOwnedProcessTree(child: StreamingChild): Promise<void> {
       try {
         // Non-Windows children are spawned detached below, making their pid the
         // process-group id. Signal the whole owned group so yt-dlp wrappers cannot
-        // leave ffmpeg/Deno descendants mutating the library after Cancel settles.
+        // leave ffmpeg/Deno descendants mutating the collection after Cancel settles.
         process.kill(-pid, signal)
       } catch {
         child.kill(signal)

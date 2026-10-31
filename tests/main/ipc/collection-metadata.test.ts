@@ -13,7 +13,7 @@ import { tapeDir } from '@main/paths'
 import { cancelAllWork, hasRunningWork, resumeWork } from '@main/work-registry'
 import { until } from '../../helpers/until'
 
-// Re-probing a tape and accepting the result. The catalog fields and the
+// Re-probing a tape and accepting the result. The tape's fields and the
 // sidecar's description are written for real; only the network-facing services
 // (yt-dlp's probe and thumbnail fetch, ffmpeg's image gate) are substituted.
 const handlers = new Map<string, (req: unknown) => unknown>()
@@ -26,7 +26,7 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
 
-const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[] }))
+const state = vi.hoisted(() => ({ collectionDir: '', tapes: [] as Tape[] }))
 const emit = vi.hoisted(() => vi.fn())
 const probe = vi.hoisted(() => vi.fn())
 const downloadThumbnail = vi.hoisted(() => vi.fn())
@@ -48,7 +48,7 @@ vi.mock('@main/store/session', () => ({
   reorderTapesDurably: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => state.libraryDir,
+  getCollectionDir: () => state.collectionDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn(), holdFromScheduling: () => () => {} }))
@@ -71,10 +71,10 @@ function at(id: string, name: string): string {
 
 /** An Inbox tape's own folder. */
 function folder(id: string): string {
-  return tapeDir(state.libraryDir, { id, shelved: false })
+  return tapeDir(state.collectionDir, { id, shelved: false })
 }
 
-// Each tape has its folder in the library, as a downloaded tape does.
+// Each tape has its folder in the collection, as a downloaded tape does.
 function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
   mkdirSync(folder(overrides.id), { recursive: true })
   return {
@@ -105,7 +105,7 @@ beforeEach(async () => {
   vi.mocked(fileIo.open).mockImplementation((await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).open)
   vi.mocked(fileIo.rename).mockImplementation((await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).rename)
   persistNow.mockReset().mockResolvedValue(true)
-  state.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-library-metadata-'))
+  state.collectionDir = await mkdtemp(join(tmpdir(), 'tapebox-collection-metadata-'))
   state.tapes = []
   registerCollectionHandlers()
 })
@@ -114,7 +114,7 @@ afterEach(async () => {
   // A test that quits closes the work registry; reopen it for the next one.
   resumeWork()
   vi.restoreAllMocks()
-  await rm(state.libraryDir, { recursive: true, force: true })
+  await rm(state.collectionDir, { recursive: true, force: true })
 })
 
 describe('re-probing a tape', () => {
@@ -167,7 +167,7 @@ describe('re-probing a tape', () => {
     )
   })
 
-  it('refuses for a tape the catalog does not hold', async () => {
+  it('refuses for a tape the collection does not hold', async () => {
     await expect(invoke('collection:probeMetadata', { tapeId: 'not-a-tape', requestId: 'probe-test' })).rejects.toThrow(
       'The operation could not be completed.',
     )
@@ -176,7 +176,7 @@ describe('re-probing a tape', () => {
 })
 
 describe('accepting refreshed metadata', () => {
-  it('waits for the catalog save before reporting success', async () => {
+  it('waits for the collection save before reporting success', async () => {
     state.tapes = [makeTape({ id: 'Savewait01', filename: null })]
     let release!: (value: boolean) => void
     persistNow.mockImplementation(() => new Promise<boolean>((resolve) => { release = resolve }))
@@ -190,12 +190,12 @@ describe('accepting refreshed metadata', () => {
     } finally { release(true); await apply }
   })
 
-  it.each(['false', 'rejected'])('reports a truthful partial result on a %s catalog save without rolling back saved sidecar or live metadata', async (kind) => {
+  it.each(['false', 'rejected'])('reports a truthful partial result on a %s collection save without rolling back saved sidecar or live metadata', async (kind) => {
     const sidecar = at('Partial001', 'Take.json')
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, title: 'Old title' }))
     state.tapes = [makeTape({ id: 'Partial001', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
     if (kind === 'false') persistNow.mockResolvedValueOnce(false)
-    else persistNow.mockRejectedValueOnce(new Error('catalog writer rejected'))
+    else persistNow.mockRejectedValueOnce(new Error('collection writer rejected'))
     await expect(invoke('collection:applyMetadata', { tapeId: 'Partial001', metadata: ACCEPTED })).rejects.toMatchObject({ userMessage: { key: 'refresh.applyPartial' } })
     expect(state.tapes[0]?.title).toBe('New title')
     expect(JSON.parse(await readFile(sidecar, 'utf8')).title).toBe('New title')
@@ -216,7 +216,7 @@ describe('accepting refreshed metadata', () => {
     await expect(invoke('collection:applyMetadata', { tapeId: tape.id, metadata: ACCEPTED })).resolves.toMatchObject({ title: 'New title' })
   })
 
-  it('saves the catalog fields and puts the same values in the sidecar', async () => {
+  it('saves the tape\'s fields and puts the same values in the sidecar', async () => {
     const sidecar = at('Acceptthis', 'Take.json')
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', description: 'Old description', extra: 'kept' }), 'utf8')
     state.tapes = [makeTape({ id: 'Acceptthis', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]
@@ -258,7 +258,7 @@ describe('accepting refreshed metadata', () => {
 
     await expect(invoke<Tape>('collection:applyMetadata', { tapeId: 'Nosidecarf', metadata: ACCEPTED })).rejects.toThrow()
 
-    expect(state.tapes[0], 'the catalog and the sidecar never disagree').toBe(tape)
+    expect(state.tapes[0], 'the tape and the sidecar never disagree').toBe(tape)
     expect(emit).not.toHaveBeenCalled()
   })
 
@@ -304,7 +304,7 @@ describe('accepting refreshed metadata', () => {
     await expect(readFile(raw)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('records a backfilled poster in the catalog alone, leaving the sidecar\'s own section as it was', async () => {
+  it('records a backfilled poster in the tape alone, leaving the sidecar\'s own section as it was', async () => {
     const sidecar = at('Posterside', 'Holiday.json')
     const tape = makeTape({ id: 'Posterside', filename: 'Holiday.mp4', sidecarFilename: 'Holiday.json' })
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source', tapebox: { media: null } }), 'utf8')
@@ -359,7 +359,7 @@ describe('accepting refreshed metadata', () => {
     expect(downloadThumbnail).not.toHaveBeenCalled()
   })
 
-  it('refuses for a tape the catalog does not hold', async () => {
+  it('refuses for a tape the collection does not hold', async () => {
     await expect(invoke('collection:applyMetadata', { tapeId: 'not-a-tape', metadata: ACCEPTED })).rejects.toThrow(
       'The operation could not be completed.',
     )
@@ -378,7 +378,7 @@ describe('accepting refreshed metadata', () => {
     expect(persistNow).not.toHaveBeenCalled()
   })
 
-  it('finishes its catalog commit when cancelled after the sidecar has committed', async () => {
+  it('finishes its collection commit when cancelled after the sidecar has committed', async () => {
     const sidecar = at('Lateabort1', 'Take.json')
     await writeFile(sidecar, JSON.stringify({ formatVersion: 1, id: 'source' }), 'utf8')
     state.tapes = [makeTape({ id: 'Lateabort1', sidecarFilename: 'Take.json', thumbnailFilename: 'Take.jpg' })]

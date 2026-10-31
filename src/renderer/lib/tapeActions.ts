@@ -27,7 +27,7 @@ import { message, type Message } from '@shared/i18n/translate'
  *                  by the detail-pane buttons — you're focused on that one video.
  *
  * The CALLER picks the policy; the layer never inspects the event source, so there's
- * no fragile "was this a mouse or a key" guessing. Archive / unarchive / move are
+ * no fragile "was this a mouse or a key" guessing. Shelve / Back to Inbox / move are
  * local session writes, so we relocate optimistically — the item leaves its list
  * at once — then roll back and retain a per-tape result if persistence rejects.
  * The IPC re-emit settles the exact order on success. Removal lives
@@ -111,7 +111,7 @@ function relocate(
 ): void {
   const advance = keep === 'list' ? advanceSelection(tape) : null
   // Place it at the front of the destination optimistically so it doesn't flash at
-  // its old order before boxes:place / library:archive re-emit the authoritative one.
+  // its old order before boxes:place / collection:shelve re-emit the authoritative one.
   const optimisticPatch = { ...patch, order: frontOrderFor(dest, tape.id) }
   const optimistic = { ...tape, ...optimisticPatch }
   useTapesStore.getState().upsert(optimistic)
@@ -134,7 +134,7 @@ function relocate(
   })
 }
 
-/** Archive a downloaded tape — it goes to the top of Loose tapes. No-op otherwise. */
+/** Shelve a downloaded tape — it goes to the top of Loose tapes. No-op otherwise. */
 export function shelveTape(tape: Tape, keep: Keep): void {
   if (tape.state !== 'downloaded' || tape.shelved) return
   relocate(
@@ -143,13 +143,14 @@ export function shelveTape(tape: Tape, keep: Keep): void {
     { shelved: true, boxId: null },
     keep,
     'shelve',
-    'tape archive failed',
+    'tape shelve failed',
     message('tapeActions.shelveFailed'),
     () => ipcInvoke('collection:shelve', { tapeIds: [tape.id] }),
   )
 }
 
-/** Unarchive a tape — it returns to the top of the inbox. No-op if not archived. */
+/** Send a shelved tape back to the Inbox, where it sorts by when it was added.
+ *  No-op if not shelved. */
 export function unshelveTape(tape: Tape, keep: Keep): void {
   if (!tape.shelved) return
   relocate(
@@ -158,13 +159,13 @@ export function unshelveTape(tape: Tape, keep: Keep): void {
     { shelved: false, boxId: null },
     keep,
     'unshelve',
-    'tape unarchive failed',
+    'tape back to inbox failed',
     message('tapeActions.unshelveFailed'),
     () => ipcInvoke('collection:unshelve', { tapeIds: [tape.id] }),
   )
 }
 
-/** File an archived tape into a box (null = Loose tapes). No-op if not archived or
+/** File a shelved tape into a box (null = Loose tapes). No-op if not shelved or
  *  already there. */
 export function moveTapeToBox(tape: Tape, boxId: string | null, keep: Keep): void {
   if (!tape.shelved || boxId === tape.boxId) return

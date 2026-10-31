@@ -37,7 +37,7 @@ export const SHORTCUTS = {
   refreshMetadata: { label: 'detail.refreshMetadata', chords: [[plain('m')]] },
   rename: { label: 'detail.rename', chords: [[plain('r')]] },
   export: { label: 'detail.export', chords: [[plain('e')]] },
-  shelveToggle: { label: 'shortcuts.shelveToggle', chords: [[plain('a')]] },
+  shelveToggle: { label: 'shortcuts.shelveToggle', chords: [[plain('s')]] },
   // Backspace or Delete removes, with or without Cmd/Ctrl.
   remove: { label: 'remove.moveToTrash', chords: [[{ key: 'Backspace', mod: 'any', shift: 'any' }], [{ key: 'Delete', mod: 'any', shift: 'any' }]] },
   // YouTube's J and L beside the arrows; Shift+arrow is left to the player.
@@ -64,7 +64,7 @@ export const SHORTCUT_GROUPS: readonly { title: MessageKey; note?: MessageKey; s
   },
   {
     // Same order as the detail-pane button row: primary action, then the
-    // housekeeping group (refresh → rename → export), then archive, then remove.
+    // housekeeping group (refresh → rename → export), then Shelve, then remove.
     title: 'shortcuts.selectedTape',
     shortcuts: [SHORTCUTS.mainAction, SHORTCUTS.refreshMetadata, SHORTCUTS.rename, SHORTCUTS.export, SHORTCUTS.shelveToggle, SHORTCUTS.remove],
   },

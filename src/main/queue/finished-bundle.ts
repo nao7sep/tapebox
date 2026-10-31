@@ -7,7 +7,7 @@ import type { TapeMove } from '@main/core/tape-state'
 import { SourceIndex, tapeSourceRef } from '@shared/source-identity'
 
 /**
- * A download can finish on disk without its catalog commit landing: a crash, a
+ * A download can finish on disk without its tape.json commit landing: a crash, a
  * forced exit or Quit anyway after a failed save leaves the tape stored as
  * queued (store/session.ts) beside its finished files. A new attempt clears the
  * tape's whole stem before downloading (services/ytdlp.ts), which would delete
@@ -78,7 +78,7 @@ export async function findFinishedBundle(dir: string, tape: Tape): Promise<Finis
       state: 'downloaded',
       failureCode: null,
       lastError: null,
-      // The tape's own probe answer wins; the sidecar fills what the catalog lost.
+      // The tape's own probe answer wins; the sidecar fills what tape.json lost.
       sourceId: tape.sourceId ?? found.sourceId,
       extractor: tape.extractor ?? found.extractor,
       title: tape.title ?? found.title,

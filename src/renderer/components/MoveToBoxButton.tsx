@@ -10,7 +10,7 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 import { message } from '@shared/i18n/translate'
 
 /**
- * Files an archived tape into a box (or Loose tapes, or a brand-new box) via a small
+ * Files a shelved tape into a box (or Loose tapes, or a brand-new box) via a small
  * dropdown — a deliberate "put this one there" click, so it uses the 'tape' policy:
  * the view follows the tape into its new box and keeps it selected. Drag-and-drop
  * hits the same moveTapeToBox but with the 'list' policy. The menu opens upward

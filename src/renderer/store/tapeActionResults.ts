@@ -21,8 +21,8 @@ type TapeActionResultsState = {
 
 /**
  * Retained presentation for direct actions on one tape. Results are keyed by
- * both tape and operation so a failed reveal cannot erase an unresolved archive
- * failure, and a result follows its tape between Inbox, Archive, and search.
+ * both tape and operation so a failed reveal cannot erase an unresolved shelve
+ * failure, and a result follows its tape between Inbox, Shelf, and search.
  */
 export const useTapeActionResultsStore = create<TapeActionResultsState>((set) => ({
   byTape: {},

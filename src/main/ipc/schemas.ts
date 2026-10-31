@@ -54,7 +54,7 @@ export const ipcRequestSchemas = {
   'downloads:cancel':      z.object({ tapeId: z.string() }),
   'downloads:retry':       z.object({ tapeId: z.string() }),
 
-  // ── Library ──────────────────────────────────────────────────────────────
+  // ── Collection ───────────────────────────────────────────────────────────
   'collection:subscribe':     z.undefined(),
   'collection:remove':        z.object({ tapeIds: z.array(z.string()), deleteFiles: z.boolean() }),
   'collection:rename':        z.object({ tapeId: z.string(), name: z.string() }),

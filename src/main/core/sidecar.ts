@@ -9,10 +9,10 @@ import { message } from '@shared/i18n/translate'
 /**
  * Build the final sidecar JSON from yt-dlp's info.json output.
  *
- * Layout in the library:
+ * Layout in the collection:
  *   { formatVersion, ...ytDlpInfoJson_with_paths_stripped, tapebox: { media } }
  *
- * The catalog holds everything else about the tape; an export adds it back
+ * The tape's tape.json holds everything else about it; an export adds it back
  * ({@link exportNamespace}).
  *
  * The yt-dlp portion is intentionally NOT zod-validated (large, evolving
@@ -55,18 +55,18 @@ export async function finalize(opts: {
 
   data.tapebox = { media: opts.media }
   // not recorded: a tape's sidecar (yt-dlp info.json + the tapebox namespace) is
-  // library content, transient and app-owned until exported (developer
+  // collection content, transient and app-owned until exported (developer
   // classification), so it takes the raw writeJsonAtomic, not the choke point. The
-  // tape's catalog row is what records, via catalog.json.
+  // tape's tape.json is what records.
   await writeSidecar(opts.sidecarPath, data)
   await unlink(opts.infoJsonPath).catch(() => {})
 }
 
-/** How every sidecar is serialized: the library's own and an export's copy. */
+/** How every sidecar is serialized: the collection's own and an export's copy. */
 export const SIDECAR_JSON = { formatVersion: FORMAT_VERSIONS.sidecar }
 
 /**
- * Write a sidecar in the library, stamped with its format version. Not recorded:
+ * Write a sidecar in the collection, stamped with its format version. Not recorded:
  * see {@link finalize}.
  */
 export async function writeSidecar(path: string, sidecar: Record<string, unknown>): Promise<void> {
@@ -87,22 +87,22 @@ export async function readSidecarFile(sidecarPath: string): Promise<Record<strin
   return found.value
 }
 
-/** The catalog fields an exported sidecar carries in its tapebox section. */
-const CATALOG_FIELDS = ['sourceUrl', 'name', 'addedAtUtc', 'downloadedAtUtc', 'renamedAtUtc', 'mediaFilename', 'thumbnailFilename'] as const
+/** The tape.json fields an exported sidecar carries in its tapebox section. */
+const TAPE_FIELDS = ['sourceUrl', 'name', 'addedAtUtc', 'downloadedAtUtc', 'renamedAtUtc', 'mediaFilename', 'thumbnailFilename'] as const
 
-/** A sidecar as the library keeps it: an imported bundle's catalog fields,
- *  which the catalog now holds, leave its tapebox section; the media facts and
+/** A sidecar as the collection keeps it: an imported bundle's tape.json fields,
+ *  which its tape.json now holds, leave its tapebox section; the media facts and
  *  anything else in it stay. */
 export function collectionSidecar(sidecar: Record<string, unknown>): Record<string, unknown> {
   const section = sidecar['tapebox']
   const kept = section && typeof section === 'object' && !Array.isArray(section)
-    ? Object.fromEntries(Object.entries(section).filter(([key]) => !(CATALOG_FIELDS as readonly string[]).includes(key)))
+    ? Object.fromEntries(Object.entries(section).filter(([key]) => !(TAPE_FIELDS as readonly string[]).includes(key)))
     : {}
   return { ...sidecar, tapebox: { media: null, ...kept } }
 }
 
-/** The tapebox section an exported sidecar carries: the catalog's record of the
- *  tape beside what the library sidecar's own section holds, so the bundle can
+/** The tapebox section an exported sidecar carries: the tape.json record of the
+ *  tape beside what the collection sidecar's own section holds, so the bundle can
  *  be imported from its sidecar alone. */
 export function exportNamespace(sidecar: Record<string, unknown>, tape: Tape): SidecarTapeBox & Record<string, unknown> {
   const kept = collectionSidecar(sidecar)['tapebox'] as Record<string, unknown>

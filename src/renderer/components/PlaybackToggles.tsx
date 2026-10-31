@@ -7,7 +7,7 @@ import { useI18n } from '@renderer/i18n/I18nContext'
 const PERSIST_DELAY_MS = 500
 
 /**
- * App-wide playback controls, shown at the right of the Inbox/Archived row: the
+ * App-wide playback controls, shown at the right of the Inbox/Shelf row: the
  * Autoplay toggle (lit = on) and the playback volume, whose zero is mute. Both
  * are settings the player reads, so they stay in sync with it.
  */

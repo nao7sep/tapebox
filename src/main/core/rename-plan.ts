@@ -5,7 +5,7 @@ import { TAPE_FILE } from '@shared/domain'
 import { sanitizeFilename } from '@main/core/filename'
 import { message, type Message } from '@shared/i18n/translate'
 
-// The pure naming/file-op planning behind `library:rename`, lifted out of the IPC
+// The pure naming/file-op planning behind `collection:rename`, lifted out of the IPC
 // handler so the derived names, the no-op short-circuit, and — critically — the
 // intra-plan collision guard are testable without touching disk.
 

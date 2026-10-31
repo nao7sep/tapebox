@@ -250,9 +250,9 @@ describe('the live download path', () => {
         expect(tape.lastError).toBeNull()
         expect(tape.state).toBe('downloaded')
 
-        const library = join(home, 'library')
-        expect((await stat(join(library, tape.filename!))).size).toBe((await stat(join(CORPUS, VIDEO))).size)
-        const sidecar = JSON.parse(await readFile(join(library, tape.sidecarFilename!), 'utf8')) as {
+        const collection = join(home, 'collection')
+        expect((await stat(join(collection, tape.filename!))).size).toBe((await stat(join(CORPUS, VIDEO))).size)
+        const sidecar = JSON.parse(await readFile(join(collection, tape.sidecarFilename!), 'utf8')) as {
           tapebox: { media: { width: number; height: number; vcodec: string; acodec: string; durationSeconds: number } }
         }
         expect(sidecar.tapebox.media).toMatchObject({ width: 480, height: 320, vcodec: 'h264', acodec: 'aac' })

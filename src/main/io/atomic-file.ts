@@ -9,7 +9,7 @@ import { applyFileStamp, chmodWhereHeld, fileStampOf, keepOriginalMode } from '.
  * Atomically publish a file. Runs `produce(tempPath)` to write the complete,
  * ready-to-use contents into a temporary path, then fsyncs that file and renames
  * it onto `destPath` — the write-temp → fsync → rename discipline every managed
- * file and library replacement shares, so a crash or power loss can never expose
+ * file and collection replacement shares, so a crash or power loss can never expose
  * a half-written file at `destPath`, though it may lose the newest save.
  *
  * `produce` is handed an exclusively created, empty private file and must leave a finished artifact there —
@@ -84,7 +84,7 @@ function linkUnsupported(err: unknown): boolean {
  * ordinary permission bits and copy times (content-lifecycle conventions, Files).
  * Where the destination has no hard links this writes straight to the final
  * name, so power loss mid-copy can leave a truncated file there: accepted rather
- * than refusing FAT and exFAT drives, since the library source is kept until the
+ * than refusing FAT and exFAT drives, since the collection source is kept until the
  * commit.
  */
 async function copyExclusive(sourcePath: string, destPath: string, signal?: AbortSignal): Promise<void> {

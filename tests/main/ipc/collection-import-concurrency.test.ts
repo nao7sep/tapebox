@@ -9,7 +9,7 @@ import type { ImportResult } from '@shared/ipc-contract'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 
 const state = vi.hoisted(() => ({
-  libraryDir: '', heldCopy: '', heldCatalog: '',
+  collectionDir: '', heldCopy: '', heldTapeFile: '',
   held: () => {}, release: null as Promise<void> | null,
 }))
 const handlers = new Map<string, (req: unknown) => Promise<unknown>>()
@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => state.libraryDir,
+  getCollectionDir: () => state.collectionDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
 }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
@@ -39,7 +39,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
     copyFileNoOverwrite: async (...args: Parameters<typeof actual.copyFileNoOverwrite>) => {
       await actual.copyFileNoOverwrite(...args)
       // The copy lands in a tape folder named by an id the test cannot know, so it is held by its file name.
-      if (args[1].startsWith(state.libraryDir) && basename(args[1]) === state.heldCopy) { state.held(); await state.release }
+      if (args[1].startsWith(state.collectionDir) && basename(args[1]) === state.heldCopy) { state.held(); await state.release }
     },
   }
 })
@@ -49,8 +49,8 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
     ...actual,
     writeManagedJsonBytes: async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
       // A tape's own file sits in a folder named by an id the test cannot know, so it is held by its file name.
-      if (state.heldCatalog !== '' && basename(args[0]) === state.heldCatalog) {
-        state.heldCatalog = ''
+      if (state.heldTapeFile !== '' && basename(args[0]) === state.heldTapeFile) {
+        state.heldTapeFile = ''
         state.held()
         await state.release
       }
@@ -65,7 +65,7 @@ import * as session from '@main/store/session'
 let root: string
 let sourceDir: string
 
-function hold(kind: 'heldCopy' | 'heldCatalog', path: string): { started: Promise<void>; release: () => void } {
+function hold(kind: 'heldCopy' | 'heldTapeFile', path: string): { started: Promise<void>; release: () => void } {
   let started!: () => void
   let release!: () => void
   const waiting = new Promise<void>((resolve) => { release = resolve })
@@ -99,7 +99,7 @@ const byId = (a: Tape, b: Tape) => a.id.localeCompare(b.id)
 
 /** The tapes as the collection on disk holds them, by id. */
 async function savedTapes(): Promise<Tape[]> {
-  const read = await session.readCollection(state.libraryDir)
+  const read = await session.readCollection(state.collectionDir)
   if (read.kind !== 'current') throw new Error('expected a current collection')
   return [...read.session.tapes].sort(byId)
 }
@@ -113,14 +113,14 @@ beforeEach(async () => {
   handlers.clear()
   root = await mkdtemp(join(tmpdir(), 'tapebox-import-concurrency-'))
   sourceDir = join(root, 'source')
-  state.libraryDir = join(root, 'library')
+  state.collectionDir = join(root, 'collection')
   state.heldCopy = ''
-  state.heldCatalog = ''
+  state.heldTapeFile = ''
   state.release = null
   emit.mockClear()
   await mkdir(sourceDir)
   // A collection that already holds Inbox tapes has its inbox/ folder.
-  await mkdir(join(state.libraryDir, 'inbox'), { recursive: true })
+  await mkdir(join(state.collectionDir, 'inbox'), { recursive: true })
   await session.loadSession()
   registerCollectionHandlers()
 })
@@ -130,7 +130,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-describe('bundle import beside catalog changes', () => {
+describe('bundle import beside session changes', () => {
   it('keeps a batch in selection order while a URL added during its copy waits sorts by its own time', async () => {
     const firstPath = await stageBundle(sourceDir, 'first', 'https://example.test/first')
     const secondPath = await stageBundle(sourceDir, 'second', 'https://example.test/second')
@@ -160,7 +160,7 @@ describe('bundle import beside catalog changes', () => {
 
   it('announces the current rows after changes made during the collection save', async () => {
     const path = await stageBundle(sourceDir, 'pending', 'https://example.test/pending')
-    const gate = hold('heldCatalog', TAPE_FILE)
+    const gate = hold('heldTapeFile', TAPE_FILE)
     const importing = importBundle(path)
     try {
       await gate.started

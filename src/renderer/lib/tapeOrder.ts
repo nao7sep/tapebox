@@ -51,7 +51,7 @@ export function visibleTapes(
     return tapes.filter((t) => !t.shelved).sort(compareInbox)
   }
 
-  const archived = tapes.filter((t) => t.shelved)
+  const shelved = tapes.filter((t) => t.shelved)
   const q = query.trim().toLowerCase()
   if (q) {
     // Loose tapes (no box) leads, mirroring the box list where Loose tapes sits on top; then
@@ -59,11 +59,11 @@ export function visibleTapes(
     const boxRankById = new Map(boxes.map((b) => [b.id, b.order]))
     const boxRank = (boxId: string | null) =>
       boxId === null ? -Infinity : boxRankById.get(boxId) ?? Infinity
-    return archived
+    return shelved
       .filter((t) => (t.title ?? t.sourceUrl).toLowerCase().includes(q))
       .sort((a, b) => boxRank(a.boxId) - boxRank(b.boxId) || byOrder(a, b))
   }
-  return archived.filter((t) => t.boxId === selectedBoxId).sort(byOrder)
+  return shelved.filter((t) => t.boxId === selectedBoxId).sort(byOrder)
 }
 
 /** Reactive: the on-screen tape order for the current filter, box, and search. */

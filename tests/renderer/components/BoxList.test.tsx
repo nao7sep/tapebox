@@ -119,19 +119,19 @@ it('marks the whole selected box row for keyboard emphasis while hover leaves na
 })
 
 
-async function showArchive(visible: boolean) {
+async function showShelf(visible: boolean) {
   await act(async () => root.render(createElement(Fragment, null,
     visible ? createElement(BoxList, { onReorder: () => {}, orderError: null, onDismissOrderError: () => {} }) : null,
     createElement(WindowCloseGuard),
   )))
 }
 
-describe('box draft across Archive/Inbox navigation', () => {
-  it('retains exact invalid text while the Archive view is absent', async () => {
+describe('box draft across Shelf/Inbox navigation', () => {
+  it('retains exact invalid text while the Shelf view is absent', async () => {
     await type('   ')
-    await showArchive(false)
+    await showShelf(false)
     expect(windowCloseState().dirty).toBe(true)
-    await showArchive(true)
+    await showShelf(true)
     expect(input().value).toBe('   ')
     expect(bridge.invoke).not.toHaveBeenCalled()
   })
@@ -141,10 +141,10 @@ describe('box draft across Archive/Inbox navigation', () => {
     bridge.invoke.mockImplementation(() => new Promise((_resolve, reject) => { fail = reject }))
     await type('  Keep on failure  ')
     await act(async () => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
-    await showArchive(false)
+    await showShelf(false)
     await act(async () => fail(new Error('failed save')))
     expect(windowCloseState()).toEqual({ dirty: true })
-    await showArchive(true)
+    await showShelf(true)
     expect(input().value).toBe('  Keep on failure  ')
     expect(document.body.textContent).toContain('The box could not be renamed.')
   })
@@ -258,7 +258,7 @@ describe('new box reply ownership', () => {
   })
 })
 
-it('derives archived counts after moves and unarchiving, including Loose tapes', async () => {
+it('derives shelved counts after moves and Back to Inbox, including Loose tapes', async () => {
   const tape: Tape = {
     id: 'TapeID0001', sourceUrl: 'https://example.test', state: 'downloaded', addedAtUtc: '2026-01-01T00:00:00Z',
     sourceId: null, extractor: null, title: null, uploader: null, durationSeconds: null, chapterCount: null,

@@ -4,7 +4,7 @@ import type { Box } from '@shared/domain'
 /**
  * Renderer mirror of the Shelf boxes, hydrated at startup and kept in sync by
  * the boxes:changed event. Box membership and order of individual tapes live on
- * the tapes themselves (see tapeOrder); this store also owns the inline rename draft across Archive/Inbox navigation.
+ * the tapes themselves (see tapeOrder); this store also owns the inline rename draft across Shelf/Inbox navigation.
  */
 type BoxesState = {
   collection: object

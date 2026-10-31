@@ -57,8 +57,8 @@ export function registerBoxHandlers(): void {
       .getTapes()
       .filter((t) => t.boxId === boxId)
       .sort((a, b) => a.order - b.order)
-    const unboxed = session.getTapes().filter((t) => t.shelved && t.boxId === null)
-    const orders = frontOrders(unboxed.map((t) => t.order), orphans.length)
+    const loose = session.getTapes().filter((t) => t.shelved && t.boxId === null)
+    const orders = frontOrders(loose.map((t) => t.order), orphans.length)
     const changed: Tape[] = []
     orphans.forEach((tape, i) => {
       const updated = { ...tape, boxId: null, order: orders[i] }
@@ -89,7 +89,7 @@ export function registerBoxHandlers(): void {
     const all = session.getTapes()
 
     // The destination list's current members (shelved tapes filed there), minus
-    // anything being moved. Loose tapes is boxId === null, so the archived guard keeps
+    // anything being moved. Loose tapes is boxId === null, so the shelved guard keeps
     // inbox tapes — which also have boxId null — out of it.
     const members = all
       .filter((i) => i.shelved && i.boxId === boxId && !moving.has(i.id))

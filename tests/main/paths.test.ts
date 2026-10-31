@@ -85,24 +85,24 @@ describe('resolveStorageRoot', () => {
 // config and the window layout; it travels with the collection.
 describe('paths collection files', () => {
   it('resolves shelf.json inside the collection', () => {
-    expect(basename(shelfFile(paths.library))).toBe('shelf.json')
-    expect(dirname(shelfFile(paths.library))).toBe(paths.library)
+    expect(basename(shelfFile(paths.collection))).toBe('shelf.json')
+    expect(dirname(shelfFile(paths.collection))).toBe(paths.collection)
   })
 
   it('puts each tape folder in the area where the tape sits', () => {
-    expect(areaDir(paths.library, false)).toBe(join(paths.library, 'inbox'))
-    expect(areaDir(paths.library, true)).toBe(join(paths.library, 'shelf'))
-    expect(tapeDir(paths.library, { id: 'Tape000001', shelved: false })).toBe(join(paths.library, 'inbox', 'Tape000001'))
-    expect(tapeFile(paths.library, { id: 'Tape000001', shelved: true }, 'tape.json'))
-      .toBe(join(paths.library, 'shelf', 'Tape000001', 'tape.json'))
+    expect(areaDir(paths.collection, false)).toBe(join(paths.collection, 'inbox'))
+    expect(areaDir(paths.collection, true)).toBe(join(paths.collection, 'shelf'))
+    expect(tapeDir(paths.collection, { id: 'Tape000001', shelved: false })).toBe(join(paths.collection, 'inbox', 'Tape000001'))
+    expect(tapeFile(paths.collection, { id: 'Tape000001', shelved: true }, 'tape.json'))
+      .toBe(join(paths.collection, 'shelf', 'Tape000001', 'tape.json'))
   })
 
   it('keeps shelf.json separate from config and layout', () => {
     expect(basename(paths.config)).toBe('config.json')
     expect(basename(paths.layout)).toBe('layout.json')
-    expect(shelfFile(paths.library)).not.toBe(paths.config)
-    expect(shelfFile(paths.library)).not.toBe(paths.layout)
-    expect(shelfFile(paths.library)).not.toBe(paths.apiKeys)
+    expect(shelfFile(paths.collection)).not.toBe(paths.config)
+    expect(shelfFile(paths.collection)).not.toBe(paths.layout)
+    expect(shelfFile(paths.collection)).not.toBe(paths.apiKeys)
   })
 })
 

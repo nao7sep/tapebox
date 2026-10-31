@@ -167,7 +167,7 @@ describe('Shelf tape reorder settlement through its list', () => {
 
     expect(currentTape('TapeFirst1')).toEqual({ ...downloaded, order: 10 })
     expect(currentTape('TapeSecond').order).toBe(20)
-    const result = useOrderFailuresStore.getState().shelfTapes.unboxed
+    const result = useOrderFailuresStore.getState().shelfTapes.loose
     expect(inEnglish(result)).toContain('order')
     expect(inEnglish(result)).not.toMatch(/EACCES|private\/tmp|ORDER_SENTINEL/)
     expect(JSON.stringify(logError.mock.calls)).toContain('ORDER_SENTINEL')
@@ -216,7 +216,7 @@ describe('Shelf tape reorder settlement through its list', () => {
     expect(currentTape('TapeFirst1')).toEqual(downloaded)
     expect(currentTape('TapeSecond').order).toBe(20)
     expect(currentTape('TapeThird1').order).toBe(30)
-    const result = useOrderFailuresStore.getState().shelfTapes.unboxed
+    const result = useOrderFailuresStore.getState().shelfTapes.loose
     expect(inEnglish(result)).toContain('order')
     expect(inEnglish(result)).not.toContain('WHOLE_ROW_SENTINEL')
     expect(JSON.stringify(logError.mock.calls)).toContain('WHOLE_ROW_SENTINEL')
@@ -267,10 +267,10 @@ describe('Shelf tape reorder settlement through its list', () => {
     const latest = useTapesStore.getState().tapes
     await act(async () => older.reject(new Error('superseded remount order rejected')))
 
-    expect(useOrderFailuresStore.getState().pending['shelf:unboxed']?.active.size).toBe(1)
+    expect(useOrderFailuresStore.getState().pending['shelf:loose']?.active.size).toBe(1)
 
     expect(useTapesStore.getState().tapes).toBe(latest)
-    const result = useOrderFailuresStore.getState().shelfTapes.unboxed
+    const result = useOrderFailuresStore.getState().shelfTapes.loose
     expect(result ?? null).toBeNull()
     await act(async () => newer.resolve())
     expect(useOrderFailuresStore.getState().pending).toEqual({})
@@ -284,14 +284,14 @@ describe('Shelf tape reorder settlement through its list', () => {
     await reorder(label)
     const latest = useTapesStore.getState().tapes
     const retained = message('tapes.orderSaveFailed')
-    await act(async () => useOrderFailuresStore.getState().setShelfTapes('unboxed', retained))
+    await act(async () => useOrderFailuresStore.getState().setShelfTapes('loose', retained))
     await act(async () => older.reject(new Error('older reorder rejected')))
 
     expect(useTapesStore.getState().tapes).toEqual(latest)
-    const result = useOrderFailuresStore.getState().shelfTapes.unboxed
+    const result = useOrderFailuresStore.getState().shelfTapes.loose
     expect(result).toEqual(retained)
     await act(async () => newer.resolve())
-    const cleared = useOrderFailuresStore.getState().shelfTapes.unboxed
+    const cleared = useOrderFailuresStore.getState().shelfTapes.loose
     expect(cleared ?? null).toBeNull()
   })
 

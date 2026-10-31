@@ -23,7 +23,7 @@ export const ImportableUrlSchema = z.string().trim().url().refine(isImportableUr
  *   probing    -> running yt-dlp --dump-json --skip-download
  *   ready      -> metadata captured, awaiting download slot
  *   downloading
- *   downloaded -> media + sidecar present in library/
+ *   downloaded -> media + sidecar present in its tape folder
  *   failed
  *   paused
  *   listing    -> probe found a page that lists videos, not a single video; a

@@ -44,38 +44,38 @@ function trackedCollectionFiles(): string[] {
 }
 
 /**
- * Resolve a persisted libraryDir value to its effective absolute path, the same way
- * getCollectionDir() does (blank → the default library folder). Used to
+ * Resolve a persisted collectionDir value to its effective absolute path, the same way
+ * getCollectionDir() does (blank → the default collection folder). Used to
  * compare the OLD effective dir against the NEW one a patch would produce, so the
  * move triggers on any real change — including custom→default and default→custom —
  * and no-ops when they resolve equal.
  */
-function effectiveCollectionDir(libraryDir: string): string {
-  return libraryDir || paths.library
+function effectiveCollectionDir(collectionDir: string): string {
+  return collectionDir || paths.collection
 }
 
 /**
- * Relocate the library when a settings patch changes the effective library dir.
+ * Relocate the collection when a settings patch changes the effective collection dir.
  * Publishes destination copies BEFORE the new setting is committed, keeping every
  * source. Only after config.json durably names the destination does the
  * caller clean the obsolete sources. A crash or failure before that commit leaves
- * the old libraryDir and every catalog-visible source coherent; a no-op (effective
+ * the old collectionDir and every source the collection names coherent; a no-op (effective
  * dir unchanged) returns immediately and the normal update proceeds.
  *
- * It runs at its library turn (library-writes.ts), so no import, rename, export or
+ * It runs at its collection turn (collection-writes.ts), so no import, rename, export or
  * removal runs beside it; it refuses while a download runs, and none starts until
- * the settings commit, so nothing is stranded in the old folder. Catalog changes
- * made meanwhile go through the catalog's owner, which carries them to the new folder.
+ * the settings commit, so nothing is stranded in the old folder. Collection changes
+ * made meanwhile go through the session store, which carries them to the new folder.
  */
 type CompletedRelocation = { fromDir: string; files: RelocatedFile[] }
 
-/** Work-registry key for the one library move that can be in flight. */
+/** Work-registry key for the one collection move that can be in flight. */
 const COLLECTION_MOVE_KEY = 'collection-move'
 
-/** True when applying `patch` would change the effective library folder. */
+/** True when applying `patch` would change the effective collection folder. */
 function movesCollection(patch: SettingsSets): boolean {
-  if (patch.libraryDir === undefined) return false
-  return resolve(config.getCollectionDir()) !== resolve(effectiveCollectionDir(patch.libraryDir))
+  if (patch.collectionDir === undefined) return false
+  return resolve(config.getCollectionDir()) !== resolve(effectiveCollectionDir(patch.collectionDir))
 }
 
 async function relocateIfCollectionDirChanged(
@@ -84,23 +84,23 @@ async function relocateIfCollectionDirChanged(
 ): Promise<CompletedRelocation | null> {
   if (!movesCollection(patch)) return null
   const fromDir = config.getCollectionDir()
-  const toDir = effectiveCollectionDir(patch.libraryDir!)
+  const toDir = effectiveCollectionDir(patch.collectionDir!)
 
   await session.prepareCollection()
   signal.throwIfAborted()
   const entries = trackedCollectionFiles()
   const storeFiles = new Set(session.collectionStoreFiles())
-  log.info('relocating library', { from: fromDir, to: toDir, files: entries.length })
+  log.info('relocating collection', { from: fromDir, to: toDir, files: entries.length })
   const result = await relocateCollection(fromDir, toDir, entries, {
     signal,
     onProgress: (progress) => emit('settings:collectionMoveProgress', progress),
-    // The library store copies its own files, so no save can land mid-copy.
+    // The session store copies its own files, so no save can land mid-copy.
     publish: (name, source, destination, signal) => storeFiles.has(name)
       ? session.copyStoreFileTo(name, destination, signal)
       : linkOrCopyNoOverwrite(source, destination, signal),
   })
   if (result.moved) {
-    log.info('library destinations published; awaiting settings commit', {
+    log.info('collection destinations published; awaiting settings commit', {
       from: fromDir,
       to: toDir,
       count: result.count,
@@ -112,26 +112,26 @@ async function relocateIfCollectionDirChanged(
 
 export function registerSettingsHandlers(): void {
   handle('settings:get', async () => config.getSettings())
-  // The default library folder, shown as the placeholder when libraryDir is blank.
-  handle('settings:defaultCollectionDir', async () => paths.library)
+  // The default collection folder, shown as the placeholder when collectionDir is blank.
+  handle('settings:defaultCollectionDir', async () => paths.collection)
   handle('settings:update', async ({ collectionAction, ...patch }) => {
     // Normalize user-typed folder fields at the boundary.
     const normalized: SettingsSets = { ...patch }
-    if (patch.libraryDir !== undefined) {
-      normalized.libraryDir = normalizeUserDir('errors.collectionFolderNotAbsolute', patch.libraryDir)
+    if (patch.collectionDir !== undefined) {
+      normalized.collectionDir = normalizeUserDir('errors.collectionFolderNotAbsolute', patch.collectionDir)
     }
     if (patch.defaultExportDir !== undefined) {
       normalized.defaultExportDir = normalizeUserDir('errors.exportFolderNotAbsolute', patch.defaultExportDir)
     }
     // Validate the full merged result BEFORE touching any files, so an invalid
-    // sibling field in the same patch can't leave the library moved but the setting
+    // sibling field in the same patch can't leave the collection moved but the setting
     // unsaved. updateSettings re-validates too (this doesn't replace it); doing it
     // here just guarantees the move only runs for a patch that will persist.
     settingsAfterPatch(config.getSettings(), normalized)
-    // Move the library first; if it throws (collision, downloads running,
-    // a failed-and-rolled-back move) the new libraryDir is never committed, so the
-    // renderer surfaces the error and the catalog still points at the old folder.
-    // The library turn lasts for the whole move and settings commit so no download,
+    // Move the collection first; if it throws (collision, downloads running,
+    // a failed-and-rolled-back move) the new collectionDir is never committed, so the
+    // renderer surfaces the error and the setting still points at the old folder.
+    // The collection turn lasts for the whole move and settings commit so no download,
     // import or rename writes into the old folder meanwhile; the queue catches up
     // after. Stop (settings:cancelCollectionMove) or quitting aborts the copy and rolls
     // back every file already published.
@@ -175,7 +175,7 @@ export function registerSettingsHandlers(): void {
 
 type SettingsUpdateResult = IpcCalls['settings:update']['res']
 
-/** Shown when the new library folder is committed but old copies remain in the previous one. */
+/** Shown when the new collection folder is committed but old copies remain in the previous one. */
 const OBSOLETE_SOURCES_WARNING = message('errors.collectionOldCopiesKept')
 
 async function applySettingsPatch(
@@ -185,7 +185,7 @@ async function applySettingsPatch(
 ): Promise<SettingsUpdateResult> {
   const previous = config.getSettings()
   const switching = movesCollection(normalized)
-  const toDir = effectiveCollectionDir(normalized.libraryDir ?? config.getSettings().libraryDir)
+  const toDir = effectiveCollectionDir(normalized.collectionDir ?? config.getSettings().collectionDir)
   const opening = switching && collectionAction === 'open'
   // Inspect an explicitly opened collection without quarantine. It is never a
   // destination for the current collection's media or organization. One in the
@@ -207,14 +207,14 @@ async function applySettingsPatch(
     if (relocation) {
       try {
         await rollbackCollectionRelocation(relocation.files)
-        log.info('library destinations rolled back after settings save failure', {
+        log.info('collection destinations rolled back after settings save failure', {
           source: relocation.fromDir,
           files: relocation.files.length,
         })
       } catch (rollbackError) {
         throw new AggregateError(
           [saveError, rollbackError],
-          'Settings could not be saved and the library relocation could not be fully rolled back.',
+          'Settings could not be saved and the collection relocation could not be fully rolled back.',
         )
       }
     }
@@ -222,7 +222,7 @@ async function applySettingsPatch(
   }
   if (opened) {
     // Changes made to the current collection while it was being opened reach
-    // its own catalog before the opened one replaces it.
+    // its own files before the opened one replaces it.
     await session.persistNow()
     session.bindSession(toDir, opened)
     emit('collection:opened', opened.session)
@@ -250,12 +250,12 @@ async function applySettingsPatch(
   if (relocation) {
     try {
       await completeCollectionRelocation(relocation.files)
-      log.info('obsolete library sources cleaned after settings commit', {
+      log.info('obsolete collection sources cleaned after settings commit', {
         from: relocation.fromDir,
         files: relocation.files.length,
       })
     } catch (cleanupError) {
-      log.error('obsolete library source cleanup incomplete after settings commit', {
+      log.error('obsolete collection source cleanup incomplete after settings commit', {
         from: relocation.fromDir,
         error: describeError(cleanupError),
       })

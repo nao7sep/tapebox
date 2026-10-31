@@ -15,8 +15,8 @@ export function isInSameTapeList(
   current: Pick<Tape, 'shelved' | 'boxId'>,
   submitted: Pick<Tape, 'shelved' | 'boxId'>,
 ): boolean {
-  const archived = submitted.shelved
-  return current.shelved === archived && (!archived || current.boxId === submitted.boxId)
+  const shelved = submitted.shelved
+  return current.shelved === shelved && (!shelved || current.boxId === submitted.boxId)
 }
 
 /** Roll back order on current members, preserving additions, removals and metadata. */

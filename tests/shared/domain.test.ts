@@ -85,7 +85,7 @@ describe('SessionSchema identities', () => {
   it('lets two tapes, each in its own folder, use the same file names', () => {
     expect(() => SessionSchema.parse({
       tapes: [
-        { ...completeTape(), filename: 'Archive.MP4' },
+        { ...completeTape(), filename: 'Shelf.MP4' },
         { ...completeTape(), id: 'def7654321', sourceUrl: 'https://example.com/watch?v=y', filename: 'shelf.mp4' },
       ],
       boxes: [],

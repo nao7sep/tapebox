@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { paths, log } = vi.hoisted(() => ({
-  paths: { config: '', library: '/mock/library' },
+  paths: { config: '', collection: '/mock/collection' },
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 vi.mock('@main/paths', () => ({ paths }))
@@ -77,8 +77,8 @@ describe('settings by set', () => {
     expect(await savedSets(), 'the user saving the set replaces the kept copy').toEqual({ defaultExportDir: '/exports', autoplay: false, keepAwakeWhilePlaying: false })
   })
 
-  it('stops for a library folder it cannot use, rather than look in the wrong place', async () => {
-    const text = JSON.stringify({ formatVersion: 1, libraryDir: 'relative/library' })
+  it('stops for a collection folder it cannot use, rather than look in the wrong place', async () => {
+    const text = JSON.stringify({ formatVersion: 1, collectionDir: 'relative/collection' })
     await writeFile(paths.config, text)
     await expect(loadSettings()).rejects.toMatchObject({ name: 'CollectionFolderSettingError', path: paths.config })
     expect(await readFile(paths.config, 'utf8')).toBe(text)
@@ -95,7 +95,7 @@ describe('settings by set', () => {
   it('refuses a relative folder on save and keeps the file as it is', async () => {
     await writeFile(paths.config, JSON.stringify({ formatVersion: 1, autoplay: false }))
     await loadSettings()
-    await expect(updateSettings({ libraryDir: 'relative/library' })).rejects.toThrow()
+    await expect(updateSettings({ collectionDir: 'relative/collection' })).rejects.toThrow()
     await expect(updateSettings({ defaultExportDir: 'exports' })).rejects.toThrow()
     expect(await savedSets()).toEqual({ autoplay: false })
   })

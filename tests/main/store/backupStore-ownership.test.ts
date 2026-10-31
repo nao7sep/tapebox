@@ -76,19 +76,19 @@ it('seals ordinary admission immediately and drains what was admitted before sto
 it('dispatches one snapshot at a time, in save order', async () => {
   backup.record('/first', Buffer.from('first'))
   const worker = state.workers[0]!
-  backup.record('/catalog', Buffer.from('catalog-0'))
-  backup.record('/catalog', Buffer.from('catalog-1'))
+  backup.record('/shelf', Buffer.from('shelf-0'))
+  backup.record('/shelf', Buffer.from('shelf-1'))
   backup.record('/settings', Buffer.from([0xff, 0x00, 0x0d, 0x0a]))
   expect(worker.messages).toHaveLength(1)
   let drained = false
   const flush = backup.flushBackupStore().then(() => { drained = true })
   worker.emit('message', { id: 1 })
   expect(worker.messages).toHaveLength(2)
-  expect(worker.messages[1]).toMatchObject({ absolutePath: '/catalog', bytes: Buffer.from('catalog-0') })
+  expect(worker.messages[1]).toMatchObject({ absolutePath: '/shelf', bytes: Buffer.from('shelf-0') })
   await Promise.resolve()
   expect(drained).toBe(false)
   worker.emit('message', { id: 2 })
-  expect(worker.messages[2]).toMatchObject({ absolutePath: '/catalog', bytes: Buffer.from('catalog-1') })
+  expect(worker.messages[2]).toMatchObject({ absolutePath: '/shelf', bytes: Buffer.from('shelf-1') })
   worker.emit('message', { id: 3 })
   expect(worker.messages[3]).toMatchObject({ absolutePath: '/settings', bytes: Buffer.from([0xff, 0x00, 0x0d, 0x0a]) })
   worker.emit('message', { id: 4 })

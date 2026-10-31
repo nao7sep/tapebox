@@ -2,7 +2,7 @@ import type { Tape } from './domain'
 import { canonicalizeForDedup } from './url'
 
 /**
- * The one rule for "is this video already in the library?", used by Add, import,
+ * The one rule for "is this video already in the collection?", used by Add, import,
  * page scans and the post-probe duplicate check.
  *
  * Two sources are the same video when their URLs match once tracking parameters and

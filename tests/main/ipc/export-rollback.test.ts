@@ -44,10 +44,10 @@ const tape: Tape = {
   name: 'Take', renamedAtUtc: null, addedIndex: 0, shelved: false, boxId: null, order: 0,
   pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
-const libraryState = vi.hoisted(() => ({ dir: '' }))
+const collectionState = vi.hoisted(() => ({ dir: '' }))
 const sessionState = vi.hoisted(() => ({ tape: null as Tape | null }))
 vi.mock('@main/store/session', () => ({ getTape: () => sessionState.tape }))
-vi.mock('@main/store/config', () => ({ getCollectionDir: () => libraryState.dir }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => collectionState.dir }))
 vi.mock('@main/ipc/collection', () => ({ removeTapesFrom: vi.fn(async () => ({ removed: [], failed: [] as string[] })) }))
 vi.mock('@main/io/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() } }))
 
@@ -61,13 +61,13 @@ beforeEach(async () => {
   state.cleanupThrows = false
   sessionState.tape = tape
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-rollback-'))
-  libraryState.dir = join(root, 'library')
+  collectionState.dir = join(root, 'collection')
   state.destinationDir = join(root, 'destination')
-  await mkdir(join(libraryState.dir, 'inbox', tape.id), { recursive: true })
+  await mkdir(join(collectionState.dir, 'inbox', tape.id), { recursive: true })
   await mkdir(state.destinationDir)
-  await writeFile(join(libraryState.dir, 'inbox', tape.id, 'Take.mp4'), 'source video')
-  await writeFile(join(libraryState.dir, 'inbox', tape.id, 'Take.jpg'), 'source poster')
-  await writeFile(join(libraryState.dir, 'inbox', tape.id, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
+  await writeFile(join(collectionState.dir, 'inbox', tape.id, 'Take.mp4'), 'source video')
+  await writeFile(join(collectionState.dir, 'inbox', tape.id, 'Take.jpg'), 'source poster')
+  await writeFile(join(collectionState.dir, 'inbox', tape.id, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   registerExportHandlers()
 })
 
@@ -82,7 +82,7 @@ describe('export:files rollback ownership', () => {
     })
     await expect(failure).rejects.toThrow('The operation could not be completed.')
     expect(await readdir(state.destinationDir)).toEqual([])
-    expect(await readFile(join(libraryState.dir, 'inbox', tape.id, 'Take.mp4'), 'utf8')).toBe('source video')
+    expect(await readFile(join(collectionState.dir, 'inbox', tape.id, 'Take.mp4'), 'utf8')).toBe('source video')
   })
 
   it('keeps rollback cleanup details in diagnostics while the rejection stays authored', async () => {

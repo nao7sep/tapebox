@@ -24,23 +24,23 @@ import { message } from '@shared/i18n/translate'
 import { nowUtcIso } from '@shared/utc'
 
 /**
- * export:files — copy a tape out of the library, verbatim. No transcoding:
+ * export:files — copy a tape out of the collection, verbatim. No transcoding:
  * TapeBox is a thin wrapper, not a converter. The media and its thumbnail (if any)
  * are byte-for-byte copies; the sidecar is copied with a tapebox section written
- * from the catalog under the exported names, so the bundle stays re-importable,
+ * from its tape.json under the exported names, so the bundle stays re-importable,
  * and with renamedAtUtc set when the name changes. All three land in
  * destinationDir under `name`.
  *
  * Pre-flight refuses if any destination file already exists, so a partial export
  * can't half-overwrite something in the user's folder. When deleteFromApp is set,
- * the tape is then removed from the library (its originals trashed/deleted per the
+ * the tape is then removed from the collection (its originals trashed/deleted per the
  * Trash setting), making export a "move out".
  */
 export function registerExportHandlers(): void {
-  // A library turn: the export reads the library's files and, with
+  // A collection turn: the export reads the collection's files and, with
   // deleteFromApp, removes them.
   handle('export:files', (req) => runCancellable((signal) =>
-    withCollectionTurn((libraryDir) => exportTape(req, libraryDir, signal))))
+    withCollectionTurn((collectionDir) => exportTape(req, collectionDir, signal))))
 }
 
 /**
@@ -51,7 +51,7 @@ export function registerExportHandlers(): void {
  */
 async function exportTape(
   { tapeId, destinationDir, name, deleteFromApp }: IpcCalls['export:files']['req'],
-  libDir: string,
+  collectionDir: string,
   signal: AbortSignal,
 ): Promise<IpcCalls['export:files']['res']> {
   const tape = session.getTape(tapeId)
@@ -83,10 +83,10 @@ async function exportTape(
   // Read the sidecar and write its tapebox section UP FRONT — before any file is
   // copied out — so a corrupt source sidecar fails the export before it leaves
   // partial files in the user's folder.
-  const original = await readSidecarFile(tapeFile(libDir, tape, tape.sidecarFilename))
+  const original = await readSidecarFile(tapeFile(collectionDir, tape, tape.sidecarFilename))
   const sidecar = JSON.parse(maskUrlCredentials(maskYtdlpOutput(JSON.stringify(original)))) as Record<string, unknown>
   const tb = exportNamespace(sidecar, tape)
-  // The catalog's source URL leaves under the same masking as the sidecar.
+  // The tape's source URL leaves under the same masking as the sidecar.
   tb['sourceUrl'] = maskUrlCredentials(maskYtdlpOutput(tape.sourceUrl))
   // Exporting under another name renames the bundle, so the sidecar records when.
   if (tb['name'] !== cleanName) tb['renamedAtUtc'] = nowUtcIso()
@@ -101,10 +101,10 @@ async function exportTape(
   const committed: string[] = []
   try {
     const hardLinks = await directorySupportsHardLinks(destinationDir)
-    await copyFileNoOverwrite(tapeFile(libDir, tape, tape.filename), mediaDst, { hardLinks, signal })
+    await copyFileNoOverwrite(tapeFile(collectionDir, tape, tape.filename), mediaDst, { hardLinks, signal })
     committed.push(mediaDst)
     if (thumbDst && tape.thumbnailFilename) {
-      await copyFileNoOverwrite(tapeFile(libDir, tape, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
+      await copyFileNoOverwrite(tapeFile(collectionDir, tape, tape.thumbnailFilename), thumbDst, { hardLinks, signal })
       committed.push(thumbDst)
     }
     signal.throwIfAborted()
@@ -125,11 +125,11 @@ async function exportTape(
 
   log.info('export:files', { tapeId, destinationDir, deleteFromApp, count: writtenPaths.length })
 
-  // Copies are safely written; only now take the tape out of the library. The copy
+  // Copies are safely written; only now take the tape out of the collection. The copy
   // already succeeded, so a discard failure must say "exported, but the original
   // wasn't removed" rather than leave an untracked orphan while claiming success.
   if (deleteFromApp) {
-    const { failed } = await removeTapesFrom(libDir, [tapeId], true)
+    const { failed } = await removeTapesFrom(collectionDir, [tapeId], true)
     if (failed.length > 0) {
       throw new UserFacingError('conflict', message('errors.exportOriginalsKept'))
     }

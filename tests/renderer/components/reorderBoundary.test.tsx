@@ -145,7 +145,7 @@ afterEach(async () => {
 })
 
 describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC, sync and shelf.json', (kind) => {
-  it.each([false, true])('keeps the latest order when saves fail, as any library edit (earlier failure: %s)', async (firstFails) => {
+  it.each([false, true])('keeps the latest order when saves fail, as any collection edit (earlier failure: %s)', async (firstFails) => {
     if (kind === 'tapes') {
       ids.forEach((id, order) => session.upsertTape(tape(id, order)))
       useTapesStore.getState().setAll(session.getTapes())
@@ -168,13 +168,13 @@ describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC,
     await second.held
     await act(async () => { second.release(); await bridge.calls[1] })
 
-    // A failed save keeps the edit in the library; the save owner retries and reports it.
+    // A failed save keeps the edit in the collection; the save owner retries and reports it.
     const main = kind === 'tapes' ? session.getTapes() : session.getBoxes()
     const renderer = kind === 'tapes' ? useTapesStore.getState().tapes : useBoxesStore.getState().boxes
     expect(identityOrder(main)).toEqual([ids[1], ids[2], ids[0]])
     expect(renderer).toEqual(main)
     expect(useOrderFailuresStore.getState().pending).toEqual({})
-    expect(kind === 'tapes' ? useOrderFailuresStore.getState().shelfTapes.unboxed ?? null : useOrderFailuresStore.getState().boxes).toBeNull()
+    expect(kind === 'tapes' ? useOrderFailuresStore.getState().shelfTapes.loose ?? null : useOrderFailuresStore.getState().boxes).toBeNull()
     await session.persistNow()
     const saved = await readCollection(directory)
     if (saved.kind !== 'current') throw new Error('expected the current collection layout')

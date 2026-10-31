@@ -68,9 +68,9 @@ button:disabled {
   --color-sticky: #f4f4f5f2;
   /* Behind a modal. */
   --color-backdrop: #18181b66;
-  /* A settled tape row, an archived one, a neutral panel. */
+  /* A settled tape row, a shelved one, a neutral panel. */
   --color-row: #fafafa;
-  --color-row-archived: #f4f4f5;
+  --color-row-shelved: #f4f4f5;
   --color-neutral-tint: #fafafa;
   /* A progress fill. */
   --color-progress: #3f3f46;
@@ -182,7 +182,7 @@ button:disabled {
       --color-sticky: #27272af2;
       --color-backdrop: #09090bcc;
       --color-row: #18181b99;
-      --color-row-archived: #09090b66;
+      --color-row-shelved: #09090b66;
       --color-neutral-tint: #18181b66;
       --color-progress: #e4e4e7;
       --color-inverse: #fafafa;

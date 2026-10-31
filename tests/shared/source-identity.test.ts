@@ -14,7 +14,7 @@ function tape(overrides: Partial<Tape>): Tape {
   })
 }
 
-describe('library source identity', () => {
+describe('collection source identity', () => {
   it('matches the same URL with tracking parameters or a fragment added', () => {
     const index = collectionSourceIndex([tape({})])
     expect(index.find({ url: 'https://www.youtube.com/watch?v=X&si=abc#t=3' })).toBe('Tape000001')

@@ -1,7 +1,7 @@
 import { useSelectionStore } from '@renderer/store/selection'
 
 /**
- * Select a tape. Used wherever a tape row is clicked or arrowed to (inbox, archive
+ * Select a tape. Used wherever a tape row is clicked or arrowed to (Inbox, Shelf
  * box, search results). Clicking a row also hands Up/Down to that list for free:
  * the row is a non-focusable option inside its focusable listbox container, so the
  * click focuses the container. A thin wrapper kept as the single named selection

@@ -14,7 +14,7 @@ export class StoreAccessError extends Error {
 }
 
 /**
- * The library folder saved in config.json could not be used. Library work needs
+ * The collection folder saved in config.json could not be used. Collection work needs
  * it, and the built-in folder would be the wrong place, so startup stops and the
  * file is left as it is.
  */
@@ -22,7 +22,7 @@ export class CollectionFolderSettingError extends Error {
   readonly path: string
 
   constructor(path: string) {
-    super(`The library folder saved in ${path} could not be read`)
+    super(`The collection folder saved in ${path} could not be read`)
     this.name = 'CollectionFolderSettingError'
     this.path = path
   }

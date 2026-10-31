@@ -8,7 +8,7 @@ import { z } from 'zod'
 const recordedUtc = z.iso.datetime({ offset: true })
   .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/)
 
-/** Validate present fields that enter the catalog; unrelated yt-dlp data is opaque. */
+/** Validate present fields that enter the collection; unrelated yt-dlp data is opaque. */
 function consumedFieldsValid(sidecar: Record<string, unknown>, fields: Record<string, unknown>): boolean {
   for (const key of ['id', 'extractor', 'title', 'uploader']) {
     if (sidecar[key] != null && typeof sidecar[key] !== 'string') return false
@@ -23,10 +23,10 @@ function consumedFieldsValid(sidecar: Record<string, unknown>, fields: Record<st
   return true
 }
 
-// The pure decisions behind `library:import`, lifted out of the IPC handler: the
+// The pure decisions behind `collection:import`, lifted out of the IPC handler: the
 // sidecar-shape accept/reject classification and the ~25-field Tape construction. The
 // handler keeps the filesystem and session work (reading files, the
-// already-in-library check, copying into the library); these decide.
+// already-in-collection check, copying into the collection); these decide.
 
 export type ImportClassification =
   | { status: 'reject'; reason: Message }
@@ -35,7 +35,7 @@ export type ImportClassification =
 /**
  * Decide whether a parsed sidecar names a TapeBox bundle that can be imported,
  * pulling out the fields the handler needs. The remaining reject reasons —
- * already in the library, media file missing beside the sidecar — depend on the
+ * already in the collection, media file missing beside the sidecar — depend on the
  * session and filesystem and stay in the handler.
  */
 export function classifyImport(sidecar: unknown): ImportClassification {
@@ -86,7 +86,7 @@ export function classifyImport(sidecar: unknown): ImportClassification {
 }
 
 /**
- * Build the library Tape from an imported sidecar after checking consumed fields.
+ * Build the collection's Tape from an imported sidecar after checking consumed fields.
  * Identity, naming, ordering, and the
  * resolved thumbnail are passed in (they depend on nanoid / the order window /
  * filesystem). A time the sidecar does not record stays empty; the import does not
@@ -108,7 +108,7 @@ export function tapeFromSidecar(
   },
 ): Tape {
   const tb = (sidecar['tapebox'] as Record<string, unknown> | undefined) ?? {}
-  if (!consumedFieldsValid(sidecar, tb)) throw new Error('The sidecar has invalid catalog fields')
+  if (!consumedFieldsValid(sidecar, tb)) throw new Error('The sidecar has invalid tape fields')
   const recordedTime = (key: string): string | null => typeof tb[key] === 'string' ? new Date(tb[key]).toISOString() : null
   const downloadedAtUtc = recordedTime('downloadedAtUtc')
   return {

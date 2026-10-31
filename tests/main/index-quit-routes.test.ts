@@ -13,7 +13,7 @@ import { EXIT_DEADLINE_MS } from '@main/quit'
 // delay the OS: the macOS quit never shows the failed-save question and ends
 // within the exit deadline, and the Windows handler drains the records,
 // kills the owned download tools and exits before it returns, with no
-// synchronous catalog write. quit.test.ts covers the quit's own steps and deadline.
+// synchronous collection write. quit.test.ts covers the quit's own steps and deadline.
 
 type Handler = (...args: unknown[]) => unknown
 
@@ -99,8 +99,9 @@ vi.mock('@main/io/records', () => ({ flushRecords: vi.fn(async () => {}), closeR
 vi.mock('@main/records-window', () => ({ notifyRecordsChanged: vi.fn() }))
 vi.mock('@main/store/config', () => ({ getSettings: () => ({ language: 'en', theme: 'system', keepAwakeWhilePlaying: true }), loadSettings: vi.fn(async () => ({ status: 'loaded' })) }))
 vi.mock('@main/store/dependencies', () => ({ loadDependencies: vi.fn(async () => {}) }))
-// Every catalog save fails: a user's quit would ask; a session end must not.
-vi.mock('@main/store/session', () => ({ loadSession: vi.fn(async () => ({ status: 'loaded' })), persistNow: vi.fn(async () => { state.order.push('save-library'); return false }) }))
+vi.mock('@main/store/stored-names', () => ({ convertStoredNames: vi.fn(async () => {}) }))
+// Every collection save fails: a user's quit would ask; a session end must not.
+vi.mock('@main/store/session', () => ({ loadSession: vi.fn(async () => ({ status: 'loaded' })), persistNow: vi.fn(async () => { state.order.push('save-collection'); return false }) }))
 vi.mock('@main/store/layout', () => ({ loadLayout: vi.fn(async () => {}), persistNow: vi.fn(async () => {}) }))
 vi.mock('@main/ipc/index', () => ({ registerIpcHandlers: vi.fn() }))
 vi.mock('@main/ipc/binaries', () => ({ resumeBinaryOperations: vi.fn(), shutdownBinaryOperations: vi.fn(async () => {}) }))
@@ -214,7 +215,7 @@ describe('the quit questions', () => {
       closeLabel: 'common.cancel',
       actions: [{ id: 'quit-anyway', label: 'quit.collectionNotSaved.quitAnyway', danger: true }],
     })
-    expect(state.order).not.toContain('save-library')
+    expect(state.order).not.toContain('save-collection')
     expect(state.order).not.toContain('stop-downloads')
   })
 
@@ -230,7 +231,7 @@ describe('the quit questions', () => {
   it('asks nothing about work when none is running', async () => {
     await launch()
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
-    await until(() => state.order.includes('save-library'))
+    await until(() => state.order.includes('save-collection'))
     expect(state.order[0]).toBe('drafts')
     expect(state.order).not.toContain('work-dialog')
   })
@@ -271,7 +272,7 @@ describe('an OS session end delivered to the Electron entry', () => {
     state.app.get('before-quit')!(quitEvent)
     await until(() => state.order.at(-1) === 'app-exit')
     expect(state.order).not.toContain('dialog')
-    expect(state.order).toEqual(['save-library', 'stop-downloads', 'save-library', 'close-records', 'kill-tools', 'app-exit'])
+    expect(state.order).toEqual(['save-collection', 'stop-downloads', 'save-collection', 'close-records', 'kill-tools', 'app-exit'])
   })
 
   it('macOS: work that stalls at a session end is forced off at the exit deadline', async () => {
@@ -310,7 +311,7 @@ describe('a quit that begins during startup', () => {
     state.app.get('before-quit')!({ preventDefault: vi.fn() })
     state.releaseLanguage()
     await until(() => state.windows.length === 1)
-    expect(state.order).toEqual(['drafts', 'save-library', 'dialog', 'resume'])
+    expect(state.order).toEqual(['drafts', 'save-collection', 'dialog', 'resume'])
   })
 })
 
@@ -408,6 +409,6 @@ describe('renderer reload consent', () => {
     state.reload(window, force)
     await until(() => (force ? state.reloadIgnoringCache : state.reloadPage).mock.calls.length === 1)
     expect(state.order).not.toContain('stop-downloads')
-    expect(state.order).not.toContain('save-library')
+    expect(state.order).not.toContain('save-collection')
   })
 })

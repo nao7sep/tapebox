@@ -51,7 +51,7 @@ export type TapeListDropPlan = {
   toIndex: number
 }
 
-/** Map a completed library sort into TapeBox's one durable inbox operation. */
+/** Map a completed sort within one tape list into its durable reorder. */
 export function planTapeListDrop(event: DragEndEvent): TapeListDropPlan | null {
   const { operation } = event
   if (event.canceled || !isSortableOperation(operation)) return null
@@ -71,7 +71,7 @@ export type ShelfDropPlan =
   | { kind: 'reorder-tape'; tapeId: string; fromIndex: number; toIndex: number }
   | { kind: 'move-tape'; tapeId: string; boxId: string | null }
 
-/** Map one archive release to reorder-within-list or move-to-semantic-box. */
+/** Map one Shelf release to reorder-within-list or move-to-semantic-box. */
 export function planShelfDrop(event: DragEndEvent): ShelfDropPlan | null {
   if (event.canceled) return null
   const { source, target } = event.operation

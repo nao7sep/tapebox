@@ -10,12 +10,12 @@ import { until } from '../helpers/until'
 
 // The real loopback server, driven over real HTTP — the point of this module is
 // what Chromium's media stack receives, so nothing about the request path is
-// substituted. Library location and logging are stubbed; targeted filesystem
+// substituted. Collection location and logging are stubbed; targeted filesystem
 // gates exercise disconnects during metadata and streaming.
 // `unreadable` names paths whose read fails after the file stats fine — a disk
 // going bad mid-playback, which no fixture can stage honestly.
 const mocks = vi.hoisted(() => ({
-  libraryDir: '',
+  collectionDir: '',
   server: null as import('node:http').Server | null,
   statGate: null as (() => Promise<void>) | null,
   streams: [] as import('node:stream').Readable[],
@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
-vi.mock('@main/store/config', () => ({ getCollectionDir: () => mocks.libraryDir }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => mocks.collectionDir }))
 // The server finds a tape's folder from the tape itself; this one is on the Shelf.
 vi.mock('@main/store/session', () => ({
   getTape: (id: string) => id === 'Tape000001' ? { id, shelved: true } : undefined,
@@ -71,8 +71,8 @@ const TAPE = 'Tape000001'
 let folder: string
 
 beforeAll(async () => {
-  mocks.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-media-server-'))
-  folder = join(mocks.libraryDir, 'shelf', TAPE)
+  mocks.collectionDir = await mkdtemp(join(tmpdir(), 'tapebox-media-server-'))
+  folder = join(mocks.collectionDir, 'shelf', TAPE)
   await mkdir(folder, { recursive: true })
   await writeFile(join(folder, 'tape.mp4'), BODY, 'utf8')
   await writeFile(join(folder, 'poster.jpg'), BODY, 'utf8')
@@ -94,7 +94,7 @@ afterEach(() => {
 
 afterAll(async () => {
   await stopMediaServer()
-  await rm(mocks.libraryDir, { recursive: true, force: true })
+  await rm(mocks.collectionDir, { recursive: true, force: true })
 })
 
 function get(path: string, init?: RequestInit): Promise<Response> {
@@ -116,7 +116,7 @@ describe('the media server lifecycle', () => {
   })
 })
 
-describe('serving a library file', () => {
+describe('serving a collection file', () => {
   it('does not open a stream after the client disconnects during metadata lookup', async () => {
     let release!: () => void
     let entered!: () => void
@@ -276,7 +276,7 @@ describe('what the server refuses', () => {
   })
 
   it.each([
-    ['a traversal out of the library', '..%2F..%2Fetc%2Fpasswd'],
+    ['a traversal out of the collection', '..%2F..%2Fetc%2Fpasswd'],
     ['a backslash path', 'sub%5Ctape.mp4'],
     ['a null byte', 'tape.mp4%00.txt'],
     ['an empty name', ''],
@@ -287,7 +287,7 @@ describe('what the server refuses', () => {
   })
 
   it.each([
-    ['a file type the library never holds', 'notes.txt', 404],
+    ['a file type the collection never holds', 'notes.txt', 404],
     ['a file that is not there', 'missing.mp4', 404],
     ['a directory named like a tape', 'folder.mp4', 404],
   ])('answers 404 for %s', async (_case, name, status) => {
@@ -295,8 +295,8 @@ describe('what the server refuses', () => {
   })
 
   it('refuses a tape the collection does not hold, even with a folder of its own', async () => {
-    await mkdir(join(mocks.libraryDir, 'inbox', 'Unknown001'), { recursive: true })
-    await writeFile(join(mocks.libraryDir, 'inbox', 'Unknown001', 'tape.mp4'), BODY, 'utf8')
+    await mkdir(join(mocks.collectionDir, 'inbox', 'Unknown001'), { recursive: true })
+    await writeFile(join(mocks.collectionDir, 'inbox', 'Unknown001', 'tape.mp4'), BODY, 'utf8')
 
     // Refused as any request that names no file of the collection is.
     expect((await fetch(`${base}/Unknown001/tape.mp4`)).status).toBe(403)

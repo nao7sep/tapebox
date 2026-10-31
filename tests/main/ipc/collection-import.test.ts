@@ -12,11 +12,11 @@ import type { Message } from '@shared/i18n/translate'
 import { inEnglish } from '../../helpers/i18n'
 
 // Importing a bundle someone exported: the sidecar names its media and poster,
-// and this boundary decides what comes into the library, what is refused and
+// and this boundary decides what comes into the collection, what is refused and
 // what the user is told about the rest of their selection. Real files and real
-// copies throughout; only the catalogue, the log and the event bus are stood in
+// copies throughout; only the session, the log and the event bus are stood in
 // for, so an import that reports success has really landed on disk. Each
-// imported tape gets its own folder, named by its id, under the library's inbox/.
+// imported tape gets its own folder, named by its id, under the collection's inbox/.
 type ImportResult = { imported: Tape[]; issues: Array<{ path: string; reason: string; severity: string }> }
 
 const handlers = new Map<string, (req: unknown) => unknown>()
@@ -29,7 +29,7 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
 
-const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[] }))
+const state = vi.hoisted(() => ({ collectionDir: '', tapes: [] as Tape[] }))
 const emit = vi.hoisted(() => vi.fn())
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
@@ -48,7 +48,7 @@ vi.mock('@main/store/session', () => ({
   reorderTapesDurably: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => state.libraryDir,
+  getCollectionDir: () => state.collectionDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
@@ -63,9 +63,9 @@ const { withCollectionMove } = await import('@main/collection-writes')
 let root: string
 let sourceDir: string
 
-/** An Inbox tape's own folder inside the library. */
+/** An Inbox tape's own folder inside the collection. */
 function folder(id: string): string {
-  return join(state.libraryDir, 'inbox', id)
+  return join(state.collectionDir, 'inbox', id)
 }
 
 /** Writes a bundle beside its sidecar and returns the sidecar's path. */
@@ -135,11 +135,11 @@ beforeEach(async () => {
   vi.clearAllMocks()
   root = await mkdtemp(join(tmpdir(), 'tapebox-import-'))
   sourceDir = join(root, 'source')
-  state.libraryDir = join(root, 'library')
+  state.collectionDir = join(root, 'collection')
   state.tapes = []
   await mkdir(sourceDir)
   // A fresh collection has no inbox/ folder yet; import makes it.
-  await mkdir(state.libraryDir, { recursive: true })
+  await mkdir(state.collectionDir, { recursive: true })
   registerCollectionHandlers()
 })
 
@@ -167,10 +167,10 @@ describe('importing a bundle', () => {
       addedIndex: 0,
     })
     expect([...state.tapes].sort(compareInbox).map((entry) => entry.id), 'added later, it sorts above the older tape').toEqual([tape.id, 'already-here'])
-    expect(await readdir(join(state.libraryDir, 'inbox')), 'the bundle lands in its own folder').toEqual([tape.id])
+    expect(await readdir(join(state.collectionDir, 'inbox')), 'the bundle lands in its own folder').toEqual([tape.id])
     expect((await readdir(folder(tape.id))).sort()).toEqual(['holiday.jpg', 'holiday.json', 'holiday.mp4'])
     expect(await readFile(join(folder(tape.id), 'holiday.mp4'), 'utf8')).toBe('video for holiday')
-    // The tape's own file holds the bundle's catalog fields; the library sidecar keeps only the media facts.
+    // The tape's own file holds the bundle's record of the tape; the collection's sidecar keeps only the media facts.
     const kept = JSON.parse(await readFile(join(folder(tape.id), 'holiday.json'), 'utf8'))
     expect(kept.tapebox).toEqual({ media: null })
     expect(state.tapes.map((entry) => entry.id)).toContain(tape.id)
@@ -195,14 +195,14 @@ describe('importing a bundle', () => {
     expect(await readFile(join(folder('has-trip'), 'trip.mp4'), 'utf8'), 'the other tape is untouched').toBe('the other tape')
   })
 
-  it('waits for a library move to end before copying anything', async () => {
+  it('waits for a collection move to end before copying anything', async () => {
     const sidecar = await stageBundle({ stem: 'late' })
     let finishMove!: () => void
     const moving = withCollectionMove(() => new Promise<void>((resolve) => { finishMove = resolve }))
 
     const importing = importPaths(sidecar)
     await new Promise((resolve) => setImmediate(resolve))
-    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(await readdir(state.collectionDir)).toEqual([])
 
     finishMove()
     await moving
@@ -219,10 +219,10 @@ describe('importing a bundle', () => {
 
     expect(result.imported).toEqual([])
     expect(result.issues).toEqual([expect.objectContaining({ path: sidecar, reason: 'Already in the collection.' })])
-    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(await readdir(state.collectionDir)).toEqual([])
   })
 
-  it('names the library copies after the media file, not after the sidecar', async () => {
+  it('names the collection copies after the media file, not after the sidecar', async () => {
     const sidecar = await stageBundle({ stem: 'holiday', sidecarName: 'renamed-by-hand.json' })
 
     const result = await importPaths(sidecar)
@@ -267,13 +267,13 @@ describe('importing a bundle', () => {
     ])
   })
 
-  it('imports a bundle that already sits in the library without copying over itself', async () => {
-    const sidecar = await stageBundle({ stem: 'inplace', dir: state.libraryDir })
+  it('imports a bundle that already sits in the collection without copying over itself', async () => {
+    const sidecar = await stageBundle({ stem: 'inplace', dir: state.collectionDir })
 
     const result = await importPaths(sidecar)
 
     expect(result.imported).toHaveLength(1)
-    expect(await readFile(join(state.libraryDir, 'inplace.mp4'), 'utf8')).toBe('video for inplace')
+    expect(await readFile(join(state.collectionDir, 'inplace.mp4'), 'utf8')).toBe('video for inplace')
     expect(await readFile(join(folder(result.imported[0].id), 'inplace.mp4'), 'utf8')).toBe('video for inplace')
   })
 })
@@ -323,7 +323,7 @@ describe('what the import refuses, and what it says', () => {
     expect(result.issues).toEqual([
       expect.objectContaining({ severity: 'information', reason: 'Already in the collection.' }),
     ])
-    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(await readdir(state.collectionDir)).toEqual([])
   })
 
   it('says which media file is missing beside its sidecar', async () => {
@@ -334,7 +334,7 @@ describe('what the import refuses, and what it says', () => {
     expect(result.issues).toEqual([
       expect.objectContaining({ severity: 'warning', reason: 'The media file holiday.mp4 is missing beside the sidecar.' }),
     ])
-    expect(await readdir(state.libraryDir)).toEqual([])
+    expect(await readdir(state.collectionDir)).toEqual([])
   })
 
   it('explains the files in the selection that no sidecar accounted for', async () => {

@@ -61,11 +61,11 @@ const TAPE = {
 
 describe('shelf.json', () => {
   beforeEach(async () => {
-    await mkdir(join(root, 'library'), { recursive: true })
+    await mkdir(join(root, 'collection'), { recursive: true })
     await (await import('@main/store/config')).loadSettings()
   })
   const session = () => import('@main/store/session')
-  const path = () => join(root, 'library', 'shelf.json')
+  const path = () => join(root, 'collection', 'shelf.json')
   const SHELF_BOX = { id: BOX.id, name: BOX.name, tapeIds: [] }
 
   it('reads an unmarked current-shape file and marks it at the next save', async () => {
@@ -115,12 +115,12 @@ describe('shelf.json', () => {
 
 describe('tape.json', () => {
   beforeEach(async () => {
-    await mkdir(join(root, 'library', 'inbox', TAPE.id), { recursive: true })
-    await writeFile(join(root, 'library', 'shelf.json'), JSON.stringify({ formatVersion: 1, boxes: [], loose: [] }))
+    await mkdir(join(root, 'collection', 'inbox', TAPE.id), { recursive: true })
+    await writeFile(join(root, 'collection', 'shelf.json'), JSON.stringify({ formatVersion: 1, boxes: [], loose: [] }))
     await (await import('@main/store/config')).loadSettings()
   })
   const session = () => import('@main/store/session')
-  const path = () => join(root, 'library', 'inbox', TAPE.id, 'tape.json')
+  const path = () => join(root, 'collection', 'inbox', TAPE.id, 'tape.json')
 
   it('reads an unmarked current-shape file and marks it at the next save', async () => {
     await writeFile(path(), JSON.stringify(TAPE))

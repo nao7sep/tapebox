@@ -16,7 +16,7 @@ const source = vi.hoisted(() => ({ sidecarFilename: null as string | null, read:
 vi.mock('@main/store/session', () => ({
   getTape: (id: string) => ({ id, shelved: false, title: 'A Title', uploader: 'Someone', sidecarFilename: source.sidecarFilename }),
 }))
-vi.mock('@main/store/config', () => ({ getCollectionDir: () => '/library' }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => '/collection' }))
 vi.mock('@main/core/sidecar', () => ({ readSidecarFile: source.read }))
 
 const seenSignals = vi.hoisted(() => [] as AbortSignal[])
@@ -40,7 +40,7 @@ describe('AI name suggestion', () => {
     source.sidecarFilename = 't1.json'
     source.read.mockRejectedValue(new Error(failure))
     await expect(handlers.get('ai:generateSlug')!({ tapeId: 't1', requestId: 'failed-input', include: { title: true, uploader: false, description: true } })).rejects.toThrow()
-    expect(source.read).toHaveBeenCalledWith('/library/inbox/t1/t1.json')
+    expect(source.read).toHaveBeenCalledWith('/collection/inbox/t1/t1.json')
     expect(seenSignals).toHaveLength(0)
   })
 

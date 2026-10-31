@@ -96,7 +96,7 @@ describe('relocateCollection', () => {
 
   it('relocates from the default folder to a custom one (default→custom)', async () => {
     // The caller resolves blank→default before calling; here fromDir stands in for
-    // the resolved default library folder and toDir for a chosen custom folder.
+    // the resolved default collection folder and toDir for a chosen custom folder.
     await seed(fromDir, 'x.webm', 'x')
     await seed(fromDir, 'x.json', 'xj')
 
@@ -117,7 +117,7 @@ describe('relocateCollection', () => {
 
   it('leaves unrelated files in the source untouched', async () => {
     await seed(fromDir, 'a.mp4', 'video')
-    await seed(fromDir, 'notes.txt', 'mine') // not a tracked library file
+    await seed(fromDir, 'notes.txt', 'mine') // not a tracked collection file
 
     await relocateCollection(fromDir, toDir, ['a.mp4'])
 
@@ -126,7 +126,7 @@ describe('relocateCollection', () => {
     expect(await exists(join(toDir, 'a.mp4'))).toBe(true)
   })
 
-  it('skips a catalog entry whose source file is already gone', async () => {
+  it('skips a listed file whose source file is already gone', async () => {
     await seed(fromDir, 'a.mp4', 'video')
     // 'a.json' is named but missing on disk — relocation should move what exists and
     // not fail on the missing one.
@@ -192,15 +192,15 @@ describe('relocateCollection', () => {
     await mkdir(join(fromDir, 'Tape000001'))
     await seed(fromDir, join('Tape000001', 'a.mp4'), 'video')
     await seed(fromDir, join('Tape000001', 'a.json'), 'sidecar')
-    await seed(fromDir, 'catalog.json', 'catalog')
+    await seed(fromDir, 'shelf.json', 'shelf')
     await mkdir(join(toDir, 'tape000001'), { recursive: true })
 
-    await expect(relocateCollection(fromDir, toDir, ['catalog.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')]))
+    await expect(relocateCollection(fromDir, toDir, ['shelf.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')]))
       .rejects.toThrow(/already contains/)
     expect(await names(join(toDir, 'tape000001'))).toEqual([])
 
     await rm(join(toDir, 'tape000001'), { recursive: true })
-    const result = await relocateCollection(fromDir, toDir, ['catalog.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')])
+    const result = await relocateCollection(fromDir, toDir, ['shelf.json', join('Tape000001', 'a.mp4'), join('Tape000001', 'a.json')])
     expect(await names(join(toDir, 'Tape000001'))).toEqual(['a.json', 'a.mp4'])
     await completeCollectionRelocation(result.moved ? result.files : [])
     expect(await names(fromDir), 'the emptied tape folder goes with its files').toEqual([])
@@ -250,7 +250,7 @@ describe('relocateCollection', () => {
     await paused
 
     // If the process stopped here, config.json would still name fromDir and both
-    // catalog-visible source paths remain complete despite partial publication.
+    // source paths the collection names remain complete despite partial publication.
     expect(await readFile(join(fromDir, 'a.mp4'), 'utf8')).toBe('video-a')
     expect(await readFile(join(fromDir, 'b.mp4'), 'utf8')).toBe('video-b')
     expect(await readFile(join(toDir, 'a.mp4'), 'utf8')).toBe('video-a')

@@ -34,7 +34,7 @@ const QUIET_SETS: ReadonlySet<string> = new Set(['theme', 'language'])
 export async function loadSettings(): Promise<ConfigLoadResult> {
   const found = await readSettingsStore(paths.config)
   if (found !== null && 'sets' in found) {
-    if (found.rejected.includes('libraryDir')) throw new CollectionFolderSettingError(paths.config)
+    if (found.rejected.includes('collectionDir')) throw new CollectionFolderSettingError(paths.config)
     cache = effectiveSettings(found.sets)
     kept = found.kept
     const material = found.rejected.filter((key) => !QUIET_SETS.has(key))
@@ -96,13 +96,13 @@ export function getSettings(): Settings {
 }
 
 /**
- * The resolved library directory every main consumer must use. An empty
- * libraryDir means "use the default", which resolves to paths.library; a set value is a custom folder used as-is. Routing all consumers
+ * The resolved collection directory every main consumer must use. An empty
+ * collectionDir means "use the default", which resolves to paths.collection; a set value is a custom folder used as-is. Routing all consumers
  * through this is what keeps a cleared Settings field from ever producing a
  * cwd-relative path (join('', file)) — see storage-path-conventions.
  */
 export function getCollectionDir(): string {
-  return getSettings().libraryDir || paths.library
+  return getSettings().collectionDir || paths.collection
 }
 
 // One serialized owner applies the cleaned patch to the cached settings and

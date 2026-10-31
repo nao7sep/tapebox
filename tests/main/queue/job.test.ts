@@ -11,9 +11,9 @@ import type { Tape } from '@shared/domain'
 
 const T0 = '2026-01-01T00:00:00.000Z'
 const T1 = '2026-06-26T00:00:00.000Z'
-const LIBRARY_DIR = join(tmpdir(), 'tapebox-job-library')
+const COLLECTION_DIR = join(tmpdir(), 'tapebox-job-collection')
 /** A queued tape's folder is in the Inbox. */
-const TAPE_DIR = join(LIBRARY_DIR, 'inbox', 't1')
+const TAPE_DIR = join(COLLECTION_DIR, 'inbox', 't1')
 
 function tape(over: Partial<Tape>): Tape {
   return {
@@ -106,8 +106,8 @@ function makeDeps(opts: {
         return opts.persistSucceeds ?? true
       },
     },
-    getCollectionDir: () => LIBRARY_DIR,
-    withCollectionTurn: (work) => work(LIBRARY_DIR),
+    getCollectionDir: () => COLLECTION_DIR,
+    withCollectionTurn: (work) => work(COLLECTION_DIR),
     emit: ((channel: string, payload: unknown) => {
       emits.push(channel)
       payloads.push(payload)
@@ -250,7 +250,7 @@ describe('Job lifecycle (driven with fakes)', () => {
     await new Job(t, deps).run()
     expect(tapes.get('t1')!.state).toBe('failed')
     expect(tapes.get('t1')!.failureCode).toBe('duplicate')
-    expect(tapes.get('t1')!.lastError).toMatch(/already in the library/)
+    expect(tapes.get('t1')!.lastError).toMatch(/already in the collection/)
   })
 
   it('records one probe time for a duplicate and its failure', async () => {

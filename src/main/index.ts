@@ -11,6 +11,7 @@ import { describeError } from '@shared/error'
 import { getSettings, loadSettings } from './store/config.js'
 import { loadDependencies } from './store/dependencies.js'
 import { loadSession, persistNow } from './store/session.js'
+import { convertStoredNames } from './store/stored-names.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import { resumeBinaryOperations, shutdownBinaryOperations } from './ipc/binaries.js'
@@ -191,6 +192,9 @@ async function startup(): Promise<void> {
   }
 
   await afterQuit()
+  // Names stored before the rename to collection and Shelf, converted before
+  // the settings that point at the collection are read.
+  await convertStoredNames()
   const configResult = await loadSettings()
   await applyLanguagePreference(getSettings().language)
   registerLanguageHandlers()
@@ -221,7 +225,7 @@ async function startup(): Promise<void> {
   // ~/.tapebox/backups.sqlite3 through a FIFO queue after its atomic rename lands (see
   // store/backupStore.ts and io/atomic-json.ts). There is nothing to kick off here.
 
-  // If the catalog was unreadable, it was set aside (never wiped), and a tape
+  // If shelf.json or the old catalog was unreadable, it was set aside (never wiped), and a tape
   // file that could not be read was left as it is; tell the user at the app edge — the session store stays UI-free.
   await afterQuit()
   if (sessionResult.status === 'recovered') {
@@ -270,7 +274,7 @@ setReloadRequest((window, force) => { void reload.request(window, force) })
 
 /** The quit's steps; quit.ts owns their order and the exit deadline. Stopping work stops
  * downloads, tool installs, scans and other in-flight work, whose child
- * processes and library writes must not outlive the app; a download stopped
+ * processes and collection writes must not outlive the app; a download stopped
  * here resumes at the next launch. The media server is in-process, so it dies
  * with this process. */
 const quit = createQuit({
@@ -321,7 +325,7 @@ const quit = createQuit({
 })
 
 /** App-owned work quit would stop: downloads, tool installs, page scans and
- * user-started operations such as exports, imports and library moves. Queued
+ * user-started operations such as exports, imports and collection moves. Queued
  * downloads are not running; they start again at the next launch. */
 function workIsRunning(): boolean {
   return queue.hasActiveJobs() || hasInstalls() || hasActiveScans() || hasRunningWork()
@@ -393,7 +397,7 @@ async function askAfterFailedCollectionSave(signal: AbortSignal): Promise<QuitCh
 
 // Global last-resort hooks. An uncaught exception is fatal: log it with full
 // fidelity, drain the records synchronously so that line lands, then force the
-// exit. The catalog keeps its last committed state (store/session.ts). An
+// exit. The collection keeps its last committed state (store/session.ts). An
 // unhandled rejection is logged but not fatal — a stray fire-and-forget should
 // not take a desktop app down, and a logged error at `error` level is a record,
 // not a silent swallow. Every other way out closes the records itself: a quit

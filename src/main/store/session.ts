@@ -411,7 +411,7 @@ export type RenameFields = Pick<Tape, 'filename' | 'sidecarFilename' | 'thumbnai
 /** Commit one tape's rename fields to its tape.json before publishing them. This
  * is the transaction boundary for a filesystem rename: new paths must not become
  * authoritative until the tape's durable file names them. At its turn in the save
- * order the library is written with the fields, which then apply to the row as
+ * order the collection is written with the fields, which then apply to the row as
  * it is by then; nothing else changes them meanwhile. Returns the current row. */
 export async function renameTapeDurably(id: string, fields: RenameFields): Promise<Tape> {
   assertLoaded()
@@ -502,7 +502,7 @@ export function removeBox(id: string): void {
   scheduleSave()
 }
 
-/** Position indexes are derived from the authoritative arrays, never a second catalog. */
+/** Position indexes are derived from the authoritative arrays, never a second record. */
 function rebuildIndexes(): void {
   tapePositions.clear()
   boxPositions.clear()
@@ -529,7 +529,7 @@ function cancelScheduledSave(): void {
  * unreadable or un-quarantinable file) can never overwrite the on-disk file with
  * the empty default.
  *
- * Resolves true once the catalog on disk matches the cache. A failed write is
+ * Resolves true once the collection on disk matches the cache. A failed write is
  * owned here rather than by the caller: the change stays in the cache (it already
  * happened — a finished download's files are on disk), the save is retried after
  * {@link SAVE_RETRY_AFTER_FAILURE_MS} and at quit, the failure listener tells the

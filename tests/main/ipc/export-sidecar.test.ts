@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tape } from '@shared/domain'
 
-// The library sidecar holds yt-dlp's info and the media facts; the exported
-// bundle's sidecar carries the catalog's record of the tape under the name it
+// The collection's sidecar holds yt-dlp's info and the media facts; the exported
+// bundle's sidecar carries the collection's record of the tape under the name it
 // leaves under, and when that name differs from the one it had, the rename that
 // export made, so the bundle can be imported from its sidecar alone.
 const handlers = new Map<string, (req: unknown) => unknown>()
@@ -30,11 +30,11 @@ const tape: Tape = {
   name: 'Take', renamedAtUtc: RENAMED_AT, addedIndex: 0, shelved: false, boxId: null, order: 0,
   pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
 }
-const libraryState = vi.hoisted(() => ({ dir: '' }))
+const collectionState = vi.hoisted(() => ({ dir: '' }))
 const MEDIA = { width: 640, height: 360, fps: 30, vcodec: 'h264', acodec: 'aac', durationSeconds: 1, bitrateKbps: 900 }
-const tapeFolder = () => join(libraryState.dir, 'inbox', tape.id)
+const tapeFolder = () => join(collectionState.dir, 'inbox', tape.id)
 vi.mock('@main/store/session', () => ({ getTape: () => tape }))
-vi.mock('@main/store/config', () => ({ getCollectionDir: () => libraryState.dir }))
+vi.mock('@main/store/config', () => ({ getCollectionDir: () => collectionState.dir }))
 vi.mock('@main/ipc/collection', () => ({
   caseInsensitiveSiblingExists: vi.fn(async () => false),
   removeTapesFrom: vi.fn(async () => ({ removed: [], failed: [] as string[] })),
@@ -52,7 +52,7 @@ beforeEach(async () => {
   handlers.clear()
   vi.mocked(removeTapesFrom).mockClear().mockResolvedValue({ removed: [], failed: [] })
   root = await mkdtemp(join(tmpdir(), 'tapebox-export-sidecar-'))
-  libraryState.dir = join(root, 'library')
+  collectionState.dir = join(root, 'collection')
   destinationDir = join(root, 'destination')
   await mkdir(tapeFolder(), { recursive: true })
   await mkdir(destinationDir)
@@ -82,7 +82,7 @@ describe('export:files sidecar', () => {
     expect(await readFile(join(tapeFolder(), 'Take.mp4'), 'utf8')).toBe('video')
   })
 
-  it('writes the catalog\'s record and the library\'s media facts, so the bundle imports again', async () => {
+  it('writes the collection\'s record and the sidecar\'s media facts, so the bundle imports again', async () => {
     await handlers.get('export:files')!({ tapeId: tape.id, destinationDir, name: 'Take', deleteFromApp: false })
     const exported = JSON.parse(await readFile(join(destinationDir, 'Take.json'), 'utf8')) as Record<string, unknown>
     expect(exported['tapebox']).toEqual({
@@ -96,7 +96,7 @@ describe('export:files sidecar', () => {
     })).toMatchObject({ name: 'Take', addedAtUtc: tape.addedAtUtc, downloadedAtUtc: tape.downloadedAtUtc, renamedAtUtc: RENAMED_AT })
   })
 
-  it('masks credentials in the catalog\'s source URL', async () => {
+  it('masks credentials in the tape\'s source URL', async () => {
     const original = tape.sourceUrl
     tape.sourceUrl = 'https://login:password@example.test/watch?v=1&signature=SIGN_SENTINEL'
     try {

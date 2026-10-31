@@ -17,7 +17,7 @@ export const SidecarPreviewContext = createContext<SidecarPreview | null>(null)
 
 /** The pane owns its preview; tools inherit it. Standalone tools own their read.
  * A metadata revision or collection replacement invalidates the complete result,
- * including errors, without keeping a library-sized cache of sidecar objects. */
+ * including errors, without keeping a collection-sized cache of sidecar objects. */
 export function useSidecarPreview(tape: Tape): SidecarPreview {
   const collection = useMediaStore((state) => state.collectionRevision)
   const key = JSON.stringify([collection, tape.id, tape.state, tape.sidecarFilename, tape.probedAtUtc])

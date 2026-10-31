@@ -58,14 +58,14 @@ describe('probeMedia', () => {
     const info = 'Duration: 00:01:05.50, start: 0.000000, bitrate: 512 kb/s'
     script.text = `process.stderr.write(${JSON.stringify(info)}); process.exit(1)`
 
-    const media = await probeMedia('t1', '/library/clip.mp4')
+    const media = await probeMedia('t1', '/collection/clip.mp4')
 
     expect(media).toMatchObject({ durationSeconds: 65.5, bitrateKbps: 512 })
     expect(writeRecord).toHaveBeenCalledOnce()
     const [table, row] = writeRecord.mock.calls[0]!
     expect(table).toBe('ffmpeg_runs')
     expect(row).toMatchObject({ tape_id: 't1', kind: 'probe', exit_code: 1, stderr: '' })
-    expect(JSON.parse(row.args)).toEqual(['-hide_banner', '-i', '/library/clip.mp4'])
+    expect(JSON.parse(row.args)).toEqual(['-hide_banner', '-i', '/collection/clip.mp4'])
     expect(writeRecord.mock.calls[0]![5]).toMatchObject({ succeeded: true, elapsedMs: expect.any(Number) })
   })
 })
@@ -74,7 +74,7 @@ it('rejects unrecognized ffmpeg media and records semantic failure', async () =>
   writeRecord.mockClear()
     writeOutputChunk.mockClear()
   script.text = "process.stderr.write('Invalid data found when processing input'); process.exit(1)"
-  await expect(probeMedia('t1', '/library/not-media.mp4')).rejects.toThrow('did not recognize')
+  await expect(probeMedia('t1', '/collection/not-media.mp4')).rejects.toThrow('did not recognize')
   expect(writeRecord.mock.calls[0]![1]).toMatchObject({ exit_code: 1, kind: 'probe' })
   expect(writeRecord.mock.calls[0]![5]).toMatchObject({ succeeded: false, elapsedMs: expect.any(Number) })
 })
@@ -106,7 +106,7 @@ it('keeps parsed probe metadata after long trailing warnings leave the stderr ta
   writeRecord.mockClear()
   writeOutputChunk.mockClear()
   script.text = "process.stderr.write('Duration: 00:01:05.50, bitrate: 512 kb/s\\nStream #0:0: Video: h264, 640x360, 30 fps\\nAudio: aac\\n'); process.stderr.write('warning\\n'.repeat(12000)); process.exit(1)"
-  expect(await probeMedia('t1', '/library/clip.mp4')).toMatchObject({ durationSeconds: 65.5, bitrateKbps: 512, vcodec: 'h264', width: 640, height: 360, fps: 30, acodec: 'aac' })
+  expect(await probeMedia('t1', '/collection/clip.mp4')).toMatchObject({ durationSeconds: 65.5, bitrateKbps: 512, vcodec: 'h264', width: 640, height: 360, fps: 30, acodec: 'aac' })
   expect(writeOutputChunk.mock.calls.filter((call) => call[1] === 'stderr').map((call) => call[3]).join('')).toContain('Duration: 00:01:05.50')
   expect(writeRecord.mock.calls[0]![5]).toMatchObject({ succeeded: true })
 })

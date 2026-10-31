@@ -11,7 +11,7 @@ import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 
 /**
- * Loopback HTTP server that streams library files to the renderer's
+ * Loopback HTTP server that streams collection files to the renderer's
  * <video>/<audio> elements.
  *
  * Why an HTTP server instead of a custom protocol: Chromium's media pipeline
@@ -24,7 +24,7 @@ import { describeError } from '@shared/error'
  * Security model (no auth server, no exotic crypto):
  *   - bound to 127.0.0.1 only, so it is never reachable off-machine;
  *   - every URL carries a random per-process token as its first path segment,
- *     so other local processes can't browse the library through the open port;
+ *     so other local processes can't browse the collection through the open port;
  *   - a request names a tape id and one flat file name in that tape's folder,
  *     with a known media extension — no traversal, no arbitrary files.
  *
@@ -50,7 +50,7 @@ const MIME_TYPES: Record<string, string> = {
   '.wav': 'audio/wav',
   '.flac': 'audio/flac',
   // Tape posters. Every thumbnail is normalized to JPEG by the image gate
-  // (ffmpeg.saveThumbnailJpeg), so .jpg is the only image type the library holds.
+  // (ffmpeg.saveThumbnailJpeg), so .jpg is the only image type the collection holds.
   '.jpg': 'image/jpeg',
 }
 
@@ -171,7 +171,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
     const start = range.kind === 'partial' ? range.start : 0
     const end = range.kind === 'partial' ? range.end : Math.max(0, size - 1)
-    // Deliberately no 'Cache-Control: no-store'. Library files are content-stable —
+    // Deliberately no 'Cache-Control: no-store'. Collection files are content-stable —
     // a rename changes the URL's filename, opening a collection changes its query,
     // and the token is per-process — so letting
     // Chromium cache and reuse byte ranges is safe, and it's what keeps seeking
@@ -211,10 +211,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 }
 
 /**
- * Resolve a requested tape file to an absolute path inside libraryDir, or null
+ * Resolve a requested tape file to an absolute path inside collectionDir, or null
  * if it escapes. The id must have a tape id's shape and the name must be a flat
  * basename, so any path separator is an immediate reject; the containment check
- * is belt-and-suspenders. libraryDir is read per request so a changed setting
+ * is belt-and-suspenders. collectionDir is read per request so a changed setting
  * is honored without a restart.
  */
 function resolveCollectionFile(tapeId: string, filename: string): string | null {

@@ -18,7 +18,7 @@ import { withCollectionTurn } from '@main/collection-writes'
 
 const DOWNLOAD_FAILURE_MESSAGE =
   'The download could not be completed. Check the source and your connection, then try again.'
-const DUPLICATE_FAILURE_MESSAGE = 'This video is already in the library, so it was not downloaded again.'
+const DUPLICATE_FAILURE_MESSAGE = 'This video is already in the collection, so it was not downloaded again.'
 
 /**
  * Everything the job lifecycle reaches into the rest of the app for. Injected so
@@ -73,7 +73,7 @@ export const defaultJobDeps: JobDeps = {
  * Single job lifecycle: probe -> download -> finalize sidecar.
  *
  * Cancellation is awaitable: cancel() returns the same Promise that run()
- * returns. The queue manager awaits this when other handlers (library:remove,
+ * returns. The queue manager awaits this when other handlers (collection:remove,
  * downloads:cancel) need the yt-dlp process to be gone before they touch disk.
  */
 export class Job {
@@ -166,10 +166,10 @@ export class Job {
   }
 
   /**
-   * Adopt a download that finished on disk before its catalog commit landed,
+   * Adopt a download that finished on disk before its tape.json commit landed,
    * instead of probing and downloading again over it (queue/finished-bundle.ts).
    * Returns true once the job is settled: adopted, or failed with the files kept.
-   * Runs at a library turn, so no file action changes ownership meanwhile.
+   * Runs at a collection turn, so no file action changes ownership meanwhile.
    */
   private async adoptFinishedDownload(): Promise<boolean> {
     const cur = this.current()
@@ -209,8 +209,8 @@ export class Job {
       return false
     }
     // Two URLs can resolve to the same video (e.g. a short share link and the
-    // canonical page), and we don't want two library rows for one video. The
-    // (extractor, id) pair is only known post-probe, so the library's identity
+    // canonical page), and we don't want two collection rows for one video. The
+    // (extractor, id) pair is only known post-probe, so the collection's identity
     // rule is checked again here with it.
     const duplicateOf = this.d.session.sourceOwner({
       url: this.current()!.sourceUrl,
@@ -315,11 +315,11 @@ export class Job {
     await this.d.sidecar.finalize({ infoJsonPath: result.infoJsonPath, sidecarPath, media })
     const downloadedAtUtc = this.d.now()
 
-    // The finished files are on disk; adding them to the library is this job's
-    // one library turn. Commit the row that names them before reporting success,
+    // The finished files are on disk; adding them to the collection is this job's
+    // one collection turn. Commit the row that names them before reporting success,
     // so a crash now cannot restore the tape as queued and have its next attempt
     // delete the finished download. The download is done either way: a failed
-    // catalog write is the session store's to retry and report, never a download
+    // collection write is the session store's to retry and report, never a download
     // failure that would invite a Retry over these files.
     const committed = await this.d.withCollectionTurn(() => {
       this.move({

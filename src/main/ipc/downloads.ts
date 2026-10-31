@@ -34,7 +34,7 @@ export function registerDownloadHandlers(): void {
     // of the same URL cannot both pass the check.
     const id = await reserveTapeId(getCollectionDir(), session.getTapes().map((tape) => tape.id))
     // Dedup by URL for the single-add path (no id yet — it's unprobed), with the
-    // library's one identity rule, so the same video pasted with tracking junk or a
+    // collection's one identity rule, so the same video pasted with tracking junk or a
     // fragment isn't added twice. Any existing tape blocks the add, in any state; a
     // failed one is resumed via Retry, not re-added.
     if (session.sourceOwner({ url: trimmed })) {
@@ -102,7 +102,7 @@ function transition(tapeId: string, move: TapeMove): void {
 }
 
 /**
- * Dedup by URL against the library and within the batch itself, so adding the
+ * Dedup by URL against the collection and within the batch itself, so adding the
  * same scan twice (or a list with repeats) can't create duplicate rows. The set
  * grows as it goes, which collapses intra-batch repeats too. Same-video-
  * different-URL collisions are caught later, post-probe, in the queue.
@@ -119,7 +119,7 @@ export function newUrls(tapes: readonly Tape[], urls: readonly string[]): string
 }
 
 /** A new tape for `url`. Its id doubles as the on-disk filename stem once the
- * download lands, so the caller reserves it against the library first. */
+ * download lands, so the caller reserves it against the collection first. */
 function queuedTape(id: string, url: string, now: string, addedIndex: number): Tape {
   const autostart = getSettings().autoStartDownloads
   return {

@@ -19,7 +19,7 @@ export const FORMAT_VERSIONS = {
   dependencies: 1,
   /** api-keys.json */
   apiKeys: 1,
-  /** A tape's sidecar in the library, and the copy an export writes. */
+  /** A tape's sidecar in the collection, and the copy an export writes. */
   sidecar: 1,
   /** `bin/<name>.json`, the installed version beside a managed binary. */
   binaryVersion: 1,

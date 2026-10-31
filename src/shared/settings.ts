@@ -105,15 +105,15 @@ export const THEME_PREFERENCES = ['system', 'light', 'dark'] as const
 export type ThemePreference = (typeof THEME_PREFERENCES)[number]
 
 export const SettingsObjectSchema = z.object({
-  // Folder where the library lives — where tapes are saved and read from. Empty =
-  // use the default library folder (~/.tapebox/library); main resolves it via
+  // Folder where the collection lives — where tapes are saved and read from. Empty =
+  // use the default collection folder (~/.tapebox/collection); main resolves it via
   // getCollectionDir(). A set value is a custom folder used as-is. Never read this as a
   // path directly in main — always go through getCollectionDir() so an empty value
-  // can't become a cwd-relative path. Changing this relocates the existing library:
+  // can't become a cwd-relative path. Changing this relocates the existing collection:
   // ipc/settings moves every tracked file to the new folder before committing the
   // new value, or explicitly opens an existing collection without moving files.
   // Both refuse while another collection mutation is in progress.
-  libraryDir: z.string(),
+  collectionDir: z.string(),
   autoStartDownloads: z.boolean(),
   maxConcurrentDownloads: z.number().int().min(MAX_CONCURRENT_DOWNLOADS.min).max(MAX_CONCURRENT_DOWNLOADS.max),
 
@@ -174,7 +174,7 @@ export const SettingsObjectSchema = z.object({
   // the modal, and the user can still pick a different one for that export.
   defaultExportDir: z.string(),
 
-  // Whether Export removes the tape from the library after copying it out (so it
+  // Whether Export removes the tape from the collection after copying it out (so it
   // becomes a "move out"). Shown in the export modal as the default, overridable
   // per export. On by default — exporting is usually how a finished tape leaves.
   deleteAfterExport: z.boolean(),
@@ -228,7 +228,7 @@ export function effectiveSettings(sets: SettingsSets): Settings {
   return settings
 }
 
-/** Validate a patch, in the form it will be stored, before any library relocation. */
+/** Validate a patch, in the form it will be stored, before any collection relocation. */
 export function settingsAfterPatch(current: Settings, patch: SettingsSets): Settings {
   return SettingsObjectSchema.parse({ ...current, ...cleanSettingsSets(patch) })
 }
@@ -302,14 +302,14 @@ export function changedSettings(original: Partial<Settings>, draft: Partial<Sett
 
 /**
  * Built-in settings used for absent or malformed sets without writing config.json.
- * libraryDir defaults to '' — an empty value means "use the default library
- * folder", which main/ resolves to paths.library via getCollectionDir(). The actual
+ * collectionDir defaults to '' — an empty value means "use the default collection
+ * folder", which main/ resolves to paths.collection via getCollectionDir(). The actual
  * path lives in main/ (path resolution stays there); the built-in value is just
  * blank, exactly like defaultExportDir.
  */
 export function defaultSettings(): Settings {
   return {
-    libraryDir: '',
+    collectionDir: '',
     autoStartDownloads: true,
     maxConcurrentDownloads: MAX_CONCURRENT_DOWNLOADS.default,
     autoplay: true,
@@ -346,7 +346,7 @@ export function defaultSettings(): Settings {
  */
 export function summarizeSettings(s: Settings): Record<string, unknown> {
   return {
-    libraryDir: s.libraryDir,
+    collectionDir: s.collectionDir,
     autoStartDownloads: s.autoStartDownloads,
     maxConcurrentDownloads: s.maxConcurrentDownloads,
     autoplay: s.autoplay,

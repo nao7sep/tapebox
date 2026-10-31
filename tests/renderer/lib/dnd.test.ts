@@ -200,7 +200,7 @@ function dropEvent(
 }
 
 describe('current dnd-kit completion mapping', () => {
-  it('maps inbox sorting and rejects cancellation and no-ops', () => {
+  it('maps Shelf tape list sorting and rejects cancellation and no-ops', () => {
     const source = sortable('tape-a', TAPE_DRAG_TYPE, 0, 2)
     const target = sortable('tape-c', TAPE_DRAG_TYPE, 2, 2)
 
@@ -214,7 +214,7 @@ describe('current dnd-kit completion mapping', () => {
     expect(planTapeListDrop(dropEvent(source, null))).toBeNull()
   })
 
-  it('keeps archive list sorting distinct from semantic box delivery', () => {
+  it('keeps Shelf list sorting distinct from semantic box delivery', () => {
     expect(planShelfDrop(dropEvent(
       sortable('box-a', BOX_DRAG_TYPE, 0, 1),
       sortable('box-b', BOX_DRAG_TYPE, 1, 1),

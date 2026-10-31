@@ -30,7 +30,7 @@ describe('sanitizeFilename — path safety', () => {
   })
 
   it('keeps every sanitized name inside the target directory once joined', () => {
-    const dir = resolve(tmpdir(), 'tapebox-library')
+    const dir = resolve(tmpdir(), 'tapebox-collection')
     for (const evil of ['../../escape', '/abs/path', 'a/b/c', '..\\..\\x', '....//....//y']) {
       const safe = sanitizeFilename(evil)
       const full = join(dir, `${safe}.mp4`)

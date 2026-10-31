@@ -36,7 +36,7 @@ function aiRequestKey(requestId: string): string {
 
 /**
  * The source description, pulled from the sidecar's yt-dlp info.json (it isn't
- * kept on the Tape — descriptions are large and would bloat catalog.json). Only
+ * kept on the Tape — descriptions are large and would bloat tape.json). Only
  * downloaded tapes have a sidecar. An absent optional field yields null; a
  * failed read must stop the request before selected input reaches the provider.
  */

@@ -26,7 +26,7 @@ beforeEach(async () => {
     writeOutputChunk.mockClear()
   userArgs.value = []
   vi.stubEnv('TAPEBOX_NAME', 'Unrelated')
-  vi.stubEnv('TAPEBOX_MANAGED_LIBRARY', 'Unrelated')
+  vi.stubEnv('TAPEBOX_TAPE_DIR', 'Unrelated')
   vi.stubEnv('TAPEBOX_TEST_EXPANSION_HOME', join(root, 'expanded-home'))
   vi.stubEnv('TAPEBOX_TEST_THUMBNAIL_RESULT', 'success')
 })
@@ -40,7 +40,7 @@ async function exists(path: string): Promise<boolean> {
   try { await access(path); return true } catch { return false }
 }
 
-async function library(name = 'library'): Promise<string> {
+async function collection(name = 'collection'): Promise<string> {
   const path = join(root, name)
   await mkdir(path, { recursive: true })
   return path
@@ -48,9 +48,9 @@ async function library(name = 'library'): Promise<string> {
 
 for (const flavour of ['posix', 'windows']) {
   describe(`literal paths with ${flavour} expansion`, () => {
-    it.each(['$TAPEBOX_NAME', '%TAPEBOX_NAME%', 'percent %(title)s and ~literal', '${TAPEBOX_MANAGED_LIBRARY}', '%TAPEBOX_MANAGED_LIBRARY%', ' spaces at both ends '])('downloads into the literal selected directory %s', async (name) => {
+    it.each(['$TAPEBOX_NAME', '%TAPEBOX_NAME%', 'percent %(title)s and ~literal', '${TAPEBOX_TAPE_DIR}', '%TAPEBOX_TAPE_DIR%', ' spaces at both ends '])('downloads into the literal selected directory %s', async (name) => {
       vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', flavour)
-      const dir = await library(name)
+      const dir = await collection(name)
       const anotherFile = join(dir, 'regular.mp4')
       await writeFile(anotherFile, 'regular file')
       await writeFile(join(dir, `${tapeId}.part`), 'old retry')
@@ -65,12 +65,12 @@ for (const flavour of ['posix', 'windows']) {
       expect(await findThumbnail(dir, tapeId)).toBe(join(dir, `${tapeId}.webp`))
       expect(writeRecord.mock.calls[0]![1]).toMatchObject({ url: sourceUrl, tape_id: tapeId, kind: 'download', exit_code: 0 })
       expect(writeOutputChunk.mock.calls.filter((call) => call[1] === 'stdout').map((call) => call[3]).join('')).toContain(`tapebox-final-filepath:${result.mediaPath}`)
-      expect(process.env['TAPEBOX_MANAGED_LIBRARY']).toBe('Unrelated')
+      expect(process.env['TAPEBOX_TAPE_DIR']).toBe('Unrelated')
     })
 
     it.each(['%(title)s', '$TAPEBOX_NAME', '%TAPEBOX_NAME%', '~Holiday', 'literal 100% ${TAPEBOX_NAME}'])('fetches an isolated raw poster for literal media stem %s', async (stem) => {
       vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', flavour)
-      const dir = await library()
+      const dir = await collection()
       await writeFile(join(dir, `${stem}.mp4`), 'existing media')
       await writeFile(join(dir, `${stem}.info.json`), 'existing sidecar')
       await writeFile(join(dir, 'Unrelated.webp'), 'protected poster')
@@ -90,7 +90,7 @@ for (const flavour of ['posix', 'windows']) {
 
     it('retains inherited cwd and intentionally authored relative/environment cookie options', async () => {
       vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', flavour)
-      const dir = await library('$TAPEBOX_NAME')
+      const dir = await collection('$TAPEBOX_NAME')
       const cookieDir = join(root, 'cookies with spaces')
       await mkdir(cookieDir)
       await writeFile(join(cookieDir, 'cookies.txt'), 'fixture cookie file')
@@ -109,11 +109,11 @@ for (const flavour of ['posix', 'windows']) {
       expect(JSON.parse(firstLine.slice('[fixture] '.length))).toEqual({ cwd: process.cwd(), pid: expect.any(Number), cookies: '[REDACTED]', header: headerArgument, url: sourceUrl })
     })
 
-    it('keeps inherited environment values from redirecting raw posters outside the managed library', async () => {
+    it('keeps inherited environment values from redirecting raw posters outside the managed collection', async () => {
       vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', flavour)
       const outsideStem = join(root, 'outside', 'escaped')
       vi.stubEnv('TAPEBOX_NAME', outsideStem)
-      const dir = await library()
+      const dir = await collection()
       const outside = outsideStem + '.webp'
       await mkdir(dirname(outside))
       await writeFile(outside, 'protected outside poster')
@@ -130,7 +130,7 @@ for (const flavour of ['posix', 'windows']) {
 describe('raw poster scratch ownership', () => {
   it('keeps concurrent raw results for the same tape separate', async () => {
     vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', 'posix')
-    const dir = await library()
+    const dir = await collection()
     const signal = new AbortController().signal
     const [first, second] = await Promise.all([
       downloadThumbnail(tapeId, sourceUrl, dir, signal),
@@ -149,7 +149,7 @@ describe('raw poster scratch ownership', () => {
   it('removes only its own raw scratch after the provider has failed', async () => {
     vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', 'posix')
     vi.stubEnv('TAPEBOX_TEST_THUMBNAIL_RESULT', 'fail')
-    const dir = await library()
+    const dir = await collection()
     const unrelated = join(dir, `${tapeId}.poster-kept.webp`)
     await writeFile(unrelated, 'previous raw poster')
     await writeFile(join(dir, 'regular.webp'), 'regular poster')
@@ -164,7 +164,7 @@ describe('raw poster scratch ownership', () => {
   it('removes its scratch after a parked provider has physically stopped on abort', async ({ signal }) => {
     vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', 'posix')
     vi.stubEnv('TAPEBOX_TEST_THUMBNAIL_RESULT', 'park')
-    const dir = await library()
+    const dir = await collection()
     const controller = new AbortController()
     const result = downloadThumbnail(tapeId, sourceUrl, dir, controller.signal)
     const observed = result.then(() => 'resolved', (err: unknown) => err)
@@ -189,7 +189,7 @@ describe('raw poster scratch ownership', () => {
   it('returns null for a missing optional poster and leaves existing files intact', async () => {
     vi.stubEnv('TAPEBOX_TEST_PATH_FLAVOUR', 'posix')
     vi.stubEnv('TAPEBOX_TEST_THUMBNAIL_RESULT', 'missing')
-    const dir = await library()
+    const dir = await collection()
     await writeFile(join(dir, 'Holiday.mp4'), 'existing media')
 
     await expect(downloadThumbnail(tapeId, sourceUrl, dir, new AbortController().signal)).resolves.toBeNull()

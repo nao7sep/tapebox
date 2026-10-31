@@ -4,8 +4,8 @@ import { chmod, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import type { BinaryName } from '@shared/ipc-contract'
 
 /**
- * Machine-local TapeBox files live under ~/.tapebox; the configurable library
- * holds its media and authoritative collection metadata. Electron's own profile
+ * Machine-local TapeBox files live under ~/.tapebox; the configurable collection
+ * folder holds its media and authoritative collection metadata. Electron's own profile
  * (Chromium caches, window placement, the single-instance lock) is machine-local
  * presentation state and cache too, so it lives under the root in its own
  * `electron` folder rather than the OS-default userData location: a relocated
@@ -89,7 +89,7 @@ function storageRoot(): string {
 export const paths = {
   get root()          { return storageRoot() },
   get bin()           { return join(storageRoot(), 'bin') },
-  get library()       { return join(storageRoot(), 'library') },
+  get collection()    { return join(storageRoot(), 'collection') },
   get logs()          { return join(storageRoot(), 'logs') },
   get temp()          { return join(storageRoot(), 'temp') },
   get config()        { return join(storageRoot(), 'config.json') },
@@ -119,6 +119,9 @@ export const SHELF_FILE = 'shelf.json'
 /** The catalog of the layout before Inbox and Shelf, converted when found
  *  (store/collection-convert.ts). */
 export const LEGACY_CATALOG = 'catalog.json'
+/** The default collection folder's name before it became `collection/`, renamed
+ *  when found (store/stored-names.ts). */
+export const LEGACY_COLLECTION_FOLDER = 'library'
 export function shelfFile(collectionDir: string): string {
   return join(collectionDir, SHELF_FILE)
 }
@@ -180,7 +183,7 @@ export async function ensureDirs(): Promise<void> {
   await mkdir(paths.root, { recursive: true, mode: 0o700 })
   await secureRoot(paths.root)
 
-  const otherDirs: readonly string[] = [paths.bin, paths.library, paths.temp]
+  const otherDirs: readonly string[] = [paths.bin, paths.collection, paths.temp]
   for (const dir of otherDirs) {
     await mkdir(dir, { recursive: true })
   }
@@ -194,7 +197,7 @@ export async function ensureDirs(): Promise<void> {
  * defensive ensureDirs(), which runs mid-operation.
  *
  * Two TapeBoxes on different machines sharing one TAPEBOX_DATA_DIR are not a
- * supported setup (the catalog has no cross-host coordination either); at worst
+ * supported setup (the collection has no cross-host coordination either); at worst
  * the other one's install in progress fails and is tried again. A file that
  * cannot be removed is reported to the caller, never a reason to stop startup.
  */

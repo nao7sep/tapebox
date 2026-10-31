@@ -8,7 +8,7 @@ import { execCapture, makeLineBuffer } from '@main/io/spawn'
 
 describe('subprocess UTF-8 text', () => {
   it('preserves a path marker and scan JSON at every byte boundary', () => {
-    const lines = ['__final_filepath__:/library/日本語-🎞️.mp4', JSON.stringify({ title: 'é動画🎬', url: 'https://example.com/日本語' })]
+    const lines = ['__final_filepath__:/collection/日本語-🎞️.mp4', JSON.stringify({ title: 'é動画🎬', url: 'https://example.com/日本語' })]
     const bytes = Buffer.from(lines.join('\r\n'))
     for (let split = 1; split < bytes.length; split++) {
       const found: string[] = []

@@ -7,7 +7,7 @@ const testRoot = vi.hoisted(
   () => `${process.env.TEMP ?? process.env.TMPDIR ?? '/tmp'}/tapebox-session-terminal-${process.pid}`,
 )
 const record = vi.hoisted(() => vi.fn())
-const catalogMutation = vi.hoisted(() => ({
+const collectionMutation = vi.hoisted(() => ({
   failRenamedOnce: false,
   failReorderOnce: false,
   failBoxReorderOnce: false,
@@ -28,24 +28,24 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
     writeManagedJsonBytes: vi.fn(async (...args: Parameters<typeof actual.writeManagedJsonBytes>) => {
       // Each write is one tape's tape.json or shelf.json.
       const value = JSON.parse(args[1].toString('utf8')) as Partial<Tape> & { boxes?: { id: string }[]; loose?: string[] }
-      if (catalogMutation.failRenamedOnce && value.name === 'Renamed') {
-        catalogMutation.failRenamedOnce = false
-        throw new Error('catalog disk full')
+      if (collectionMutation.failRenamedOnce && value.name === 'Renamed') {
+        collectionMutation.failRenamedOnce = false
+        throw new Error('collection disk full')
       }
-      if (catalogMutation.failReorderOnce && value.loose?.[0] === 'def1234567') {
-        catalogMutation.failReorderOnce = false
-        throw new Error('catalog reorder disk full')
+      if (collectionMutation.failReorderOnce && value.loose?.[0] === 'def1234567') {
+        collectionMutation.failReorderOnce = false
+        throw new Error('shelf reorder disk full')
       }
-      if (catalogMutation.failBoxReorderOnce && value.boxes?.[0]?.id === 'boxdef4567') {
-        catalogMutation.failBoxReorderOnce = false
+      if (collectionMutation.failBoxReorderOnce && value.boxes?.[0]?.id === 'boxdef4567') {
+        collectionMutation.failBoxReorderOnce = false
         throw new Error('box reorder disk full')
       }
-      if (catalogMutation.failOrdinaryWrites > 0) {
-        catalogMutation.failOrdinaryWrites -= 1
-        throw new Error('catalog disk full')
+      if (collectionMutation.failOrdinaryWrites > 0) {
+        collectionMutation.failOrdinaryWrites -= 1
+        throw new Error('collection disk full')
       }
       await actual.writeManagedJsonBytes(...args)
-      catalogMutation.saved?.()
+      collectionMutation.saved?.()
     }),
   }
 })
@@ -82,11 +82,11 @@ function tape(id = 'abc1234567', order = 0): Tape {
 
 beforeEach(async () => {
   record.mockReset()
-  catalogMutation.failRenamedOnce = false
-  catalogMutation.failReorderOnce = false
-  catalogMutation.failBoxReorderOnce = false
-  catalogMutation.failOrdinaryWrites = 0
-  catalogMutation.saved = null
+  collectionMutation.failRenamedOnce = false
+  collectionMutation.failReorderOnce = false
+  collectionMutation.failBoxReorderOnce = false
+  collectionMutation.failOrdinaryWrites = 0
+  collectionMutation.saved = null
   await mkdir(testRoot, { recursive: true })
 })
 
@@ -151,7 +151,7 @@ describe('collection persistence', () => {
     upsertTape(original)
 
     const before = persistNow()
-    catalogMutation.failRenamedOnce = true
+    collectionMutation.failRenamedOnce = true
     const durableResult = rename(updated).then(
       () => null,
       (error: unknown) => error,
@@ -160,13 +160,13 @@ describe('collection persistence', () => {
     const after = persistNow()
 
     await before
-    expect(await durableResult).toMatchObject({ message: 'catalog disk full' })
+    expect(await durableResult).toMatchObject({ message: 'collection disk full' })
     await after
 
     expect(await onDisk()).toEqual({ tapes: [original], boxes: [box] })
   })
 
-  it('keeps a reorder whose save failed, as any library edit, and writes it on the retry', async () => {
+  it('keeps a reorder whose save failed, as any collection edit, and writes it on the retry', async () => {
     await loadSession()
     const failures = vi.fn()
     onCollectionSaveFailure(failures)
@@ -181,9 +181,9 @@ describe('collection persistence', () => {
     upsertBox(secondBox)
     await persistNow()
 
-    catalogMutation.failReorderOnce = true
+    collectionMutation.failReorderOnce = true
     await reorderTapesDurably([second.id, first.id])
-    catalogMutation.failBoxReorderOnce = true
+    collectionMutation.failBoxReorderOnce = true
     await reorderBoxesDurably([secondBox.id, firstBox.id])
     expect(failures).toHaveBeenCalledOnce()
     expect([getTape(first.id)?.order, getTape(second.id)?.order]).toEqual([1, 0])
@@ -237,7 +237,7 @@ describe('collection persistence', () => {
     const finished = tape('fin1234567')
     upsertTape(finished)
 
-    catalogMutation.failOrdinaryWrites = 2
+    collectionMutation.failOrdinaryWrites = 2
     await expect(persistNow()).resolves.toBe(false)
     await expect(persistNow()).resolves.toBe(false)
     expect(failures).toHaveBeenCalledOnce()
@@ -252,11 +252,11 @@ describe('collection persistence', () => {
     await loadSession()
     onCollectionSaveFailure(() => {})
     const finished = tape('ret1234567')
-    const saved = new Promise<void>((resolve) => { catalogMutation.saved = resolve })
+    const saved = new Promise<void>((resolve) => { collectionMutation.saved = resolve })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       upsertTape(finished)
-      catalogMutation.failOrdinaryWrites = 1
+      collectionMutation.failOrdinaryWrites = 1
       // The caller's own wait ends with the failure; nothing it later cancels reaches the retry.
       await expect(persistNow()).resolves.toBe(false)
       await vi.advanceTimersByTimeAsync(30_000)
@@ -271,7 +271,7 @@ describe('collection persistence', () => {
     onCollectionSaveFailure(failures)
     upsertTape(tape('qui1234567'))
 
-    catalogMutation.failOrdinaryWrites = 2
+    collectionMutation.failOrdinaryWrites = 2
     await expect(persistNow({ quitting: true })).resolves.toBe(false)
     // The quit's dialog told the user; a later autosave failure does not repeat it.
     await expect(persistNow()).resolves.toBe(false)
@@ -312,8 +312,8 @@ describe('collection publication', () => {
     const original = tape()
     upsertTape(original)
     await persistNow()
-    catalogMutation.saved = () => {
-      catalogMutation.saved = null
+    collectionMutation.saved = () => {
+      collectionMutation.saved = null
       upsertTape({ ...original, title: 'New metadata' })
     }
     await rename({ ...original, name: 'Renamed', filename: 'Renamed.mp4' })

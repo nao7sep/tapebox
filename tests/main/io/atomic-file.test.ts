@@ -432,7 +432,7 @@ describe('linkOrCopyNoOverwrite', () => {
 
 // A read-only source (0444 on POSIX, the read-only attribute on Windows) gives
 // its copy or second name the same protection. TapeBox later renames and
-// removes library files, so neither may be blocked by it on any platform.
+// removes collection files, so neither may be blocked by it on any platform.
 describe('a read-only source', () => {
   it.each([
     ['a linked copy', (source: string, dest: string) => copyFileNoOverwrite(source, dest, { hardLinks: true })],

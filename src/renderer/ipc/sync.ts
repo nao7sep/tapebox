@@ -21,8 +21,8 @@ import { useToastStore } from '@renderer/store/toast'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 import { message } from '@shared/i18n/translate'
 
-/** Shown when main reports that library changes are not reaching disk. */
-export const LIBRARY_SAVE_FAILED_MESSAGE = message('app.collectionSaveFailed')
+/** Shown when main reports that collection changes are not reaching disk. */
+export const COLLECTION_SAVE_FAILED_MESSAGE = message('app.collectionSaveFailed')
 
 export type InitialSyncState = {
   binaries: BinaryStatus[]
@@ -33,9 +33,9 @@ export type InitialSyncState = {
 }
 
 /**
- * Pull every required renderer mirror. The catalog is not pulled: subscribing
- * makes main send it as library:current, on the same ordered channel as every
- * later catalog event, and before the subscription's reply, so the window has
+ * Pull every required renderer mirror. The collection is not pulled: subscribing
+ * makes main send it as collection:current, on the same ordered channel as every
+ * later collection event, and before the subscription's reply, so the window has
  * one source for it and nothing to merge.
  */
 export async function pullInitialSyncState(): Promise<InitialSyncState> {
@@ -102,7 +102,7 @@ export function startIpcSync(): IpcSync {
       })
     }),
     ipcOn('boxes:changed',    (boxes) => useBoxesStore.getState().setBoxes(boxes)),
-    ipcOn('collection:saveFailed', () => useToastStore.getState().notify(LIBRARY_SAVE_FAILED_MESSAGE, 'error')),
+    ipcOn('collection:saveFailed', () => useToastStore.getState().notify(COLLECTION_SAVE_FAILED_MESSAGE, 'error')),
     ipcOn('tapes:progress',  ({ tapeId, phase, percent, speedBps, etaSec }) =>
       useTapesStore.getState().setProgress(tapeId, { phase, percent, speedBps, etaSec }),
     ),

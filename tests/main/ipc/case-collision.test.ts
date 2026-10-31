@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { portableSiblingExists } from '@main/io/portable-directory'
 
-// The collision guard behind library:rename / library:import / export:files. macOS
+// The collision guard behind collection:rename / collection:import / export:files. macOS
 // and Windows are case-insensitive, so "Take.wav" and "take.wav" are one file there
 // and one silently clobbers the other; storage-path-conventions makes a
 // case-insensitive sibling a hard collision. Exercised against a real temp dir
-// (like library-move.test.ts) so the readdir-based fold is checked end to end on a
+// (like collection-move.test.ts) so the readdir-based fold is checked end to end on a
 // case-sensitive CI filesystem, where a plain stat("take.wav") would report missing.
 
 let dir: string

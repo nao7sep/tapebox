@@ -16,6 +16,6 @@ export function collidingPortableFilename(names: readonly string[]): string | un
   return undefined
 }
 
-/** Identity shared by live box admission and catalog decoding. */
+/** Identity shared by live box admission and shelf.json decoding. */
 export const normalizeBoxName = (name: string): string => name.normalize("NFC").trim()
 export const boxNameIdentity = (name: string): string => normalizeBoxName(name).toLowerCase()

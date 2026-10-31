@@ -13,8 +13,8 @@ import { cancelAllWork, resumeWork } from '@main/work-registry'
 import { until } from '../../helpers/until'
 
 // Moving tapes between the inbox and the Shelf, and taking them out of the
-// library altogether. The library directory is real — a removal that claims to
-// have deleted files has to have deleted them — while the catalog is a working
+// collection altogether. The collection directory is real — a removal that claims to
+// have deleted files has to have deleted them — while the session is a working
 // fake so the orders these handlers write can be read back.
 const handlers = new Map<string, (req: unknown) => unknown>()
 const shell = vi.hoisted(() => ({
@@ -31,7 +31,7 @@ vi.mock('electron', () => ({
   shell,
 }))
 
-const state = vi.hoisted(() => ({ libraryDir: '', tapes: [] as Tape[], trashOnRemove: false, readdirFailurePath: '', readdirFailureCode: '', realSession: false }))
+const state = vi.hoisted(() => ({ collectionDir: '', tapes: [] as Tape[], trashOnRemove: false, readdirFailurePath: '', readdirFailureCode: '', realSession: false }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
@@ -82,7 +82,7 @@ vi.mock('@main/store/session', async (importOriginal) => {
 })
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => state.libraryDir,
+  getCollectionDir: () => state.collectionDir,
   getSettings: () => ({ trashOnRemove: state.trashOnRemove, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => queueManager)
@@ -124,7 +124,7 @@ beforeEach(async () => {
   queueManager.isActive.mockReturnValue(false)
   queueManager.cancel.mockImplementation(async () => {})
   persistNow.mockImplementation(async () => {})
-  state.libraryDir = await mkdtemp(join(tmpdir(), 'tapebox-library-shelving-'))
+  state.collectionDir = await mkdtemp(join(tmpdir(), 'tapebox-collection-shelving-'))
   state.trashOnRemove = false
   state.readdirFailurePath = ''
   state.readdirFailureCode = ''
@@ -137,12 +137,12 @@ afterEach(async () => {
   state.realSession = false
   // A test that quits closes the work registry; reopen it for the next one.
   resumeWork()
-  await rm(state.libraryDir, { recursive: true, force: true })
+  await rm(state.collectionDir, { recursive: true, force: true })
 })
 
-/** A tape's own folder inside the library, in the Inbox or on the Shelf. */
+/** A tape's own folder inside the collection, in the Inbox or on the Shelf. */
 function folder(id: string, shelved = false): string {
-  return tapeDir(state.libraryDir, { id, shelved })
+  return tapeDir(state.collectionDir, { id, shelved })
 }
 
 /** Run against the real session, bound to the temp collection with these rows,
@@ -153,7 +153,7 @@ async function realCollection(tapes: Tape[], boxes: Box[] = []): Promise<void> {
     await mkdir(folder(tape.id, tape.shelved), { recursive: true })
     await writeFile(join(folder(tape.id, tape.shelved), `${tape.id}.mp4`), 'video', 'utf8')
   }
-  session.bindSession(state.libraryDir, { session: { tapes: [], boxes: [] }, shelfWritten: false })
+  session.bindSession(state.collectionDir, { session: { tapes: [], boxes: [] }, shelfWritten: false })
   for (const box of boxes) session.upsertBox(structuredClone(box))
   for (const tape of tapes) session.upsertTape(structuredClone(tape))
   expect(await session.persistNow()).toBe(true)
@@ -161,7 +161,7 @@ async function realCollection(tapes: Tape[], boxes: Box[] = []): Promise<void> {
 
 /** What the collection on disk says now. */
 async function saved(): Promise<{ tapes: Tape[]; boxes: Box[] }> {
-  const read = await readCollection(state.libraryDir)
+  const read = await readCollection(state.collectionDir)
   if (read.kind !== 'current') throw new Error('the collection is in the old layout')
   return read.session
 }
@@ -184,7 +184,7 @@ describe('shelving', () => {
     for (const id of ['Inboxtapea', 'Inboxtapeb']) {
       expect((await readdir(folder(id, true))).sort(), `${id} moved with its files`).toEqual([`${id}.mp4`, TAPE_FILE])
     }
-    expect(await readdir(join(state.libraryDir, INBOX_FOLDER))).toEqual([])
+    expect(await readdir(join(state.collectionDir, INBOX_FOLDER))).toEqual([])
     const disk = await saved()
     expect(shelfList(disk.tapes, null)).toEqual(['Inboxtapeb', 'Inboxtapea', 'Alreadyon1'])
     expect(shelfList(session.getTapes(), null)).toEqual(['Inboxtapeb', 'Inboxtapea', 'Alreadyon1'])
@@ -202,8 +202,8 @@ describe('shelving', () => {
 
     await invoke('collection:shelve', { tapeIds: ['Queuedtape', 'Activetape', 'Readytape1'] })
 
-    expect((await readdir(join(state.libraryDir, INBOX_FOLDER))).sort()).toEqual(['Activetape', 'Queuedtape'])
-    expect(await readdir(join(state.libraryDir, SHELF_FOLDER))).toEqual(['Readytape1'])
+    expect((await readdir(join(state.collectionDir, INBOX_FOLDER))).sort()).toEqual(['Activetape', 'Queuedtape'])
+    expect(await readdir(join(state.collectionDir, SHELF_FOLDER))).toEqual(['Readytape1'])
     expect((await saved()).tapes.filter((tape) => tape.shelved).map((tape) => tape.id)).toEqual(['Readytape1'])
     expect(emitted('tapes:updatedMany')).toEqual([[[session.getTape('Readytape1')]]])
   })
@@ -240,7 +240,7 @@ describe('taking tapes back to the Inbox', () => {
     for (const id of ['Filedtapea', 'Filedtapeb']) {
       expect((await readdir(folder(id))).sort(), `${id} moved with its files`).toEqual([`${id}.mp4`, TAPE_FILE])
     }
-    expect(await readdir(join(state.libraryDir, SHELF_FOLDER))).toEqual(['Staysput01'])
+    expect(await readdir(join(state.collectionDir, SHELF_FOLDER))).toEqual(['Staysput01'])
     const disk = await saved()
     expect(shelfList(disk.tapes, 'Summer0001')).toEqual(['Staysput01'])
     // The Inbox shows them by when they were added, newest first.
@@ -283,7 +283,7 @@ describe('reordering one list by hand', () => {
   })
 })
 
-describe('removing tapes from the library', () => {
+describe('removing tapes from the collection', () => {
   async function stageFiles(id: string, stem = id): Promise<Tape> {
     await mkdir(folder(id), { recursive: true })
     for (const name of [`${stem}.mp4`, `${stem}.json`, `${stem}.jpg`]) {
@@ -319,7 +319,7 @@ describe('removing tapes from the library', () => {
 
     await invoke('collection:remove', { tapeIds: ['Deletethem'], deleteFiles: true })
 
-    expect(await readdir(join(state.libraryDir, INBOX_FOLDER))).toEqual(['Other00001'])
+    expect(await readdir(join(state.collectionDir, INBOX_FOLDER))).toEqual(['Other00001'])
     expect(shell.trashItem).not.toHaveBeenCalled()
   })
 
@@ -328,11 +328,11 @@ describe('removing tapes from the library', () => {
 
     await invoke('collection:remove', { tapeIds: ['Removeme01'], deleteFiles: true })
 
-    expect(await readdir(join(state.libraryDir, INBOX_FOLDER))).toEqual(['Sametake01'])
+    expect(await readdir(join(state.collectionDir, INBOX_FOLDER))).toEqual(['Sametake01'])
     expect((await readdir(folder('Sametake01'))).sort()).toEqual(['Take.jpg', 'Take.json', 'Take.mp4', TAPE_FILE])
   })
 
-  it('trashes a finished bundle the catalog never named, and deletes fragments outright', async () => {
+  it('trashes a finished bundle the tape never named, and deletes fragments outright', async () => {
     state.trashOnRemove = true
     state.tapes = [makeTape({ id: 'Uncommit01', state: 'queued', filename: null, downloadedAtUtc: null })]
     await mkdir(folder('Uncommit01'), { recursive: true })
@@ -365,7 +365,7 @@ describe('removing tapes from the library', () => {
     await writeFile(join(folder('Damaged001'), 'Damaged001.json'), 'unreadable')
     await invoke('collection:remove', { tapeIds: ['Damaged001'], deleteFiles: true })
     expect(state.tapes).toEqual([])
-    expect(await readdir(join(state.libraryDir, INBOX_FOLDER))).toEqual([])
+    expect(await readdir(join(state.collectionDir, INBOX_FOLDER))).toEqual([])
   })
 
   it('sends the folder to the Trash instead when the user asked for that, and skips one already gone', async () => {
@@ -387,11 +387,11 @@ describe('removing tapes from the library', () => {
     await invoke('collection:remove', { tapeIds: ['Fragsonly1'], deleteFiles: true })
 
     expect(shell.trashItem).not.toHaveBeenCalled()
-    expect(await readdir(join(state.libraryDir, INBOX_FOLDER))).toEqual([])
+    expect(await readdir(join(state.collectionDir, INBOX_FOLDER))).toEqual([])
     expect(state.tapes).toEqual([])
   })
 
-  it.each(['EACCES', 'EIO'])('keeps the catalog row and files when the tape folder cannot be read (%s)', async (code) => {
+  it.each(['EACCES', 'EIO'])('keeps the tape and its files when the tape folder cannot be read (%s)', async (code) => {
     state.trashOnRemove = true
     const tape = await stageFiles('Readfailed')
     state.tapes = [tape]
@@ -406,7 +406,7 @@ describe('removing tapes from the library', () => {
     expect((await readdir(folder('Readfailed'))).sort()).toEqual(['Readfailed.jpg', 'Readfailed.json', 'Readfailed.mp4', TAPE_FILE])
     expect(shell.trashItem).not.toHaveBeenCalled()
     expect(emitted('tapes:removed')).toEqual([])
-    expect(log.error).toHaveBeenCalledWith('library removal failed', expect.objectContaining({
+    expect(log.error).toHaveBeenCalledWith('collection removal failed', expect.objectContaining({
       tapeId: tape.id, error: expect.objectContaining({ message: expect.stringContaining(code) }),
     }))
   })
@@ -439,11 +439,11 @@ describe('removing tapes from the library', () => {
 
     await invoke('collection:remove', { tapeIds: ['Latefinish'], deleteFiles: true })
 
-    expect(await readdir(join(state.libraryDir, INBOX_FOLDER))).toEqual([])
+    expect(await readdir(join(state.collectionDir, INBOX_FOLDER))).toEqual([])
     expect(state.tapes).toEqual([])
   })
 
-  it('holds a quit until the removal and its catalog commit have settled', async () => {
+  it('holds a quit until the removal and its collection commit have settled', async () => {
     state.tapes = [await stageFiles('Quitwaits1')]
     let commit!: () => void
     persistNow.mockImplementation(() => new Promise<void>((resolve) => { commit = resolve }))
@@ -458,7 +458,7 @@ describe('removing tapes from the library', () => {
     commit()
     await removal
     await quit
-    expect(await readdir(join(state.libraryDir, INBOX_FOLDER))).toEqual([])
+    expect(await readdir(join(state.collectionDir, INBOX_FOLDER))).toEqual([])
     expect(emitted('tapes:removed')).toEqual([[{ tapeIds: ['Quitwaits1'] }]])
   })
 
@@ -475,10 +475,10 @@ describe('removing tapes from the library', () => {
 
     expect(state.tapes.map((tape) => tape.id), 'the tape whose files stayed is kept').toEqual(['Stuckhere1'])
     expect(emitted('tapes:removed')).toEqual([[{ tapeIds: ['Removable1'] }]])
-    expect(log.error).toHaveBeenCalledWith('library removal failed', expect.objectContaining({ tapeId: 'Stuckhere1' }))
+    expect(log.error).toHaveBeenCalledWith('collection removal failed', expect.objectContaining({ tapeId: 'Stuckhere1' }))
   })
 
-  it('skips ids the catalog no longer holds', async () => {
+  it('skips ids the collection no longer holds', async () => {
     state.tapes = [makeTape({ id: 'Stillhere1' })]
 
     await invoke('collection:remove', { tapeIds: ['gone-already'], deleteFiles: true })

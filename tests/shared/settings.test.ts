@@ -64,17 +64,17 @@ describe('SettingsSchema', () => {
     expect(parsed).not.toHaveProperty('leftPaneWidth')
   })
 
-  // libraryDir defaults to blank ("use the default folder"), exactly like
-  // defaultExportDir. main resolves blank → paths.library via getCollectionDir(); the
+  // collectionDir defaults to blank ("use the default folder"), exactly like
+  // defaultExportDir. main resolves blank → paths.collection via getCollectionDir(); the
   // persisted default must never be an absolute path or a cleared field couldn't
   // mean "default".
-  it('defaults libraryDir to blank, not an absolute path', () => {
-    expect(defaultSettings().libraryDir).toBe('')
+  it('defaults collectionDir to blank, not an absolute path', () => {
+    expect(defaultSettings().collectionDir).toBe('')
   })
 
   // The UI font is family-only and engine-resolved; blank means "use the built-in
   // default stack" (globals.css @theme --font-sans), exactly like a blank
-  // libraryDir/externalPlayer means "use the default".
+  // collectionDir/externalPlayer means "use the default".
   it('defaults uiFontFamily to blank, meaning the built-in default font', () => {
     expect(defaultSettings().uiFontFamily).toBe('')
   })
@@ -89,7 +89,7 @@ describe('SettingsSchema', () => {
 describe('summarizeSettings', () => {
   it('logs each setting as it is', () => {
     const s = defaultSettings()
-    s.libraryDir = '/lib'
+    s.collectionDir = '/lib'
     s['openai.endpoint'] = 'https://api.example.com/v1'
     s['openai.slug'] = 'gpt-x'
     s.maxConcurrentDownloads = 4
@@ -97,7 +97,7 @@ describe('summarizeSettings', () => {
     s.uiFontFamily = 'Iosevka, monospace'
 
     expect(summarizeSettings(s)).toMatchObject({
-      libraryDir: '/lib',
+      collectionDir: '/lib',
       aiEndpoint: 'https://api.example.com/v1',
       aiModel: 'gpt-x',
       maxConcurrentDownloads: 4,

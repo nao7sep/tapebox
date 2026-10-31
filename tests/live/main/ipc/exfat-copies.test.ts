@@ -2,7 +2,7 @@ vi.mock('@main/ipc/trust', () => ({ isTrustedApplicationSender: () => true }))
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 // Every path that copies a file onto another volume, driven through the real IPC
 // handlers onto a real exFAT disk image: import from it, export to it, move the
-// library onto it, and import into the library that now lives there. exFAT has no
+// collection onto it, and import into the collection that now lives there. exFAT has no
 // hard links, so each file goes through the copy into an exclusive claim, and its
 // file ids change once bytes are written. Run only by npm run test:full, through
 // vitest.live.config.ts, on macOS, where hdiutil makes the image.
@@ -123,17 +123,17 @@ afterAll(async () => {
 })
 
 describe('copies onto exFAT', () => {
-  it('import, export, library move and import into the moved library each finish and leave no temp', async (ctx) => {
+  it('import, export, collection move and import into the moved collection each finish and leave no temp', async (ctx) => {
     ctx.skip(!isMac, 'macOS only: hdiutil makes the exFAT image')
     const home = join(root, 'home')
     const stop = await startApp(home)
     try {
-      // Import from the exFAT volume into the library on the system volume.
+      // Import from the exFAT volume into the collection on the system volume.
       const first = await writeBundle(join(volume, 'incoming'), 'First', 'https://example.test/first')
       const imported = await invoke('collection:import', { paths: first }) as ImportResult
       expect(imported.issues).toEqual([])
       const [tape] = imported.imported
-      expect((await stat(join(home, 'library', 'First.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
+      expect((await stat(join(home, 'collection', 'First.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
 
       // Export onto the exFAT volume.
       const outbox = join(volume, 'exported')
@@ -145,23 +145,23 @@ describe('copies onto exFAT', () => {
       expect(exported.size).toBe(MEDIA_BYTES)
       expect(exported.mtimeMs).toBe(MODIFIED.getTime())
 
-      // Move the library onto the exFAT volume.
-      const library = join(volume, 'library')
-      await invoke('settings:update', { libraryDir: library })
-      expect(await readFile(join(library, 'First.mp4'))).toHaveLength(MEDIA_BYTES)
-      expect((await stat(join(library, 'First.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
+      // Move the collection onto the exFAT volume.
+      const collection = join(volume, 'collection')
+      await invoke('settings:update', { collectionDir: collection })
+      expect(await readFile(join(collection, 'First.mp4'))).toHaveLength(MEDIA_BYTES)
+      expect((await stat(join(collection, 'First.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
 
-      // Import from the system volume into the library that now lives on exFAT.
+      // Import from the system volume into the collection that now lives on exFAT.
       const second = await writeBundle(join(root, 'incoming'), 'Second', 'https://example.test/second')
       const again = await invoke('collection:import', { paths: second }) as ImportResult
       expect(again.issues).toEqual([])
-      expect((await stat(join(library, 'Second.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
+      expect((await stat(join(collection, 'Second.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
 
       expect(await volumeNames(volume)).toEqual([
+        'collection', 'collection/First.jpg', 'collection/First.json', 'collection/First.mp4',
+        'collection/Second.jpg', 'collection/Second.json', 'collection/Second.mp4',
         'exported', 'exported/Holiday.jpg', 'exported/Holiday.json', 'exported/Holiday.mp4',
         'incoming', 'incoming/First.jpg', 'incoming/First.json', 'incoming/First.mp4',
-        'library', 'library/First.jpg', 'library/First.json', 'library/First.mp4',
-        'library/Second.jpg', 'library/Second.json', 'library/Second.mp4',
       ])
     } finally {
       await stop()

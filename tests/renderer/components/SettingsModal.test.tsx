@@ -37,7 +37,7 @@ function stubMain(updateReply: (patch: SettingsSets) => unknown, keyState = 'abs
   ipcInvoke.mockImplementation((channel: string, req?: unknown) => {
     if (channel === 'settings:get') return Promise.resolve(saved)
     if (channel === 'settings:apiKeyState') return Promise.resolve(keyState)
-    if (channel === 'settings:defaultCollectionDir') return Promise.resolve('/home/me/.tapebox/library')
+    if (channel === 'settings:defaultCollectionDir') return Promise.resolve('/home/me/.tapebox/collection')
     if (channel === 'settings:update') return Promise.resolve(updateReply(req as SettingsSets))
     if (channel === 'settings:systemAppearance') return Promise.resolve('dark')
     return Promise.resolve()
@@ -88,7 +88,7 @@ describe('SettingsModal', () => {
     const pending = new Promise((_resolve, reject) => { rejectSave = reject })
     stubMain(() => pending)
     await render()
-    await type(document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!, '/new-library')
+    await type(document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/collection"]')!, '/new-collection')
     await click('Save')
     await act(async () => {
       const progress = events.get('settings:collectionMoveProgress') as unknown as (value: unknown) => void
@@ -128,8 +128,8 @@ describe('SettingsModal', () => {
     useBoxesStore.setState({ editingId: 'box1', draftName: 'Unsaved box', boxes: [{ id: 'box1', name: 'Original', order: 0 }] })
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
-    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
-    await type(field, '/copied-library')
+    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/collection"]')!
+    await type(field, '/copied-collection')
     const toggle = [...document.querySelectorAll('label')].find((label) => label.textContent?.includes('Open an existing collection'))!.querySelector('input')!
     await act(async () => toggle.click())
     await click('Save')
@@ -138,29 +138,29 @@ describe('SettingsModal', () => {
     expect(useBoxesStore.getState().draftName).toBe('Unsaved box')
     await click('Save')
     await click('Discard')
-    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { libraryDir: '/copied-library', collectionAction: 'open' })
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { collectionDir: '/copied-collection', collectionAction: 'open' })
   })
 
   it('saves an explicit existing-collection choice and replaces the move explanation', async () => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
-    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
-    await type(field, '/copied-library')
+    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/collection"]')!
+    await type(field, '/copied-collection')
     const toggle = [...document.querySelectorAll('label')].find((label) => label.textContent?.includes('Open an existing collection'))!.querySelector('input')!
     await act(async () => toggle.click())
     expect(document.body.textContent).toContain('The current collection stays in its folder.')
     expect(document.body.textContent).not.toContain('Changing this moves your existing tapes')
     await click('Save')
-    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { libraryDir: '/copied-library', collectionAction: 'open' })
+    expect(ipcInvoke).toHaveBeenCalledWith('settings:update', { collectionDir: '/copied-collection', collectionAction: 'open' })
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it.each(['libraryDir', 'defaultExportDir'] as const)('Browse follows the current %s draft and preserves it on cancel', async (key) => {
+  it.each(['collectionDir', 'defaultExportDir'] as const)('Browse follows the current %s draft and preserves it on cancel', async (key) => {
     saved = { ...saved, [key]: '/saved' }
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
-    const field = key === 'libraryDir'
-      ? document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
+    const field = key === 'collectionDir'
+      ? document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/collection"]')!
       : [...document.querySelectorAll<HTMLInputElement>('input')].find((input) => input.value === '/saved')!
     const choose = field.parentElement!.querySelector('button')!
     await type(field, '~/draft')
@@ -175,15 +175,15 @@ describe('SettingsModal', () => {
     expect(ipcInvoke.mock.calls.some(([channel]) => channel === 'settings:update')).toBe(false)
   })
 
-  it('Browse uses the effective library default after clearing a saved folder', async () => {
-    saved = { ...saved, libraryDir: '/saved' }
+  it('Browse uses the effective collection default after clearing a saved folder', async () => {
+    saved = { ...saved, collectionDir: '/saved' }
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }))
     await render()
-    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/library"]')!
+    const field = document.querySelector<HTMLInputElement>('input[placeholder="/home/me/.tapebox/collection"]')!
     await type(field, '')
     ipcInvoke.mockResolvedValueOnce(null)
     await act(async () => field.parentElement!.querySelector('button')!.click())
-    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: '/home/me/.tapebox/library' }))
+    expect(ipcInvoke).toHaveBeenLastCalledWith('dialog:pickDirectory', expect.objectContaining({ initialDirectory: '/home/me/.tapebox/collection' }))
     expect(field.value).toBe('')
   })
 

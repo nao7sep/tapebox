@@ -153,7 +153,7 @@ export type RecordDetail = LogRecordDetail | AiCallRecordDetail | YtdlpRunRecord
 export type RecordSources = {
   currentSession: string | null
   sessions: string[]
-  /** A tape still in the library carries its title. */
+  /** A tape still in the collection carries its title. */
   tapes: { tapeId: string; name: string | null }[]
 }
 

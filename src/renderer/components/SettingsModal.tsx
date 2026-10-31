@@ -48,15 +48,15 @@ type Tab = 'general' | 'ai' | 'ytdlp'
  * IPC call. A credential failure leaves the settings saved and the dialog open
  * for retry. Closing with unsaved changes prompts a shared ConfirmModal to discard.
  *
- * The library folder is a picker-backed field on the General tab, grouped with the
+ * The collection folder is a picker-backed field on the General tab, grouped with the
  * download settings. Leaving it blank uses the default folder (shown as the
- * field's placeholder); a set value points the library at a custom folder. Changing
+ * field's placeholder); a set value points the collection at a custom folder. Changing
  * it moves every existing tape's files to the new folder as part of Save (main does
  * the move, then commits the setting), so a confirm prompts first; the move is
  * refused while downloads, imports, renames or exports are running. While it runs, the dialog shows its
- * progress and offers Stop Move, which rolls the copies back. Open existing
- * library instead switches to the selected collection on Save, leaving the current
- * library in place; it never merges the two collections.
+ * progress and offers Stop Move, which rolls the copies back. Open an existing
+ * collection instead switches to the selected collection on Save, leaving the current
+ * collection in place; it never merges the two collections.
  */
 
 type MoveProgress = IpcEvents['settings:collectionMoveProgress']
@@ -113,7 +113,7 @@ export function SettingsModal({ onClose }: Props) {
   function stopMove() {
     setStoppingMove(true)
     void ipcInvoke('settings:cancelCollectionMove')
-      .catch((err) => log.debug('library move cancel failed', { error: describeError(err) }))
+      .catch((err) => log.debug('collection move cancel failed', { error: describeError(err) }))
   }
 
   function patchDraft(patch: Partial<Settings>) {
@@ -155,7 +155,7 @@ export function SettingsModal({ onClose }: Props) {
   const dirty = settingsDirty || apiKeyDirty || concurrentInvalid
   useWindowCloseGuard(() => ({ dirty }))
 
-  // How many existing tapes have files on disk that a library move would relocate.
+  // How many existing tapes have files on disk that a collection move would relocate.
   // Used only to decide whether to prompt before Save and to phrase the prompt;
   // main does the actual move and is the source of truth for what's moved.
   function tapesOnDiskCount(): number {
@@ -168,10 +168,10 @@ export function SettingsModal({ onClose }: Props) {
   function collectionDirChanged(): boolean {
     if (!original || !draft) return false
     const effective = (v: string) => v.trim() ? v : defaultCollectionDir
-    return effective(original.libraryDir) !== effective(draft.libraryDir)
+    return effective(original.collectionDir) !== effective(draft.collectionDir)
   }
 
-  // Save splits into a request (which may prompt) and the commit. A library move is
+  // Save splits into a request (which may prompt) and the commit. A collection move is
   // a real, user-visible relocation of their files, so it gets a confirm first when
   // there are tapes to move; everything else saves straight through.
   function changeConcurrentText(text: string) {
@@ -390,7 +390,7 @@ export function SettingsModal({ onClose }: Props) {
 
 function pickEditable(s: Settings) {
   return {
-    libraryDir: s.libraryDir,
+    collectionDir: s.collectionDir,
     autoStartDownloads: s.autoStartDownloads,
     maxConcurrentDownloads: s.maxConcurrentDownloads,
     autoplay: s.autoplay,
@@ -573,10 +573,10 @@ function GeneralTab({
   async function chooseCollectionDir() {
     setPickerError(null)
     try {
-      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickCollectionFolder'), initialDirectory: draft.libraryDir.trim() ? draft.libraryDir : defaultCollectionDir })
-      if (dir) onPatch({ libraryDir: dir })
+      const dir = await ipcInvoke('dialog:pickDirectory', { title: t.t('settings.pickCollectionFolder'), initialDirectory: draft.collectionDir.trim() ? draft.collectionDir : defaultCollectionDir })
+      if (dir) onPatch({ collectionDir: dir })
     } catch (error) {
-      setPickerError(presentFailure(error, message('common.folderPickerFailed'), 'settings library folder picker failed'))
+      setPickerError(presentFailure(error, message('common.folderPickerFailed'), 'settings collection folder picker failed'))
     }
   }
   return (
@@ -675,8 +675,8 @@ function GeneralTab({
         <div className="mt-1 flex items-center gap-2">
           <input
             type="text"
-            value={draft.libraryDir}
-            onChange={(e) => onPatch({ libraryDir: e.target.value })}
+            value={draft.collectionDir}
+            onChange={(e) => onPatch({ collectionDir: e.target.value })}
             placeholder={defaultCollectionDir}
             spellCheck={false}
             disabled={busy}

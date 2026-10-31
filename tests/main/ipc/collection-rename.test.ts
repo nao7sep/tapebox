@@ -19,7 +19,7 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
 
-const state = vi.hoisted(() => ({ tape: null as Tape | null, libraryDir: '' }))
+const state = vi.hoisted(() => ({ tape: null as Tape | null, collectionDir: '' }))
 const upsertTape = vi.hoisted(() => vi.fn((tape: Tape) => { state.tape = tape }))
 const renameTapeDurably = vi.hoisted(() => vi.fn())
 const logError = vi.hoisted(() => vi.fn())
@@ -35,7 +35,7 @@ vi.mock('@main/store/session', () => ({
   removeTapes: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => state.libraryDir,
+  getCollectionDir: () => state.collectionDir,
   getSettings: () => ({ trashOnRemove: true, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
@@ -90,8 +90,8 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
 
 const { registerCollectionHandlers } = await import('@main/ipc/collection')
 
-// The library root, and the tape's own folder inside it, where its files live.
-let lib: string
+// The collection root, and the tape's own folder inside it, where its files live.
+let root: string
 let dir: string
 
 beforeEach(async () => {
@@ -99,8 +99,8 @@ beforeEach(async () => {
   logError.mockClear()
   upsertTape.mockClear()
   renameTapeDurably.mockReset()
-  lib = await mkdtemp(join(tmpdir(), 'tapebox-rename-'))
-  state.libraryDir = lib
+  root = await mkdtemp(join(tmpdir(), 'tapebox-rename-'))
+  state.collectionDir = root
   rollbackMutation.mode = null
   rollbackMutation.durableFails = false
   rollbackMutation.publishes = 0
@@ -119,35 +119,35 @@ beforeEach(async () => {
     pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
   state.tape = tape
-  dir = tapeDir(lib, tape)
+  dir = tapeDir(root, tape)
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'Take.mp4'), 'video')
   await writeFile(join(dir, 'Take.jpg'), 'poster')
   await writeFile(join(dir, 'Take.json'), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
   renameTapeDurably.mockImplementation(async (_id: string, fields: Partial<Tape>) => {
-    rollbackMutation.order.push('catalog:start')
+    rollbackMutation.order.push('collection:start')
     rollbackMutation.sourcesVisibleAtCommit = await Promise.all(
       ['Take.mp4', 'Take.json', 'Take.jpg'].map((name) => readFile(join(dir, name)).then(() => true, () => false)),
     ).then((visible) => visible.every(Boolean))
     rollbackMutation.destinationsVisibleAtCommit = await Promise.all(
       ['renamed.mp4', 'renamed.json', 'renamed.jpg'].map((name) => readFile(join(dir, name)).then(() => true, () => false)),
     ).then((visible) => visible.every(Boolean))
-    if (rollbackMutation.durableFails) throw new Error('catalog disk full')
+    if (rollbackMutation.durableFails) throw new Error('collection disk full')
     state.tape = { ...state.tape!, ...fields }
-    rollbackMutation.order.push('catalog:committed')
+    rollbackMutation.order.push('collection:committed')
     return state.tape
   })
   registerCollectionHandlers()
 })
 
 afterEach(async () => {
-  await rm(lib, { recursive: true, force: true })
+  await rm(root, { recursive: true, force: true })
 })
 
 describe('collection:rename', () => {
   it('keeps physical filenames authoritative during a case-only logical rename', async () => {
     const rename = handlers.get('collection:rename')
-    if (!rename) throw new Error('library:rename was not registered')
+    if (!rename) throw new Error('collection:rename was not registered')
 
     await rename({ tapeId: state.tape!.id, name: 'take' })
 
@@ -155,7 +155,7 @@ describe('collection:rename', () => {
     expect(await readFile(join(dir, 'Take.mp4'), 'utf8')).toBe('video')
     expect(await readFile(join(dir, 'Take.jpg'), 'utf8')).toBe('poster')
     expect(state.tape).toMatchObject({ name: 'take', filename: 'Take.mp4', sidecarFilename: 'Take.json' })
-    // The catalog alone records the name; the sidecar is not rewritten.
+    // The collection alone records the name; the sidecar is not rewritten.
     expect(JSON.parse(await readFile(join(dir, 'Take.json'), 'utf8'))).toEqual({ formatVersion: 1, tapebox: { media: null } })
     expect(rollbackMutation.publishes).toBe(0)
   })
@@ -222,7 +222,7 @@ describe('collection:rename', () => {
     expect(rollbackMutation.order.slice(0, 3)).toEqual([
       'publish:renamed.mp4', 'publish:renamed.json', 'publish:renamed.jpg',
     ])
-    expect(rollbackMutation.order.indexOf('catalog:committed')).toBeLessThan(
+    expect(rollbackMutation.order.indexOf('collection:committed')).toBeLessThan(
       rollbackMutation.order.indexOf('cleanup:obsolete'),
     )
     expect((await readdir(dir)).sort()).toEqual(['renamed.jpg', 'renamed.json', 'renamed.mp4'])
@@ -252,7 +252,7 @@ describe('collection:rename', () => {
     expect((await readdir(dir)).sort()).toEqual(['renamed.jpg', 'renamed.json', 'renamed.mp4'])
   })
 
-  it('rolls back every destination and keeps the old catalog/sources when durable commit fails', async () => {
+  it('rolls back every destination and keeps the old record/sources when durable commit fails', async () => {
     rollbackMutation.durableFails = true
     const invoke = handlers.get('collection:rename')!
 
@@ -269,14 +269,14 @@ describe('collection:rename', () => {
     expect(rollbackMutation.order.at(-1)).toBe('cleanup:rollback')
   })
 
-  it('keeps committed cleanup paths diagnostic-only while the catalog stays authoritative', async () => {
+  it('keeps committed cleanup paths diagnostic-only while the collection stays authoritative', async () => {
     rollbackMutation.mode = 'final-cleanup'
     const invoke = handlers.get('collection:rename')!
 
     const failure = Promise.resolve(invoke({ tapeId: state.tape!.id, name: 'renamed' }))
     // The rename committed, so the user is told exactly that; the paths stay in the log.
     await expect(failure).rejects.toThrow('The tape was renamed, but some of its old files could not be removed')
-    await expect(failure).rejects.not.toThrow(lib)
+    await expect(failure).rejects.not.toThrow(root)
     expect(rollbackMutation.cleanupPath).toBe(join(dir, 'Take.mp4'))
     expect(JSON.stringify(logWarn.mock.calls)).toContain(rollbackMutation.cleanupPath)
 

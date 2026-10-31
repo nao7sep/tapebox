@@ -1,9 +1,9 @@
 import { getCollectionDir } from '@main/store/config'
 
 /**
- * The one owner of file actions in the library folder. Import, rename, Apply's
- * poster and sidecar, export, removal, a library move and a finished download's
- * step into the library each take a turn and run one at a time, in arrival
+ * The one owner of file actions in the collection folder. Import, rename, Apply's
+ * poster and sidecar, export, removal, a collection move and a finished download's
+ * step into the collection each take a turn and run one at a time, in arrival
  * order; an action that waits shows as in progress until its turn has run
  * (developer decision). Downloads themselves run side by side outside turns,
  * each in its own tape's file namespace.
@@ -15,14 +15,14 @@ import { getCollectionDir } from '@main/store/config'
 let turns: Promise<unknown> = Promise.resolve()
 let moving = false
 
-/** Run `work` at its turn, with the library folder resolved when the turn starts. */
-export function withCollectionTurn<T>(work: (libraryDir: string) => Promise<T>): Promise<T> {
+/** Run `work` at its turn, with the collection folder resolved when the turn starts. */
+export function withCollectionTurn<T>(work: (collectionDir: string) => Promise<T>): Promise<T> {
   const run = turns.then(() => work(getCollectionDir()))
   turns = run.catch(() => {})
   return run
 }
 
-/** Run a library move at its turn, holding off new downloads until it settles. */
+/** Run a collection move at its turn, holding off new downloads until it settles. */
 export function withCollectionMove<T>(work: () => Promise<T>): Promise<T> {
   return withCollectionTurn(async () => {
     moving = true

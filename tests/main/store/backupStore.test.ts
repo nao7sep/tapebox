@@ -378,7 +378,7 @@ describe('manual recovery from captured managed bytes', () => {
     const session = await import('@main/store/session')
     const { paths, shelfFile, tapeFile } = await import('@main/paths')
     const backup = await import('@main/store/backupStore')
-    await mkdir(paths.library, { recursive: true })
+    await mkdir(paths.collection, { recursive: true })
     await config.loadSettings()
     const profile = {
       id: 'recover1', name: 'Synthetic recovery authorization', urlPattern: 'example.test', isRegex: false,
@@ -406,12 +406,12 @@ describe('manual recovery from captured managed bytes', () => {
     // The launch's initial empty shelf.json has been replaced by its final snapshot.
     expect(rows).toHaveLength(3)
     const configRow = rows.find((row) => row.path === paths.config)!
-    const shelfRow = rows.find((row) => row.path === shelfFile(paths.library))!
-    const tapeRow = rows.find((row) => row.path === tapeFile(paths.library, tape, 'tape.json'))!
+    const shelfRow = rows.find((row) => row.path === shelfFile(paths.collection))!
+    const tapeRow = rows.find((row) => row.path === tapeFile(paths.collection, tape, 'tape.json'))!
     expect(Buffer.from(configRow.content)).toEqual(readFileSync(paths.config))
     expect(Buffer.from(configRow.content).toString('utf8')).toContain('synthetic-recovery-secret')
-    expect(Buffer.from(shelfRow.content)).toEqual(readFileSync(shelfFile(paths.library)))
-    expect(Buffer.from(tapeRow.content)).toEqual(readFileSync(tapeFile(paths.library, tape, 'tape.json')))
+    expect(Buffer.from(shelfRow.content)).toEqual(readFileSync(shelfFile(paths.collection)))
+    expect(Buffer.from(tapeRow.content)).toEqual(readFileSync(tapeFile(paths.collection, tape, 'tape.json')))
     await backup.closeBackupStore()
 
     const recoveredRoot = mkdtempSync(path.join(tmpdir(), 'tapebox-recovered-'))
@@ -419,8 +419,8 @@ describe('manual recovery from captured managed bytes', () => {
       process.env.TAPEBOX_DATA_DIR = recoveredRoot
       vi.resetModules()
       const recoveredPaths = await import('@main/paths')
-      const recoveredShelf = recoveredPaths.shelfFile(recoveredPaths.paths.library)
-      const recoveredTape = recoveredPaths.tapeFile(recoveredPaths.paths.library, tape, 'tape.json')
+      const recoveredShelf = recoveredPaths.shelfFile(recoveredPaths.paths.collection)
+      const recoveredTape = recoveredPaths.tapeFile(recoveredPaths.paths.collection, tape, 'tape.json')
       await mkdir(path.dirname(recoveredTape), { recursive: true })
       await writeFile(recoveredPaths.paths.config, configRow.content)
       await writeFile(recoveredShelf, shelfRow.content)

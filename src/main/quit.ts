@@ -8,18 +8,18 @@
  * shutdown is a session end: macOS and Linux mark it with powerMonitor's
  * 'shutdown' before their quit arrives, and Windows raises the main window's
  * 'session-end' and never a quit event, so that handler closes the records and
- * exits before it returns; the catalog keeps its last committed state.
+ * exits before it returns; the collection keeps its last committed state.
  *
- * The library catalog is the user's own work. A user's quit saves it before
+ * The collection is the user's own work. A user's quit saves it before
  * anything is stopped, so a failed save can cancel the quit with the app still
  * whole: the user chooses Cancel, Retry or Quit anyway. Stopping work can
- * change the catalog, so its final save has the same choices. A session end
+ * change the collection, so its final save has the same choices. A session end
  * never asks.
  */
 
 import { describeError } from '@shared/error'
 
-/** What the user chose after a failed library save; 'cancel' is also the dialog closed. */
+/** What the user chose after a failed collection save; 'cancel' is also the dialog closed. */
 export type QuitChoice = 'cancel' | 'retry' | 'quit-anyway'
 
 /** The one exit deadline, in ms, for every quit, within the 5 s Windows gives a
@@ -41,9 +41,9 @@ export interface QuitSteps {
    * false when the user keeps them. An abort of `signal` (a session end) ends
    * the questions, and the quit goes on. */
   confirm(signal: AbortSignal): Promise<boolean>
-  /** Saves the library catalog; resolves true once it is on disk. */
+  /** Saves the collection; resolves true once it is on disk. */
   saveCollection(): Promise<boolean>
-  /** Shows the failed library save and resolves with the user's choice. An abort
+  /** Shows the failed collection save and resolves with the user's choice. An abort
    * of `signal` closes it as cancelled. */
   ask(signal: AbortSignal): Promise<QuitChoice>
   /** The user cancelled the quit: the app carries on. */
@@ -56,7 +56,7 @@ export interface QuitSteps {
    * session end skips the backups still waiting. */
   close(sessionEnding: boolean): Promise<void>
   /** Closes the records synchronously within `remainingMs`, for a Windows
-   * session end, after which the process may be ended at any time. The catalog
+   * session end, after which the process may be ended at any time. The collection
    * keeps its last committed state; nothing writes it synchronously. */
   endNow(remainingMs: number): void
   warn(message: string, details: Record<string, unknown>): void
@@ -102,8 +102,8 @@ export function createQuit(steps: QuitSteps): Quit {
   let allowUnsaved = false
   /** A stop, layout or close step outlived the deadline and may still be running. */
   let forced = false
-  /** The last library save outlived the deadline. A later successful save clears
-   * it: catalog writes run in order, so that one settled first. */
+  /** The last collection save outlived the deadline. A later successful save clears
+   * it: collection writes run in order, so that one settled first. */
   let collectionSaveUnsettled = false
   let deadlineAt = 0
   let markTimer: ReturnType<typeof setTimeout> | null = null
@@ -145,16 +145,16 @@ export function createQuit(steps: QuitSteps): Quit {
     warnUnsettled(name, settled)
   }
 
-  /** Saves the library until it is saved, the user decides, or the session ends.
+  /** Saves the collection until it is saved, the user decides, or the session ends.
    * Resolves false when the user cancelled the quit. */
   async function saveOrAsk(): Promise<boolean> {
     for (;;) {
       const saved = await within(steps.saveCollection(), remaining())
       collectionSaveUnsettled = saved.outcome === 'timeout'
       if (saved.outcome === 'done' && saved.value) return true
-      warnUnsettled('the library save', saved)
+      warnUnsettled('the collection save', saved)
       if (sessionEnding) {
-        steps.warn('quitting for the session end without the library save', {})
+        steps.warn('quitting for the session end without the collection save', {})
         return true
       }
       if (allowUnsaved) return true
@@ -170,7 +170,7 @@ export function createQuit(steps: QuitSteps): Quit {
       if (choice === 'retry') continue
       if (choice === 'quit-anyway') {
         allowUnsaved = true
-        steps.warn('quit anyway without the library save', {})
+        steps.warn('quit anyway without the collection save', {})
         return true
       }
       return false
@@ -196,10 +196,10 @@ export function createQuit(steps: QuitSteps): Quit {
       return
     }
     await step('stopping work in flight', steps.stopWork())
-    // Finalized downloads may have changed the catalog while work stopped.
-    const library = saveOrAsk()
+    // Finalized downloads may have changed the collection while work stopped.
+    const collection = saveOrAsk()
     const layout = steps.saveLayout()
-    if (!(await library)) {
+    if (!(await collection)) {
       running = false
       steps.resume()
       return

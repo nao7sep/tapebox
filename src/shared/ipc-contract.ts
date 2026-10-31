@@ -25,8 +25,8 @@ export type IpcCalls = {
   'downloads:cancel':      { req: { tapeId: string };               res: void }
   'downloads:retry':       { req: { tapeId: string };               res: void }
 
-  // ── Library ──────────────────────────────────────────────────────────────
-  // Subscribe to the catalog: main sends it as library:current before replying.
+  // ── Collection ───────────────────────────────────────────────────────────
+  // Subscribe to the collection: main sends it as collection:current before replying.
   'collection:subscribe':       { req: undefined;                                       res: void }
   'collection:remove':          { req: { tapeIds: string[]; deleteFiles: boolean };     res: void }
   // Rename a downloaded tape's on-disk files (media + sidecar + thumbnail) to a
@@ -52,13 +52,13 @@ export type IpcCalls = {
   'collection:applyMetadata':   { req: { tapeId: string; metadata: RefreshedMetadata }; res: Tape }
 
   // ── Tape ordering (manual position within a list) ────────────────────────
-  // Reindex one list (the inbox, a box, or Loose tapes) to the given sequence: each id
+  // Reindex one Shelf list (a box, or Loose tapes) to the given sequence: each id
   // gets order = its index, top first. The caller sends the list's full new order
-  // after a drag; the tapes keep their archived/box membership — this is reorder,
-  // not move. Used by both the inbox and the Shelf's within-box reorder.
+  // after a drag; the tapes keep their shelved/box membership — this is reorder,
+  // not move. The Inbox has no manual order, so its tapes are ignored.
   'tapes:reorder': { req: { orderedIds: string[] };          res: void }
 
-  // ── Archive organization (boxes for shelved tapes) ──────────────────────
+  // ── Shelf organization (boxes for shelved tapes) ────────────────────────
   // A box holds shelved tapes in manual order; a tape is in one box or none.
   // `boxes:place` files tapes INTO `boxId` (null = Loose tapes) at the front of that
   // list, reindexing it — the cross-list move (click menu or drag onto a box).
@@ -69,11 +69,11 @@ export type IpcCalls = {
   'boxes:reorder': { req: { orderedIds: string[] };          res: void }
   'boxes:place':   { req: { tapeIds: string[]; boxId: string | null }; res: void }
 
-  // ── Export (copy out of the library) ─────────────────────────────────────
+  // ── Export (copy out of the collection) ──────────────────────────────────
   // Copy media and thumbnail (if any) byte-for-byte into destinationDir under
   // `name`. Rewrite the sidecar with credentials masked and the exported bundle's
   // names, then reserialize it. No transcoding. When deleteFromApp is true the tape is removed from
-  // the library afterwards (its files trashed/deleted per the trash setting), so
+  // the collection afterwards (its files trashed/deleted per the trash setting), so
   // export doubles as "move out". Returns the paths written.
   'export:files': {
     req: { tapeId: string; destinationDir: string; name: string; deleteFromApp: boolean }
@@ -94,13 +94,13 @@ export type IpcCalls = {
   // ── Settings ─────────────────────────────────────────────────────────────
   'settings:get':          { req: undefined;                         res: Settings }
   // `warning` is main-authored copy (a message descriptor) for a save that committed with a leftover
-  // problem (old library copies not removed); null on a clean save.
+  // problem (old collection copies not removed); null on a clean save.
   'settings:update':       { req: SettingsSets & { collectionAction?: 'open' };                 res: { settings: Settings; warning: Message | null } }
-  // Stop a library move started by settings:update; its copies are rolled back and
-  // the update rejects with the library still in the old folder.
+  // Stop a collection move started by settings:update; its copies are rolled back and
+  // the update rejects with the collection still in the old folder.
   'settings:cancelCollectionMove': { req: undefined;                    res: void }
-  // The resolved default library folder (paths.library). The Settings dialog shows
-  // it as the placeholder for an empty libraryDir field, so the user sees where
+  // The resolved default collection folder (paths.collection). The Settings dialog shows
+  // it as the placeholder for an empty collectionDir field, so the user sees where
   // downloads land when they leave the field blank.
   'settings:defaultCollectionDir': { req: undefined;                    res: string }
   'settings:setApiKey':    { req: { apiKey: string };                res: void }
@@ -134,7 +134,7 @@ export type IpcCalls = {
   'dialog:pickFiles':      { req: { title?: string };                res: string[] }
 
   // ── Media (loopback playback server) ─────────────────────────────────────
-  // Base URL of the in-process loopback HTTP server that streams library files
+  // Base URL of the in-process loopback HTTP server that streams collection files
   // to <video>/<audio>. Renderer appends '/<encodeURIComponent(filename)>'.
   'media:endpoint':        { req: undefined;                         res: { baseUrl: string } }
 
@@ -243,7 +243,7 @@ export type RuntimeInfo = {
 }
 
 /**
- * The catalog metadata a re-probe can refresh: the fields that can genuinely
+ * The tape metadata a re-probe can refresh: the fields that can genuinely
  * improve from the source over time. Duration and chapter count are deliberately
  * absent — they're fixed by the downloaded file and can't change unless it's
  * replaced. Identity fields (sourceId, filenames) are never touched either.
@@ -303,18 +303,18 @@ export type IpcEvents = {
   // Bulk tape update (e.g. a box reorder touches many tapes at once).
   'tapes:updatedMany': Tape[]
 
-  // Library changes stopped reaching catalog.json. Sent once per failing streak;
+  // Collection changes stopped reaching disk. Sent once per failing streak;
   // main keeps the changes and retries the save.
   'collection:saveFailed': null
 
-  // The catalog as it is now, the first event of a library:subscribe.
+  // The collection as it is now, the first event of a collection:subscribe.
   'collection:current': { tapes: Tape[]; boxes: Box[] }
   // Replace the renderer's collection after an explicitly committed Open.
   'collection:opened': { tapes: Tape[]; boxes: Box[] }
   // The box list changed (created / renamed / deleted / reordered).
   'boxes:changed':    Box[]
 
-  // Progress of a library move started by settings:update, per file published.
+  // Progress of a collection move started by settings:update, per file published.
   'settings:collectionMoveProgress': { filesDone: number; filesTotal: number; bytesDone: number; bytesTotal: number }
 
   'scan:entry':        { sessionId: string; entry: ScanResult }

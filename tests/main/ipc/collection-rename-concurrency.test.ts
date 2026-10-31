@@ -8,7 +8,7 @@ import { tapeDir } from '@main/paths'
 import { unwrapIpcReply, type IpcReply } from '@shared/ipc-reply'
 
 const state = vi.hoisted(() => ({
-  libraryDir: '', holdRename: false, holdCleanup: false,
+  collectionDir: '', holdRename: false, holdCleanup: false,
   started: () => {}, release: null as Promise<void> | null,
 }))
 const emit = vi.hoisted(() => vi.fn())
@@ -22,7 +22,7 @@ vi.mock('electron', () => ({
   shell: { showItemInFolder: vi.fn(), openPath: vi.fn(), trashItem: vi.fn() },
 }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => state.libraryDir,
+  getCollectionDir: () => state.collectionDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: '' }),
 }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
@@ -52,7 +52,7 @@ vi.mock('@main/io/atomic-file', async (importOriginal) => {
   return {
     ...actual,
     unlinkFiles: async (...args: Parameters<typeof actual.unlinkFiles>) => {
-      if (state.holdCleanup && args[0].includes(join(state.libraryDir, 'shelf', 'abc1234567', 'Original.mp4'))) {
+      if (state.holdCleanup && args[0].includes(join(state.collectionDir, 'shelf', 'abc1234567', 'Original.mp4'))) {
         state.holdCleanup = false
         state.started()
         await state.release
@@ -67,18 +67,18 @@ import * as session from '@main/store/session'
 
 let root: string
 let original: Tape
-// The tape's own folder inside the library, where its files live.
+// The tape's own folder inside the collection, where its files live.
 let tapeFolder: string
 
 beforeEach(async () => {
   handlers.clear()
   emit.mockClear()
   root = await mkdtemp(join(tmpdir(), 'tapebox-rename-concurrency-'))
-  state.libraryDir = join(root, 'library')
+  state.collectionDir = join(root, 'collection')
   state.holdRename = false
   state.holdCleanup = false
   state.release = null
-  await mkdir(state.libraryDir)
+  await mkdir(state.collectionDir)
   await session.loadSession()
   original = {
     id: 'abc1234567', sourceUrl: 'https://example.test/clip', state: 'downloaded',
@@ -90,7 +90,7 @@ beforeEach(async () => {
     pausedAtUtc: null, failedAtUtc: null, failureCode: null, lastError: null,
   }
   // Shelved, so its box and place are organization the rename must keep.
-  tapeFolder = tapeDir(state.libraryDir, original)
+  tapeFolder = tapeDir(state.collectionDir, original)
   await mkdir(tapeFolder, { recursive: true })
   await writeFile(join(tapeFolder, original.filename!), 'video')
   await writeFile(join(tapeFolder, original.sidecarFilename!), JSON.stringify({ formatVersion: 1, tapebox: { media: null } }))
@@ -127,7 +127,7 @@ describe('rename publication across the real session commit', () => {
     expect(returned).toEqual(current)
     expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:updated', current)
     await session.persistNow()
-    const saved = await session.readCollection(state.libraryDir)
+    const saved = await session.readCollection(state.collectionDir)
     if (saved.kind !== 'current') throw new Error('expected the current layout')
     // shelf.json keeps the tape's place in its box, not the order number.
     expect(saved.session.tapes).toEqual([{ ...session.durableTape(current), order: 0 }])

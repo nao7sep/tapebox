@@ -10,11 +10,11 @@ import { matchShortcut, SHORTCUTS } from '@renderer/lib/shortcuts'
  * App-level navigation shortcuts — distinct from the per-list keys (useListboxKeyboard)
  * and per-tape keys (DetailPane):
  *   - ? or ⌘/Ctrl /  open the shortcuts list
- *   - ⌘/Ctrl 1 / 2   switch to Inbox / Archived
- *   - /              jump to the Archive and focus its search box
+ *   - ⌘/Ctrl 1 / 2   switch to Inbox / Shelf
+ *   - /              jump to the Shelf and focus its search box
  *
  * A modal owning the keyboard suppresses everything, and so does a pending IME
- * composition: Cmd+1 mid-candidate would swap the Archive search box out from
+ * composition: Cmd+1 mid-candidate would swap the Shelf search box out from
  * under it. The guard returns without preventing default, so the field's own
  * handling still runs (text-input-ime-conventions). While typing, the bare keys
  * stand down (they are typed text), and on macOS so does the Ctrl half of a

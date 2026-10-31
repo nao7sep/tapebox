@@ -12,7 +12,7 @@ const { ipcInvoke, ipcOn } = vi.hoisted(() => ({ ipcInvoke: vi.fn(), ipcOn: vi.f
 vi.mock('@renderer/ipc/client', () => ({ ipcInvoke, ipcOn }))
 vi.mock('@renderer/ipc/log', () => ({ log: { error: vi.fn() } }))
 
-import { LIBRARY_SAVE_FAILED_MESSAGE, applyInitialSyncState, pullInitialSyncState, startIpcSync } from '@renderer/ipc/sync'
+import { COLLECTION_SAVE_FAILED_MESSAGE, applyInitialSyncState, pullInitialSyncState, startIpcSync } from '@renderer/ipc/sync'
 import { useToastStore } from '@renderer/store/toast'
 import { useTapesStore } from '@renderer/store/tapes'
 import { useBoxesStore } from '@renderer/store/boxes'
@@ -23,9 +23,9 @@ import { useLayoutStore } from '@renderer/store/layout'
 import { useSettingsStore } from '@renderer/store/settings'
 import { useOrderFailuresStore } from '@renderer/store/orderFailures'
 
-function tape(id: string, order: number, boxId: string | null = null, archived = false): Tape {
+function tape(id: string, order: number, boxId: string | null = null, shelved = false): Tape {
   return {
-    id, order, boxId, shelved: archived, addedIndex: 0,
+    id, order, boxId, shelved, addedIndex: 0,
     sourceUrl: `https://example.test/${id}`, state: 'downloaded', addedAtUtc: '2026-10-11T00:00:00.000Z',
     sourceId: null, extractor: null, title: id, uploader: null, durationSeconds: null, chapterCount: null,
     probedAtUtc: null, filename: null, sidecarFilename: null, thumbnailFilename: null,
@@ -93,7 +93,7 @@ describe('required renderer hydration', () => {
 })
 
 describe('live sync', () => {
-  it('gives video and poster files distinct URLs on every Open, including returning to an earlier library', () => {
+  it('gives video and poster files distinct URLs on every Open, including returning to an earlier collection', () => {
     const listeners = new Map<string, (payload: unknown) => void>()
     ipcOn.mockImplementation((channel: string, listener: (payload: unknown) => void) => {
       listeners.set(channel, listener)
@@ -130,10 +130,10 @@ describe('live sync', () => {
     useSelectionStore.getState().select(old.id)
     useShelfStore.getState().selectBox('OldBoxId')
     useShelfStore.getState().setQuery('old search')
-    const attempt = useOrderFailuresStore.getState().beginAttempt('shelf:unboxed', [old])
-    useOrderFailuresStore.getState().setShelfTapes('unboxed', { key: 'app.collectionSaveFailed' })
+    const attempt = useOrderFailuresStore.getState().beginAttempt('shelf:loose', [old])
+    useOrderFailuresStore.getState().setShelfTapes('loose', { key: 'app.collectionSaveFailed' })
     let fail!: (reason: Error) => void
-    const oldAction = runTapeAction(old.id, 'shelve', 'archive failed', { key: 'app.collectionSaveFailed' }, () => new Promise((_resolve, reject) => { fail = reject }))
+    const oldAction = runTapeAction(old.id, 'shelve', 'shelve failed', { key: 'app.collectionSaveFailed' }, () => new Promise((_resolve, reject) => { fail = reject }))
     useBoxActionResultsStore.getState().setResult('create', { key: 'app.collectionSaveFailed' })
     const sync = startIpcSync()
     const boxes = [{ id: 'FreshBoxId', name: 'Fresh', order: 0 }]
@@ -146,14 +146,14 @@ describe('live sync', () => {
     expect(useShelfStore.getState()).toMatchObject({ selectedBoxId: null, query: '' })
     expect(useTapesStore.getState()).toMatchObject({ tapes: [fresh], progress: {}, stalled: {} })
     expect(useOrderFailuresStore.getState()).toMatchObject({ shelfTapes: {}, pending: {} })
-    expect(useOrderFailuresStore.getState().isCurrentAttempt('shelf:unboxed', attempt)).toBe(false)
-    const nextAttempt = useOrderFailuresStore.getState().beginAttempt('shelf:unboxed', [fresh])
+    expect(useOrderFailuresStore.getState().isCurrentAttempt('shelf:loose', attempt)).toBe(false)
+    const nextAttempt = useOrderFailuresStore.getState().beginAttempt('shelf:loose', [fresh])
     expect(nextAttempt).not.toBe(attempt)
     expect(useBoxesStore.getState().boxes).toEqual(boxes)
     sync.stop()
   })
 
-  it('takes the catalog from its first event and applies later events on top in order', () => {
+  it('takes the collection from its first event and applies later events on top in order', () => {
     const listeners = new Map<string, (payload: unknown) => void>()
     ipcOn.mockImplementation((channel: string, listener: (payload: unknown) => void) => {
       listeners.set(channel, listener)
@@ -172,7 +172,7 @@ describe('live sync', () => {
     sync.stop()
   })
 
-  it('keeps a notice on screen when main reports library changes are not reaching disk', () => {
+  it('keeps a notice on screen when main reports collection changes are not reaching disk', () => {
     useToastStore.setState({ toasts: [] })
     const listeners = new Map<string, (payload: unknown) => void>()
     ipcOn.mockImplementation((channel: string, listener: (payload: unknown) => void) => {
@@ -182,7 +182,7 @@ describe('live sync', () => {
     const sync = startIpcSync()
     listeners.get('collection:saveFailed')!(null)
     expect(useToastStore.getState().toasts).toEqual([
-      expect.objectContaining({ text: LIBRARY_SAVE_FAILED_MESSAGE, kind: 'error' }),
+      expect.objectContaining({ text: COLLECTION_SAVE_FAILED_MESSAGE, kind: 'error' }),
     ])
     sync.stop()
   })

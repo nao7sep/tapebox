@@ -16,22 +16,22 @@ function shortName(name: string): string {
 }
 
 /**
- * Move the library's tracked contents from one folder to another when the user
- * changes the library folder. Path-taking and side-effect-localized (no settings,
+ * Move the collection's tracked contents from one folder to another when the user
+ * changes the collection folder. Path-taking and side-effect-localized (no settings,
  * no queue, no app logging) so it is unit-testable against real temp dirs, the way
  * the rest of the I/O layer is. The caller (ipc/settings) resolves the effective
  * old/new dirs and the file list, then commits the new setting only after this
  * resolves.
  *
  * A multi-file move is not atomic, and the files ARE the user's data, so the whole
- * operation retains every catalog-visible source until the caller durably commits
- * the new libraryDir authority:
+ * operation retains every source the collection names until the caller durably commits
+ * the new collectionDir authority:
  *
  *   1. Same effective dir → no-op (custom→default that resolves equal, a re-pick of
  *      the same folder, whitespace differences). Compared by resolved path.
  *   2. Create the destination dir first (recursive, idempotent).
- *   3. Collision guard, up front: if the catalog or ANY tape folder already exists at
- *      the destination we abort before moving a single file — a relocation must never
+ *   3. Collision guard, up front: if shelf.json, an inbox/ or a shelf/ folder already
+ *      exists at the destination we abort before moving a single file — a relocation must never
  *      overwrite or merge into what is already in the new folder, and aborting early
  *      means nothing has moved yet.
  *   4. Per file: publish to the destination without overwrite, keeping the source:
@@ -47,7 +47,7 @@ function shortName(name: string): string {
  *      collisions for the user to clear (accepted: rare).
  *
  * Only the named entries are touched — files the app created and tracks (media,
- * sidecars, thumbnails, each in its tape's folder) and the collection catalog.
+ * sidecars, thumbnails, each in its tape's folder, and each tape.json) and shelf.json.
  * Unrelated files the user dropped in the folder are left alone, and a tape
  * folder holding anything else stays where it is.
  */
@@ -65,12 +65,12 @@ export type RelocateOptions = {
   /** Called once before the first file and after each file is published. */
   onProgress?: (progress: RelocateProgress) => void
   /** Publishes one file at its destination without overwrite; the owner of a
-   * file another writer may change, such as the catalog, publishes it itself. */
+   * file another writer may change, such as shelf.json or a tape.json, publishes it itself. */
   publish?: (name: string, source: string, destination: string, signal?: AbortSignal) => Promise<{ crossDevice: boolean }>
 }
 
 /**
- * Resolve whether two library paths point at the same effective directory. The
+ * Resolve whether two collection paths point at the same effective directory. The
  * caller resolves blank→default before calling, but normalizing here too makes the
  * no-op check robust to trailing slashes and `.`/`..` segments.
  */
@@ -118,7 +118,7 @@ async function removeEmptiedFolders(files: readonly RelocatedFile[], side: 'sour
   }
 }
 
-/** Roll back pre-config publication. The catalog-visible sources were never
+/** Roll back pre-config publication. The sources the collection names were never
  * removed. */
 export async function rollbackCollectionRelocation(
   files: readonly RelocatedFile[],
@@ -166,7 +166,7 @@ export async function relocateCollection(
     // The notice names the first five, each shortened as identifying text, and
     // counts the rest; Records keeps every complete name (interface-styling-
     // conventions, Labels). The count is a plural entry.
-    log.warn('library move destination already holds files', { toDir, collisions })
+    log.warn('collection move destination already holds files', { toDir, collisions })
     const shown = collisions.slice(0, 5).map(shortName).join(', ')
     throw new UserFacingError(
       'conflict',
@@ -176,7 +176,7 @@ export async function relocateCollection(
     )
   }
 
-  // A file the catalog references but that isn't on disk (already deleted out of
+  // A file the collection references but that isn't on disk (already deleted out of
   // band) is skipped, not failed — there's nothing to move and nothing to lose.
   const present: { name: string; size: number }[] = []
   for (const name of entries) {
@@ -215,7 +215,7 @@ export async function relocateCollection(
     } catch (rollbackError) {
       throw new AggregateError(
         [err, rollbackError],
-        'Library relocation failed and could not be fully rolled back.',
+        'Collection relocation failed and could not be fully rolled back.',
       )
     }
     throw err

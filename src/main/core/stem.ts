@@ -14,12 +14,12 @@ import { tapeDir } from '@main/paths'
 
 const ID_LENGTH = 10
 
-export async function reserveTapeId(libraryDir: string, taken: Iterable<string>): Promise<string> {
+export async function reserveTapeId(collectionDir: string, taken: Iterable<string>): Promise<string> {
   const held = new Set([...taken].map(portableFilenameIdentity))
   for (;;) {
     const id = nanoid(ID_LENGTH)
     if (held.has(portableFilenameIdentity(id))) continue
-    const folders = [false, true].map((shelved) => tapeDir(libraryDir, { id, shelved }))
+    const folders = [false, true].map((shelved) => tapeDir(collectionDir, { id, shelved }))
     if (!(await exists(folders[0]!)) && !(await exists(folders[1]!))) return id
   }
 }

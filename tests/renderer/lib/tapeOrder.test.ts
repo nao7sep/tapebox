@@ -78,18 +78,18 @@ describe('visibleTapes — inbox', () => {
   })
 })
 
-describe('visibleTapes — archived', () => {
-  const archived = (over: Partial<Tape> & { id: string }) =>
+describe('visibleTapes — shelved', () => {
+  const shelved = (over: Partial<Tape> & { id: string }) =>
     tape({ shelved: true, ...over })
 
   it('shows one box at a time in manual order', () => {
     const tapes = [
-      archived({ id: 'unboxed___', boxId: null, order: 0 }),
-      archived({ id: 'b2________', boxId: 'box1', order: 1 }),
-      archived({ id: 'b1________', boxId: 'box1', order: 0 }),
+      shelved({ id: 'loose_____', boxId: null, order: 0 }),
+      shelved({ id: 'b2________', boxId: 'box1', order: 1 }),
+      shelved({ id: 'b1________', boxId: 'box1', order: 0 }),
     ]
     expect(ids(visibleTapes(tapes, 'shelf', 'box1'))).toEqual(['b1________', 'b2________'])
-    expect(ids(visibleTapes(tapes, 'shelf', null))).toEqual(['unboxed___'])
+    expect(ids(visibleTapes(tapes, 'shelf', null))).toEqual(['loose_____'])
   })
 
   it('search orders by box (then within-box order), spanning all boxes', () => {
@@ -98,9 +98,9 @@ describe('visibleTapes — archived', () => {
       { id: 'box2', name: 'B', order: 1 },
     ]
     const tapes = [
-      archived({ id: 'bbbbbbbbbb', title: 'cat meme', boxId: 'box2', order: 0, downloadedAtUtc: '2024-05-01T00:00:00.000Z' }),
-      archived({ id: 'aaaaaaaaaa', title: 'cat video', boxId: 'box1', order: 0, downloadedAtUtc: '2024-01-01T00:00:00.000Z' }),
-      archived({ id: 'cccccccccc', title: 'dog', boxId: 'box1', order: 1 }),
+      shelved({ id: 'bbbbbbbbbb', title: 'cat meme', boxId: 'box2', order: 0, downloadedAtUtc: '2024-05-01T00:00:00.000Z' }),
+      shelved({ id: 'aaaaaaaaaa', title: 'cat video', boxId: 'box1', order: 0, downloadedAtUtc: '2024-01-01T00:00:00.000Z' }),
+      shelved({ id: 'cccccccccc', title: 'dog', boxId: 'box1', order: 1 }),
     ]
     // Box A (order 0) precedes box B (order 1) even though B's match is newer; the
     // selected box is ignored (search spans all); 'dog' is filtered out.
@@ -110,10 +110,10 @@ describe('visibleTapes — archived', () => {
   it('search puts Loose tapes first, then each box in its own manual order', () => {
     const boxes = [{ id: 'box1', name: 'A', order: 0 }]
     const tapes = [
-      archived({ id: 'a1________', title: 'x one', boxId: 'box1', order: 0 }),
-      archived({ id: 'unboxed___', title: 'x unboxed', boxId: null, order: 0 }),
-      archived({ id: 'a2________', title: 'x two', boxId: 'box1', order: 1 }),
+      shelved({ id: 'a1________', title: 'x one', boxId: 'box1', order: 0 }),
+      shelved({ id: 'loose_____', title: 'x loose', boxId: null, order: 0 }),
+      shelved({ id: 'a2________', title: 'x two', boxId: 'box1', order: 1 }),
     ]
-    expect(ids(visibleTapes(tapes, 'shelf', null, 'x', boxes))).toEqual(['unboxed___', 'a1________', 'a2________'])
+    expect(ids(visibleTapes(tapes, 'shelf', null, 'x', boxes))).toEqual(['loose_____', 'a1________', 'a2________'])
   })
 })

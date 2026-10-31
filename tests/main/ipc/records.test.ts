@@ -53,7 +53,7 @@ describe('records IPC', () => {
     expect(readRecords).toHaveBeenLastCalledWith({ op: 'detail', kind: 'ytdlp-run', id: 4 })
   })
 
-  it('names each tape still in the library and marks this launch', async () => {
+  it('names each tape still in the collection and marks this launch', async () => {
     readRecords.mockResolvedValueOnce({ sessions: ['s2', 's1'], tapeIds: ['t1', 't2', 't3'] })
     expect(await invoke('records:sources')).toEqual({
       ok: true,

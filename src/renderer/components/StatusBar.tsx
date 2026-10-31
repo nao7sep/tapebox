@@ -18,7 +18,7 @@ import { joinMessages, message, type Message, type MessageValue } from '@shared/
  * short, since nothing else shows the complete status (text-cleanup rule 4); an
  * empty notice zone takes no width and the tools zone takes its content's, so the
  * activity line has the room and wraps only in an unusually narrow window:
- *   left   — live download activity, or an idle library summary
+ *   left   — live download activity, or an idle collection summary
  *   center — an eligible app-wide passing notice; empty when none
  *   right  — managed-tool / update state, click-through to the tools modal
  */
@@ -39,7 +39,7 @@ export function StatusBar() {
 /**
  * The live pulse, read left to right in pipeline order. The lead reflects the
  * most active stage with anything in it: active downloads (with summed speed +
- * ETA) > a working queue > tapes paused waiting for the user > an idle library
+ * ETA) > a working queue > tapes paused waiting for the user > an idle collection
  * count. Then the attention items trail in a fixed order — failed, then pages to
  * scan — because they no longer jump the list, so this bar is where you spot them.
  */

@@ -26,7 +26,7 @@ vi.mock('@main/store/session', () => ({
   },
 }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => '/library',
+  getCollectionDir: () => '/collection',
   getSettings: () => ({ autoStartDownloads: true }),
 }))
 const stat = vi.hoisted(() => vi.fn())
@@ -49,7 +49,7 @@ describe('adding URLs', () => {
   it.each(['EACCES', 'EIO'])('does not add or announce a tape after a stem lookup fails with %s', async (code) => {
     const { emit } = await import('@main/ipc/events')
     const { tick } = await import('@main/queue/manager')
-    stat.mockRejectedValue(Object.assign(new Error('library unavailable'), { code }))
+    stat.mockRejectedValue(Object.assign(new Error('collection unavailable'), { code }))
     await expect(handlers.get('downloads:add')!({ url: 'https://example.test/watch' })).rejects.toMatchObject({ code: 'internal' })
     await expect(handlers.get('downloads:addBulk')!({ urls: ['https://example.test/watch'] })).rejects.toMatchObject({ code: 'internal' })
     expect(tapes).toEqual([])

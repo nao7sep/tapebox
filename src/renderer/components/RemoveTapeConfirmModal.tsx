@@ -10,7 +10,7 @@ type Props = {
 }
 
 /**
- * Confirmation for removing a tape from the library. The message and commit
+ * Confirmation for removing a tape from the collection. The message and commit
  * label adapt to the tape's state: a still-downloading tape has no file to
  * remove; otherwise the wording reflects whether files go to the Trash
  * (restorable) or are deleted permanently, per the trash-on-remove setting.

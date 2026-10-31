@@ -22,7 +22,7 @@ import { nowUtcIso } from '@shared/utc'
 const PROBE_IDLE_TIMEOUT_MS = 30_000
 
 // Thumbnail encoding — fixed, not user-configurable. Every poster image passes
-// through saveThumbnailJpeg, so these literals are the one place the library's
+// through saveThumbnailJpeg, so these literals are the one place the collection's
 // thumbnail format is decided. Values target a clean preview at modest size, not
 // archival fidelity: a poster is only ever shown letterboxed in the player.
 const THUMBNAIL_JPEG_QSCALE = 3      // ffmpeg mjpeg -q:v: 2 (best) … 31 (worst)

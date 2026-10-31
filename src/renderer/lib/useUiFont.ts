@@ -5,7 +5,7 @@ import { useEffect } from 'react'
  *
  * The default family stack lives in globals.css (@theme --font-sans); this only
  * *overrides* it when uiFontFamily is non-empty, mirroring how a blank
- * libraryDir/externalPlayer means "use the default". The string is handed to CSS
+ * collectionDir/externalPlayer means "use the default". The string is handed to CSS
  * verbatim — the browser resolves the comma-separated stack and falls back on its
  * own, so a misspelled or absent font never breaks text (app-chrome-conventions:
  * web fonts are engine-resolved, not parsed). Clearing the field reverts to the

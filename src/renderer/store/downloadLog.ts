@@ -6,7 +6,7 @@ import type { Message } from '@shared/i18n/translate'
  * Newest entry first — the detail pane reads it top-down, so the latest line
  * (and, on failure, the error) sits at the top. Ephemeral: it mirrors what the
  * main process streams during an attempt, is reset when a new attempt starts,
- * and is dropped once the tape lands in the library.
+ * and is dropped once the tape lands in the collection.
  */
 
 // A line is yt-dlp's own output, shown as it printed it; an error is app copy.

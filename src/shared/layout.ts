@@ -3,7 +3,7 @@ import { z } from 'zod'
 /**
  * View state — the pane sizes the user drags. This is disposable chrome, not a
  * preference and not data: it lives in its own layout.json, separate from
- * settings (which the user authors) and session (which holds the library and must
+ * settings (which the user authors) and the collection (which holds the tapes and must
  * never be reset). Every field self-heals — an out-of-range or missing value falls
  * back to its default rather than blocking load — because losing a pane width
  * costs the user nothing.
@@ -19,7 +19,7 @@ import { z } from 'zod'
 export const LAYOUT_BOUNDS = {
   leftPaneWidth:      { min: 200, max: 720, default: 320 },
   chaptersPaneWidth:  { min: 200, max: 720, default: 288 },
-  archiveBoxesHeight: { min: 120, max: 800, default: 240 },
+  shelfBoxesHeight: { min: 120, max: 800, default: 240 },
   // The Records window's list pane (records/RecordsWindow.tsx). `min` still fits
   // two filter selects side by side in a row and feeds RECORDS_WINDOW_MIN_WIDTH.
   recordsListWidth:   { min: 320, max: 640, default: 380 },
@@ -149,7 +149,7 @@ const dim = (b: { min: number; max: number; default: number }) =>
 export const LayoutSchema = z.object({
   leftPaneWidth: dim(LAYOUT_BOUNDS.leftPaneWidth),
   chaptersPaneWidth: dim(LAYOUT_BOUNDS.chaptersPaneWidth),
-  archiveBoxesHeight: dim(LAYOUT_BOUNDS.archiveBoxesHeight),
+  shelfBoxesHeight: dim(LAYOUT_BOUNDS.shelfBoxesHeight),
   recordsListWidth: dim(LAYOUT_BOUNDS.recordsListWidth),
 })
 export type Layout = z.infer<typeof LayoutSchema>
@@ -157,6 +157,6 @@ export type Layout = z.infer<typeof LayoutSchema>
 export const defaultLayout: Layout = {
   leftPaneWidth: LAYOUT_BOUNDS.leftPaneWidth.default,
   chaptersPaneWidth: LAYOUT_BOUNDS.chaptersPaneWidth.default,
-  archiveBoxesHeight: LAYOUT_BOUNDS.archiveBoxesHeight.default,
+  shelfBoxesHeight: LAYOUT_BOUNDS.shelfBoxesHeight.default,
   recordsListWidth: LAYOUT_BOUNDS.recordsListWidth.default,
 }

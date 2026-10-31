@@ -20,7 +20,7 @@ type Props = {
 
 
 /**
- * A library row. Two lines: the title (with the running time right-aligned,
+ * A tape row. Two lines: the title (with the running time right-aligned,
  * since length is what you scan for) and a muted meta line — the status label
  * plus chapter count. The background/border tint carries the tape's state at a
  * glance; selection brightens the border on top without erasing that state cue.
@@ -28,8 +28,8 @@ type Props = {
  * A non-focusable option: its listbox container holds the single tab stop and the
  * keys, and points aria-activedescendant at the selected row's id. Clicking the row
  * selects the tape (and, since the row sits inside the focusable container, hands the
- * arrows to this list). No "archived" marker: a row only ever appears in a list
- * already filtered to one side (Inbox or Archived), so the flag would be the same on
+ * arrows to this list). No "shelved" marker: a row only ever appears in a list
+ * already filtered to one side (Inbox or Shelf), so the flag would be the same on
  * every row.
  */
 export const TapeRow = memo(function TapeRow({ tape, progress: explicitProgress, selected, onSelect, id }: Props) {
@@ -62,8 +62,8 @@ export const TapeRow = memo(function TapeRow({ tape, progress: explicitProgress,
         )}
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-fg-muted">
-        {/* A downloaded tape's status is just "In library" (says nothing across a
-            whole library), so show the uploader instead when we have one. */}
+        {/* A downloaded tape's status is just "In collection" (says nothing across a
+            whole collection), so show the uploader instead when we have one. */}
         <span className="min-w-0 truncate">
           {tape.state === 'downloaded' && tape.uploader
             ? tape.uploader
@@ -89,7 +89,7 @@ export const TapeRow = memo(function TapeRow({ tape, progress: explicitProgress,
 
 function paletteFor(tape: Tape, selected: boolean): string {
   const state = tape.state
-  const archived = tape.shelved
+  const shelved = tape.shelved
 
   // Selection overlays a bright border on top of the state palette so the
   // selected row — the listbox's active descendant — is always obvious without
@@ -98,8 +98,8 @@ function paletteFor(tape: Tape, selected: boolean): string {
     ? 'border-selected ring-1 ring-selected/40'
     : ''
 
-  const baseBgBorder = archived
-    ? 'bg-row-archived border-line/70 hover:border-line'
+  const baseBgBorder = shelved
+    ? 'bg-row-shelved border-line/70 hover:border-line'
     : bgBorderForState(state)
 
   return `${baseBgBorder} ${selectionRing}`

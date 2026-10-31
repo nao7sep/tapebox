@@ -64,7 +64,7 @@ describe('plain message dialog settlement', () => {
 
   const choices = {
     language: 'en',
-    title: 'Library changes could not be saved',
+    title: 'Collection changes could not be saved',
     message: 'm',
     closeLabel: 'Cancel',
     actions: [{ id: 'retry', label: 'Try again' }, { id: 'quit-anyway', label: 'Quit anyway', danger: true }],

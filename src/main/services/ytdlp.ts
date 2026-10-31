@@ -27,8 +27,8 @@ import {
  * player JS / solve challenges on sites that need it).
  */
 
-const MANAGED_LIBRARY_ENV = 'TAPEBOX_MANAGED_LIBRARY'
-const MANAGED_LIBRARY_ARG = 'home:${' + MANAGED_LIBRARY_ENV + '}'
+const MANAGED_TAPE_DIR_ENV = 'TAPEBOX_TAPE_DIR'
+const MANAGED_TAPE_DIR_ARG = 'home:${' + MANAGED_TAPE_DIR_ENV + '}'
 
 /** `dir` is the tape folder yt-dlp writes into, when it writes at all. */
 export function ytdlpEnv(dir?: string): NodeJS.ProcessEnv {
@@ -39,7 +39,7 @@ export function ytdlpEnv(dir?: string): NodeJS.ProcessEnv {
     // Insert the literal directory through that final expansion so its spaces,
     // dollars, percents and tildes never become another expression. Keep cwd and
     // the rest of the environment for intentionally authored user options.
-    ...(dir === undefined ? {} : { [MANAGED_LIBRARY_ENV]: dir }),
+    ...(dir === undefined ? {} : { [MANAGED_TAPE_DIR_ENV]: dir }),
   }
 }
 
@@ -252,7 +252,7 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
 
   const args = [
     ...resolveYtdlpArgs(opts.url),
-    '--paths', MANAGED_LIBRARY_ARG,
+    '--paths', MANAGED_TAPE_DIR_ARG,
     '--write-info-json',
     // Write the source thumbnail beside the media as {outputId}.{ext}. We do NOT
     // ask yt-dlp to convert it — every image goes through our own gate
@@ -274,8 +274,8 @@ async function runDownloadOnce(opts: DownloadOptions, idleTimeoutMs: number | un
     opts.url,
   ]
   // not recorded: yt-dlp writes media, a raw thumbnail, and info JSON into the
-  // library (including a user-selected external one): transient app-owned content
-  // until exported (developer classification). Its catalog row is what is backed up.
+  // collection (including a user-selected external one): transient app-owned content
+  // until exported (developer classification). Its tape.json is what is backed up.
   const child = spawnStreaming(binaryPath('yt-dlp'), args, { env: ytdlpEnv(opts.dir), signal: opts.signal, idleTimeoutMs })
   const run = collectRun(child, { kind: 'download', tapeId: opts.tapeId, scanId: null, url: opts.url, args })
 
@@ -408,7 +408,7 @@ export async function downloadThumbnail(
   dir: string,
   signal: AbortSignal,
 ): Promise<string | null> {
-  // Tape IDs and nanoids use the catalog's controlled alphabet, so the scratch
+  // Tape IDs and nanoids use the collection's controlled alphabet, so the scratch
   // name is never mistaken for the media's; the random suffix separates
   // repeated calls.
   const scratchStem = `${tapeId}.poster-${nanoid(10)}`
@@ -421,7 +421,7 @@ export async function downloadThumbnail(
       '--write-thumbnail',
       '--no-playlist',
       '--no-warnings',
-      '--paths', MANAGED_LIBRARY_ARG,
+      '--paths', MANAGED_TAPE_DIR_ARG,
       '--output', `${scratchStem}.%(ext)s`,
       url,
     ], signal, dir)

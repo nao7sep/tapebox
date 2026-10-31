@@ -6,7 +6,7 @@ import * as session from '@main/store/session'
 /**
  * The Records window: opening it, and its reads of records.sqlite3, which the
  * records writer thread answers (io/records.ts). The filters' launches and tapes come
- * from the records themselves; a tape still in the library is named by its title.
+ * from the records themselves; a tape still in the collection is named by its title.
  */
 export function registerRecordsHandlers(): void {
   handle('records:open', () => openRecordsWindow())

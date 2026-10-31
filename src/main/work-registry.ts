@@ -1,9 +1,9 @@
 /**
  * The owner of cancellable, user-started work outside the download queue and the
  * page scans: AI name suggestions, renames, exports, imports, metadata refreshes
- * and library moves. Each run gets its own AbortSignal. A caller-supplied key lets
+ * and collection moves. Each run gets its own AbortSignal. A caller-supplied key lets
  * the renderer cancel one run (e.g. the Suggest button); quitting cancels every
- * run and waits for each to settle, so no child process or half-written library
+ * run and waits for each to settle, so no child process or half-written collection
  * file outlives the app.
  */
 

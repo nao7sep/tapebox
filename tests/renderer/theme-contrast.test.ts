@@ -55,7 +55,7 @@ const GROUNDS = ['canvas', 'panel']
 // behind icon buttons and the disabled primary carry only body-weight text; the
 // selected box row adds its muted count; the subtle tier (placeholders, empty
 // values) sits only on resting surfaces.
-const RESTING = ['canvas', 'panel', 'raised', 'hover', 'sticky', 'row', 'row-archived', 'neutral-tint']
+const RESTING = ['canvas', 'panel', 'raised', 'hover', 'sticky', 'row', 'row-shelved', 'neutral-tint']
 const TEXT_ON: Record<string, string[]> = {
   'fg-strong': [...RESTING, 'raised-hover', 'hover-strong', 'info-selected'],
   'fg-emphasis': [...RESTING, 'raised-hover', 'hover-strong', 'info-selected'],

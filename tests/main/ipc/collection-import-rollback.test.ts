@@ -21,7 +21,7 @@ vi.mock('electron', () => ({
 }))
 
 const state = vi.hoisted(() => ({
-  libraryDir: '',
+  collectionDir: '',
   failSidecar: true,
   failCopyOf: null as string | null,
   cleanupThrows: false,
@@ -33,7 +33,7 @@ vi.mock('@main/io/atomic-json', async (importOriginal) => {
   return {
     ...actual,
     writeJsonAtomic: vi.fn(async (...args: Parameters<typeof actual.writeJsonAtomic>) => {
-      if (state.failSidecar && args[0].startsWith(state.libraryDir)) throw new Error('sidecar publication failed')
+      if (state.failSidecar && args[0].startsWith(state.collectionDir)) throw new Error('sidecar publication failed')
       return actual.writeJsonAtomic(...args)
     }),
   }
@@ -72,7 +72,7 @@ vi.mock('@main/store/session', () => ({
   removeTapes: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => state.libraryDir,
+  getCollectionDir: () => state.collectionDir,
   getSettings: () => ({ trashOnRemove: true, externalPlayer: '' }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
@@ -95,10 +95,10 @@ beforeEach(async () => {
   mainLog.error.mockReset()
   root = await mkdtemp(join(tmpdir(), 'tapebox-import-rollback-'))
   sourceDir = join(root, 'source')
-  state.libraryDir = join(root, 'library')
+  state.collectionDir = join(root, 'collection')
   await mkdir(sourceDir)
   // A collection that already holds Inbox tapes has its inbox/ folder.
-  await mkdir(join(state.libraryDir, 'inbox'), { recursive: true })
+  await mkdir(join(state.collectionDir, 'inbox'), { recursive: true })
   await writeFile(join(sourceDir, 'clip.mp4'), 'source video')
   await writeFile(join(sourceDir, 'clip.json'), JSON.stringify({
     formatVersion: 1,
@@ -116,7 +116,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-describe('library:import rollback ownership', () => {
+describe('collection:import rollback ownership', () => {
   it('removes the files it copied when a later bundle publication fails', async () => {
     const result = await handlers.get('collection:import')!({
       paths: [join(sourceDir, 'clip.json'), join(sourceDir, 'clip.mp4')],
@@ -130,7 +130,7 @@ describe('library:import rollback ownership', () => {
     expect(inEnglish(result.issues[0]?.reason)).toBe(
       'The tape files could not be copied into the collection. Check that the collection folder is available and try again.',
     )
-    expect(await readdir(join(state.libraryDir, 'inbox'))).toEqual([])
+    expect(await readdir(join(state.collectionDir, 'inbox'))).toEqual([])
     expect(upsertTape).not.toHaveBeenCalled()
     expect(mainLog.error).toHaveBeenCalledWith(
       'import bundle copy failed',

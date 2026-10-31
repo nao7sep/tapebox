@@ -52,7 +52,7 @@ export async function notifySettingsKept(configPath: string, owner?: BrowserWind
 }
 
 /** Startup stopped. A store in a newer format, one that could not be opened, and
- *  a library folder setting that could not be read are each named with their
+ *  a collection folder setting that could not be read are each named with their
  *  path, and were left as they are (store-recovery-conventions). */
 export async function notifyStartupFailure(error: unknown): Promise<void> {
   if (error instanceof NewerFormatError) await showNotice('storeNewer', undefined, { path: error.path })

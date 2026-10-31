@@ -9,7 +9,7 @@ export function sendTo<K extends keyof IpcEvents>(contents: Electron.WebContents
 /**
  * Push an event to every live renderer.
  * Events fired before any window exists are dropped: a window's
- * library:subscribe sends it the catalog as it is then.
+ * collection:subscribe sends it the session as it is then.
  */
 export function emit<K extends keyof IpcEvents>(channel: K, payload: IpcEvents[K]): void {
   for (const win of BrowserWindow.getAllWindows()) {

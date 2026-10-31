@@ -34,7 +34,7 @@ export function registerScanHandlers(): void {
     }
     if (closed) throw new Error('TapeBox is quitting.')
     const sessionId = nanoid(8)
-    // Mark what the library already holds with its one identity rule: the
+    // Mark what the collection already holds with its one identity rule: the
     // (extractor, id) pair for probed tapes, the canonical URL for any tape,
     // including ones still queued unprobed (added with autostart off).
     const known = collectionSourceIndex(session.getTapes())

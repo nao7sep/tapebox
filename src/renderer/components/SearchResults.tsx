@@ -7,7 +7,7 @@ import { TapeRow } from './TapeRow'
 import { useI18n } from '@renderer/i18n/I18nContext'
 
 /**
- * Read-only results for an archive search: matching tapes across all boxes,
+ * Read-only results for a Shelf search: matching tapes across all boxes,
  * ordered exactly like the box list reads (Loose tapes first, then boxes in their
  * order) and grouped under a header band per box. The header — a flush, borderless
  * strip that sticks to the top while scrolling — does the job the old per-row

@@ -25,7 +25,7 @@ vi.mock('electron', () => ({
 const openExternalPlayer = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@main/io/external-player', () => ({ openExternalPlayer }))
 
-const state = vi.hoisted(() => ({ libraryDir: '/library', tapes: [] as Tape[], externalPlayer: '' }))
+const state = vi.hoisted(() => ({ collectionDir: '/collection', tapes: [] as Tape[], externalPlayer: '' }))
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }))
 
 vi.mock('@main/store/session', () => ({
@@ -38,7 +38,7 @@ vi.mock('@main/store/session', () => ({
   reorderTapesDurably: vi.fn(),
 }))
 vi.mock('@main/store/config', () => ({
-  getCollectionDir: () => state.libraryDir,
+  getCollectionDir: () => state.collectionDir,
   getSettings: () => ({ trashOnRemove: false, externalPlayer: state.externalPlayer }),
 }))
 vi.mock('@main/queue/manager', () => ({ isActive: vi.fn(() => false), cancel: vi.fn() }))
@@ -50,7 +50,7 @@ vi.mock('@main/ipc/events', () => ({ emit: vi.fn() }))
 const { registerCollectionHandlers } = await import('@main/ipc/collection')
 
 // A shelved tape's file sits in its folder under shelf/.
-const FULL_PATH = join('/library', 'shelf', 'Hasafile12', 'Take.mp4')
+const FULL_PATH = join('/collection', 'shelf', 'Hasafile12', 'Take.mp4')
 function makeTape(overrides: Partial<Tape> & { id: string }): Tape {
   return {
     sourceUrl: 'https://example.test/watch', state: 'downloaded',
@@ -90,7 +90,7 @@ describe('revealing a tape in the file manager', () => {
 
   it.each([
     ['a tape whose file is not downloaded yet', 'Nofileyet1'],
-    ['a tape the catalog does not hold', 'not-a-tape'],
+    ['a tape the collection does not hold', 'not-a-tape'],
   ])('refuses for %s', async (_case, tapeId) => {
     await expect(invoke('collection:reveal', { tapeId })).rejects.toThrow('The operation could not be completed.')
     expect(shell.showItemInFolder).not.toHaveBeenCalled()
@@ -104,7 +104,7 @@ describe('playing a tape outside the app', () => {
     expect(shell.openPath).not.toHaveBeenCalled()
     state.externalPlayer = 'player'
     await invoke('collection:playExternal', { tapeId: 'Hasafile12' })
-    expect(openExternalPlayer).toHaveBeenCalledWith('player', join('/library', 'shelf', 'Hasafile12', filename))
+    expect(openExternalPlayer).toHaveBeenCalledWith('player', join('/collection', 'shelf', 'Hasafile12', filename))
   })
 
   it('lets the OS choose the player when none is configured', async () => {
@@ -144,7 +144,7 @@ describe('playing a tape outside the app', () => {
 
   it.each([
     ['a tape whose file is not downloaded yet', 'Nofileyet1'],
-    ['a tape the catalog does not hold', 'not-a-tape'],
+    ['a tape the collection does not hold', 'not-a-tape'],
   ])('refuses for %s', async (_case, tapeId) => {
     await expect(invoke('collection:playExternal', { tapeId })).rejects.toThrow('The operation could not be completed.')
     expect(shell.openPath).not.toHaveBeenCalled()

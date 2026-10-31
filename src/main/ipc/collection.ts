@@ -48,7 +48,7 @@ function emitCurrent(tapeIds: readonly string[]): void {
 export function registerCollectionHandlers(): void {
   session.onCollectionSaveFailure(() => emit('collection:saveFailed', null))
 
-  // The catalog goes as this subscription's first event, sent in the same turn
+  // The session goes as this subscription's first event, sent in the same turn
   // as any later change would be, so the window needs no second source.
   handle('collection:subscribe', async (_req, event) => {
     sendTo(event.sender, 'collection:current', { tapes: session.getTapes(), boxes: session.getBoxes() })
@@ -79,9 +79,10 @@ export function registerCollectionHandlers(): void {
     }
   }))
 
-  // Reindex one list (the inbox, a box, or Loose tapes) to the caller's sequence after
-  // a drag — order = position, top first. Membership (archived / box) is left
-  // untouched; this is reorder-in-place, not a move between lists.
+  // Reindex one Shelf list (a box or Loose tapes) to the caller's sequence after
+  // a drag — order = position, top first. The Inbox has no chosen order, so its
+  // tapes are ignored. Membership (shelved / box) is left untouched; this is
+  // reorder-in-place, not a move between lists.
   //
   // Reindex the targeted list's FULL membership rather than blindly numbering the
   // caller's ids 0..n-1: ids that vanished (a concurrent removal) are ignored, and
@@ -92,13 +93,13 @@ export function registerCollectionHandlers(): void {
     if (changed.length > 0) emit('tapes:updatedMany', changed)
   })
 
-  // Registered as work so a quit waits for it, files and catalog commit alike,
-  // before its final catalog save. Removal is not abandoned midway: it settles.
+  // Registered as work so a quit waits for it, files and collection commit alike,
+  // before its final collection save. Removal is not abandoned midway: it settles.
   handle('collection:remove', ({ tapeIds, deleteFiles }) => runCancellable(async () => {
     const { failed } = await removeTapes(tapeIds, deleteFiles)
     // Tapes whose files couldn't be discarded are KEPT (not removed from the list);
     // surface the failure so the user is never told a removal succeeded while the
-    // files (and the catalog entry) actually remain.
+    // files (and the tape's entry) actually remain.
     if (failed.length > 0) {
       throw new UserFacingError('conflict', message('errors.removeFilesKept', { count: failed.length }))
     }
@@ -137,7 +138,7 @@ export function registerCollectionHandlers(): void {
   })
 
   handle('collection:rename', ({ tapeId, name }) => runCancellable((signal) =>
-    withCollectionTurn((libraryDir) => renameTape(tapeId, name, libraryDir, signal))))
+    withCollectionTurn((collectionDir) => renameTape(tapeId, name, collectionDir, signal))))
 
   handle('collection:probeMetadata', async ({ tapeId, requestId }) => {
     const tape = session.getTape(tapeId)
@@ -163,7 +164,7 @@ export function registerCollectionHandlers(): void {
     cancelWork(`metadata-probe:${requestId}`)
   })
 
-  // Writes the sidecar and may save a poster into the library, so it takes a library turn.
+  // Writes the sidecar and may save a poster into the collection, so it takes a collection turn.
   handle('collection:applyMetadata', ({ tapeId, metadata }) => runCancellable((signal) =>
     withCollectionTurn((dir) => applyMetadata(tapeId, metadata, dir, signal))))
 
@@ -171,20 +172,20 @@ export function registerCollectionHandlers(): void {
   // boundary can tell referenced bundle companions from unsupported extras. One
   // sidecar = one tape, so a duplicate is reported once, not once per selected file.
   handle('collection:import', ({ paths }) => runCancellable((signal) =>
-    withCollectionTurn((libraryDir) => importBundles(paths, libraryDir, signal))))
+    withCollectionTurn((collectionDir) => importBundles(paths, collectionDir, signal))))
 }
 
-async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, libraryDir: string, signal: AbortSignal): Promise<Tape> {
+async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, collectionDir: string, signal: AbortSignal): Promise<Tape> {
   const existing = session.getTape(tapeId)
   if (!existing) throw new Error(`Tape not found: ${tapeId}`)
   if (queue.isActive(tapeId)) throw new UserFacingError('refused', message('errors.tapeBusy'))
   const tape = structuredClone(existing)
-  const dir = tapeDir(libraryDir, tape)
+  const dir = tapeDir(collectionDir, tape)
   // Refuse a protected sidecar before attempting its optional poster backfill.
   const sidecar = tape.sidecarFilename ? await readSidecarFile(join(dir, tape.sidecarFilename)) : null
 
   // Backfill a local poster for a downloaded tape that has none — e.g. one
-  // downloaded before thumbnails were saved locally. Best-effort: the catalog
+  // downloaded before thumbnails were saved locally. Best-effort: the tape
   // metadata the user reviewed must still apply even if the fetch fails. Routed
   // through the same image gate as a fresh download.
   let thumbnailFilename = tape.thumbnailFilename
@@ -216,21 +217,21 @@ async function applyMetadata(tapeId: string, metadata: RefreshedMetadata, librar
   signal.throwIfAborted()
 
   // The sidecar keeps yt-dlp's info, so it takes the refreshed title, uploader
-  // and description in yt-dlp's own fields; the catalog alone records the
-  // poster. It is written before the catalog, so a failed write leaves the
-  // catalog as it was rather than the two disagreeing. A poster fetched for it
+  // and description in yt-dlp's own fields; tape.json alone records the
+  // poster. It is written before tape.json, so a failed write leaves the
+  // tape.json as it was rather than the two disagreeing. A poster fetched for it
   // stays in the tape's folder under its own stem, for the next Apply.
   if (tape.sidecarFilename) {
     await writeRefreshedSidecar(join(dir, tape.sidecarFilename), metadata, sidecar!)
   }
 
-  // Once the sidecar has committed, Apply finishes with its catalog commit even if
+  // Once the sidecar has committed, Apply finishes with its tape.json commit even if
   // it is cancelled or the app is quitting, so the two never disagree. No other
   // file action runs during this turn.
   const current = session.getTape(tapeId)
   if (!current) throw new Error(`Tape not found: ${tapeId}`)
 
-  // Persist the accepted catalog fields. Duration and chapter count are NOT here:
+  // Persist the accepted tape fields. Duration and chapter count are NOT here:
   // they're fixed by the file and can't change unless it's replaced. sourceId and
   // the on-disk filenames are the tape's identity — left untouched.
   const updated: Tape = {
@@ -282,21 +283,21 @@ async function writeRefreshedSidecar(
     changed = true
   }
   if (!changed) return
-  // not recorded: the sidecar is library-directory content, colocated with binary
+  // not recorded: the sidecar is collection-directory content, colocated with binary
   // media, so it is excluded (data-backup conventions) and takes the raw
   // writeJsonAtomic, not the choke point.
   await writeSidecar(path, sidecar)
 }
 
 /**
- * Import sidecar-driven bundles into the library. Each bundle gets a new tape
+ * Import sidecar-driven bundles into the collection. Each bundle gets a new tape
  * folder; its media and poster are each copied once (into a temp that is linked
- * into place where the library supports hard links), and its sidecar is written
- * there as the library keeps it, its catalog fields going to the catalog.
+ * into place where the collection supports hard links), and its sidecar is written
+ * there as the collection keeps it, its tape fields going to tape.json.
  * Quitting stops the import between chunks, rolling back the bundle in progress.
  */
-async function importBundles(paths: string[], libraryDir: string, signal: AbortSignal): Promise<ImportResult> {
-  const hardLinks = await directorySupportsHardLinks(libraryDir)
+async function importBundles(paths: string[], collectionDir: string, signal: AbortSignal): Promise<ImportResult> {
+  const hardLinks = await directorySupportsHardLinks(collectionDir)
   const imported: Tape[] = []
   const issues: ImportIssue[] = []
   const sidecarPaths = paths.filter((path) => extname(path).toLowerCase() === '.json')
@@ -347,7 +348,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       extractor: typeof sidecar['extractor'] === 'string' ? sidecar['extractor'] : null,
       sourceId: typeof sidecar['id'] === 'string' ? sidecar['id'] : null,
     }
-    // The catalog owns source admission, even for missing files. Admit the
+    // The collection owns source admission, even for missing files. Admit the
     // source before awaiting any of the companion-file work.
     if (session.sourceOwner(source)) {
       issues.push({ path: sidecarPath, reason: message(ALREADY_IN_COLLECTION), severity: 'information' })
@@ -366,20 +367,20 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       continue
     }
 
-    // Library names follow the media file's stem so the bundle stays internally
+    // Collection names follow the media file's stem so the bundle stays internally
     // consistent regardless of the sidecar's own name. A stem whose sidecar would
     // be the tape's own tape.json takes the tape's id instead, as a download does.
-    const id = await reserveTapeId(libraryDir, [...session.getTapes(), ...imported].map((tape) => tape.id))
+    const id = await reserveTapeId(collectionDir, [...session.getTapes(), ...imported].map((tape) => tape.id))
     const bundleStem = mediaFilename.slice(0, -extname(mediaFilename).length)
     const mediaStem = portableFilenameIdentity(`${bundleStem}.json`) === portableFilenameIdentity(TAPE_FILE) ? id : bundleStem
     const collectionMedia = `${mediaStem}${extname(mediaFilename)}`
     const sidecarFilename = `${mediaStem}.json`
-    const folder = tapeDir(libraryDir, { id, shelved: false })
+    const folder = tapeDir(collectionDir, { id, shelved: false })
     try {
-      // not recorded: import copies a bundle into the library, transient app-owned
-      // content until exported (developer classification). The new catalog row,
-      // the user's library membership, is what is backed up.
-      await mkdir(areaDir(libraryDir, false), { recursive: true })
+      // not recorded: import copies a bundle into the collection, transient app-owned
+      // content until exported (developer classification). The new tape.json,
+      // the user's collection membership, is what is backed up.
+      await mkdir(areaDir(collectionDir, false), { recursive: true })
       await mkdir(folder)
       await copyFileNoOverwrite(srcMedia, join(folder, collectionMedia), { hardLinks, signal })
       await writeSidecar(join(folder, sidecarFilename), collectionSidecar(sidecar))
@@ -398,7 +399,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
       } catch (cleanupError) {
         const failure = new AggregateError(
           [err, cleanupError],
-          `Copy into library failed: ${String(err)}. Published files could not be fully cleaned up.`,
+          `Copy into collection failed: ${String(err)}. Published files could not be fully cleaned up.`,
         )
         log.error('import bundle copy and rollback failed', {
           path: sidecarPath,
@@ -420,7 +421,7 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     if (tbThumb && portableFilenameIdentity(tbThumb) !== portableFilenameIdentity(TAPE_FILE)) {
       const srcThumb = join(dir, tbThumb)
       try {
-        // not recorded: the imported poster is library content, like its media.
+        // not recorded: the imported poster is collection content, like its media.
         await copyFileNoOverwrite(srcThumb, join(folder, tbThumb), { hardLinks, signal })
         thumbnailFilename = tbThumb
       } catch (err) {
@@ -456,9 +457,9 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
     // The receipt describes what this import accepted; later removal must not
     // erase that outcome.
     imported.splice(0, imported.length, ...imported.map((tape) => session.getTape(tape.id) ?? tape))
-    // The copied files are in the library; commit their rows before reporting,
+    // The copied files are in the collection; commit their rows before reporting,
     // so a crash now cannot leave them unlisted and blocking a re-import. The rows
-    // are in the library either way; a failed write is the session store's to
+    // are in the session either way; a failed write is the session store's to
     // retry and report, and the window must still learn about them.
     await session.persistNow()
     // A window can list and organize these rows while the save waits. Announce
@@ -484,10 +485,10 @@ async function importBundles(paths: string[], libraryDir: string, signal: AbortS
  * Rename a downloaded tape's media, sidecar and thumbnail together, inside its
  * folder. Each new name is published with a hard link where supported, whose
  * cost does not grow with the video; the copy fallback scales with file size.
- * The files' contents stay as they are: the catalog alone records names.
- * Quitting aborts it before the catalog commit, which rolls the new names back.
+ * The files' contents stay as they are: tape.json alone records names.
+ * Quitting aborts it before the tape.json commit, which rolls the new names back.
  */
-async function renameTape(tapeId: string, name: string, libraryDir: string, signal: AbortSignal): Promise<Tape> {
+async function renameTape(tapeId: string, name: string, collectionDir: string, signal: AbortSignal): Promise<Tape> {
   const tape = session.getTape(tapeId)
   if (!tape) throw new Error(`Tape not found: ${tapeId}`)
   if (!tape.filename || !tape.sidecarFilename) {
@@ -506,10 +507,10 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   if (plan.status === 'noop') return tape
 
   const { cleanName } = plan
-  const p = (rel: string) => tapeFile(libraryDir, tape, rel)
+  const p = (rel: string) => tapeFile(collectionDir, tape, rel)
   const nowUtc = nowUtcIso()
 
-  // Resolve the plan while keeping every old file until the durable catalog
+  // Resolve the plan while keeping every old file until the durable tape.json
   // commits. A portable-equivalent spelling change keeps the existing
   // physical filename (the only crash-safe representation on case-insensitive
   // filesystems) while still applying the requested display name.
@@ -543,16 +544,16 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   }
 
   // Build and exclusively publish every genuinely new destination while the old
-  // files remain intact. Until catalog.json commits, the new files are
+  // files remain intact. Until tape.json commits, the new files are
   // rollback-only and the persisted row still resolves every old file.
   const done: string[] = []
-  const rollbackBeforeCatalogCommit = async (initiatingError: unknown): Promise<never> => {
+  const rollbackBeforeTapeCommit = async (initiatingError: unknown): Promise<never> => {
     try {
       await unlinkFiles(done)
     } catch (cleanupError) {
       throw new AggregateError(
         [initiatingError, cleanupError],
-        `Rename failed before the catalog commit and destination rollback was incomplete. ` +
+        `Rename failed before the tape.json commit and destination rollback was incomplete. ` +
           `Destinations: ${done.join(', ')}.`,
       )
     }
@@ -568,14 +569,14 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
       signal.throwIfAborted()
     }
   } catch (err) {
-    await rollbackBeforeCatalogCommit(err)
+    await rollbackBeforeTapeCommit(err)
   }
 
-  const committed = await session.renameTapeDurably(tapeId, renamed).catch(rollbackBeforeCatalogCommit)
+  const committed = await session.renameTapeDurably(tapeId, renamed).catch(rollbackBeforeTapeCommit)
   emit('tapes:updated', committed)
 
-  // The durable catalog is the commit point; genuinely renamed old files
-  // become obsolete only now. A failure is an explicit partial success: catalog
+  // The durable tape.json is the commit point; genuinely renamed old files
+  // become obsolete only now. A failure is an explicit partial success: tape.json
   // and renderer still name a complete, existing bundle.
   const obsolete = publishing.map((item) => item.old)
   try {
@@ -583,7 +584,7 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
   } catch (cleanupError) {
     const diagnostic = new AggregateError(
       [cleanupError],
-      `Rename committed and the catalog points to the new bundle, but the old files could not all be removed. ` +
+      `Rename committed and tape.json points to the new bundle, but the old files could not all be removed. ` +
         `Old paths: ${obsolete.join(', ')}.`,
     )
     throw new UserFacingError(
@@ -597,12 +598,12 @@ async function renameTape(tapeId: string, name: string, libraryDir: string, sign
 }
 
 /**
- * Remove tapes from the library. With deleteFiles, each tape's files are trashed
+ * Remove tapes from the collection. With deleteFiles, each tape's files are trashed
  * (or deleted, per the Trash setting) and its download leftovers swept; otherwise
- * only the library entries go. An in-flight download is stopped first so we never
+ * only the collection entries go. An in-flight download is stopped first so we never
  * race yt-dlp's writes, and no download starts for a tape being removed.
  *
- * library:remove takes its own turn; Export's "delete from app" copies the
+ * collection:remove takes its own turn; Export's "delete from app" copies the
  * files out, then removes the tape within its turn through {@link removeTapesFrom}.
  */
 export async function removeTapes(
@@ -616,15 +617,15 @@ export async function removeTapes(
   const release = queue.holdFromScheduling(ids)
   try {
     for (const id of ids) if (queue.isActive(id)) await queue.cancel(id)
-    return await withCollectionTurn((libraryDir) => removeTapesFrom(libraryDir, [...ids], deleteFiles))
+    return await withCollectionTurn((collectionDir) => removeTapesFrom(collectionDir, [...ids], deleteFiles))
   } finally {
     release()
   }
 }
 
-/** Remove tapes at the caller's library turn; none of them has a running download. */
+/** Remove tapes at the caller's collection turn; none of them has a running download. */
 export async function removeTapesFrom(
-  libraryDir: string,
+  collectionDir: string,
   tapeIds: string[],
   deleteFiles: boolean,
 ): Promise<{ removed: string[]; failed: string[] }> {
@@ -635,7 +636,7 @@ export async function removeTapesFrom(
   // No save writes a tape file into a folder while it is discarded.
   await session.releaseTapeFolders(selected.map((tape) => tape.id))
   for (const tape of selected) {
-    const dir = tapeDir(libraryDir, tape)
+    const dir = tapeDir(collectionDir, tape)
     try {
       if (deleteFiles) {
         if (tape.sidecarFilename) await refuseNewerSidecar(join(dir, tape.sidecarFilename))
@@ -645,7 +646,7 @@ export async function removeTapesFrom(
         await rm(join(dir, TAPE_FILE), { force: true })
       }
     } catch (err) {
-      log.error('library removal failed', { tapeId: tape.id, error: describeError(err) })
+      log.error('collection removal failed', { tapeId: tape.id, error: describeError(err) })
       session.keepTapeFolders([tape.id])
       failed.push(tape.id)
       continue
@@ -678,11 +679,11 @@ async function refuseNewerSidecar(path: string): Promise<void> {
 
 /**
  * Discard a tape's folder: what its row names and everything a download left
- * before its commit, including a finished bundle the catalog never named.
+ * before its commit, including a finished bundle its tape.json never named.
  * yt-dlp's in-progress fragments are incomplete junk and are deleted outright;
  * the folder with everything else follows the Trash setting. A missing folder
  * is a no-op. A real failure THROWS (it is not swallowed) so the caller can
- * keep the catalog entry rather than claim a removal that left the files behind.
+ * keep the tape's entry rather than claim a removal that left the files behind.
  */
 async function discardTapeFolder(dir: string, toTrash: boolean): Promise<void> {
   let names: string[]

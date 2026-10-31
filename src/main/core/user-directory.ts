@@ -5,7 +5,7 @@ import { UserFacingError } from '@main/user-facing-error'
 import { message } from '@shared/i18n/translate'
 
 /**
- * Normalize a user-typed folder setting (libraryDir, defaultExportDir) at the
+ * Normalize a user-typed folder setting (collectionDir, defaultExportDir) at the
  * boundary, before it is stored or used: absolute paths stay literal; otherwise
  * whitespace is trimmed and a leading ~ / ~/ / ~\ is expanded to home.
  * A value its set schema refuses is reported with the folder's own message.

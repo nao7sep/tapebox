@@ -170,10 +170,10 @@ export function DetailPane({
     await openTapeSourceUrl(tape.id, tape.sourceUrl)
   }
 
-  // Archive / unarchive from the detail pane use the 'tape' policy: follow the
-  // video to where it lands (switch to Archive/Inbox, select + focus it there).
-  function archive()         { shelveTape(tape, 'tape') }
-  function unarchive()       { unshelveTape(tape, 'tape') }
+  // Shelve / Back to Inbox from the detail pane use the 'tape' policy: follow the
+  // video to where it lands (switch to Shelf/Inbox, select + focus it there).
+  function shelve()          { shelveTape(tape, 'tape') }
+  function backToInbox()     { unshelveTape(tape, 'tape') }
   async function cancel() {
     await runTapeAction(
       tape.id,
@@ -251,7 +251,7 @@ export function DetailPane({
   }
 
   // Per-tape keyboard, live while a tape is open and acting on the selected tape no
-  // matter which list has focus: A archives/unarchives, Backspace/Delete removes,
+  // matter which list has focus: S shelves / sends back to the Inbox, Backspace/Delete removes,
   // Left/Right (or YouTube's J/L) seek the player, Enter does the tape's primary
   // action (play/pause; scan a page; retry/resume), and R / E / M open the
   // housekeeping tools. Up/Down
@@ -265,8 +265,8 @@ export function DetailPane({
       if (e.defaultPrevented || keyEventIsComposing(e) || isShortcutBlocked(e.target)) return
       const { tape, onScanPage, onRequestRemove } = keyRef.current
 
-      // Selected-tape commands, so they work regardless of focus. A archives or
-      // unarchives with the keyboard's triage 'list' policy, advancing selection to
+      // Selected-tape commands, so they work regardless of focus. S shelves or
+      // sends back to the Inbox with the keyboard's triage 'list' policy, advancing selection to
       // a neighbor (the detail-pane button uses 'tape' to follow it).
       if (matchShortcut(SHORTCUTS.remove, e) >= 0) {
         e.preventDefault()
@@ -384,7 +384,7 @@ export function DetailPane({
                       : <PathLine value={tape.sourceUrl} />}
                   </h2>
                   {/* Always visible: the media line for a downloaded tape (its "status"
-                      is just "In library", which says nothing), otherwise the status. */}
+                      is just "In collection", which says nothing), otherwise the status. */}
                   <p className="mt-0.5 wrap-anywhere text-xs text-fg-muted">
                     {downloaded && mediaMeta ? mediaMeta : t.text(headerStatus(tape, progress, stalled, t))}
                   </p>
@@ -510,7 +510,7 @@ export function DetailPane({
 
         {/* All operations live here, in a consistent order for every state:
             the state's primary action first, then the downloaded-tape actions
-            grouped use → housekeep (refresh → rename → export) → archive, then
+            grouped use → housekeep (refresh → rename → export) → shelve, then
             the source-link reference actions that apply to any tape, and finally
             the destructive Remove, set apart on the right. */}
         <div className="detail-result-shelf shrink-0 space-y-2 border-t border-line px-4 py-3 empty:hidden">
@@ -545,10 +545,10 @@ export function DetailPane({
               {tape.shelved ? (
                 <>
                   <MoveToBoxButton tape={tape} />
-                  <ActionButton onClick={unarchive}>{t.t('detail.backToInbox')}</ActionButton>
+                  <ActionButton onClick={backToInbox}>{t.t('detail.backToInbox')}</ActionButton>
                 </>
               ) : (
-                <ActionButton onClick={archive}>{t.t('detail.shelve')}</ActionButton>
+                <ActionButton onClick={shelve}>{t.t('detail.shelve')}</ActionButton>
               )}
             </>
           )}
@@ -624,7 +624,7 @@ const WORKING_PLACEHOLDER: Partial<Record<TapeState, MessageKey>> = {
 }
 
 /** The one-line status under the heading: the shared status label, plus the live
- *  download speed when downloading and an Archived suffix when archived. */
+ *  download speed when downloading and a Shelf suffix when shelved. */
 function headerStatus(tape: Tape, progress: ProgressEntry | undefined, stalled: boolean, t: UiTranslator): Message {
   let base = tapeStatusLabel(tape, progress, stalled)
   if (progress?.phase === 'downloading' && progress.speedBps) {

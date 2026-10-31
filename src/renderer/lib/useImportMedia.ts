@@ -35,7 +35,7 @@ export function useImportMedia(): (
       settle(attempt, {
         imported: [],
         issues: [
-          { path: message('import.selectedFiles'), reason: presentFailure(err, message('import.failedSelection'), 'library import failed'), severity: 'error' },
+          { path: message('import.selectedFiles'), reason: presentFailure(err, message('import.failedSelection'), 'collection import failed'), severity: 'error' },
           ...preliminaryIssues,
         ],
       })

@@ -17,7 +17,7 @@ describe('classifyImport', () => {
     { renamedAtUtc: 9 }, { name: [] },
     { addedAtUtc: '2026-01-01T00:00:00.12345678Z' },
     { addedAtUtc: '2026-01-01T00:00:00+01:00' }, { addedAtUtc: '2026-01-01T00:00:00' },
-  ])('rejects malformed present TapeBox catalog fields: %j', (fields) => {
+  ])('rejects malformed present TapeBox tape fields: %j', (fields) => {
     expect(classifyImport({ formatVersion: 1, tapebox: { sourceUrl: 'https://x.test', mediaFilename: 'v.mp4', ...fields } }))
       .toMatchObject({ status: 'reject', reason: { key: 'import.sidecarInvalidJson' } })
   })
@@ -153,7 +153,7 @@ describe('tapeFromSidecar', () => {
   })
 
   it('refuses malformed present fields when used directly too', () => {
-    expect(() => tapeFromSidecar({ title: 9, tapebox: {} }, params)).toThrow('invalid catalog fields')
+    expect(() => tapeFromSidecar({ title: 9, tapebox: {} }, params)).toThrow('invalid tape fields')
   })
 
   it('emits canonical millisecond UTC after accepting cross-language recorded times', () => {

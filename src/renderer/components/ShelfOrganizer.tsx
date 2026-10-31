@@ -39,12 +39,12 @@ export function ShelfOrganizer() {
   const setQuery = useShelfStore((s) => s.setQuery)
   const pendingSearchFocus = useShelfStore((s) => s.pendingSearchFocus)
   const setPendingSearchFocus = useShelfStore((s) => s.setPendingSearchFocus)
-  const boxesIntent = useLayoutStore((s) => s.layout!.archiveBoxesHeight)
+  const boxesIntent = useLayoutStore((s) => s.layout!.shelfBoxesHeight)
   const tapes = useVisibleTapes()
   const searching = query.trim().length > 0
   const boxOrderError = useOrderFailuresStore((s) => s.boxes)
   const setBoxOrderError = useOrderFailuresStore((s) => s.setBoxes)
-  const tapeListKey = selectedBoxId === null ? 'unboxed' : `box:${selectedBoxId}`
+  const tapeListKey = selectedBoxId === null ? 'loose' : `box:${selectedBoxId}`
   const tapeOrderError = useOrderFailuresStore((s) => s.shelfTapes[tapeListKey] ?? null)
   const setTapeOrderError = useOrderFailuresStore((s) => s.setShelfTapes)
   const t = useI18n()
@@ -60,7 +60,7 @@ export function ShelfOrganizer() {
     setPendingSearchFocus(false)
   }, [pendingSearchFocus, setPendingSearchFocus])
 
-  // The persisted archiveBoxesHeight is the drag-set INTENT; the DISPLAYED height
+  // The persisted shelfBoxesHeight is the drag-set INTENT; the DISPLAYED height
   // is derived from it and the live pane (window-chrome-conventions: re-clamp on
   // resize and when restoring a persisted value). A window smaller than last run
   // narrows the *display* toward the boxes minimum so a tall intent can't swallow
@@ -74,8 +74,8 @@ export function ShelfOrganizer() {
     true,
     {
       siblingMin,
-      min: LAYOUT_BOUNDS.archiveBoxesHeight.min,
-      max: LAYOUT_BOUNDS.archiveBoxesHeight.max,
+      min: LAYOUT_BOUNDS.shelfBoxesHeight.min,
+      max: LAYOUT_BOUNDS.shelfBoxesHeight.max,
     },
   )
 
@@ -135,7 +135,7 @@ export function ShelfOrganizer() {
         tapes: rollbackOptimisticOrder(state.tapes, useOrderFailuresStore.getState().confirmedOrder(list), optimistic, isInSameTapeList),
       })),
       () => setTapeOrderError(tapeListKey, null),
-      (error) => setTapeOrderError(tapeListKey, presentFailure(error, message('tapes.orderSaveFailed'), 'archive tape order save failed')),
+      (error) => setTapeOrderError(tapeListKey, presentFailure(error, message('tapes.orderSaveFailed'), 'shelf tape order save failed')),
       (saved) => useOrderFailuresStore.getState().finishAttempt(list, attempt, saved ? optimistic : null),
     )
   }
@@ -165,13 +165,13 @@ export function ShelfOrganizer() {
             // persisted on commit. The displayed height re-derives from that
             // intent against the live pane (the clamp above).
             size={effectiveBoxesHeight}
-            min={LAYOUT_BOUNDS.archiveBoxesHeight.min}
-            max={LAYOUT_BOUNDS.archiveBoxesHeight.max}
-            onResize={(h) => void patchLayout({ archiveBoxesHeight: h }, false)}
-            onCommit={(h) => void patchLayout({ archiveBoxesHeight: h }, true)}
+            min={LAYOUT_BOUNDS.shelfBoxesHeight.min}
+            max={LAYOUT_BOUNDS.shelfBoxesHeight.max}
+            onResize={(h) => void patchLayout({ shelfBoxesHeight: h }, false)}
+            onCommit={(h) => void patchLayout({ shelfBoxesHeight: h }, true)}
           />
         </div>
-        <LayoutWriteResult field="archiveBoxesHeight" className="m-3 mb-0 shrink-0" />
+        <LayoutWriteResult field="shelfBoxesHeight" className="m-3 mb-0 shrink-0" />
         <div className="flex min-h-0 flex-1 flex-col">
           {searching ? (
             <SearchResults />

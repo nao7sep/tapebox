@@ -271,7 +271,7 @@ export function ScanPageModal({ onClose, initialUrl = '' }: Props) {
     }
   }
 
-  // The breakdown line (new / already in the library / unavailable) drawn under
+  // The breakdown line (new / already in the collection / unavailable) drawn under
   // the result headline once scanning finishes: entries fall into exactly one of
   // these three per ScanResult's own fields.
   const inCollectionCount = useMemo(() => entries.filter((e) => e.alreadyInCollection).length, [entries])

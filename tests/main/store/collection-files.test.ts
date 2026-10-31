@@ -59,7 +59,7 @@ function legacyTape(id: string, overrides: Record<string, unknown> = {}): Record
   return { ...rest, archivedAtUtc: null, ...overrides }
 }
 
-const legacyLibrary = () => [
+const legacyTapes = () => [
   legacyTape('Inbox00001', { order: 1 }),
   legacyTape('Inbox00002', { order: 0 }),
   legacyTape('Boxed00001', { archivedAtUtc: ARCHIVED, boxId: BOX, order: 0 }),
@@ -98,7 +98,7 @@ afterEach(async () => {
 
 describe('converting the layout before Inbox and Shelf', () => {
   it('moves every folder into inbox/ or shelf/ with its tape.json, writes shelf.json, then deletes catalog.json', async () => {
-    await writeLegacy(legacyLibrary())
+    await writeLegacy(legacyTapes())
 
     const result = await session.loadSession()
 
@@ -123,7 +123,7 @@ describe('converting the layout before Inbox and Shelf', () => {
   })
 
   it('loses nothing when stopped before shelf.json, and finishes at the next launch', async () => {
-    await writeLegacy(legacyLibrary())
+    await writeLegacy(legacyTapes())
     state.failWrite = (path) => path.endsWith('shelf.json')
 
     await expect(session.loadSession()).rejects.toThrow('disk full')
@@ -139,7 +139,7 @@ describe('converting the layout before Inbox and Shelf', () => {
   })
 
   it('loses nothing when stopped after some folders moved', async () => {
-    await writeLegacy(legacyLibrary())
+    await writeLegacy(legacyTapes())
     let writes = 0
     state.failWrite = () => ++writes === 3
 
@@ -147,14 +147,14 @@ describe('converting the layout before Inbox and Shelf', () => {
     state.failWrite = null
     await session.loadSession()
 
-    expect(session.getTapes().map((item) => item.id).sort()).toEqual(legacyLibrary().map((item) => item['id'] as string).sort())
+    expect(session.getTapes().map((item) => item.id).sort()).toEqual(legacyTapes().map((item) => item['id'] as string).sort())
     expect(where(session.getTapes())['Boxed00001']).toBe(BOX)
   })
 })
 
 describe('tapes without shelf.json', () => {
   it('loses no tape when shelf.json is deleted, shelved ones becoming loose tapes', async () => {
-    await writeLegacy(legacyLibrary())
+    await writeLegacy(legacyTapes())
     await session.loadSession()
     await rm(join(state.dir, 'shelf.json'))
 
@@ -249,7 +249,7 @@ describe('moving between the Inbox and the Shelf', () => {
 
 describe('a damaged tape file', () => {
   it('names the file and leaves it exactly as it is', async () => {
-    await writeLegacy(legacyLibrary())
+    await writeLegacy(legacyTapes())
     await session.loadSession()
     const broken = join(state.dir, 'inbox', 'Inbox00001', 'tape.json')
     await writeFile(broken, '{ not json')

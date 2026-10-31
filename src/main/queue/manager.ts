@@ -22,7 +22,7 @@ import { maskUrlCredentials, maskYtdlpOutput } from '@main/io/mask'
  *
  * cancel() returns a Promise that resolves once the underlying yt-dlp
  * process has exited and the Job's finally blocks have run. Callers that
- * need to touch the tape's files (library:remove, library:rename)
+ * need to touch the tape's files (collection:remove, collection:rename)
  * must await this before doing so — otherwise yt-dlp keeps writing into
  * paths that have just been unlinked.
  */
@@ -35,7 +35,7 @@ const held = new Set<string>()
 
 /**
  * Start what the concurrency cap allows. A job downloads straight into the
- * library folder, so a library move refuses while any runs; during a move
+ * collection folder, so a collection move refuses while any runs; during a move
  * nothing starts, and the move's owner ticks again when it ends.
  */
 export function tick(): void {
@@ -152,7 +152,7 @@ export function isActive(tapeId: string): boolean {
 
 /**
  * Called once at startup. A download that was in flight when the app stopped
- * comes back from the catalog as queued (see durableTape), so starting
+ * comes back from its tape.json as queued (see durableTape), so starting
  * the queue resumes it.
  */
 export function start(): void {

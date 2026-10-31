@@ -116,9 +116,9 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-// A reorder applies at once and then awaits its save, like every library edit,
+// A reorder applies at once and then awaits its save, like every collection edit,
 // so an edit made while that save runs lands after it and wins.
-describe('reorders beside other library edits', () => {
+describe('reorders beside other collection edits', () => {
   it('lets a placement made while the reorder saves land after it, without duplicate orders', async () => {
     const a = tape('OrderTapeA', 0)
     const b = tape('OrderTapeB', 1)
