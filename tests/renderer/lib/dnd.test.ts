@@ -62,7 +62,6 @@ import {
   TAPE_DRAG_TYPE,
   TAPE_SORT_GROUP,
   planShelfDrop,
-  planTapeListDrop,
 } from '@renderer/lib/dnd'
 import { SortableTape } from '@renderer/components/SortableTape'
 import { BoxList, LOOSE_DROP_ID } from '@renderer/components/BoxList'
@@ -200,20 +199,6 @@ function dropEvent(
 }
 
 describe('current dnd-kit completion mapping', () => {
-  it('maps Shelf tape list sorting and rejects cancellation and no-ops', () => {
-    const source = sortable('tape-a', TAPE_DRAG_TYPE, 0, 2)
-    const target = sortable('tape-c', TAPE_DRAG_TYPE, 2, 2)
-
-    expect(planTapeListDrop(dropEvent(source, target))).toEqual({
-      tapeId: 'tape-a',
-      fromIndex: 0,
-      toIndex: 2,
-    })
-    expect(planTapeListDrop(dropEvent(source, target, true))).toBeNull()
-    expect(planTapeListDrop(dropEvent(sortable('tape-a', TAPE_DRAG_TYPE, 1, 1), target))).toBeNull()
-    expect(planTapeListDrop(dropEvent(source, null))).toBeNull()
-  })
-
   it('keeps Shelf list sorting distinct from semantic box delivery', () => {
     expect(planShelfDrop(dropEvent(
       sortable('box-a', BOX_DRAG_TYPE, 0, 1),

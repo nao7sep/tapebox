@@ -45,27 +45,6 @@ export function ListboxDragProvider({
   )
 }
 
-export type TapeListDropPlan = {
-  tapeId: string
-  fromIndex: number
-  toIndex: number
-}
-
-/** Map a completed sort within one tape list into its durable reorder. */
-export function planTapeListDrop(event: DragEndEvent): TapeListDropPlan | null {
-  const { operation } = event
-  if (event.canceled || !isSortableOperation(operation)) return null
-  const { source, target } = operation
-  if (!source || !target) return null
-  if (source.type !== TAPE_DRAG_TYPE || target.type !== TAPE_DRAG_TYPE) return null
-  if (source.initialIndex === source.index) return null
-  return {
-    tapeId: String(source.id),
-    fromIndex: source.initialIndex,
-    toIndex: source.index,
-  }
-}
-
 export type ShelfDropPlan =
   | { kind: 'reorder-box'; boxId: string; fromIndex: number; toIndex: number }
   | { kind: 'reorder-tape'; tapeId: string; fromIndex: number; toIndex: number }
