@@ -3,14 +3,14 @@ import { trustApplicationDocument } from './ipc/trust'
 import { app, BrowserWindow, powerMonitor, shell } from 'electron'
 import { join } from 'node:path'
 import { ensureDirs, paths, sweepAbandonedStaging } from './paths.js'
-import { notifyCorruptConfig, notifyCorruptSession, notifyDamagedTapes, notifySettingsKept, notifyStartupFailure } from './startup-dialog.js'
+import { notifyDamagedTapes, notifySettingsKept, notifySideStoreOff, notifyStartupFailure } from './startup-dialog.js'
 import { initLogger, isDebugEnabled, log } from './io/logger.js'
-import { closeRecords, flushRecords, flushRecordsBeforeExit, onRecordStored, openRecords } from './io/records.js'
+import { closeRecords, flushRecordsBeforeExit, onRecordStored, openRecords } from './io/records.js'
+import { LAUNCH_LOADERS, loadLaunchFiles } from './launch-files.js'
 import { notifyRecordsChanged } from './records-window.js'
 import { describeError } from '@shared/error'
-import { getSettings, loadSettings } from './store/config.js'
-import { loadDependencies } from './store/dependencies.js'
-import { loadSession, persistNow } from './store/session.js'
+import { getSettings } from './store/config.js'
+import { persistNow, prepareCollection } from './store/session.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import { resumeBinaryOperations, shutdownBinaryOperations } from './ipc/binaries.js'
@@ -190,24 +190,25 @@ async function startup(): Promise<void> {
     log.warn('temporary download staging could not be swept', { error: describeError(error) })
   }
 
+  // Every file the launch reads is checked before anything is saved, and the
+  // stop names every refused one (launch-files.ts).
   await afterQuit()
-  const configResult = await loadSettings()
-  await applyLanguagePreference(getSettings().language)
-  registerLanguageHandlers()
-  // The saved theme reaches the title bar, the renderer's prefers-color-scheme,
-  // and the recovery dialogs before any window exists, so launch never shows the
-  // OS appearance and then switches. A failure before this point follows the OS.
-  applyThemePreference(getSettings().theme)
+  const launch = await loadLaunchFiles({
+    ...LAUNCH_LOADERS,
+    afterSettings: async () => {
+      await applyLanguagePreference(getSettings().language)
+      registerLanguageHandlers()
+      // The saved theme reaches the title bar, the renderer's prefers-color-scheme,
+      // and the recovery dialogs before any window exists, so launch never shows the
+      // OS appearance and then switches. A failure before this point follows the OS.
+      applyThemePreference(getSettings().theme)
+    },
+  })
   followOsThemeChanges()
-  await afterQuit()
-  await loadDependencies()
-  const sessionResult = await loadSession()
-  await layout.loadLayout()
+  await prepareCollection()
 
   await afterQuit()
   await startMediaServer()
-  // The writer has opened its schema before the Records window can read it.
-  await flushRecords()
   registerIpcHandlers()
   registerDraftAnswers()
   queue.start()
@@ -221,21 +222,18 @@ async function startup(): Promise<void> {
   // ~/.tapebox/backups.sqlite3 through a FIFO queue after its atomic rename lands (see
   // store/backupStore.ts and io/atomic-json.ts). There is nothing to kick off here.
 
-  // If shelf.json was unreadable, it was set aside (never wiped), and a tape
-  // file that could not be read was left as it is; tell the user at the app edge — the session store stays UI-free.
+  // A tape file that could not be read was left as it is, and a records or
+  // backup database that could not be opened is off for this launch; tell the
+  // user at the app edge — the stores stay UI-free.
+  const damaged = launch.session.damaged
   await afterQuit()
-  if (sessionResult.status === 'recovered') {
-    await notifyCorruptSession(sessionResult.quarantinePath, initialWindow)
-  }
+  if (damaged.length > 0) await notifyDamagedTapes(damaged.map((tape) => tape.path), initialWindow)
   await afterQuit()
-  if (sessionResult.damaged.length > 0) {
-    await notifyDamagedTapes(sessionResult.damaged.map((tape) => tape.path), initialWindow)
-  }
-  await afterQuit()
-  if (configResult.status === 'recovered') {
-    await notifyCorruptConfig(configResult.quarantinePath, initialWindow)
-  } else if (configResult.status === 'loaded' && configResult.settingsKept) {
-    await notifySettingsKept(paths.config, initialWindow)
+  if (launch.settings.status === 'loaded' && launch.settings.settingsKept) await notifySettingsKept(paths.config, initialWindow)
+  for (const [notice, store] of [['recordsOff', launch.records], ['backupsOff', launch.backups]] as const) {
+    if (!store) continue
+    await afterQuit()
+    await notifySideStoreOff(notice, store.path, initialWindow)
   }
 }
 

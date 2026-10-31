@@ -61,20 +61,30 @@ describe('api-keys storage', () => {
     expect(statSync(apiKeysPath).mode).toBe(before.mode)
   })
 
-  it('leaves an unreadable key file in place as no key, and a newly entered key replaces it', async () => {
-    await writeFile(apiKeysPath, JSON.stringify({ ...header('apiKeys'), keys: [] }), 'utf8')
+  it('leaves an unreadable key file in place as no key, and refuses to save or clear a key over it', async () => {
+    const bytes = JSON.stringify({ ...header('apiKeys'), keys: [] })
+    await writeFile(apiKeysPath, bytes, 'utf8')
     await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
     await expect(apiKeys.apiKeyState('openai')).resolves.toBe('unreadable')
-    expect(await readFile(apiKeysPath, 'utf8')).toBe(JSON.stringify({ ...header('apiKeys'), keys: [] }))
-    await apiKeys.writeApiKey('openai', 'replacement')
-    await expect(apiKeys.resolveApiKey('openai')).resolves.toBe('replacement')
+    const refusal = { name: 'UserFacingError', userMessage: { key: 'errors.fileUnreadable', values: { name: 'api-keys.json' } } }
+    await expect(apiKeys.writeApiKey('openai', 'replacement')).rejects.toMatchObject(refusal)
+    await expect(apiKeys.clearApiKey('openai')).rejects.toMatchObject(refusal)
+    expect(await readFile(apiKeysPath, 'utf8')).toBe(bytes)
   })
 
-  it('replaces an unreadable key file when the key is cleared', async () => {
-    await writeFile(apiKeysPath, 'not json at all', 'utf8')
-    await apiKeys.clearApiKey('openai')
-    await expect(apiKeys.apiKeyState('openai')).resolves.toBe('absent')
-    expect(JSON.parse(await readFile(apiKeysPath, 'utf8'))).toEqual({ ...header('apiKeys'), keys: {} })
+  it.each([
+    ['unreadable', 'not json at all'],
+    ['newer', JSON.stringify({ ...header('apiKeys', 2), keys: {} })],
+  ])('stops the launch for an %s key file, naming it, and leaves it as it is', async (reason, bytes) => {
+    await writeFile(apiKeysPath, bytes, 'utf8')
+    await expect(apiKeys.checkApiKeysAtLaunch()).rejects.toMatchObject({ name: 'RefusedFileError', path: apiKeysPath, reason })
+    expect(await readFile(apiKeysPath, 'utf8')).toBe(bytes)
+  })
+
+  it('passes a missing or readable key file at launch', async () => {
+    await expect(apiKeys.checkApiKeysAtLaunch()).resolves.toBeUndefined()
+    await apiKeys.writeApiKey('openai', 'sk-saved')
+    await expect(apiKeys.checkApiKeysAtLaunch()).resolves.toBeUndefined()
   })
 
   it('resolves no key from a key file without its header', async () => {

@@ -248,13 +248,17 @@ describe('portable collection through settings and the actual collection owner',
     else await expect(readFile(app.shelfFile(target))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it.each(['absent', 'invalid', 'newer'])('refuses an %s opened shelf file without quarantine or writes', async (kind) => {
+  it.each([
+    ['absent', 'Could not open the collection at'],
+    ['invalid', 'shelf.json could not be read'],
+    ['newer', 'shelf.json was written by a newer version of TapeBox'],
+  ])('refuses an %s opened shelf file without changing it, naming it', async (kind, refusal) => {
     const app = await seed()
     const target = join(root, kind)
     await mkdir(target, { recursive: true })
     const bytes = kind === 'invalid' ? '{broken' : JSON.stringify({ ...header('shelf', 999), boxes: [], loose: [] })
     if (kind !== 'absent') await writeFile(app.shelfFile(target), bytes)
-    await expect(update({ collectionDir: target, collectionAction: 'open' })).rejects.toThrow('Could not open the collection at')
+    await expect(update({ collectionDir: target, collectionAction: 'open' })).rejects.toThrow(refusal)
     expect(app.config.getCollectionDir()).toBe(app.paths.collection)
     expect(await readdir(target)).toEqual(kind === 'absent' ? [] : ['shelf.json'])
     if (kind !== 'absent') expect(await readFile(app.shelfFile(target), 'utf8')).toBe(bytes)

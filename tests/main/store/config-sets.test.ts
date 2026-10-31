@@ -245,14 +245,11 @@ describe('settings by set', () => {
     expect(getSettings().ytdlpArgs, 'the setting itself is unchanged').toBe('--password hunter22 -f best')
   })
 
-  it('quarantines corrupt bytes without reseeding a config', async () => {
+  it('refuses corrupt bytes without reseeding or moving the config', async () => {
     await writeFile(paths.config, '{broken')
-    const result = await loadSettings()
-    expect(result.status).toBe('recovered')
-    if (result.status !== 'recovered') throw new Error('Expected recovery')
-    expect(await readFile(result.quarantinePath, 'utf8')).toBe('{broken')
-    expect(await readdir(dir)).toEqual([result.quarantinePath.slice(dir.length + 1)])
-    expect(getSettings()).toEqual(defaultSettings())
+    await expect(loadSettings()).rejects.toMatchObject({ name: 'RefusedFileError', reason: 'unreadable' })
+    expect(await readFile(paths.config, 'utf8')).toBe('{broken')
+    expect(await readdir(dir)).toEqual(['config.json'])
   })
 
   it('serializes concurrent set writes without losing either copy', async () => {

@@ -288,7 +288,7 @@ describe('SettingsModal', () => {
   })
 
   it.each([
-    ['unreadable', 'The saved key file could not be read. Enter a new key and save to replace it.'],
+    ['unreadable', 'The saved key file could not be read and was left as it is'],
     ['newer', 'The saved key file is from a newer version of TapeBox and is left unchanged.'],
   ])('says when the saved key file is %s', async (keyState, text) => {
     stubMain((patch) => ({ settings: settingsAfterPatch(saved, patch), warning: null }), keyState)

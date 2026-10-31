@@ -9,7 +9,9 @@ import { header } from '../../helpers/file-header'
 // Each JSON store's format version (store-recovery-conventions), through the
 // real store over a throwaway storage root: a file without its header is
 // unreadable, what the store writes carries it and reads back, and
-// a newer file is refused and left byte-identical, with nothing written over it.
+// a newer file is refused and left byte-identical, with nothing written over it;
+// settings, the shelf and keys refuse an unreadable file too, while layout and
+// tool facts fall back to their defaults.
 
 vi.mock('@main/io/logger', () => ({ log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('@main/store/backupStore', () => ({ record: vi.fn() }))
@@ -50,7 +52,8 @@ async function writeNewer(kind: Parameters<typeof header>[0], path: string, body
   return text
 }
 
-const NEWER = { name: 'NewerFormatError', version: 2 }
+const NEWER = { name: 'RefusedFileError', reason: 'newer' }
+const UNREADABLE = { name: 'RefusedFileError', reason: 'unreadable' }
 const BOX = { id: 'box1234567', name: 'Box', order: 0 }
 const TAPE = {
   id: 'Tape123456', sourceUrl: 'https://example.test/watch', state: 'failed', addedAtUtc: '2026-07-08T00:00:00.000Z',
@@ -69,27 +72,25 @@ describe('shelf.json', () => {
   const path = () => join(root, 'collection', 'shelf.json')
   const SHELF_BOX = { id: BOX.id, name: BOX.name, tapeIds: [] }
 
-  it('sets aside a file without its header, like any unreadable one', async () => {
+  it('refuses a file without its header, leaving it byte-identical with nothing beside it', async () => {
     const text = JSON.stringify({ boxes: [SHELF_BOX], loose: [] })
     await writeFile(path(), text)
     const store = await session()
-    expect(await store.loadSession()).toMatchObject({ status: 'recovered' })
-    expect(store.getBoxes()).toEqual([])
-    const aside = (await readdir(dirname(path()))).find((name) => name.startsWith('shelf-') && name.endsWith('.invalid'))
-    expect(await readFile(join(dirname(path()), aside!), 'utf8')).toBe(text)
+    await expect(store.loadSession()).rejects.toMatchObject({ ...UNREADABLE, path: path() })
+    expect(await readFile(path(), 'utf8')).toBe(text)
+    expect(await readdir(dirname(path()))).toEqual(['shelf.json'])
   })
 
-  it('sets aside a file of a lower version, another kind or another owner', async () => {
+  it('refuses a file of a lower version, another kind or another owner the same way', async () => {
     for (const format of [header('shelf', 0).format, { owner: 'tapebox', kind: 'tape', version: 1 }, { owner: 'gptimg', kind: 'shelf', version: 1 }, 'shelf']) {
-      await writeFile(path(), JSON.stringify({ format, boxes: [SHELF_BOX], loose: [] }))
+      const text = JSON.stringify({ format, boxes: [SHELF_BOX], loose: [] })
+      await writeFile(path(), text)
       const store = await relaunch(async () => {
         await (await import('@main/store/config')).loadSettings()
         return session()
       })
-      expect(await store.loadSession(), JSON.stringify(format)).toMatchObject({ status: 'recovered' })
-      expect(store.getBoxes()).toEqual([])
-      // Set-aside names carry the second, so clear this one before the next.
-      for (const name of await readdir(dirname(path()))) if (name.endsWith('.invalid')) await rm(join(dirname(path()), name))
+      await expect(store.loadSession(), JSON.stringify(format)).rejects.toMatchObject({ ...UNREADABLE, path: path() })
+      expect(await readFile(path(), 'utf8')).toBe(text)
     }
   })
 
@@ -178,14 +179,13 @@ describe('config.json', () => {
   const config = () => import('@main/store/config')
   const path = () => join(root, 'config.json')
 
-  it('sets aside a file without its header and uses the defaults', async () => {
+  it('refuses a file without its header, leaving it byte-identical with nothing beside it', async () => {
     const text = JSON.stringify({ autoplay: false })
     await writeFile(path(), text)
     const store = await config()
-    expect(await store.loadSettings()).toMatchObject({ status: 'recovered' })
-    expect(store.getSettings().autoplay).toBe(true)
-    const aside = (await readdir(root)).find((name) => name.endsWith('.invalid'))
-    expect(await readFile(join(root, aside!), 'utf8')).toBe(text)
+    await expect(store.loadSettings()).rejects.toMatchObject({ ...UNREADABLE, path: path() })
+    expect(await readFile(path(), 'utf8')).toBe(text)
+    expect(await readdir(root)).toEqual(['config.json'])
   })
 
   it('stops, naming the file and leaving it in place, when it cannot be opened', async () => {
@@ -242,10 +242,10 @@ describe('layout.json', () => {
     expect(relaunched.getLayout().leftPaneWidth).toBe(410)
   })
 
-  it('uses the defaults for a newer file and never writes it', async () => {
+  it('refuses a newer file, stopping the launch, and never writes it', async () => {
     const text = await writeNewer('layout', path(), { leftPaneWidth: 400 })
     const store = await layout()
-    await store.loadLayout()
+    await expect(store.loadLayout()).rejects.toMatchObject({ ...NEWER, path: path() })
     expect(store.getLayout()).toEqual(defaultLayout)
 
     store.updateLayout({ leftPaneWidth: 420 })
@@ -279,10 +279,10 @@ describe('dependencies.json', () => {
     expect(relaunched.getDependencies().ffmpeg).toEqual(FACT)
   })
 
-  it('uses fresh facts for a newer file and never writes it', async () => {
+  it('refuses a newer file, stopping the launch, and never writes it', async () => {
     const text = await writeNewer('dependencies', path(), { ...defaultDependencies(), ffmpeg: FACT })
     const store = await dependencies()
-    await store.loadDependencies()
+    await expect(store.loadDependencies()).rejects.toMatchObject({ ...NEWER, path: path() })
     expect(store.getDependencies()).toEqual(defaultDependencies())
 
     await store.mutateDependencies(() => ({ ffmpeg: FACT }))

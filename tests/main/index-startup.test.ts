@@ -66,13 +66,14 @@ vi.mock('@main/paths', () => ({
   binaryPath: () => process.execPath,
   paths: { electronProfile: '/data-root/electron' },
 }))
-vi.mock('@main/startup-dialog', () => ({ notifyCorruptConfig: vi.fn(), notifyCorruptSession: vi.fn(), notifyStartupFailure: vi.fn() }))
+vi.mock('@main/startup-dialog', () => ({ notifyDamagedTapes: vi.fn(), notifySettingsKept: vi.fn(), notifySideStoreOff: vi.fn(), notifyStartupFailure: vi.fn() }))
 vi.mock('@main/io/logger', () => ({ initLogger: vi.fn(), isDebugEnabled: () => false, log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
-vi.mock('@main/io/records', () => ({ flushRecords: vi.fn(async () => {}), closeRecords: vi.fn(async () => {}), flushRecordsBeforeExit: vi.fn(() => { order.push('records-drain') }), onRecordStored: vi.fn(), openRecords: () => 'session' }))
+vi.mock('@main/io/records', () => ({ flushRecords: vi.fn(async () => {}), closeRecords: vi.fn(async () => {}), flushRecordsBeforeExit: vi.fn(() => { order.push('records-drain') }), onRecordStored: vi.fn(), openRecords: () => 'session', recordsRefusal: () => null }))
+vi.mock('@main/services/api-keys', () => ({ checkApiKeysAtLaunch: vi.fn(async () => {}) }))
 vi.mock('@main/records-window', () => ({ notifyRecordsChanged: vi.fn() }))
 vi.mock('@main/store/config', () => ({ getSettings: () => ({ language: 'en', theme: 'system' }), loadSettings: vi.fn(async () => ({ status: 'loaded' })) }))
 vi.mock('@main/store/dependencies', () => ({ loadDependencies: vi.fn(async () => {}) }))
-vi.mock('@main/store/session', () => ({ loadSession: vi.fn(async () => { order.push('session'); return { status: 'loaded' } }), persistNow: vi.fn(async () => true) }))
+vi.mock('@main/store/session', () => ({ loadSession: vi.fn(async () => { order.push('session'); return { status: 'loaded', damaged: [] } }), persistNow: vi.fn(async () => true), prepareCollection: vi.fn(async () => {}) }))
 vi.mock('@main/store/layout', () => ({ loadLayout: step('layout'), persistNow: vi.fn(async () => {}) }))
 vi.mock('@main/ipc/index', () => ({ registerIpcHandlers: vi.fn(() => { order.push('ipc') }) }))
 vi.mock('@main/ipc/binaries', () => ({ resumeBinaryOperations: vi.fn(), shutdownBinaryOperations: vi.fn(async () => {}) }))
@@ -88,7 +89,7 @@ vi.mock('@main/window-state-recovery', () => ({ createWindowWithUsablePersistedB
 vi.mock('@main/window-minimum', () => ({ configureWindowMinimum: vi.fn() }))
 vi.mock('@main/window-activity', () => ({ configureWindowActivity: vi.fn() }))
 vi.mock('@main/window-close', () => ({ configureWindowClose: vi.fn(), registerDraftAnswers: vi.fn(), settleWindowDrafts: vi.fn(async () => true) }))
-vi.mock('@main/store/backupStore', () => ({ closeBackupStore: vi.fn(async () => {}) }))
+vi.mock('@main/store/backupStore', () => ({ closeBackupStore: vi.fn(async () => {}), openBackupStore: vi.fn(async () => null) }))
 vi.mock('@main/plain-message-dialog', () => ({ showPlainMessageDialog: vi.fn() }))
 vi.mock('@main/force-exit', () => ({ forceExitProcess: vi.fn(() => { order.push('force-exit') }) }))
 vi.mock('@main/io/spawn', async (importOriginal) => {

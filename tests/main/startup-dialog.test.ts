@@ -11,9 +11,10 @@ vi.mock('@main/i18n.js', async () => {
   return { mainTranslator: () => createTranslator(language.current) }
 })
 
-import { notifyCorruptConfig, notifyCorruptSession, notifyDamagedTapes, notifyStartupFailure } from '@main/startup-dialog'
+import { notifyDamagedTapes, notifySideStoreOff, notifyStartupFailure } from '@main/startup-dialog'
 import { loadCatalogue } from '@shared/i18n/catalogues'
 import { NewerFormatError } from '@main/io/file-header'
+import { LaunchRefusedError, RefusedFileError, StoreAccessError } from '@main/io/store-access'
 
 await loadCatalogue('de')
 
@@ -23,25 +24,39 @@ beforeEach(() => {
 })
 
 describe('startup recovery dialogs', () => {
-  it('names where an unreadable settings file was set aside and what TapeBox started with', async () => {
-    const owner = {} as BrowserWindow
-    await notifyCorruptConfig('/data/config-20260101-000000-000-utc.invalid', owner)
+  it('names every refused file in one window, each newer or unreadable, and what to do', async () => {
+    await notifyStartupFailure(new LaunchRefusedError([
+      { path: '/data/config.json', reason: 'unreadable' },
+      { path: '/data/collection/shelf.json', reason: 'newer' },
+    ]))
 
+    expect(showPlainMessageDialog).toHaveBeenCalledOnce()
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
-      owner,
-      title: 'Settings could not be read',
-      message: expect.stringContaining('/data/config-20260101-000000-000-utc.invalid'),
-      detail: expect.stringContaining('default settings'),
+      title: 'TapeBox could not start',
+      message: expect.stringContaining('/data/config.json (could not be read)\n/data/collection/shelf.json (written by a newer version of TapeBox)'),
+      detail: expect.stringMatching(/start that version of TapeBox.*repair it, restore it from a backup, or move it out of the way/),
     }))
   })
 
-  it('names where an unreadable shelf file was set aside and what TapeBox started with', async () => {
-    await notifyCorruptSession('/data/shelf-20260101-000000-000-utc.invalid')
+  it.each([
+    [new RefusedFileError('/data/api-keys.json', 'unreadable'), '/data/api-keys.json (could not be read)'],
+    [new StoreAccessError('/data/config.json', new Error('EACCES')), '/data/config.json (could not be read)'],
+    [new NewerFormatError('/data/shelf.json', 2, 1), '/data/shelf.json (written by a newer version of TapeBox)'],
+  ])('names a single refused file the same way', async (error, line) => {
+    await notifyStartupFailure(error)
+    expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({ title: 'TapeBox could not start', message: expect.stringContaining(line) }))
+  })
 
+  it.each([
+    ['recordsOff', 'Records are off', 'text file'],
+    ['backupsOff', 'Backups are off', 'not keeping backups'],
+  ] as const)('says a side store is off for the session, naming it: %s', async (notice, title, text) => {
+    const owner = {} as BrowserWindow
+    await notifySideStoreOff(notice, '/data/store.sqlite3', owner)
     expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Shelf could not be read',
-      message: expect.stringContaining('/data/shelf-20260101-000000-000-utc.invalid'),
-      detail: expect.stringContaining('tapes are all there'),
+      owner, title,
+      message: expect.stringMatching(new RegExp(`/data/store\\.sqlite3.*${text}`)),
+      detail: expect.stringContaining('left exactly as it is'),
     }))
   })
 
@@ -65,16 +80,6 @@ describe('startup recovery dialogs', () => {
       language: 'de',
       title: 'TapeBox konnte nicht starten',
       closeLabel: 'OK',
-    }))
-  })
-
-  it('names a store in a newer format and says it was left as it is', async () => {
-    await notifyStartupFailure(new NewerFormatError('/data/shelf.json', 2, 1))
-
-    expect(showPlainMessageDialog).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'File from a newer version of TapeBox',
-      message: expect.stringContaining('/data/shelf.json'),
-      detail: expect.stringContaining('left exactly as it is'),
     }))
   })
 })

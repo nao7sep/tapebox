@@ -1,8 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { areaDir, shelfFile, tapeFile } from '@main/paths'
-import { quarantineFile, serializeStoreJson } from '@main/io/atomic-json'
-import { StoreAccessError } from '@main/io/store-access'
-import { FORMATS, NewerFormatError, parseStoreJson } from '@main/io/file-header'
+import { serializeStoreJson } from '@main/io/atomic-json'
+import { RefusedFileError, StoreAccessError } from '@main/io/store-access'
+import { FORMATS, parseStoreJson } from '@main/io/file-header'
 import { durableTape } from '@shared/durable-tape'
 import { portableFilenameIdentity } from '@shared/filename'
 import { compareInbox } from '@shared/order'
@@ -31,18 +31,23 @@ import {
  */
 
 /** A tape folder whose tape.json could not be read. Its files are left as they are. */
-export type DamagedTape = { id: string; path: string; reason: string }
+/** A tape whose tape.json was refused; `newer` when a newer TapeBox wrote it. */
+export type DamagedTape = { id: string; path: string; reason: string; newer: boolean }
+
+/** Where shelf.json put a shelved tape whose tape.json was refused: the tape
+ *  is not loaded, but its place is kept, so a later save does not lose it. */
+export type HeldPlace = { id: string; boxId: string | null; index: number }
 
 export type CollectionLoadResult =
   | { status: 'loaded'; tapeCount: number }
   | { status: 'empty' }
-  | { status: 'recovered'; quarantinePath: string }
 
 export type CollectionRead = {
   result: CollectionLoadResult
   session: Session
   damaged: DamagedTape[]
-  /** False when shelf.json is missing or was set aside, so the next save writes it. */
+  held: HeldPlace[]
+  /** False when shelf.json is missing, so the next save writes it. */
   shelfWritten: boolean
 }
 
@@ -60,25 +65,35 @@ export function encodeTapeFile(tape: Tape): Buffer {
   return Buffer.from(serializeStoreJson(tapeFacts(tape), TAPE_JSON), 'utf8')
 }
 
-/** The exact bytes of shelf.json for `session`. */
-export function encodeShelf(session: Session): Buffer {
-  return Buffer.from(serializeStoreJson(shelfOf(session), SHELF_JSON), 'utf8')
+/** The exact bytes of shelf.json for `session`, keeping the places `held`
+ *  for refused tapes. */
+export function encodeShelf(session: Session, held: readonly HeldPlace[] = []): Buffer {
+  return Buffer.from(serializeStoreJson(shelfOf(session, held), SHELF_JSON), 'utf8')
 }
 
 function byOrder(a: { order: number }, b: { order: number }): number {
   return a.order - b.order
 }
 
-/** The Shelf's organization, as shelf.json records it. */
-export function shelfOf(session: Session): Shelf {
-  const ids = (tapes: Tape[]) => tapes.sort(byOrder).map((tape) => tape.id)
+/** The Shelf's organization, as shelf.json records it. A held place goes back
+ *  at its index in its list, or at the end of the loose tapes once its box is
+ *  gone. */
+export function shelfOf(session: Session, held: readonly HeldPlace[] = []): Shelf {
+  const boxIds = new Set(session.boxes.map((box) => box.id))
+  const ids = (tapes: Tape[], boxId: string | null) => {
+    const list = tapes.sort(byOrder).map((tape) => tape.id)
+    const places = held.filter((place) => place.boxId === boxId).sort((a, b) => a.index - b.index)
+    for (const place of places) list.splice(Math.min(place.index, list.length), 0, place.id)
+    if (boxId === null) list.push(...held.filter((place) => place.boxId !== null && !boxIds.has(place.boxId)).map((place) => place.id))
+    return list
+  }
   return {
     boxes: [...session.boxes].sort(byOrder).map(({ id, name }) => ({
       id,
       name,
-      tapeIds: ids(session.tapes.filter((tape) => tape.shelved && tape.boxId === id)),
+      tapeIds: ids(session.tapes.filter((tape) => tape.shelved && tape.boxId === id), id),
     })),
-    loose: ids(session.tapes.filter((tape) => tape.shelved && tape.boxId === null)),
+    loose: ids(session.tapes.filter((tape) => tape.shelved && tape.boxId === null), null),
   }
 }
 
@@ -114,7 +129,6 @@ export function assembleSession(shelf: Shelf, inbox: readonly TapeFile[], shelve
 type ShelfRead =
   | { kind: 'shelf'; shelf: Shelf }
   | { kind: 'missing' }
-  | { kind: 'recovered'; quarantinePath: string }
 
 async function readShelf(collectionDir: string, requireExisting: boolean): Promise<ShelfRead> {
   const path = shelfFile(collectionDir)
@@ -128,33 +142,29 @@ async function readShelf(collectionDir: string, requireExisting: boolean): Promi
     throw new StoreAccessError(path, err)
   }
   const found = parseStoreJson(text, FORMATS.shelf)
-  if (found.status === 'newer') throw new NewerFormatError(path, found.version, FORMATS.shelf.version)
+  if (found.status === 'newer') throw new RefusedFileError(path, 'newer')
   const parsed = found.status === 'read' ? ShelfSchema.safeParse(found.value) : null
   if (parsed?.success) return { kind: 'shelf', shelf: parsed.data }
-  if (requireExisting) throw new StoreAccessError(path, new Error('Invalid shelf file'))
-  const parseErr = found.status === 'unreadable' ? found.error : parsed?.error
-  try {
-    return { kind: 'recovered', quarantinePath: await quarantineFile(path) }
-  } catch (quarantineErr) {
-    const detail = (quarantineErr as Error)?.message ?? String(quarantineErr)
-    throw new Error(`shelf file at ${path} is corrupt and could not be set aside: ${detail}`, { cause: parseErr })
-  }
+  // The boxes and their order are what the user built: refused and left as it
+  // is, never set aside (store-recovery-conventions).
+  throw new RefusedFileError(path, 'unreadable', found.status === 'unreadable' ? found.error : parsed?.error)
 }
 
 /** One tape folder's tape.json, or why it could not be read. */
-export async function readTapeFile(path: string, id: string): Promise<TapeFile | { reason: string } | null> {
+export async function readTapeFile(path: string, id: string): Promise<TapeFile | { reason: string; newer: boolean } | null> {
   let text: string
   try {
     text = await readFile(path, 'utf8')
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-    return { reason: (err as Error).message ?? String(err) }
+    return { reason: (err as Error).message ?? String(err), newer: false }
   }
   const found = parseStoreJson(text, FORMATS.tape)
-  if (found.status !== 'read') return { reason: found.status === 'newer' ? `format ${found.version} is newer` : found.error.message }
+  if (found.status === 'newer') return { reason: `format ${found.version} is newer`, newer: true }
+  if (found.status !== 'read') return { reason: found.error.message, newer: false }
   const parsed = TapeFileSchema.safeParse(found.value)
-  if (!parsed.success) return { reason: parsed.error.message }
-  if (parsed.data.id !== id) return { reason: `does not hold the tape ${id}` }
+  if (!parsed.success) return { reason: parsed.error.message, newer: false }
+  if (parsed.data.id !== id) return { reason: `does not hold the tape ${id}`, newer: false }
   return parsed.data
 }
 
@@ -184,8 +194,8 @@ async function readTapeFiles(collectionDir: string): Promise<{ inbox: TapeFile[]
       // Ids differing only in case would share one folder on a case-insensitive
       // drive, and one tape is in one place.
       const identity = portableFilenameIdentity(id)
-      if ('reason' in file) damaged.push({ id, path, reason: file.reason })
-      else if (identities.has(identity)) damaged.push({ id, path, reason: `the tape ${id} is in the collection twice` })
+      if ('reason' in file) damaged.push({ id, path, reason: file.reason, newer: file.newer })
+      else if (identities.has(identity)) damaged.push({ id, path, reason: `the tape ${id} is in the collection twice`, newer: false })
       else {
         identities.add(identity)
         files.push(file)
@@ -201,12 +211,11 @@ async function readTapeFiles(collectionDir: string): Promise<{ inbox: TapeFile[]
 /**
  * Read the collection at `collectionDir`: its tape folders and shelf.json.
  *
- * A corrupt or schema-invalid shelf.json is **never discarded**: it is renamed
- * to a timestamped `shelf-*.invalid` sibling, and every tape still shows, the
- * shelved ones as loose tapes. A shelf.json in a newer format throws
- * {@link NewerFormatError} and is left as it is. With
- * `requireExisting`, a collection without a valid shelf.json throws and nothing
- * is written.
+ * A shelf.json that is newer or cannot be read throws {@link RefusedFileError}
+ * and is left as it is. A tape whose tape.json is refused is named as damaged
+ * and not loaded; when it is on the Shelf, its place is held. With
+ * `requireExisting`, a collection without shelf.json throws and nothing is
+ * written.
  */
 export async function readCollection(
   collectionDir: string,
@@ -214,11 +223,23 @@ export async function readCollection(
 ): Promise<CollectionRead> {
   const shelf = await readShelf(collectionDir, options.requireExisting ?? false)
   const { inbox, shelved, damaged } = await readTapeFiles(collectionDir)
-  const session = assembleSession(shelf.kind === 'shelf' ? shelf.shelf : { boxes: [], loose: [] }, inbox, shelved)
+  const recorded = shelf.kind === 'shelf' ? shelf.shelf : { boxes: [], loose: [] }
+  const session = assembleSession(recorded, inbox, shelved)
   const tapeCount = session.tapes.length
-  const result: CollectionLoadResult =
-    shelf.kind === 'recovered' ? { status: 'recovered', quarantinePath: shelf.quarantinePath }
-      : shelf.kind === 'missing' && tapeCount === 0 ? { status: 'empty' }
-        : { status: 'loaded', tapeCount }
-  return { result, session, damaged, shelfWritten: shelf.kind === 'shelf' }
+  const result: CollectionLoadResult = shelf.kind === 'missing' && tapeCount === 0 ? { status: 'empty' } : { status: 'loaded', tapeCount }
+  return { result, session, damaged, held: heldPlaces(recorded, damaged, session), shelfWritten: shelf.kind === 'shelf' }
+}
+
+/** The recorded places of shelved tapes that were refused. */
+function heldPlaces(shelf: Shelf, damaged: readonly DamagedTape[], session: Session): HeldPlace[] {
+  const loaded = new Set(session.tapes.map((tape) => tape.id))
+  const refused = new Set(damaged.filter((tape) => !loaded.has(tape.id)).map((tape) => tape.id))
+  const held: HeldPlace[] = []
+  const seen = new Set<string>()
+  const keep = (id: string, boxId: string | null, index: number) => {
+    if (refused.has(id) && !seen.has(id)) { seen.add(id); held.push({ id, boxId, index }) }
+  }
+  for (const box of shelf.boxes) box.tapeIds.forEach((id, index) => keep(id, box.id, index))
+  shelf.loose.forEach((id, index) => keep(id, null, index))
+  return held
 }

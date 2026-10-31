@@ -18,6 +18,7 @@ import {
   type CollectionLoadResult,
   type CollectionRead,
   type DamagedTape,
+  type HeldPlace,
 } from './collection-files'
 export { readCollection, type CollectionRead, type DamagedTape } from './collection-files'
 
@@ -54,6 +55,8 @@ let saveTimer: NodeJS.Timeout | null = null
 let loaded = false
 let collectionDir: string | null = null
 let persistChain: Promise<void> = Promise.resolve()
+/** The places of refused shelved tapes, kept in every shelf.json written. */
+let held: HeldPlace[] = []
 /** shelf.json's bytes last written or loaded, to skip unchanged writes. */
 let lastShelfWritten: Buffer | null = null
 /** Each tape file's bytes last written or loaded. A tape not here has no file yet. */
@@ -91,7 +94,7 @@ async function writeTapeFiles(session: Session): Promise<void> {
 }
 
 async function writeShelf(session: Session): Promise<void> {
-  const bytes = encodeShelf(session)
+  const bytes = encodeShelf(session, held)
   if (!lastShelfWritten?.equals(bytes)) await writeManagedJsonBytes(shelfFile(loadedDir()), bytes)
   lastShelfWritten = bytes
 }
@@ -117,8 +120,7 @@ function emptySession(): Session {
 
 /**
  * Outcome of loading the collection, so the app edge (not this I/O layer) can
- * tell the user when shelf.json had to be set aside or a tape
- * could not be read.
+ * tell the user when a tape's file was refused.
  */
 export type SessionLoadResult = CollectionLoadResult & { damaged: DamagedTape[] }
 
@@ -127,7 +129,7 @@ export type SessionLoadResult = CollectionLoadResult & { damaged: DamagedTape[] 
  * called once during startup before any getter/mutator. A collection without a
  * readable shelf.json gets one before startup goes on.
  */
-export async function loadSession(): Promise<SessionLoadResult> {
+export async function loadSession(options: { prepare?: boolean } = {}): Promise<SessionLoadResult> {
   const dir = getCollectionDir()
   // Only the built-in collection is created implicitly. An unavailable chosen
   // drive must not become an empty replacement collection.
@@ -137,7 +139,9 @@ export async function loadSession(): Promise<SessionLoadResult> {
   if (!directory.isDirectory()) throw new StoreAccessError(dir, new Error('Not a directory'))
   const read = await readCollection(dir)
   bindSession(dir, read)
-  if (!read.shelfWritten) await prepareCollection()
+  // Startup prepares it itself once every launch file has passed, so a stopped
+  // launch writes nothing.
+  if (!read.shelfWritten && options.prepare !== false) await prepareCollection()
 
   const { result, damaged } = read
   switch (result.status) {
@@ -147,9 +151,6 @@ export async function loadSession(): Promise<SessionLoadResult> {
     case 'empty':
       log.info('session not found; starting empty')
       break
-    case 'recovered':
-      log.error('collection file corrupt; set aside', { quarantinePath: result.quarantinePath })
-      break
   }
   for (const tape of damaged) log.error('tape file unreadable; left as it is', { path: tape.path, reason: tape.reason })
   return { ...result, damaged }
@@ -157,13 +158,14 @@ export async function loadSession(): Promise<SessionLoadResult> {
 
 /** Bind only after the destination location has durably committed. The caller
  * runs at its collection turn and has flushed all previous writes. A read whose
- * shelf.json is missing or was set aside counts it as unwritten, so the next
- * save writes it. */
-export function bindSession(dir: string, read: Pick<CollectionRead, 'session' | 'shelfWritten'>): void {
+ * shelf.json is missing counts it as unwritten, so the next save writes it.
+ * The places of refused shelved tapes are held through every save. */
+export function bindSession(dir: string, read: Pick<CollectionRead, 'session' | 'shelfWritten'> & Partial<Pick<CollectionRead, 'held'>>): void {
   cancelScheduledSave()
   collectionDir = dir
   cache = read.session
-  lastShelfWritten = read.shelfWritten ? encodeShelf(read.session) : null
+  held = read.held ?? []
+  lastShelfWritten = read.shelfWritten ? encodeShelf(read.session, held) : null
   lastTapeWritten = new Map(read.session.tapes.map((tape) => [tape.id, encodeTapeFile(tape)]))
   releasedFolders.clear()
   rebuildIndexes()

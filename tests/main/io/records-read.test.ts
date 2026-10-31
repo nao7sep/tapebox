@@ -287,6 +287,8 @@ describe('records reads', () => {
       time: '2026-10-04T10:00:01.000Z', level: 'info', message: 'to the text file', tape_id: null, fields: '{}',
     }, () => 'to the text file')).toBe(false)
     await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow(/no format version/)
+    await records.flushRecords()
+    expect(records.recordsRefusal()).toEqual({ path: paths.records, reason: 'unreadable' })
     await records.closeRecords()
 
     expect(readFileSync(paths.records).equals(bytes)).toBe(true)
@@ -310,6 +312,8 @@ describe('records reads', () => {
       time: '2026-10-04T10:00:01.000Z', level: 'info', message: 'to the text file', tape_id: null, fields: '{}',
     }, () => 'to the text file')).toBe(false)
     await expect(reader.readRecords({ op: 'sources' })).rejects.toThrow(/NewerFormatError/)
+    await records.flushRecords()
+    expect(records.recordsRefusal()).toEqual({ path: paths.records, reason: 'newer' })
     await records.closeRecords()
 
     expect(readFileSync(paths.records).equals(bytes)).toBe(true)

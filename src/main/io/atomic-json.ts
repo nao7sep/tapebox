@@ -1,11 +1,9 @@
-import { open, rename, stat } from 'node:fs/promises'
-import { basename, dirname, extname, join } from 'node:path'
+import { open } from 'node:fs/promises'
 import { z } from 'zod'
 import { writeFileAtomicVia } from './atomic-file'
 import { APP_WRITER } from './app-writer'
 import { withFileHeader, type FileFormat } from './file-header'
 import { record } from '@main/store/backupStore'
-import { utcTimestampForFilename } from '@shared/utc'
 import { log } from './logger'
 import { describeError } from '@shared/error'
 
@@ -127,25 +125,4 @@ export async function writeManagedJsonBytes(path: string, bytes: Buffer): Promis
   // just wrote. Best-effort — record() never throws — so a backup problem can never
   // break the save that already succeeded above.
   record(path, bytes)
-}
-
-/**
- * Move a malformed managed file aside to its timestamped `<stem>-<stamp>.invalid`
- * sibling, preserving its bytes, and return the quarantine path. The rename
- * either lands or its failure propagates, and an earlier copy under the same
- * name is never replaced; the caller then stops rather than start fresh. Seconds
- * name it: a store is set aside at most once per launch. The one home of the
- * quarantine naming grammar, so the collection and config cannot drift apart on it.
- */
-export async function quarantineFile(filePath: string): Promise<string> {
-  const stem = basename(filePath, extname(filePath))
-  const quarantinePath = join(dirname(filePath), `${stem}-${utcTimestampForFilename()}.invalid`)
-  try {
-    await stat(quarantinePath)
-    throw Object.assign(new Error(`${quarantinePath} already exists`), { code: 'EEXIST' })
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-  await rename(filePath, quarantinePath)
-  return quarantinePath
 }

@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { paths } from '@main/paths'
-import { quarantineFile, writeManagedJson } from '@main/io/atomic-json'
+import { writeManagedJson } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
-import { FORMATS, NewerFormatError, parseStoreJson } from '@main/io/file-header'
-import { CollectionFolderSettingError, StoreAccessError } from '@main/io/store-access'
+import { FORMATS, parseStoreJson } from '@main/io/file-header'
+import { CollectionFolderSettingError, RefusedFileError, StoreAccessError } from '@main/io/store-access'
 import { maskCredentials, maskYtdlpArgs } from '@main/io/mask'
 import { tokenizeArgs } from '@main/services/ytdlp-args'
 import { describeError } from '@shared/error'
@@ -15,8 +15,8 @@ import { StoredSettingsSchema, readSettingsSets } from './settings-sets'
 
 /**
  * Effective settings cache and atomic persistence (config-sets-conventions).
- * The file is read once, at load; missing files and quarantined files use the
- * built-ins without seeding. Writes compute the stored sets from the cache
+ * The file is read once, at load; a missing file uses the built-ins without
+ * seeding, and a refused one stops the launch. Writes compute the stored sets from the cache
  * inside one serialized owner.
  */
 
@@ -33,7 +33,7 @@ const QUIET_SETS: ReadonlySet<string> = new Set(['theme', 'language'])
 
 export async function loadSettings(): Promise<ConfigLoadResult> {
   const found = await readSettingsStore(paths.config)
-  if (found !== null && 'sets' in found) {
+  if (found !== null) {
     if (found.rejected.includes('collectionDir')) throw new CollectionFolderSettingError(paths.config)
     cache = effectiveSettings(found.sets)
     kept = found.kept
@@ -44,12 +44,8 @@ export async function loadSettings(): Promise<ConfigLoadResult> {
   kept = {}
   const defaults = defaultSettings()
   cache = defaults
-  if (found === null) {
-    log.info('settings missing; using built-ins', { config: loggedSettings(defaults) })
-    return { status: 'missing' }
-  }
-  log.info('settings quarantined; using built-ins', { quarantinePath: found.quarantinePath })
-  return { status: 'recovered', quarantinePath: found.quarantinePath }
+  log.info('settings missing; using built-ins', { config: loggedSettings(defaults) })
+  return { status: 'missing' }
 }
 
 /** The effective settings for the startup record, with any credential the yt-dlp
@@ -60,17 +56,17 @@ function loggedSettings(settings: Settings): Record<string, unknown> {
   return maskCredentials(summarizeSettings(settings), credentials)
 }
 
-/** What loadSettings did, so the app edge can report a quarantine, or settings it
- *  kept but could not use, to the user (the store stays UI-free, mirroring the
- *  session store's recovery result). */
+/** What loadSettings did, so the app edge can report settings it kept but
+ *  could not use to the user (the store stays UI-free). A config.json that is
+ *  newer or unreadable is refused with {@link RefusedFileError} and stops the
+ *  launch, left exactly as it is (store-recovery-conventions). */
 export type ConfigLoadResult =
   | { status: 'loaded'; settingsKept: boolean }
   | { status: 'missing' }
-  | { status: 'recovered'; quarantinePath: string }
 
 async function readSettingsStore(
   configPath: string,
-): Promise<{ sets: SettingsSets; kept: Record<string, unknown>; rejected: string[] } | { quarantinePath: string } | null> {
+): Promise<{ sets: SettingsSets; kept: Record<string, unknown>; rejected: string[] } | null> {
   let text: string
   try {
     text = await readFile(configPath, 'utf8')
@@ -79,10 +75,10 @@ async function readSettingsStore(
     throw new StoreAccessError(configPath, err)
   }
   const found = parseStoreJson(text, FORMATS.config)
-  if (found.status === 'newer') throw new NewerFormatError(configPath, found.version, FORMATS.config.version)
+  if (found.status === 'newer') throw new RefusedFileError(configPath, 'newer')
   if (found.status === 'unreadable') {
-    log.warn('config unreadable; quarantining and falling back to defaults', { error: describeError(found.error) })
-    return { quarantinePath: await quarantineFile(configPath) }
+    log.warn('config unreadable; left as it is', { error: describeError(found.error) })
+    throw new RefusedFileError(configPath, 'unreadable', found.error)
   }
   const read = readSettingsSets(found.value)
   for (const key of read.rejected) log.warn('settings set invalid; kept in the file, using the built-in', { key })

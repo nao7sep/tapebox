@@ -3,6 +3,7 @@ import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { FORMATS, parseStoreJson } from '@main/io/file-header'
+import { RefusedFileError } from '@main/io/store-access'
 import { describeError } from '@shared/error'
 import { DependenciesSchema, defaultDependencies, type Dependencies } from '@shared/dependencies'
 
@@ -12,12 +13,10 @@ import { DependenciesSchema, defaultDependencies, type Dependencies } from '@sha
  * the user edits (persisted-store-separation-conventions).
  *
  * Facts semantics, deliberately unlike the config store:
- *   - Self-healing, never quarantined: a missing OR corrupt file falls back to
- *     fresh (all-null) entries, because every fact is re-derivable — a re-scan of
- *     disk plus one update check restores it. There is nothing to preserve, so no
- *     `.invalid` quarantine and no fail-loud (the opposite of the session store).
- *     A file in a newer format is intact, so it is left as it is: fresh facts
- *     serve the session and nothing is written.
+ *   - Self-healing: a missing OR unreadable file falls back to fresh (all-null)
+ *     entries, because every fact is re-derivable — a re-scan of disk plus one
+ *     update check restores it — and the next save replaces it. A file in a
+ *     newer format stops the launch and is never written.
  *   - Written lazily: defaults are NOT materialized on first run. The file appears
  *     the first time a check or install has an actual fact to record — the
  *     convention's "facts are written only after the app learns them."
@@ -51,13 +50,10 @@ export async function loadDependencies(): Promise<void> {
   }
   const found = parseStoreJson(text, FORMATS.dependencies)
   if (found.status === 'newer') {
-    // Intact, from a newer build: fresh facts serve this session, and it is never written.
+    // Any newer file at launch stops it (store-recovery-conventions); the guard
+    // below still keeps a newer file from being written over.
     newerOnDisk = true
-    log.warn('dependencies are from a newer TapeBox; using fresh facts and leaving the file as it is', {
-      path: paths.dependencies,
-      version: found.version,
-    })
-    return
+    throw new RefusedFileError(paths.dependencies, 'newer')
   }
   const parsed = found.status === 'read' ? DependenciesSchema.safeParse(found.value) : null
   if (parsed?.success) {
@@ -65,7 +61,7 @@ export async function loadDependencies(): Promise<void> {
     lastWritten = JSON.stringify(cache)
   } else {
     // Corrupt, not absent: the facts are re-derivable, so self-heal to defaults
-    // (a re-check refills them) rather than quarantine-and-preserve as config does.
+    // (a re-check refills them); disposable state takes no notice.
     const error = found.status === 'unreadable' ? found.error : parsed?.error
     log.warn('dependencies invalid; using fresh facts', { error: describeError(error) })
   }

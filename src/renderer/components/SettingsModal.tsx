@@ -840,7 +840,7 @@ function AiTab({
         {willClear && (
           <p className="mt-1 text-xs text-warning-fg">{t.t('settings.apiKeyWillClear')}</p>
         )}
-        {keyState === 'unreadable' && apiKeyDraft.length === 0 && (
+        {keyState === 'unreadable' && (
           <p className="mt-1 text-xs text-warning-fg">{t.t('settings.apiKeyUnreadable')}</p>
         )}
         {keyState === 'newer' && (

@@ -5,6 +5,7 @@ import { describeError } from '@shared/error'
 import type { LogLevel } from '@shared/log'
 import { utcTimestampForFilename } from '@shared/utc'
 import { toJson } from './log-format'
+import type { RefusedFile } from './store-access'
 import { APP_WRITER } from './app-writer'
 import type { RecordsRead, RecordsReadResults } from './records-query'
 import type { RecordReadResponse, RecordWriteData, RecordWriteRequest, RecordWriteResponse } from './records-write-worker'
@@ -18,6 +19,8 @@ import type { RecordTable, RecordRow, ExecutionFacts } from './records-write-wor
  * sequence's one deadline bounds its drain. */
 let session: string | null = null
 let fallbackPath: string | null = null
+let databasePath: string | null = null
+let refusal: RefusedFile | null = null
 let worker: Worker | null = null
 let responsePort: MessagePort | null = null
 let closed = false
@@ -75,6 +78,7 @@ function acknowledge(response: RecordWriteResponse | RecordReadResponse): void {
     else read.reject(new Error(response.error))
     return
   }
+  if (response.refused && databasePath) refusal = { path: databasePath, reason: response.refused }
   const entry = pending.get(response.id)
   if (!entry) return
   pending.delete(response.id)
@@ -95,6 +99,8 @@ export function openRecords(): string {
   session = started.toISOString()
   // Seconds name it: one launch writes one file, and a launch takes longer than one.
   fallbackPath = join(paths.logs, `${utcTimestampForFilename(started)}.log`)
+  databasePath = paths.records
+  refusal = null
   closed = false
   closing = null
   terminalFlushed = false
@@ -102,7 +108,7 @@ export function openRecords(): string {
   try {
     const module = import.meta.url.endsWith('.ts') ? './records-write-worker.ts' : './records-write-worker.js'
     const created = new Worker(new URL(module, import.meta.url), { workerData: {
-      databasePath: paths.records, logsPath: paths.logs, responsePort: port2,
+      databasePath, logsPath: paths.logs, responsePort: port2,
       fallbackPath, session, writer: APP_WRITER,
     } satisfies RecordWriteData, transferList: [port2] })
     port1.on('message', acknowledge)
@@ -118,6 +124,11 @@ export function openRecords(): string {
 }
 
 export function currentSession(): string | null { return session }
+
+/** records.sqlite3 when this launch refused it, once the writer has opened its
+ *  storage ({@link flushRecords}). It is left as it is, and Records go to the
+ *  text file instead. */
+export function recordsRefusal(): RefusedFile | null { return refusal }
 export function onRecordStored(listener: (() => void) | null): void { storedListener = listener }
 
 function enqueue(request: Omit<RecordWriteRequest, 'id'>, text: string, level: LogLevel, mirrored: boolean): Promise<void> {

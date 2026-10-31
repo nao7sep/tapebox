@@ -3,7 +3,7 @@ import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 import { parentPort, workerData, type MessagePort } from 'node:worker_threads'
 import { describeError } from '../../shared/error.ts'
 import { toJson } from './log-format.ts'
-import { FORMATS, type FileWriter } from './file-header.ts'
+import { FORMATS, NewerFormatError, type FileWriter } from './file-header.ts'
 import { readRecords, type RecordsRead, type RecordsReadResult } from './records-query.ts'
 import { databaseTransaction, openWritableDatabase } from './sqlite-store.ts'
 
@@ -11,7 +11,8 @@ export type RecordTable = 'logs' | 'ai_calls' | 'ytdlp_runs' | 'ffmpeg_runs'
 export type RecordRow = Record<string, SQLInputValue>
 export type ExecutionFacts = { elapsedMs?: number | null; succeeded?: boolean | null; outputKey?: string; outputChunks?: { stdout: number; stderr: number } }
 export type RecordWriteRequest = { facts?: ExecutionFacts; id: number; chunk?: { runKey: string; stream: 'stdout' | 'stderr'; sequence: number; content: string }; table?: RecordTable; row?: RecordRow; text?: string; completion?: SharedArrayBuffer; read?: RecordsRead }
-export type RecordWriteResponse = { id: number; stored: boolean; console?: string; diagnostics: string[] }
+/** `refused`: the database was refused when it was opened, newer or unreadable, and left as it is. */
+export type RecordWriteResponse = { id: number; stored: boolean; console?: string; diagnostics: string[]; refused?: 'newer' | 'unreadable' }
 /** The answer to a Records window read, which this thread runs in turn with the writes. */
 export type RecordReadResponse =
   | { id: number; read: true; ok: true; value: RecordsReadResult }
@@ -146,7 +147,11 @@ port.on('message', (request: RecordWriteRequest) => {
   if (!initialized) {
     initialized = true
     try { db = openWritableDatabase(data.databasePath, FORMATS.records, SCHEMA, data.writer) }
-    catch (error) { openFailure = error; fallback(failureNote('records database could not be opened; writing to a text file', error), response, true) }
+    catch (error) {
+      openFailure = error
+      response.refused = error instanceof NewerFormatError ? 'newer' : 'unreadable'
+      fallback(failureNote('records database could not be opened; writing to a text file', error), response, true)
+    }
   }
   if (request.read) {
     let reply: RecordReadResponse

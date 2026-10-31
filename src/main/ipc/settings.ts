@@ -17,6 +17,7 @@ import {
   type RelocatedFile,
 } from '@main/store/collection-move'
 import { UserFacingError } from '@main/user-facing-error'
+import { RefusedFileError, refusalOf } from '@main/io/store-access'
 import { log } from '@main/io/logger'
 import { describeError } from '@shared/error'
 import { linkOrCopyNoOverwrite } from '@main/io/atomic-file'
@@ -187,10 +188,14 @@ async function applySettingsPatch(
   const switching = movesCollection(normalized)
   const toDir = effectiveCollectionDir(normalized.collectionDir ?? config.getSettings().collectionDir)
   const opening = switching && collectionAction === 'open'
-  // Inspect an explicitly opened collection without quarantine. It is never a
+  // Inspect an explicitly opened collection without changing it. It is never a
   // destination for the current collection's media or organization.
   const opened = opening
     ? await session.readCollection(toDir, { requireExisting: true }).catch((cause: unknown) => {
+      // A collection whose shelf.json is refused is not opened, and the file is named.
+      const refused = refusalOf(cause)
+      if (refused?.reason === 'newer') throw new UserFacingError('refused', message('errors.fileNewer', { name: refused.path }), { cause })
+      if (refused && cause instanceof RefusedFileError) throw new UserFacingError('refused', message('errors.fileUnreadable', { name: refused.path }), { cause })
       throw new UserFacingError('refused', message('errors.collectionOpenFailed', { path: toDir }), { cause })
     })
     : null

@@ -369,6 +369,32 @@ describe('format version (store-recovery-conventions)', () => {
     expect(logCalls.warn[0]!.fields).toMatchObject({ error: expect.objectContaining({ name: 'NewerFormatError' }) })
   })
 
+  it.each([
+    ['newer', (db: DatabaseSync) => { db.exec('CREATE TABLE future (id INTEGER PRIMARY KEY)'); db.exec('PRAGMA user_version = 2') }],
+    ['unreadable', (db: DatabaseSync) => { db.exec('CREATE TABLE something_else (id INTEGER PRIMARY KEY)') }],
+  ] as const)('says at launch that a %s store is refused, before any save reaches it, leaving it byte-identical', async (reason, make) => {
+    const file = path.join(root, 'backups.sqlite3')
+    const db = new DatabaseSync(file)
+    make(db)
+    db.close()
+    const bytes = readFileSync(file)
+    const { openBackupStore, record, flushBackupStore, closeBackupStore } = await import('@main/store/backupStore')
+
+    await expect(openBackupStore()).resolves.toEqual({ path: file, reason })
+    record(path.join(root, 'config.json'), Buffer.from('a'))
+    await flushBackupStore()
+    await closeBackupStore()
+    expect(readFileSync(file).equals(bytes)).toBe(true)
+  })
+
+  it('opens a fresh store at launch and records into it', async () => {
+    const { openBackupStore, record, flushBackupStore } = await import('@main/store/backupStore')
+    await expect(openBackupStore()).resolves.toBeNull()
+    record(path.join(root, 'config.json'), Buffer.from('a'))
+    await flushBackupStore()
+    expect(readRows(root)).toHaveLength(1)
+  })
+
 })
 
 

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/settings'
 import { header } from '../../helpers/file-header'
 
-// Real filesystem (a temp dir) so the read → parse → quarantine path is exercised end to end.
+// Real filesystem (a temp dir) so the read → parse → refuse path is exercised end to end.
 // Load the production settings owner against an isolated data root.
 
 let dir: string
@@ -26,7 +26,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-describe('loadSettings recovery', () => {
+describe('loadSettings refusal', () => {
   it('uses built-ins when the file is missing, leaving nothing behind', async () => {
     expect(await config.loadSettings()).toEqual({ status: 'missing' })
     expect(config.getSettings()).toEqual(defaultSettings())
@@ -42,36 +42,27 @@ describe('loadSettings recovery', () => {
     expect(await readdir(dir)).toEqual(['config.json'])
   })
 
-  it('quarantines an unparseable config aside rather than discarding it', async () => {
+  it.each([
+    ['unparseable', '{ not valid json'],
+    ['a non-object', JSON.stringify(['not a settings map'])],
+    ['without a header', JSON.stringify({ autoplay: false })],
+    ['of another kind', JSON.stringify({ ...header('layout'), autoplay: false })],
+  ])('refuses a config that is %s, leaving it byte-identical with nothing beside it', async (_label, bytes) => {
     const path = join(dir, 'config.json')
-    const corrupt = '{ not valid json'
-    await writeFile(path, corrupt)
+    await writeFile(path, bytes)
 
-    const result = await config.loadSettings()
-    expect(result).toMatchObject({ status: 'recovered', quarantinePath: expect.stringContaining('.invalid') })
-    expect(config.getSettings()).toEqual(defaultSettings())
-
-    // The corrupt bytes survive as a `config-<yyyymmdd-hhmmss-utc>.invalid` neighbour; the original
-    // is moved.
-    const files = await readdir(dir)
-    const quarantined = files.find((f) => f.startsWith('config-') && f.endsWith('.invalid'))
-    expect(quarantined).toBeDefined()
-    expect(await readFile(join(dir, quarantined!), 'utf8')).toBe(corrupt)
-    expect(files).not.toContain('config.json')
-    if (result.status === 'recovered') expect(await readFile(result.quarantinePath, 'utf8')).toBe(corrupt)
+    await expect(config.loadSettings()).rejects.toMatchObject({ name: 'RefusedFileError', path, reason: 'unreadable' })
+    expect(await readFile(path, 'utf8')).toBe(bytes)
+    expect(await readdir(dir)).toEqual(['config.json'])
   })
 
-  it('quarantines a non-object config rather than wiping it', async () => {
+  it('refuses a newer config the same way', async () => {
     const path = join(dir, 'config.json')
-    await writeFile(path, JSON.stringify(['not a settings map']))
+    const bytes = JSON.stringify({ ...header('config', 2), autoplay: false })
+    await writeFile(path, bytes)
 
-    const result = await config.loadSettings()
-    expect(result).toMatchObject({ status: 'recovered', quarantinePath: expect.stringContaining('.invalid') })
-    expect(config.getSettings()).toEqual(defaultSettings())
-
-    const quarantined = (await readdir(dir)).find(
-      (f) => f.startsWith('config-') && f.endsWith('.invalid'),
-    )
-    expect(quarantined).toBeDefined()
+    await expect(config.loadSettings()).rejects.toMatchObject({ name: 'RefusedFileError', path, reason: 'newer' })
+    expect(await readFile(path, 'utf8')).toBe(bytes)
+    expect(await readdir(dir)).toEqual(['config.json'])
   })
 })

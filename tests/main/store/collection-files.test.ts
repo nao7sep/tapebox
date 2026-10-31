@@ -207,6 +207,24 @@ describe('a damaged tape file', () => {
     expect(await readFile(newer, 'utf8')).toBe(newerBytes)
   })
 
+  it('keeps a refused shelved tape in its box and place through later shelf changes', async () => {
+    await writeCollection(fixtureTapes())
+    await session.loadSession()
+    const before = await shelfOnDisk()
+    const refused = join(state.dir, 'shelf', 'Boxed00001', 'tape.json')
+    await writeFile(refused, '{ not json')
+
+    await session.loadSession()
+    expect(session.getTapes().map((item) => item.id)).not.toContain('Boxed00001')
+    session.upsertBox({ id: 'BoxB000001', name: 'Another box', order: 1 })
+    await session.persistNow()
+
+    const after = await shelfOnDisk()
+    expect(after.boxes[0]).toEqual(before.boxes[0])
+    expect(after.loose).toEqual(before.loose)
+    expect(await readFile(refused, 'utf8')).toBe('{ not json')
+  })
+
   it('names a tape that is in both the Inbox and the Shelf', async () => {
     await session.loadSession()
     session.upsertTape(tape('Twice00001'))

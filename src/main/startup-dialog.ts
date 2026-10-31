@@ -1,7 +1,6 @@
 import { showPlainMessageDialog } from './plain-message-dialog.js'
 import { mainTranslator } from './i18n.js'
-import { NewerFormatError } from './io/file-header.js'
-import { CollectionFolderSettingError, StoreAccessError } from './io/store-access.js'
+import { CollectionFolderSettingError, LaunchRefusedError, refusalOf } from './io/store-access.js'
 import type { MessageValues } from '@shared/i18n/translate'
 import type { BrowserWindow } from 'electron'
 
@@ -14,8 +13,8 @@ import type { BrowserWindow } from 'electron'
  */
 
 type Notice =
-  | 'settingsUnreadable' | 'shelfUnreadable' | 'settingsKept' | 'tapesDamaged'
-  | 'failed' | 'storeNewer' | 'storeInaccessible' | 'collectionFolderUnreadable'
+  | 'settingsKept' | 'tapesDamaged' | 'recordsOff' | 'backupsOff'
+  | 'failed' | 'refused' | 'collectionFolderUnreadable'
 
 async function showNotice(notice: Notice, owner?: BrowserWindow, values?: MessageValues): Promise<void> {
   const t = mainTranslator()
@@ -27,16 +26,6 @@ async function showNotice(notice: Notice, owner?: BrowserWindow, values?: Messag
     detail: t.t(`startup.${notice}.detail`),
     closeLabel: t.t('common.ok'),
   })
-}
-
-/** A store set aside and reset is named by where its bytes now are, beside what
- *  the app started with instead (store-recovery-conventions). */
-export async function notifyCorruptConfig(quarantinePath: string, owner?: BrowserWindow): Promise<void> {
-  await showNotice('settingsUnreadable', owner, { path: quarantinePath })
-}
-
-export async function notifyCorruptSession(quarantinePath: string, owner?: BrowserWindow): Promise<void> {
-  await showNotice('shelfUnreadable', owner, { path: quarantinePath })
 }
 
 /** Tapes whose own tape.json could not be read are named by that file, which
@@ -51,12 +40,22 @@ export async function notifySettingsKept(configPath: string, owner?: BrowserWind
   await showNotice('settingsKept', owner, { path: configPath })
 }
 
-/** Startup stopped. A store in a newer format, one that could not be opened, and
- *  a collection folder setting that could not be read are each named with their
- *  path, and were left as they are (store-recovery-conventions). */
+/** A records or backup database that could not be opened is off for this
+ *  launch and left as it is; the app keeps running (store-recovery-conventions). */
+export async function notifySideStoreOff(notice: 'recordsOff' | 'backupsOff', path: string, owner?: BrowserWindow): Promise<void> {
+  await showNotice(notice, owner, { path })
+}
+
+/** Startup stopped. Every refused file is named with whether a newer TapeBox
+ *  wrote it or it could not be read, and each was left as it is; a collection
+ *  folder setting that could not be read is named too (store-recovery-conventions). */
 export async function notifyStartupFailure(error: unknown): Promise<void> {
-  if (error instanceof NewerFormatError) await showNotice('storeNewer', undefined, { path: error.path })
-  else if (error instanceof StoreAccessError) await showNotice('storeInaccessible', undefined, { path: error.path })
-  else if (error instanceof CollectionFolderSettingError) await showNotice('collectionFolderUnreadable', undefined, { path: error.path })
+  const t = mainTranslator()
+  const single = refusalOf(error)
+  const files = error instanceof LaunchRefusedError ? error.files : single ? [single] : null
+  if (files) {
+    const lines = files.map((file) => t.t(file.reason === 'newer' ? 'startup.refused.newer' : 'startup.refused.unreadable', { path: file.path }))
+    await showNotice('refused', undefined, { files: lines.join('\n') })
+  } else if (error instanceof CollectionFolderSettingError) await showNotice('collectionFolderUnreadable', undefined, { path: error.path })
   else await showNotice('failed')
 }

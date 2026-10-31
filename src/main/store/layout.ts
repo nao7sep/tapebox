@@ -3,6 +3,7 @@ import { paths } from '@main/paths'
 import { writeJsonAtomic } from '@main/io/atomic-json'
 import { log } from '@main/io/logger'
 import { FORMATS, parseStoreJson } from '@main/io/file-header'
+import { RefusedFileError } from '@main/io/store-access'
 import { describeError } from '@shared/error'
 import { LayoutSchema, defaultLayout, type Layout } from '@shared/layout'
 
@@ -10,8 +11,8 @@ import { LayoutSchema, defaultLayout, type Layout } from '@shared/layout'
  * In-memory view-state cache + debounced atomic persistence to layout.json.
  * Self-healing on load (a missing or invalid file falls back to defaults)
  * because it holds no data worth protecting — the opposite policy from the
- * session store. A file in a newer format is left as it is: the defaults are
- * used and nothing is written for the session. Writes are debounced so rapid updates collapse into one write.
+ * session store. A file in a newer format stops the launch and is never
+ * written. Writes are debounced so rapid updates collapse into one write.
  */
 
 const SAVE_DEBOUNCE_MS = 500
@@ -40,13 +41,10 @@ export async function loadLayout(): Promise<void> {
   }
   const found = parseStoreJson(text, FORMATS.layout)
   if (found.status === 'newer') {
-    // Intact, from a newer build: used as defaults and never written this session.
+    // Any newer file at launch stops it (store-recovery-conventions); the guard
+    // below still keeps a newer file from being written over.
     newerOnDisk = true
-    log.warn('layout is from a newer TapeBox; using defaults and leaving it as it is', {
-      path: paths.layout,
-      version: found.version,
-    })
-    return
+    throw new RefusedFileError(paths.layout, 'newer')
   }
   const parsed = found.status === 'read' ? LayoutSchema.safeParse(found.value) : null
   if (parsed?.success) {

@@ -6,6 +6,7 @@ import { writeJsonAtomic } from '@main/io/atomic-json'
 import { FORMATS, parseStoreJson } from '@main/io/file-header'
 import { log } from '@main/io/logger'
 import { UserFacingError } from '@main/user-facing-error'
+import { RefusedFileError } from '@main/io/store-access'
 import { message } from '@shared/i18n/translate'
 import { describeError } from '@shared/error'
 
@@ -171,15 +172,27 @@ async function closeKeyFile(file: FileHandle): Promise<void> {
   }
 }
 
-/** The stored keys for a change. A file in a newer format, which this build never
- *  writes, refuses it; an unreadable one is replaced (`replace`), since entering
- *  or clearing a key is the user's way past it. */
-async function readAllForWrite(): Promise<{ all: ApiKeysFile; replace: boolean }> {
+/** The stored keys for a change. A file this build cannot use, newer or
+ *  unreadable, refuses the change and is never written (store-recovery-conventions,
+ *  A refused file is never changed). */
+async function readAllForWrite(): Promise<ApiKeysFile> {
   const all = await readAll()
   if (all === 'newer') {
     throw new UserFacingError('conflict', message('errors.fileNewer', { name: basename(paths.apiKeys) }))
   }
-  return all === 'unreadable' ? { all: { keys: {} }, replace: true } : { all, replace: false }
+  if (all === 'unreadable') {
+    throw new UserFacingError('conflict', message('errors.fileUnreadable', { name: basename(paths.apiKeys) }))
+  }
+  return all
+}
+
+/**
+ * Check api-keys.json once at launch, though keys are read when needed: a
+ * secrets file that is newer or cannot be read stops the launch, left as it is.
+ */
+export async function checkApiKeysAtLaunch(): Promise<void> {
+  const all = await readAll()
+  if (all === 'newer' || all === 'unreadable') throw new RefusedFileError(paths.apiKeys, all)
 }
 
 async function writeAll(data: ApiKeysFile): Promise<void> {
@@ -248,10 +261,10 @@ export async function writeApiKey(id: string, apiKey: string): Promise<void> {
   assertKeyId(id)
   const trimmed = apiKey.trim()
   return serialized(async () => {
-    const { all, replace } = await readAllForWrite()
+    const all = await readAllForWrite()
     const encoded = trimmed.length === 0 ? undefined : encodeApiKey(trimmed)
     // The same key saved again changes nothing on disk (content-lifecycle conventions).
-    if (!replace && all.keys[id] === encoded) return
+    if (all.keys[id] === encoded) return
     if (encoded === undefined) delete all.keys[id]
     else all.keys[id] = encoded
     await writeAll(all)
@@ -262,8 +275,8 @@ export async function writeApiKey(id: string, apiKey: string): Promise<void> {
 export async function clearApiKey(id: string): Promise<void> {
   assertKeyId(id)
   return serialized(async () => {
-    const { all, replace } = await readAllForWrite()
-    if (replace || id in all.keys) {
+    const all = await readAllForWrite()
+    if (id in all.keys) {
       delete all.keys[id]
       await writeAll(all)
     }
