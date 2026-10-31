@@ -35,8 +35,6 @@ export function openWritableDatabase(path: string, current: number, schema: stri
         return
       }
       assertDatabaseCurrent(db, path, current)
-      const version = databaseFormatVersion(db, path)
-      if (version !== current) throw new Error(`${path} is format ${version}; this build requires format ${current}`)
       db.exec(schema)
     })
     return db

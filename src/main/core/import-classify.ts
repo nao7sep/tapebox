@@ -45,11 +45,11 @@ export function classifyImport(sidecar: unknown): ImportClassification {
   // One in a newer format is reported and left as it is (store-recovery-conventions).
   const version = checkFormatVersion(sidecar as Record<string, unknown>, FORMAT_VERSIONS.sidecar)
   if (version.status === 'newer') return { status: 'reject', reason: message('import.sidecarNewer') }
-  if (version.status === 'unreadable') return { status: 'reject', reason: message('import.sidecarInvalidJson') }
   const tb = (sidecar as Record<string, unknown>)['tapebox']
   if (!tb || typeof tb !== 'object' || Array.isArray(tb)) {
     return { status: 'reject', reason: message('import.notSidecarNoSection') }
   }
+  if (version.status === 'unreadable') return { status: 'reject', reason: message('import.sidecarInvalidJson') }
   const fields = tb as Record<string, unknown>
   if (!consumedFieldsValid(sidecar as Record<string, unknown>, fields)) {
     return { status: 'reject', reason: message('import.sidecarInvalidJson') }

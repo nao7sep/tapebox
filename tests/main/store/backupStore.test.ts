@@ -295,7 +295,7 @@ describe('format version (store-recovery-conventions)', () => {
     }
   }
 
-  it.each([0, 1])('leaves an unsupported backup schema at marker %s intact and disables recording', async (version) => {
+  it.each([0])('leaves a backup store at marker %s intact and disables recording', async (version) => {
     const file = path.join(root, 'backups.sqlite3')
     const older = new DatabaseSync(file)
     older.exec(`CREATE TABLE backups (id INTEGER PRIMARY KEY, path TEXT NOT NULL, content BLOB NOT NULL,
@@ -335,12 +335,12 @@ describe('format version (store-recovery-conventions)', () => {
     expect(userVersion()).toBe(0)
   })
 
-  it('stamps format 2 on a store it creates, and records into it again after a relaunch', async () => {
+  it('stamps format 1 on a store it creates, and records into it again after a relaunch', async () => {
     const first = await import('@main/store/backupStore')
     first.record(path.join(root, 'config.json'), Buffer.from('one'))
     await first.flushBackupStore()
     await first.closeBackupStore()
-    expect(userVersion()).toBe(2)
+    expect(userVersion()).toBe(1)
 
     vi.resetModules()
     launch.id = 'second-launch'
@@ -354,7 +354,7 @@ describe('format version (store-recovery-conventions)', () => {
     const file = path.join(root, 'backups.sqlite3')
     const newer = new DatabaseSync(file)
     newer.exec('CREATE TABLE future (id INTEGER PRIMARY KEY)')
-    newer.exec('PRAGMA user_version = 3')
+    newer.exec('PRAGMA user_version = 2')
     newer.close()
     const bytes = readFileSync(file)
     const { record, flushBackupStore, closeBackupStore } = await import('@main/store/backupStore')

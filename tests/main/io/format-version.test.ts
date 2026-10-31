@@ -6,12 +6,12 @@ import { parseStoreJson, withFormatVersion } from '@main/io/format-version'
 
 describe('parseStoreJson', () => {
   it('reads 1 as this build\'s own', () => {
-    expect(parseStoreJson('{"formatVersion":1,"a":1}', 1)).toEqual({ status: 'read', value: { formatVersion: 1, a: 1 }, version: 1 })
+    expect(parseStoreJson('{"formatVersion":1,"a":1}', 1)).toEqual({ status: 'read', value: { formatVersion: 1, a: 1 } })
   })
 
-  it('passes missing and unrecognized markers to the current shape reader', () => {
-    for (const value of [{ a: 1 }, { formatVersion: 0 }, { formatVersion: 1.5 }, { formatVersion: '2' }, { formatVersion: null }]) {
-      expect(parseStoreJson(JSON.stringify(value), 1)).toEqual({ status: 'read', value, version: 1 })
+  it('refuses missing, lower and malformed markers as unreadable', () => {
+    for (const value of [{ a: 1 }, { formatVersion: 0 }, { formatVersion: -1 }, { formatVersion: 1.5 }, { formatVersion: '2' }, { formatVersion: null }]) {
+      expect(parseStoreJson(JSON.stringify(value), 1).status, JSON.stringify(value)).toBe('unreadable')
     }
   })
 

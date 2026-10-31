@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readSidecarFile, writeSidecar } from '@main/core/sidecar'
 
 // A tape's sidecar carries its format version (store-recovery-conventions). One
-// without its marker uses current-shape admission, what TapeBox writes carries 1, and one in a
+// without marker 1 is unreadable, what TapeBox writes carries 1, and one in a
 // newer format is refused by name and left byte-identical.
 
 let dir: string
@@ -19,16 +19,12 @@ afterEach(async () => {
 })
 
 describe('sidecar format version', () => {
-  it('reads a sidecar without its marker as one v0.1.0 wrote', async () => {
+  it('refuses a sidecar without marker 1 as unreadable', async () => {
     const path = join(dir, 'Take.json')
-    await writeFile(path, JSON.stringify({ id: 'source', tapebox: { name: 'Take' } }))
-    await expect(readSidecarFile(path)).resolves.toEqual({ id: 'source', tapebox: { name: 'Take' } })
-  })
-
-  it('reads an unrecognized marker through current shape admission', async () => {
-    const path = join(dir, 'Take.json')
-    await writeFile(path, JSON.stringify({ formatVersion: 'one', id: 'source' }))
-    await expect(readSidecarFile(path)).resolves.toEqual({ formatVersion: 'one', id: 'source' })
+    for (const formatVersion of [undefined, 0, 'one']) {
+      await writeFile(path, JSON.stringify({ formatVersion, id: 'source', tapebox: { name: 'Take' } }))
+      await expect(readSidecarFile(path), String(formatVersion)).rejects.toThrow(/this build reads format 1/)
+    }
   })
 
   it('writes format 1 first and reads it back', async () => {

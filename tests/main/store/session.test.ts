@@ -21,7 +21,7 @@ function tapeFacts(id: string, sourceUrl: string, filename: string): Record<stri
 }
 
 /** Put a tape folder with its tape.json in the Inbox or the Shelf. */
-async function writeTape(area: 'inbox' | 'shelf', tape: Record<string, unknown>, text = JSON.stringify(tape)): Promise<string> {
+async function writeTape(area: 'inbox' | 'shelf', tape: Record<string, unknown>, text = JSON.stringify({ formatVersion: 1, ...tape })): Promise<string> {
   const folder = join(dir, area, tape.id as string)
   await mkdir(folder, { recursive: true })
   await writeFile(join(folder, 'tape.json'), text)
@@ -96,7 +96,7 @@ describe('readCollection', () => {
     // One in each area, so even a case-insensitive drive holds both.
     await writeTape('inbox', tapeFacts('abc1234567', 'https://example.test/a', 'First.mp4'))
     const second = tapeFacts('ABC1234567', 'https://example.test/b', 'Second.mp4')
-    const secondText = JSON.stringify(second)
+    const secondText = JSON.stringify({ formatVersion: 1, ...second })
     const secondPath = await writeTape('shelf', second, secondText)
 
     const { session, damaged } = await read()
@@ -108,13 +108,13 @@ describe('readCollection', () => {
 })
 
 describe('unmarked tape files', () => {
-  it('reads a valid current unmarked shape without rewriting it', async () => {
+  it('reports a tape.json without its marker as damaged and leaves it as it is', async () => {
     const tape = tapeFacts('abc1234567', 'https://example.test/video', 'video.mp4')
     const bytes = JSON.stringify(tape)
     const path = await writeTape('inbox', tape, bytes)
     const loaded = await read()
-    expect(loaded.result).toEqual({ status: 'loaded', tapeCount: 1 })
-    expect(loaded.session.tapes).toEqual([{ ...tape, shelved: false, boxId: null, order: 0 }])
+    expect(loaded.session.tapes).toEqual([])
+    expect(loaded.damaged).toEqual([{ id: 'abc1234567', path, reason: expect.stringMatching(/formatVersion is missing/) }])
     expect(await readFile(path, 'utf8')).toBe(bytes)
   })
 })

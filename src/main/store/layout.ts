@@ -51,7 +51,7 @@ export async function loadLayout(): Promise<void> {
   const parsed = found.status === 'read' ? LayoutSchema.safeParse(found.value) : null
   if (parsed?.success) {
     cache = parsed.data
-    if (found.status === 'read' && found.version === FORMAT_VERSIONS.layout) lastWritten = JSON.stringify(cache)
+    lastWritten = JSON.stringify(cache)
   } else {
     const error = found.status === 'unreadable' ? found.error : parsed?.error
     log.warn('layout invalid; using defaults', { error: describeError(error) })

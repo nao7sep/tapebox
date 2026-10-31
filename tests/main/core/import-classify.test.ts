@@ -59,21 +59,24 @@ describe('classifyImport', () => {
     })
   })
 
-  it('accepts a sidecar without its format marker as one v0.1.0 exported', () => {
+  it('refuses a sidecar without its format marker as invalid', () => {
     expect(classifyImport({ tapebox: { sourceUrl: 'http://x.test/v', mediaFilename: 'v.mp4' } })).toMatchObject({
-      status: 'accept',
-      mediaFilename: 'v.mp4',
+      status: 'reject',
+      reason: { key: 'import.sidecarInvalidJson' },
     })
   })
 
-  it('refuses newer formats and validates unrecognized markers by current shape', () => {
+  it('refuses newer formats and lower or malformed markers', () => {
     const tapebox = { sourceUrl: 'http://x', mediaFilename: 'v.mp4' }
     const newer = classifyImport({ formatVersion: 2, tapebox })
     expect(newer).toMatchObject({ status: 'reject', reason: { key: 'import.sidecarNewer' } })
     if (newer.status === 'reject') expect(inEnglish(newer.reason)).toMatch(/newer version of TapeBox/)
-    expect(classifyImport({ formatVersion: 'one', tapebox })).toMatchObject({
-      status: 'accept',
-    })
+    for (const formatVersion of [0, 'one']) {
+      expect(classifyImport({ formatVersion, tapebox }), String(formatVersion)).toMatchObject({
+        status: 'reject',
+        reason: { key: 'import.sidecarInvalidJson' },
+      })
+    }
   })
 
   it('rejects path-bearing and colliding bundle filenames before filesystem use', () => {

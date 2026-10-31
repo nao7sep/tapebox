@@ -2,9 +2,9 @@ import type { DatabaseSync } from 'node:sqlite'
 
 /**
  * Every store's format version, and the one way each kind of store reads and
- * writes its marker (store-recovery-conventions). Each format has its own
- * number. This module imports nothing at run time, so the store worker threads
- * can run it as it is.
+ * writes its marker (store-recovery-conventions). Every format TapeBox owns is
+ * format 1, and a reader accepts exactly its current marker. This module
+ * imports nothing at run time, so the store worker threads can run it as it is.
  */
 export const FORMAT_VERSIONS = {
   /** shelf.json */
@@ -23,9 +23,8 @@ export const FORMAT_VERSIONS = {
   sidecar: 1,
   /** `bin/<name>.json`, the installed version beside a managed binary. */
   binaryVersion: 1,
-  /** backups.sqlite3. One row per file per launch (`session_id`); existing stores
-   *  must have this exact format version. */
-  backups: 2,
+  /** backups.sqlite3. One row per file per launch (`session_id`). */
+  backups: 1,
   /** records.sqlite3 */
   records: 1,
 } as const
@@ -44,7 +43,7 @@ export class NewerFormatError extends Error {
   readonly version: number
 
   constructor(path: string, version: number, supported: number) {
-    super(`${path} is format ${version}; this build reads format ${supported} and older`)
+    super(`${path} is format ${version}; this build reads format ${supported}`)
     this.name = 'NewerFormatError'
     this.path = path
     this.version = version
@@ -52,7 +51,7 @@ export class NewerFormatError extends Error {
 }
 
 export type StoreJson =
-  | { status: 'read'; value: Record<string, unknown>; version: number }
+  | { status: 'read'; value: Record<string, unknown> }
   | { status: 'newer'; version: number }
   | { status: 'unreadable'; error: Error }
 
@@ -74,15 +73,14 @@ export function parseStoreJson(text: string, current: number): StoreJson {
   return checkFormatVersion(raw as Record<string, unknown>, current)
 }
 
-/** Missing or unrecognized markers use the current shape reader. The owning
- * schema still validates critical fields; only a recognized newer format is
- * refused before shape validation. Experimental shapes have no migration path. */
+/** Only the current marker is read. A higher whole number is a newer format,
+ * left as it is; a missing, lower or malformed marker is unreadable, like any
+ * other file this build cannot read. */
 export function checkFormatVersion(value: Record<string, unknown>, current: number): StoreJson {
   const marker = value[FORMAT_VERSION_KEY]
-  if (typeof marker !== 'number' || !Number.isSafeInteger(marker) || marker < 1) {
-    return { status: 'read', value, version: current }
-  }
-  return marker > current ? { status: 'newer', version: marker } : { status: 'read', value, version: marker }
+  if (marker === current) return { status: 'read', value }
+  if (typeof marker === 'number' && Number.isSafeInteger(marker) && marker > current) return { status: 'newer', version: marker }
+  return { status: 'unreadable', error: new Error(`${FORMAT_VERSION_KEY} is ${JSON.stringify(marker) ?? 'missing'}; this build reads format ${current}`) }
 }
 
 /** `data` with `formatVersion` as its first key, replacing any marker it held. */
@@ -106,12 +104,13 @@ export function databaseFormatVersion(db: DatabaseSync, path: string): number | 
 }
 
 /**
- * Admit an existing SQLite store when it is opened. Unmarked and invalid markers
- * are unreadable; newer markers are protected. One TapeBox runs per data root, so
+ * Admit an existing SQLite store when it is opened. Unmarked, invalid and lower
+ * markers are unreadable; newer markers are protected. One TapeBox runs per data root, so
  * the format cannot change while a store is open.
  */
 export function assertDatabaseCurrent(db: DatabaseSync, path: string, current: number): void {
   const version = databaseFormatVersion(db, path)
   if (version === null) throw new Error(`${path} has no format version (PRAGMA user_version)`)
   else if (version > current) throw new NewerFormatError(path, version, current)
+  else if (version !== current) throw new Error(`${path} is format ${version}; this build reads format ${current}`)
 }

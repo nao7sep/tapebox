@@ -76,9 +76,9 @@ describe('api-keys storage', () => {
     expect(JSON.parse(await readFile(apiKeysPath, 'utf8'))).toEqual({ formatVersion: 1, keys: {} })
   })
 
-  it('reads a v0.1.0 key file, which had no format marker', async () => {
+  it('resolves no key from a key file without its format marker', async () => {
     await writeFile(apiKeysPath, JSON.stringify({ keys: { openai: 'sk-plain' } }), 'utf8')
-    await expect(apiKeys.resolveApiKey('openai')).resolves.toBe('sk-plain')
+    await expect(apiKeys.resolveApiKey('openai')).resolves.toBeNull()
   })
   it('derives the conventional environment variable from the id', () => {
     expect(OPENAI).toBe('OPENAI_API_KEY')
