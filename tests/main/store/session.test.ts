@@ -28,10 +28,8 @@ async function writeTape(area: 'inbox' | 'shelf', tape: Record<string, unknown>,
   return join(folder, 'tape.json')
 }
 
-async function read(): Promise<Extract<Awaited<ReturnType<typeof readCollection>>, { kind: 'current' }>> {
-  const collection = await readCollection(dir)
-  if (collection.kind !== 'current') throw new Error('expected the current layout')
-  return collection
+async function read(): Promise<Awaited<ReturnType<typeof readCollection>>> {
+  return readCollection(dir)
 }
 
 beforeEach(async () => {
@@ -59,12 +57,6 @@ describe('readCollection', () => {
 
     expect(result.status).toBe('loaded')
     expect(shelfWritten).toBe(true)
-  })
-
-  it('reports a collection still in the layout before Inbox and Shelf for conversion', async () => {
-    await writeFile(join(dir, 'catalog.json'), JSON.stringify({ formatVersion: 1, tapes: [], boxes: [] }))
-
-    expect(await readCollection(dir)).toEqual({ kind: 'legacy' })
   })
 
   it('sets aside an unparseable shelf file without destroying it, and keeps every tape', async () => {

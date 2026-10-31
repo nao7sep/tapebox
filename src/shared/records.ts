@@ -14,14 +14,14 @@ export const RECORD_LEVELS = ['error', 'warn', 'info', 'debug'] as const
 export type RecordLevel = (typeof RECORD_LEVELS)[number]
 
 /**
- * What the level filter offers: a record's own level, or `attention`, every
+ * What the level filter offers: a record's own level, or `warningsAndErrors`, every
  * record at `warn` or `error`, labelled "Warnings and errors": a recovered
  * problem need not mean outstanding work (logging-conventions). Only a log line has a level of its own; an AI call
  * reads as `error` when it failed. A yt-dlp or ffmpeg run reads as `warn` when the
  * user cancelled it or TapeBox quit during it, `info` when it succeeded, and
  * `error` otherwise, including a run a signal ended for any other reason.
  */
-export const RECORD_LEVEL_FILTERS = ['attention', ...RECORD_LEVELS] as const
+export const RECORD_LEVEL_FILTERS = ['warningsAndErrors', ...RECORD_LEVELS] as const
 
 export type RecordLevelFilter = (typeof RECORD_LEVEL_FILTERS)[number]
 

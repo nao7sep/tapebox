@@ -128,7 +128,6 @@ describe('rename publication across the real session commit', () => {
     expect(emit).toHaveBeenCalledExactlyOnceWith('tapes:updated', current)
     await session.persistNow()
     const saved = await session.readCollection(state.collectionDir)
-    if (saved.kind !== 'current') throw new Error('expected the current layout')
     // shelf.json keeps the tape's place in its box, not the order number.
     expect(saved.session.tapes).toEqual([{ ...session.durableTape(current), order: 0 }])
     expect((await readdir(tapeFolder)).sort()).toEqual(['Renamed.json', 'Renamed.mp4', 'tape.json'])

@@ -682,7 +682,7 @@
   "records.kindFfmpegRun": "Выполнение ffmpeg",
   "records.level": "Уровень",
   "records.allLevels": "Все уровни",
-  "records.levelAttention": "Предупреждения и ошибки",
+  "records.levelWarningsAndErrors": "Предупреждения и ошибки",
   "records.levelError": "Ошибка",
   "records.levelWarn": "Предупреждение",
   "records.levelInfo": "Информация",

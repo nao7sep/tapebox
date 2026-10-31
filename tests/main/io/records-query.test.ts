@@ -64,7 +64,7 @@ function referencePage(facts: ReturnType<typeof referenceRecords>, query: Record
     if (query.kind !== null && record.kind !== query.kind) return false
     if (query.session !== null && record.session !== query.session) return false
     if (query.tapeId !== null && record.tapeId !== query.tapeId) return false
-    if (query.level === 'attention' ? !['warn', 'error'].includes(record.level) : query.level !== null && record.level !== query.level) return false
+    if (query.level === 'warningsAndErrors' ? !['warn', 'error'].includes(record.level) : query.level !== null && record.level !== query.level) return false
     if (search && !searched.some((value) => value.includes(search))) return false
     if (query.after !== null) {
       const { time, kind, id } = query.after
@@ -165,11 +165,11 @@ describe('Records chronological page queries', () => {
     const filters: Partial<RecordsQuery>[] = [
       {},
       ...(['log', 'ai-call', 'ytdlp-run', 'ffmpeg-run'] as const).map((kind) => ({ kind })),
-      ...(['info', 'warn', 'error', 'attention'] as const).map((level) => ({ level })),
+      ...(['info', 'warn', 'error', 'warningsAndErrors'] as const).map((level) => ({ level })),
       { session: 'synthetic-launch-1' }, { session: 'missing launch' },
       { tapeId: 'synthetic-tape-1' }, { tapeId: 'missing tape' },
       ...['field_needle', 'needle_', '100%', 'scan_needle', 'run error', 'REQUEST', '  thumbnail  ', 'no match'].map((search) => ({ search })),
-      { session: 'synthetic-launch-0', tapeId: 'synthetic-tape-2', level: 'attention' },
+      { session: 'synthetic-launch-0', tapeId: 'synthetic-tape-2', level: 'warningsAndErrors' },
       { kind: 'ai-call', session: 'synthetic-launch-1', search: '100%' },
     ]
     for (const filter of filters) {

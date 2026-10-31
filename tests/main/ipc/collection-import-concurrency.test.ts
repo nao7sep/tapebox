@@ -100,7 +100,6 @@ const byId = (a: Tape, b: Tape) => a.id.localeCompare(b.id)
 /** The tapes as the collection on disk holds them, by id. */
 async function savedTapes(): Promise<Tape[]> {
   const read = await session.readCollection(state.collectionDir)
-  if (read.kind !== 'current') throw new Error('expected a current collection')
   return [...read.session.tapes].sort(byId)
 }
 

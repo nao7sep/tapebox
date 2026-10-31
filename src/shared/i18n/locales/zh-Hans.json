@@ -595,7 +595,7 @@
   "records.kindFfmpegRun": "ffmpeg 运行",
   "records.level": "级别",
   "records.allLevels": "所有级别",
-  "records.levelAttention": "警告和错误",
+  "records.levelWarningsAndErrors": "警告和错误",
   "records.levelError": "错误",
   "records.levelWarn": "警告",
   "records.levelInfo": "信息",

@@ -1,6 +1,5 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
-import { areaDir, LEGACY_CATALOG, shelfFile, tapeFile } from '@main/paths'
+import { readdir, readFile } from 'node:fs/promises'
+import { areaDir, shelfFile, tapeFile } from '@main/paths'
 import { quarantineFile, serializeStoreJson } from '@main/io/atomic-json'
 import { StoreAccessError } from '@main/io/store-access'
 import { FORMAT_VERSIONS, NewerFormatError, parseStoreJson } from '@main/io/format-version'
@@ -39,17 +38,13 @@ export type CollectionLoadResult =
   | { status: 'empty' }
   | { status: 'recovered'; quarantinePath: string }
 
-export type CollectionRead =
-  | {
-    kind: 'current'
-    result: CollectionLoadResult
-    session: Session
-    damaged: DamagedTape[]
-    /** False when shelf.json is missing or was set aside, so the next save writes it. */
-    shelfWritten: boolean
-  }
-  /** The layout before Inbox and Shelf, which {@link convertLegacyCollection} converts. */
-  | { kind: 'legacy' }
+export type CollectionRead = {
+  result: CollectionLoadResult
+  session: Session
+  damaged: DamagedTape[]
+  /** False when shelf.json is missing or was set aside, so the next save writes it. */
+  shelfWritten: boolean
+}
 
 const TAPE_JSON = { formatVersion: FORMAT_VERSIONS.tape, schema: TapeFileSchema }
 const SHELF_JSON = { formatVersion: FORMAT_VERSIONS.shelf, schema: ShelfSchema }
@@ -203,24 +198,13 @@ async function readTapeFiles(collectionDir: string): Promise<{ inbox: TapeFile[]
   return { inbox, shelved, damaged }
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw new StoreAccessError(path, err)
-  }
-}
-
 /**
  * Read the collection at `collectionDir`: its tape folders and shelf.json.
  *
  * A corrupt or schema-invalid shelf.json is **never discarded**: it is renamed
  * to a timestamped `shelf-*.invalid` sibling, and every tape still shows, the
  * shelved ones as loose tapes. A shelf.json in a newer format throws
- * {@link NewerFormatError} and is left as it is. A collection in the layout
- * before Inbox and Shelf is reported as `legacy` for conversion. With
+ * {@link NewerFormatError} and is left as it is. With
  * `requireExisting`, a collection without a valid shelf.json throws and nothing
  * is written.
  */
@@ -228,7 +212,6 @@ export async function readCollection(
   collectionDir: string,
   options: { requireExisting?: boolean } = {},
 ): Promise<CollectionRead> {
-  if (await exists(join(collectionDir, LEGACY_CATALOG))) return { kind: 'legacy' }
   const shelf = await readShelf(collectionDir, options.requireExisting ?? false)
   const { inbox, shelved, damaged } = await readTapeFiles(collectionDir)
   const session = assembleSession(shelf.kind === 'shelf' ? shelf.shelf : { boxes: [], loose: [] }, inbox, shelved)
@@ -237,5 +220,5 @@ export async function readCollection(
     shelf.kind === 'recovered' ? { status: 'recovered', quarantinePath: shelf.quarantinePath }
       : shelf.kind === 'missing' && tapeCount === 0 ? { status: 'empty' }
         : { status: 'loaded', tapeCount }
-  return { kind: 'current', result, session, damaged, shelfWritten: shelf.kind === 'shelf' }
+  return { result, session, damaged, shelfWritten: shelf.kind === 'shelf' }
 }

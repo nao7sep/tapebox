@@ -80,7 +80,6 @@ function inboxFolder(id: string): string {
 async function assertCompleteCollection(): Promise<Tape[]> {
   await session.persistNow()
   const read = await session.readCollection(state.collectionDir)
-  if (read.kind !== 'current') throw new Error('expected the current layout')
   const byId = (a: Tape, b: Tape) => a.id.localeCompare(b.id)
   const saved = [...read.session.tapes].sort(byId)
   expect(saved).toEqual(session.getTapes().map(session.durableTape).sort(byId))

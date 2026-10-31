@@ -116,12 +116,6 @@ export const paths = {
 export const INBOX_FOLDER = 'inbox'
 export const SHELF_FOLDER = 'shelf'
 export const SHELF_FILE = 'shelf.json'
-/** The catalog of the layout before Inbox and Shelf, converted when found
- *  (store/collection-convert.ts). */
-export const LEGACY_CATALOG = 'catalog.json'
-/** The default collection folder's name before it became `collection/`, renamed
- *  when found (store/stored-names.ts). */
-export const LEGACY_COLLECTION_FOLDER = 'library'
 export function shelfFile(collectionDir: string): string {
   return join(collectionDir, SHELF_FILE)
 }

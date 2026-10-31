@@ -177,7 +177,6 @@ describe.each(['tapes', 'boxes'] as const)('%s reorder across real callers, IPC,
     expect(kind === 'tapes' ? useOrderFailuresStore.getState().shelfTapes.loose ?? null : useOrderFailuresStore.getState().boxes).toBeNull()
     await session.persistNow()
     const saved = await readCollection(directory)
-    if (saved.kind !== 'current') throw new Error('expected the current collection layout')
     if (kind === 'tapes') expect(byId(saved.session.tapes)).toEqual(byId(session.getTapes().map(session.durableTape)))
     else expect(byId(saved.session.boxes)).toEqual(byId(session.getBoxes()))
   })

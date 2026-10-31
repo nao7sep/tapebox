@@ -162,7 +162,6 @@ async function realCollection(tapes: Tape[], boxes: Box[] = []): Promise<void> {
 /** What the collection on disk says now. */
 async function saved(): Promise<{ tapes: Tape[]; boxes: Box[] }> {
   const read = await readCollection(state.collectionDir)
-  if (read.kind !== 'current') throw new Error('the collection is in the old layout')
   return read.session
 }
 

@@ -42,11 +42,11 @@ describe('records IPC', () => {
 
   it('reads a page and a record on the reader thread', async () => {
     readRecords.mockResolvedValueOnce({ records: [], more: false })
-    expect(await invoke('records:page', { ...query, level: 'attention' })).toEqual({
+    expect(await invoke('records:page', { ...query, level: 'warningsAndErrors' })).toEqual({
       ok: true,
       value: { records: [], more: false },
     })
-    expect(readRecords).toHaveBeenLastCalledWith({ op: 'page', query: { ...query, level: 'attention' } })
+    expect(readRecords).toHaveBeenLastCalledWith({ op: 'page', query: { ...query, level: 'warningsAndErrors' } })
 
     readRecords.mockResolvedValueOnce(null)
     await invoke('records:detail', { kind: 'ytdlp-run', id: 4 })

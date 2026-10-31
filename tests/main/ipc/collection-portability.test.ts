@@ -123,7 +123,6 @@ function byId(session: Session): Session {
 async function readAt(dir: string): Promise<Session> {
   const { readCollection } = await import('@main/store/session')
   const read = await readCollection(dir)
-  if (read.kind !== 'current') throw new Error('expected the current layout')
   return read.session
 }
 /** What the store holds, in its durable form. */
@@ -158,25 +157,6 @@ describe('portable collection through settings and the actual collection owner',
     const reopened = await start()
     expect(reopened.config.getCollectionDir()).toBe(copied)
     expect(reopened.session.getBoxes()[0]!.name).toBe('Saved on new machine')
-  })
-
-  it('converts an opened collection in the layout before Inbox and Shelf before it commits', async () => {
-    const app = await start()
-    const target = join(root, 'legacy')
-    await mkdir(join(target, 'Tape123456'), { recursive: true })
-    await writeFile(join(target, 'Tape123456', 'shelf.mp4'), 'media bytes')
-    const { shelved: _shelved, addedIndex: _addedIndex, ...legacy } = tape()
-    await writeFile(join(target, 'catalog.json'), JSON.stringify({
-      formatVersion: 1,
-      tapes: [{ ...legacy, archivedAtUtc: '2026-01-02T00:00:00.000Z' }],
-      boxes: [{ id: 'Box1234567', name: 'Kept box', order: 0 }],
-    }))
-    await update({ collectionDir: target, collectionAction: 'open' })
-    expect(app.config.getCollectionDir()).toBe(target)
-    expect(app.session.getTapes()).toEqual([tape()])
-    expect(app.session.getBoxes()).toEqual([{ id: 'Box1234567', name: 'Kept box', order: 0 }])
-    expect((await readdir(target)).sort()).toEqual(['inbox', 'shelf', 'shelf.json'])
-    expect(await readFile(join(target, 'shelf', 'Tape123456', 'shelf.mp4'), 'utf8')).toBe('media bytes')
   })
 
   it('moves metadata and media together, preserving the source until config commits', async () => {
@@ -313,33 +293,5 @@ describe('portable collection through settings and the actual collection owner',
     expect(app.session.getBoxes().map((box) => box.id), 'the opened copy keeps its own order').toEqual(['Box1234567', 'Box7654321'])
     const saved = ShelfSchema.parse(JSON.parse(await readFile(app.shelfFile(app.paths.collection), 'utf8')))
     expect(saved.boxes.map((box) => box.id)).toEqual(['Box7654321', 'Box1234567'])
-  })
-})
-
-describe('obsolete machine-root catalogs', () => {
-  it('uses the collection\'s shelf file and leaves unrelated old catalog bytes in place', async () => {
-    const { paths, shelfFile } = await import('@main/paths')
-    await mkdir(paths.collection, { recursive: true })
-    const obsolete = join(paths.root, 'catalog.json')
-    const oldBytes = JSON.stringify({ tapes: [], boxes: [{ id: 'Box1234567', name: 'Old', order: 0 }] })
-    await writeFile(obsolete, oldBytes)
-    const current = JSON.stringify({ formatVersion: 1, boxes: [{ id: 'Box7654321', name: 'Current', tapeIds: [] }], loose: [] })
-    await writeFile(shelfFile(paths.collection), current)
-    const app = await start()
-    expect(app.session.getBoxes()[0]!.name).toBe('Current')
-    expect(await readFile(shelfFile(paths.collection), 'utf8')).toBe(current)
-    expect(await readFile(obsolete, 'utf8')).toBe(oldBytes)
-  })
-
-  it('starts an empty collection when only an obsolete machine-root catalog exists', async () => {
-    const { paths } = await import('@main/paths')
-    await mkdir(paths.collection, { recursive: true })
-    const obsolete = join(paths.root, 'catalog.json')
-    const oldBytes = JSON.stringify({ tapes: [], boxes: [{ id: 'Box1234567', name: 'Old', order: 0 }] })
-    await writeFile(obsolete, oldBytes)
-    const app = await start()
-    expect(app.session.getTapes()).toEqual([])
-    expect(app.session.getBoxes()).toEqual([])
-    expect(await readFile(obsolete, 'utf8')).toBe(oldBytes)
   })
 })

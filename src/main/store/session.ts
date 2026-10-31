@@ -19,9 +19,7 @@ import {
   type CollectionRead,
   type DamagedTape,
 } from './collection-files'
-import { convertLegacyCollection } from './collection-convert'
 export { readCollection, type CollectionRead, type DamagedTape } from './collection-files'
-export { convertLegacyCollection } from './collection-convert'
 
 /**
  * In-memory session cache, debounced atomic persistence to the collection: each
@@ -119,27 +117,10 @@ function emptySession(): Session {
 
 /**
  * Outcome of loading the collection, so the app edge (not this I/O layer) can
- * tell the user when shelf.json or the old catalog had to be set aside or a tape
+ * tell the user when shelf.json had to be set aside or a tape
  * could not be read.
  */
 export type SessionLoadResult = CollectionLoadResult & { damaged: DamagedTape[] }
-
-/**
- * Read the collection at `dir`, converting the layout before Inbox and Shelf
- * first. A conversion stopped partway runs again from the old catalog.
- */
-export async function openCollection(
-  dir: string,
-  options: { requireExisting?: boolean } = {},
-): Promise<Extract<CollectionRead, { kind: 'current' }>> {
-  const read = await readCollection(dir, options)
-  if (read.kind === 'current') return read
-  const converted = await convertLegacyCollection(dir, options)
-  if (converted.status === 'converted') log.info('collection converted to Inbox and Shelf', { tapeCount: converted.tapeCount })
-  const after = await readCollection(dir, options)
-  if (after.kind !== 'current') throw new Error(`The old catalog in ${dir} is still there after conversion`)
-  return converted.status === 'recovered' ? { ...after, result: { status: 'recovered', quarantinePath: converted.quarantinePath } } : after
-}
 
 /**
  * Load the app's collection into the in-memory cache. Idempotent at the app level —
@@ -154,7 +135,7 @@ export async function loadSession(): Promise<SessionLoadResult> {
     throw new StoreAccessError(dir, cause)
   })
   if (!directory.isDirectory()) throw new StoreAccessError(dir, new Error('Not a directory'))
-  const read = await openCollection(dir)
+  const read = await readCollection(dir)
   bindSession(dir, read)
   if (!read.shelfWritten) await prepareCollection()
 
@@ -178,7 +159,7 @@ export async function loadSession(): Promise<SessionLoadResult> {
  * runs at its collection turn and has flushed all previous writes. A read whose
  * shelf.json is missing or was set aside counts it as unwritten, so the next
  * save writes it. */
-export function bindSession(dir: string, read: Pick<Extract<CollectionRead, { kind: 'current' }>, 'session' | 'shelfWritten'>): void {
+export function bindSession(dir: string, read: Pick<CollectionRead, 'session' | 'shelfWritten'>): void {
   cancelScheduledSave()
   collectionDir = dir
   cache = read.session

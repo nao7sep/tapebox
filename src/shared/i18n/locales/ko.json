@@ -595,7 +595,7 @@
   "records.kindFfmpegRun": "ffmpeg 실행",
   "records.level": "수준",
   "records.allLevels": "모든 수준",
-  "records.levelAttention": "경고 및 오류",
+  "records.levelWarningsAndErrors": "경고 및 오류",
   "records.levelError": "오류",
   "records.levelWarn": "경고",
   "records.levelInfo": "정보",

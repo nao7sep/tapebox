@@ -97,7 +97,6 @@ afterEach(async () => {
 /** The collection as its files hold it now. */
 async function onDisk(): Promise<Session> {
   const collection = await readCollection(testRoot)
-  if (collection.kind !== 'current') throw new Error('expected the current layout')
   return collection.session
 }
 

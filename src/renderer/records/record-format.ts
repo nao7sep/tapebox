@@ -69,7 +69,7 @@ export const LEVEL_LABELS: Readonly<Record<RecordLevel, MessageKey>> = {
 }
 
 export const LEVEL_FILTER_LABELS: Readonly<Record<RecordLevelFilter, MessageKey>> = {
-  attention: 'records.levelAttention',
+  warningsAndErrors: 'records.levelWarningsAndErrors',
   ...LEVEL_LABELS,
 }
 

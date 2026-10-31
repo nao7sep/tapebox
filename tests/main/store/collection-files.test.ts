@@ -6,8 +6,8 @@ import { ShelfSchema, TapeFileSchema, type Tape } from '@shared/domain'
 
 // The collection on disk: inbox/<id>/ and shelf/<id>/ tape folders, each with its
 // own tape.json, and shelf.json for the Shelf's boxes and order. Real temp
-// folders throughout, so a deleted shelf.json, a move stopped halfway, an
-// interrupted conversion and a damaged tape file are the real thing.
+// folders throughout, so a deleted shelf.json, a move stopped halfway and a
+// damaged tape file are the real thing.
 
 const state = vi.hoisted(() => ({ dir: '', failWrite: null as null | ((path: string) => boolean), failRename: false }))
 vi.mock('@main/store/config', () => ({ getCollectionDir: () => state.dir }))
@@ -36,10 +36,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 })
 
 const session = await import('@main/store/session')
-const { readCollection } = await import('@main/store/collection-files')
+const { encodeShelf, encodeTapeFile, readCollection } = await import('@main/store/collection-files')
 
 const BOX = 'BoxA000001'
-const ARCHIVED = '2026-02-01T00:00:00.000Z'
 
 function tape(id: string, overrides: Partial<Tape> = {}): Tape {
   return {
@@ -53,36 +52,29 @@ function tape(id: string, overrides: Partial<Tape> = {}): Tape {
   }
 }
 
-/** A tape as the layout before Inbox and Shelf recorded it in catalog.json. */
-function legacyTape(id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  const { addedIndex: _addedIndex, shelved: _shelved, ...rest } = tape(id)
-  return { ...rest, archivedAtUtc: null, ...overrides }
-}
-
-const legacyTapes = () => [
-  legacyTape('Inbox00001', { order: 1 }),
-  legacyTape('Inbox00002', { order: 0 }),
-  legacyTape('Boxed00001', { archivedAtUtc: ARCHIVED, boxId: BOX, order: 0 }),
-  legacyTape('Loose00001', { archivedAtUtc: ARCHIVED, order: 0 }),
-  legacyTape('Queued0001', { state: 'queued', filename: null, sidecarFilename: null, downloadedAtUtc: null, order: -1 }),
+const fixtureTapes = () => [
+  tape('Inbox00001', { addedIndex: 1 }),
+  tape('Inbox00002'),
+  tape('Boxed00001', { shelved: true, boxId: BOX }),
+  tape('Loose00001', { shelved: true }),
+  tape('Queued0001', { state: 'queued', filename: null, sidecarFilename: null, downloadedAtUtc: null }),
 ]
 
-async function writeLegacy(tapes: Record<string, unknown>[]): Promise<void> {
+/** Seed the collection on disk: each tape's folder with its media and tape.json, then shelf.json. */
+async function writeCollection(tapes: Tape[]): Promise<void> {
   for (const item of tapes) {
-    if (item['filename'] === null) continue
-    await mkdir(join(state.dir, item['id'] as string))
-    await writeFile(join(state.dir, item['id'] as string, item['filename'] as string), 'media')
+    const folder = join(state.dir, item.shelved ? 'shelf' : 'inbox', item.id)
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'tape.json'), encodeTapeFile(item))
+    if (item.filename !== null) await writeFile(join(folder, item.filename), 'media')
   }
-  await writeFile(join(state.dir, 'catalog.json'), JSON.stringify({
-    formatVersion: 1, tapes, boxes: [{ id: BOX, name: 'Box', order: 0 }],
-  }))
+  await writeFile(join(state.dir, 'shelf.json'), encodeShelf({ tapes, boxes: [{ id: BOX, name: 'Box', order: 0 }] }))
 }
 
 const where = (tapes: readonly Tape[]) => Object.fromEntries(tapes.map((item) => [item.id, item.shelved ? item.boxId ?? 'loose' : 'inbox']))
 const shelfOnDisk = async () => ShelfSchema.parse(JSON.parse(await readFile(join(state.dir, 'shelf.json'), 'utf8')))
 async function reload(): Promise<Tape[]> {
   const read = await readCollection(state.dir)
-  if (read.kind !== 'current') throw new Error('not converted')
   return read.session.tapes
 }
 
@@ -96,65 +88,9 @@ afterEach(async () => {
   await rm(state.dir, { recursive: true, force: true })
 })
 
-describe('converting the layout before Inbox and Shelf', () => {
-  it('moves every folder into inbox/ or shelf/ with its tape.json, writes shelf.json, then deletes catalog.json', async () => {
-    await writeLegacy(legacyTapes())
-
-    const result = await session.loadSession()
-
-    expect(result).toMatchObject({ status: 'loaded', tapeCount: 5, damaged: [] })
-    expect((await readdir(state.dir)).sort()).toEqual(['inbox', 'shelf', 'shelf.json'])
-    expect((await readdir(join(state.dir, 'inbox'))).sort()).toEqual(['Inbox00001', 'Inbox00002', 'Queued0001'])
-    expect((await readdir(join(state.dir, 'shelf'))).sort()).toEqual(['Boxed00001', 'Loose00001'])
-    expect(await readFile(join(state.dir, 'inbox', 'Inbox00001', 'Inbox00001.mp4'), 'utf8')).toBe('media')
-    const file = JSON.parse(await readFile(join(state.dir, 'shelf', 'Boxed00001', 'tape.json'), 'utf8'))
-    expect(file.formatVersion).toBe(1)
-    expect(file).not.toHaveProperty('archivedAtUtc')
-    expect(file).not.toHaveProperty('boxId')
-    expect(file).not.toHaveProperty('order')
-    expect(TapeFileSchema.parse(file).title).toBe('Boxed00001')
-    expect(await shelfOnDisk()).toEqual({ boxes: [{ id: BOX, name: 'Box', tapeIds: ['Boxed00001'] }], loose: ['Loose00001'] })
-    expect(where(session.getTapes())).toEqual({
-      Inbox00001: 'inbox', Inbox00002: 'inbox', Queued0001: 'inbox', Boxed00001: BOX, Loose00001: 'loose',
-    })
-    // Tapes added at one moment keep the old Inbox's order among themselves.
-    const inbox = session.getTapes().filter((item) => !item.shelved).map((item) => item.id)
-    expect(inbox).toEqual(['Queued0001', 'Inbox00002', 'Inbox00001'])
-  })
-
-  it('loses nothing when stopped before shelf.json, and finishes at the next launch', async () => {
-    await writeLegacy(legacyTapes())
-    state.failWrite = (path) => path.endsWith('shelf.json')
-
-    await expect(session.loadSession()).rejects.toThrow('disk full')
-    // Every folder moved and has its tape file; the old catalog is still there.
-    expect((await readdir(state.dir)).sort()).toEqual(['catalog.json', 'inbox', 'shelf'])
-
-    state.failWrite = null
-    await expect(session.loadSession()).resolves.toMatchObject({ status: 'loaded', tapeCount: 5 })
-    expect(where(session.getTapes())).toEqual({
-      Inbox00001: 'inbox', Inbox00002: 'inbox', Queued0001: 'inbox', Boxed00001: BOX, Loose00001: 'loose',
-    })
-    expect((await readdir(state.dir)).sort()).toEqual(['inbox', 'shelf', 'shelf.json'])
-  })
-
-  it('loses nothing when stopped after some folders moved', async () => {
-    await writeLegacy(legacyTapes())
-    let writes = 0
-    state.failWrite = () => ++writes === 3
-
-    await expect(session.loadSession()).rejects.toThrow('disk full')
-    state.failWrite = null
-    await session.loadSession()
-
-    expect(session.getTapes().map((item) => item.id).sort()).toEqual(legacyTapes().map((item) => item['id'] as string).sort())
-    expect(where(session.getTapes())['Boxed00001']).toBe(BOX)
-  })
-})
-
 describe('tapes without shelf.json', () => {
   it('loses no tape when shelf.json is deleted, shelved ones becoming loose tapes', async () => {
-    await writeLegacy(legacyTapes())
+    await writeCollection(fixtureTapes())
     await session.loadSession()
     await rm(join(state.dir, 'shelf.json'))
 
@@ -249,7 +185,7 @@ describe('moving between the Inbox and the Shelf', () => {
 
 describe('a damaged tape file', () => {
   it('names the file and leaves it exactly as it is', async () => {
-    await writeLegacy(legacyTapes())
+    await writeCollection(fixtureTapes())
     await session.loadSession()
     const broken = join(state.dir, 'inbox', 'Inbox00001', 'tape.json')
     await writeFile(broken, '{ not json')
@@ -279,7 +215,7 @@ describe('a damaged tape file', () => {
 
     const read = await readCollection(state.dir)
 
-    expect(read.kind === 'current' && read.damaged.map((item) => item.path)).toEqual([join(state.dir, 'shelf', 'Twice00001', 'tape.json')])
+    expect(read.damaged.map((item) => item.path)).toEqual([join(state.dir, 'shelf', 'Twice00001', 'tape.json')])
   })
 
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('names a tape file that cannot be opened', async () => {
@@ -289,7 +225,7 @@ describe('a damaged tape file', () => {
     await chmod(path, 0o000)
     try {
       const read = await readCollection(state.dir)
-      expect(read.kind === 'current' && read.damaged).toMatchObject([{ id: 'Locked0001', path }])
+      expect(read.damaged).toMatchObject([{ id: 'Locked0001', path }])
     } finally {
       await chmod(path, 0o600)
     }
@@ -301,7 +237,7 @@ describe('a damaged tape file', () => {
 
     const read = await readCollection(state.dir)
 
-    expect(read.kind === 'current' && [read.session.tapes, read.damaged]).toEqual([[], []])
+    expect([read.session.tapes, read.damaged]).toEqual([[], []])
   })
 })
 

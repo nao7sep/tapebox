@@ -188,11 +188,9 @@ async function applySettingsPatch(
   const toDir = effectiveCollectionDir(normalized.collectionDir ?? config.getSettings().collectionDir)
   const opening = switching && collectionAction === 'open'
   // Inspect an explicitly opened collection without quarantine. It is never a
-  // destination for the current collection's media or organization. One in the
-  // layout before Inbox and Shelf is converted now, before anything commits; a
-  // conversion stopped partway runs again the next time it is opened.
+  // destination for the current collection's media or organization.
   const opened = opening
-    ? await session.openCollection(toDir, { requireExisting: true }).catch((cause: unknown) => {
+    ? await session.readCollection(toDir, { requireExisting: true }).catch((cause: unknown) => {
       throw new UserFacingError('refused', message('errors.collectionOpenFailed', { path: toDir }), { cause })
     })
     : null

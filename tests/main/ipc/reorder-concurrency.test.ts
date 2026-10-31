@@ -86,7 +86,6 @@ const lastReorderRows = () => emit.mock.calls.filter(([channel]) => channel === 
 async function expectCurrentSaved() {
   await expect(session.persistNow()).resolves.toBe(true)
   const read = await session.readCollection(state.root)
-  if (read.kind !== 'current') throw new Error('expected the current layout')
   const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id)
   expect([...read.session.tapes].sort(byId)).toEqual(session.getTapes().map(session.durableTape).sort(byId))
   expect(read.session.boxes).toEqual([...session.getBoxes()].sort((a, b) => a.order - b.order))

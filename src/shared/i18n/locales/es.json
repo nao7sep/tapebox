@@ -653,7 +653,7 @@
   "records.kindFfmpegRun": "Ejecución de ffmpeg",
   "records.level": "Nivel",
   "records.allLevels": "Todos los niveles",
-  "records.levelAttention": "Advertencias y errores",
+  "records.levelWarningsAndErrors": "Advertencias y errores",
   "records.levelError": "Error",
   "records.levelWarn": "Advertencia",
   "records.levelInfo": "Información",

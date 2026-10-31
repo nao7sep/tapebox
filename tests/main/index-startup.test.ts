@@ -72,7 +72,6 @@ vi.mock('@main/io/records', () => ({ flushRecords: vi.fn(async () => {}), closeR
 vi.mock('@main/records-window', () => ({ notifyRecordsChanged: vi.fn() }))
 vi.mock('@main/store/config', () => ({ getSettings: () => ({ language: 'en', theme: 'system' }), loadSettings: vi.fn(async () => ({ status: 'loaded' })) }))
 vi.mock('@main/store/dependencies', () => ({ loadDependencies: vi.fn(async () => {}) }))
-vi.mock('@main/store/stored-names', () => ({ convertStoredNames: vi.fn(async () => {}) }))
 vi.mock('@main/store/session', () => ({ loadSession: vi.fn(async () => { order.push('session'); return { status: 'loaded' } }), persistNow: vi.fn(async () => true) }))
 vi.mock('@main/store/layout', () => ({ loadLayout: step('layout'), persistNow: vi.fn(async () => {}) }))
 vi.mock('@main/ipc/index', () => ({ registerIpcHandlers: vi.fn(() => { order.push('ipc') }) }))

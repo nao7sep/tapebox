@@ -99,7 +99,6 @@ vi.mock('@main/io/records', () => ({ flushRecords: vi.fn(async () => {}), closeR
 vi.mock('@main/records-window', () => ({ notifyRecordsChanged: vi.fn() }))
 vi.mock('@main/store/config', () => ({ getSettings: () => ({ language: 'en', theme: 'system', keepAwakeWhilePlaying: true }), loadSettings: vi.fn(async () => ({ status: 'loaded' })) }))
 vi.mock('@main/store/dependencies', () => ({ loadDependencies: vi.fn(async () => {}) }))
-vi.mock('@main/store/stored-names', () => ({ convertStoredNames: vi.fn(async () => {}) }))
 // Every collection save fails: a user's quit would ask; a session end must not.
 vi.mock('@main/store/session', () => ({ loadSession: vi.fn(async () => ({ status: 'loaded' })), persistNow: vi.fn(async () => { state.order.push('save-collection'); return false }) }))
 vi.mock('@main/store/layout', () => ({ loadLayout: vi.fn(async () => {}), persistNow: vi.fn(async () => {}) }))

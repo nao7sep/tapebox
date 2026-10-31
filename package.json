@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "npm@12.2.0",
   "type": "module",
-  "description": "Download videos from the web into a private library, sort them into boxes, and watch them without autoplay pulling you along.",
+  "description": "Download videos from the web into a private collection, sort them into boxes, and watch them without autoplay pulling you along.",
   "author": "Yoshinao Inoguchi <yoshinao@inoguchi.com>",
   "license": "GPL-3.0-or-later",
   "main": "out/main/index.js",

@@ -149,7 +149,7 @@ describe('records reads', () => {
       (await reader.readRecords({ op: 'page', query: query(overrides) })).records.map((record) => record.title)
 
     expect(await titles({ kind: 'log' })).toEqual(['download stalled', 'job start'])
-    expect(await titles({ level: 'attention' })).toEqual(['ffmpeg thumbnail', 'gpt-x', 'download stalled'])
+    expect(await titles({ level: 'warningsAndErrors' })).toEqual(['ffmpeg thumbnail', 'gpt-x', 'download stalled'])
     expect(await titles({ level: 'info' })).toEqual(['yt-dlp scan', 'job start'])
     expect(await titles({ tapeId: 't1' })).toEqual(['gpt-x', 'download stalled', 'job start'])
     expect(await titles({ session: 'another launch' })).toEqual([])
@@ -197,7 +197,7 @@ describe('records reads', () => {
       (await reader.readRecords({ op: 'page', query: query({ level }) })).records.map((record) => record.time.slice(17, 19))
     expect(await levels('warn')).toEqual(['07', '02', '01'])
     expect(await levels('error')).toEqual(['05', '04', '03'])
-    expect(await levels('attention')).toEqual(['07', '05', '04', '03', '02', '01'])
+    expect(await levels('warningsAndErrors')).toEqual(['07', '05', '04', '03', '02', '01'])
 
     const cancelled = page.records.at(-1)!
     expect(await reader.readRecords({ op: 'detail', kind: 'ytdlp-run', id: cancelled.id })).toMatchObject({

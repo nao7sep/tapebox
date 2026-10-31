@@ -224,11 +224,11 @@ describe('settings by set', () => {
   })
 
   it('removes only the model saved back to its built-in, keeping a key it does not know', async () => {
-    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, ai: { baseUrl: 'https://old.example', model: 'old' }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
+    await writeFile(paths.config, JSON.stringify({ formatVersion: 1, future: { setting: true }, 'openai.endpoint': 'https://proxy.example/v1', 'openai.slug': 'custom-model' }))
     await loadSettings()
     expect(getSettings()['openai.endpoint']).toBe('https://proxy.example/v1')
     await updateSettings({ 'openai.slug': defaultSettings()['openai.slug'] })
-    expect(await savedSets()).toEqual({ 'openai.endpoint': 'https://proxy.example/v1', ai: { baseUrl: 'https://old.example', model: 'old' } })
+    expect(await savedSets()).toEqual({ 'openai.endpoint': 'https://proxy.example/v1', future: { setting: true } })
     expect(getSettings()['openai.slug']).toBe(defaultSettings()['openai.slug'])
   })
 

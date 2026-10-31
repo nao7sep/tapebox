@@ -11,7 +11,6 @@ import { describeError } from '@shared/error'
 import { getSettings, loadSettings } from './store/config.js'
 import { loadDependencies } from './store/dependencies.js'
 import { loadSession, persistNow } from './store/session.js'
-import { convertStoredNames } from './store/stored-names.js'
 import * as layout from './store/layout.js'
 import { registerIpcHandlers } from './ipc/index.js'
 import { resumeBinaryOperations, shutdownBinaryOperations } from './ipc/binaries.js'
@@ -192,9 +191,6 @@ async function startup(): Promise<void> {
   }
 
   await afterQuit()
-  // Names stored before the rename to collection and Shelf, converted before
-  // the settings that point at the collection are read.
-  await convertStoredNames()
   const configResult = await loadSettings()
   await applyLanguagePreference(getSettings().language)
   registerLanguageHandlers()
@@ -225,7 +221,7 @@ async function startup(): Promise<void> {
   // ~/.tapebox/backups.sqlite3 through a FIFO queue after its atomic rename lands (see
   // store/backupStore.ts and io/atomic-json.ts). There is nothing to kick off here.
 
-  // If shelf.json or the old catalog was unreadable, it was set aside (never wiped), and a tape
+  // If shelf.json was unreadable, it was set aside (never wiped), and a tape
   // file that could not be read was left as it is; tell the user at the app edge — the session store stays UI-free.
   await afterQuit()
   if (sessionResult.status === 'recovered') {
