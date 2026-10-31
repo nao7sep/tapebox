@@ -751,10 +751,11 @@ describe('RecordsWindow', () => {
       await scrollTo(height - box.clientHeight)
       if (++step % 10 === 0) await arrive(1)
     }
-    const first = store.findIndex((row) => row.title === titles()[0])
-    expect(titles()).toEqual(store.slice(first).map((row) => row.title))
-    expect(titles().length).toBeGreaterThan(10_000)
-    expect(new Set(titles()).size).toBe(titles().length)
+    const loaded = titles()
+    const first = store.findIndex((row) => row.title === loaded[0])
+    expect(loaded).toEqual(store.slice(first).map((row) => row.title))
+    expect(loaded.length).toBeGreaterThan(10_000)
+    expect(new Set(loaded).size).toBe(loaded.length)
   })
 
   it('says when a selected record cannot be read', async () => {

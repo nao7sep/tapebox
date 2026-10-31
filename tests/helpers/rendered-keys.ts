@@ -22,15 +22,22 @@ export function isLiteral(node: Node): boolean {
   return node.parentElement?.closest('[data-literal]') != null
 }
 
+/** Catalogue keys in a text node that is not literal content. The literal
+ * check walks up the tree, so it runs only for text that holds a key. */
+export function textKeysIn(node: Node): string[] {
+  const keys = keysIn(node.nodeValue)
+  return keys.length > 0 && isLiteral(node) ? [] : keys
+}
+
 /** Every catalogue key rendered in `node` and below. */
 export function keysRenderedIn(node: Node): string[] {
-  if (node.nodeType === 3 /* TEXT_NODE */) return isLiteral(node) ? [] : keysIn(node.nodeValue)
+  if (node.nodeType === 3 /* TEXT_NODE */) return textKeysIn(node)
   if (node.nodeType !== 1 /* ELEMENT_NODE */) return []
   const element = node as Element
   const found = READ_ATTRIBUTES.flatMap((name) => keysIn(element.getAttribute(name)))
   const walker = element.ownerDocument.createTreeWalker(element, 1 | 4 /* ELEMENT | TEXT */)
   for (let next = walker.nextNode(); next; next = walker.nextNode()) {
-    if (next.nodeType === 3) { if (!isLiteral(next)) found.push(...keysIn(next.nodeValue)) }
+    if (next.nodeType === 3) found.push(...textKeysIn(next))
     else for (const name of READ_ATTRIBUTES) found.push(...keysIn((next as Element).getAttribute(name)))
   }
   return found

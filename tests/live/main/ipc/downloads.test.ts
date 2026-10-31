@@ -25,6 +25,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { BinaryCheckResult, BinaryStatus } from '@shared/ipc-contract'
 import type { Tape } from '@shared/domain'
 import { deriveStatus } from '@shared/binary-status'
+import { tapeFile } from '@main/paths'
 
 const handlers = vi.hoisted(() => new Map<string, (req: unknown) => Promise<unknown>>())
 // Every event main sends wakes the waiters, which check the session again.
@@ -251,8 +252,9 @@ describe('the live download path', () => {
         expect(tape.state).toBe('downloaded')
 
         const collection = join(home, 'collection')
-        expect((await stat(join(collection, tape.filename!))).size).toBe((await stat(join(CORPUS, VIDEO))).size)
-        const sidecar = JSON.parse(await readFile(join(collection, tape.sidecarFilename!), 'utf8')) as {
+        expect(tape.shelved).toBe(false)
+        expect((await stat(tapeFile(collection, tape, tape.filename!))).size).toBe((await stat(join(CORPUS, VIDEO))).size)
+        const sidecar = JSON.parse(await readFile(tapeFile(collection, tape, tape.sidecarFilename!), 'utf8')) as {
           tapebox: { media: { width: number; height: number; vcodec: string; acodec: string; durationSeconds: number } }
         }
         expect(sidecar.tapebox.media).toMatchObject({ width: 480, height: 320, vcodec: 'h264', acodec: 'aac' })

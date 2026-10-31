@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect } from 'vitest'
-import { isLiteral, keysIn, keysRenderedIn, READ_ATTRIBUTES } from '../helpers/rendered-keys'
+import { keysIn, keysRenderedIn, READ_ATTRIBUTES, textKeysIn } from '../helpers/rendered-keys'
 
 /**
  * The rendered-key gate (localization-conventions): every test that mounts the
@@ -22,7 +22,7 @@ function add(keys: string[]): void {
 function record(records: MutationRecord[]): void {
   for (const change of records) {
     if (change.type === 'childList') change.addedNodes.forEach((node) => add(keysRenderedIn(node)))
-    else if (change.type === 'characterData') { if (!isLiteral(change.target)) add(keysIn(change.target.nodeValue)) }
+    else if (change.type === 'characterData') add(textKeysIn(change.target))
     else if (change.type === 'attributes' && change.attributeName) {
       add(keysIn((change.target as Element).getAttribute(change.attributeName)))
     }

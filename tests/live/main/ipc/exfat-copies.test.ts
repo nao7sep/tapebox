@@ -16,6 +16,7 @@ import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { FORMAT_VERSIONS } from '@main/io/format-version'
+import { INBOX_FOLDER, SHELF_FILE } from '@main/paths'
 import type { ImportResult, IpcCalls } from '@shared/ipc-contract'
 
 const run = promisify(execFile)
@@ -133,7 +134,7 @@ describe('copies onto exFAT', () => {
       const imported = await invoke('collection:import', { paths: first }) as ImportResult
       expect(imported.issues).toEqual([])
       const [tape] = imported.imported
-      expect((await stat(join(home, 'collection', 'First.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
+      expect((await stat(join(home, 'collection', INBOX_FOLDER, tape!.id, 'First.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
 
       // Export onto the exFAT volume.
       const outbox = join(volume, 'exported')
@@ -148,21 +149,27 @@ describe('copies onto exFAT', () => {
       // Move the collection onto the exFAT volume.
       const collection = join(volume, 'collection')
       await invoke('settings:update', { collectionDir: collection })
-      expect(await readFile(join(collection, 'First.mp4'))).toHaveLength(MEDIA_BYTES)
-      expect((await stat(join(collection, 'First.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
+      const moved = join(collection, INBOX_FOLDER, tape!.id, 'First.mp4')
+      expect(await readFile(moved)).toHaveLength(MEDIA_BYTES)
+      expect((await stat(moved)).mtimeMs).toBe(MODIFIED.getTime())
 
       // Import from the system volume into the collection that now lives on exFAT.
       const second = await writeBundle(join(root, 'incoming'), 'Second', 'https://example.test/second')
       const again = await invoke('collection:import', { paths: second }) as ImportResult
       expect(again.issues).toEqual([])
-      expect((await stat(join(collection, 'Second.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
+      const [other] = again.imported
+      expect((await stat(join(collection, INBOX_FOLDER, other!.id, 'Second.mp4'))).mtimeMs).toBe(MODIFIED.getTime())
 
+      const tapeFolder = (id: string, stem: string) => {
+        const folder = `collection/${INBOX_FOLDER}/${id}`
+        return [folder, `${folder}/${stem}.jpg`, `${folder}/${stem}.json`, `${folder}/${stem}.mp4`, `${folder}/tape.json`]
+      }
       expect(await volumeNames(volume)).toEqual([
-        'collection', 'collection/First.jpg', 'collection/First.json', 'collection/First.mp4',
-        'collection/Second.jpg', 'collection/Second.json', 'collection/Second.mp4',
+        'collection', `collection/${INBOX_FOLDER}`, ...tapeFolder(tape!.id, 'First'), ...tapeFolder(other!.id, 'Second'),
+        `collection/${SHELF_FILE}`,
         'exported', 'exported/Holiday.jpg', 'exported/Holiday.json', 'exported/Holiday.mp4',
         'incoming', 'incoming/First.jpg', 'incoming/First.json', 'incoming/First.mp4',
-      ])
+      ].sort())
     } finally {
       await stop()
     }

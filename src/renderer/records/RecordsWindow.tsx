@@ -1,5 +1,5 @@
 import { PagedRunOutput } from './PagedRunOutput'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ipcInvoke, ipcOn } from '@renderer/ipc/client'
 import { log } from '@renderer/ipc/log'
 import { describeError } from '@shared/error'
@@ -306,9 +306,12 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
   const records = list.status === 'ready' ? list.records : []
   const keys = records.map(recordKey)
 
-  const select = (record: RecordSummary): void => {
-    if (recordKey(record) !== selectedKey) setSelected({ kind: record.kind, id: record.id })
-  }
+  // Stable, so a memoized row renders again only when its own props change.
+  const selectedKeyRef = useRef(selectedKey)
+  selectedKeyRef.current = selectedKey
+  const select = useCallback((record: RecordSummary): void => {
+    if (recordKey(record) !== selectedKeyRef.current) setSelected({ kind: record.kind, id: record.id })
+  }, [])
 
   // The list is one listbox (composite-control-conventions, Listbox), through
   // the app's one listbox layer; the selection follows the active row, and
@@ -423,30 +426,15 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
               >
                 {records.map((record) => {
                   const key = recordKey(record)
-                  const isSelected = key === selectedKey
                   return (
-                    <div
+                    <RecordRow
                       key={key}
+                      record={record}
                       id={kb.optionId(key)}
-                      role="option"
-                      aria-selected={isSelected}
-                      data-record-key={key}
-                      onClick={() => select(record)}
-                      className={
-                        'listbox-item cursor-pointer rounded border px-3 py-2 transition ' +
-                        (isSelected
-                          ? 'border-selected ring-1 ring-inset ring-selected/40'
-                          : 'border-transparent hover:bg-hover')
-                      }
-                    >
-                      <div className="flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
-                        <span className="tabular-nums">{timeFormat.format(new Date(record.time))}</span>
-                        <span className={`font-medium ${LEVEL_CLASSES[record.level]}`}>{t.t(LEVEL_LABELS[record.level])}</span>
-                        {record.kind !== 'log' && <span>{t.t(KIND_LABELS[record.kind])}</span>}
-                      </div>
-                      <div className="mt-0.5 truncate text-sm text-fg-strong" data-record-title data-literal>{record.title}</div>
-                      {record.text && <div className="line-clamp-2 text-xs text-fg wrap-anywhere" data-literal>{record.text}</div>}
-                    </div>
+                      selected={key === selectedKey}
+                      onSelect={select}
+                      timeFormat={timeFormat}
+                    />
                   )
                 })}
               </div>
@@ -482,6 +470,41 @@ export function RecordsWindow({ initialListWidth, timeZone }: { initialListWidth
     </div>
   )
 }
+
+/** One row of the list. Memoized, so loading the next page or a new selection
+ * renders only the rows that changed, not every row already loaded. */
+const RecordRow = memo(function RecordRow({ record, id, selected, onSelect, timeFormat }: {
+  record: RecordSummary
+  id: string
+  selected: boolean
+  onSelect: (record: RecordSummary) => void
+  timeFormat: Intl.DateTimeFormat
+}) {
+  const t = useI18n()
+  return (
+    <div
+      id={id}
+      role="option"
+      aria-selected={selected}
+      data-record-key={recordKey(record)}
+      onClick={() => onSelect(record)}
+      className={
+        'listbox-item cursor-pointer rounded border px-3 py-2 transition ' +
+        (selected
+          ? 'border-selected ring-1 ring-inset ring-selected/40'
+          : 'border-transparent hover:bg-hover')
+      }
+    >
+      <div className="flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
+        <span className="tabular-nums">{timeFormat.format(new Date(record.time))}</span>
+        <span className={`font-medium ${LEVEL_CLASSES[record.level]}`}>{t.t(LEVEL_LABELS[record.level])}</span>
+        {record.kind !== 'log' && <span>{t.t(KIND_LABELS[record.kind])}</span>}
+      </div>
+      <div className="mt-0.5 truncate text-sm text-fg-strong" data-record-title data-literal>{record.title}</div>
+      {record.text && <div className="line-clamp-2 text-xs text-fg wrap-anywhere" data-literal>{record.text}</div>}
+    </div>
+  )
+})
 
 function FilterSelect({
   label,

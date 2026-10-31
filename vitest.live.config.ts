@@ -6,9 +6,11 @@ import base from './vitest.config'
 // API, run only by npm run test:full. Files run one at a time because they
 // share the tool cache, spend money, and wait on the network.
 export default defineConfig({
+  define: base.define,
   resolve: base.resolve,
   test: {
     environment: 'node',
+    css: base.test?.css,
     include: ['tests/live/**/*.test.ts'],
     exclude: configDefaults.exclude,
     fileParallelism: false,
